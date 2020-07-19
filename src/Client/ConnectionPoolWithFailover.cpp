@@ -11,7 +11,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
@@ -35,7 +34,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         LoadBalancing load_balancing,
         time_t decrease_error_period_,
         size_t max_error_cap_)
-    : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Logger::get("ConnectionPoolWithFailover"))
+    : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Poco::Logger::get("ConnectionPoolWithFailover"))
     , default_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
@@ -71,9 +70,32 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     case LoadBalancing::FIRST_OR_RANDOM:
         get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
+    case LoadBalancing::ROUND_ROBIN:
+        if (last_used >= nested_pools.size())
+            last_used = 0;
+        ++last_used;
+        /* Consider nested_pools.size() equals to 5
+         * last_used = 1 -> get_priority: 0 1 2 3 4
+         * last_used = 2 -> get_priority: 5 0 1 2 3
+         * last_used = 3 -> get_priority: 5 4 0 1 2
+         * ...
+         * */
+        get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
+        break;
     }
 
-    return Base::get(try_get_entry, get_priority);
+    UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
+    bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
+
+    return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
+}
+
+Int64 ConnectionPoolWithFailover::getPriority() const
+{
+    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto &a, const auto &b)
+    {
+        return a->getPriority() - b->getPriority();
+    }))->getPriority();
 }
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
@@ -181,11 +203,26 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     case LoadBalancing::FIRST_OR_RANDOM:
         get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
+    case LoadBalancing::ROUND_ROBIN:
+        if (last_used >= nested_pools.size())
+            last_used = 0;
+        ++last_used;
+        /* Consider nested_pools.size() equals to 5
+         * last_used = 1 -> get_priority: 0 1 2 3 4
+         * last_used = 2 -> get_priority: 5 0 1 2 3
+         * last_used = 3 -> get_priority: 5 4 0 1 2
+         * ...
+         * */
+        get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
+        break;
     }
 
-    bool fallback_to_stale_replicas = settings ? bool(settings->fallback_to_stale_replicas_for_distributed_queries) : true;
+    UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
+    bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
 
-    return Base::getMany(min_entries, max_entries, max_tries, try_get_entry, get_priority, fallback_to_stale_replicas);
+    return Base::getMany(min_entries, max_entries, max_tries,
+        max_ignored_errors, fallback_to_stale_replicas,
+        try_get_entry, get_priority);
 }
 
 ConnectionPoolWithFailover::TryResult
@@ -222,8 +259,8 @@ ConnectionPoolWithFailover::tryGetEntry(
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {
-            fail_message = "There is no table " + table_to_check->database + "." + table_to_check->table
-                + " on server: " + result.entry->getDescription();
+            const char * message_pattern = "There is no table {}.{} on server: {}";
+            fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
             LOG_WARNING(log, fail_message);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
 
@@ -248,10 +285,7 @@ ConnectionPoolWithFailover::tryGetEntry(
             result.is_up_to_date = false;
             result.staleness = delay;
 
-            LOG_TRACE(
-                    log, "Server " << result.entry->getDescription() << " has unacceptable replica delay "
-                    << "for table " << table_to_check->database << "." << table_to_check->table
-                    << ": " << delay);
+            LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         }
     }

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: Anidado (Nombre1 Tipo1, Nombre2 Tipo2, ...)
 ---
@@ -99,7 +99,7 @@ No puede realizar SELECT para toda una estructura de datos anidados. Solo puede 
 
 Para una consulta INSERT, debe pasar todas las matrices de columnas de componentes de una estructura de datos anidada por separado (como si fueran matrices de columnas individuales). Durante la inserción, el sistema comprueba que tienen la misma longitud.
 
-Para DESCRIBIR consulta, las columnas anidadas estructura de datos se muestran por separado en la misma forma.
+Para una consulta DESCRIBE, las columnas de una estructura de datos anidada se enumeran por separado de la misma manera.
 
 La consulta ALTER para elementos en una estructura de datos anidados tiene limitaciones.
 

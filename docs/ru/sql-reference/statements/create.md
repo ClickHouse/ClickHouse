@@ -128,7 +128,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Выражение для TTL {#vyrazhenie-dlia-ttl}
 
-Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../../sql-reference/statements/create.md#table_engine-mergetree-ttl).
+Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 ### Кодеки сжатия столбцов {#codecs}
 
@@ -301,5 +301,207 @@ LIFETIME([MIN val1] MAX val2)
 В зависимости от [способа размещения словаря в памяти](../../sql-reference/statements/create.md), ключами словаря могут быть один и более атрибутов.
 
 Смотрите [Внешние словари](../../sql-reference/statements/create.md).
+
+## CREATE USER {#create-user-statement}
+
+Создает [аккаунт пользователя](../../operations/access-rights.md#user-account-management).
+
+### Синтаксис {#create-user-syntax}
+
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+#### Идентификация
+
+Существует несколько способов идентификации пользователя:
+
+- `IDENTIFIED WITH no_password`
+- `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+- `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
+- `IDENTIFIED WITH sha256_hash BY 'hash'`
+- `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+- `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+
+#### Пользовательский хост
+
+Пользовательский хост — это хост, с которого можно установить соединение с сервером ClickHouse. Хост задается в секции `HOST` следующими способами:
+
+- `HOST IP 'ip_address_or_subnetwork'` — Пользователь может подключиться к серверу ClickHouse только с указанного IP-адреса или [подсети](https://ru.wikipedia.org/wiki/Подсеть). Примеры: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. При использовании в эксплуатации указывайте только элементы `HOST IP` (IP-адреса и маски подсети), так как использование `host` и `host_regexp` может привести к дополнительной задержке.
+- `HOST ANY` — Пользователь может подключиться с любого хоста. Используется по умолчанию.
+- `HOST LOCAL` — Пользователь может подключиться только локально.
+- `HOST NAME 'fqdn'` — Хост задается через FQDN. Например, `HOST NAME 'mysite.com'`.
+- `HOST NAME REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST NAME REGEXP '.*\.mysite\.com'`.
+- `HOST LIKE 'template'` — Позволяет использовать оператор [LIKE](../functions/string-search-functions.md#function-like) для фильтрации хостов. Например, `HOST LIKE '%'` эквивалентен `HOST ANY`; `HOST LIKE '%.mysite.com'` разрешает подключение со всех хостов в домене `mysite.com`.
+
+Также, чтобы задать хост, вы можете использовать `@` вместе с именем пользователя. Примеры:
+
+- `CREATE USER mira@'127.0.0.1'` — Эквивалентно `HOST IP`.
+- `CREATE USER mira@'localhost'` — Эквивалентно `HOST LOCAL`.
+- `CREATE USER mira@'192.168.%.%'` — Эквивалентно `HOST LIKE`.
+
+!!! info "Внимание"
+    ClickHouse трактует конструкцию `user_name@'address'` как имя пользователя целиком. То есть технически вы можете создать несколько пользователей с одинаковыми `user_name`, но разными частями конструкции после `@`, но лучше так не делать.
+
+
+### Примеры {#create-user-examples}
+
+
+Создать аккаунт `mira`, защищенный паролем `qwerty`:
+
+```sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
+```
+
+Пользователь `mira` должен запустить клиентское приложение на хосте, где запущен ClickHouse.
+
+Создать аккаунт `john`, назначить на него роли, сделать данные роли ролями по умолчанию:
+
+``` sql
+CREATE USER john DEFAULT ROLE role1, role2
+```
+
+Создать аккаунт `john` и установить ролями по умолчанию все его будущие роли:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+Когда роль будет назначена аккаунту `john`, она автоматически станет ролью по умолчанию.
+
+Создать аккаунт `john` и установить ролями по умолчанию все его будущие роли, кроме `role1` и `role2`:
+
+``` sql
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+
+## CREATE ROLE {#create-role-statement}
+
+Создает [роль](../../operations/access-rights.md#role-management).
+
+### Синтаксис {#create-role-syntax}
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### Описание {#create-role-description}
+
+Роль — это набор [привилегий](grant.md#grant-privileges). Пользователь, которому назначена роль, получает все привилегии этой роли.
+
+Одному пользователю можно назначить несколько ролей. Пользователи могут применять назначенные роли в произвольных комбинациях с помощью выражения [SET ROLE](misc.md#set-role-statement). Конечный объем привилегий — это комбинация всех привилегий всех примененных ролей. Если у пользователя имеются привилегии, присвоенные его аккаунту напрямую, они также прибавляются к привилегиям, присвоенным через роли.
+
+Роли по умолчанию применяются при входе пользователя в систему. Установить роли по умолчанию можно с помощью выражений [SET DEFAULT ROLE](misc.md#set-default-role-statement) или [ALTER USER](alter.md#alter-user-statement).
+
+Для отзыва роли используется выражение [REVOKE](revoke.md).
+
+Для удаления роли используется выражение [DROP ROLE](misc.md#drop-role-statement). Удаленная роль автоматически отзывается у всех пользователей, которым была назначена.
+
+### Примеры {#create-role-examples}
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+Такая последовательность запросов создаст роль `accountant`, у которой есть привилегия на чтение из базы данных `accounting`.
+
+Назначить роль `accountant` аккаунту `mira`:
+
+```sql
+GRANT accountant TO mira;
+```
+
+После назначения роли пользователь может ее применить и выполнять разрешенные ей запросы. Например:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```
+
+## CREATE ROW POLICY {#create-row-policy-statement}
+
+Создает [фильтр для строк](../../operations/access-rights.md#row-policy-management), которые пользователь может прочесть из таблицы.
+
+### Синтаксис {#create-row-policy-syntax}
+
+``` sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING condition]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+#### Секция AS {#create-row-policy-as}
+
+С помощью данной секции можно создать политику разрешения или ограничения.
+
+Политика разрешения предоставляет доступ к строкам. Разрешительные политики, которые применяются к одной таблице, объединяются с помощью логического оператора `OR`. Политики являются разрешительными по умолчанию.
+
+Политика ограничения запрещает доступ к строкам. Ограничительные политики, которые применяются к одной таблице, объединяются логическим оператором `AND`.
+
+Ограничительные политики применяются к строкам, прошедшим фильтр разрешительной политики. Если вы не зададите разрешительные политики, пользователь не сможет обращаться ни к каким строкам из таблицы.
+
+#### Секция TO {#create-row-policy-to}
+
+В секции `TO` вы можете перечислить как роли, так и пользователей. Например, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+Ключевым словом `ALL` обозначаются все пользователи, включая текущего. Ключевые слова `ALL EXCEPT` позволяют исключить пользователей из списка всех пользователей. Например, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+### Примеры
+
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
+
+
+## CREATE QUOTA {#create-quota-statement}
+
+Создает [квоту](../../operations/access-rights.md#quotas-management), которая может быть присвоена пользователю или роли.
+
+### Синтаксис {#create-quota-syntax}
+
+``` sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+### Пример {#create-quota-example}
+
+Ограничить максимальное количество запросов для текущего пользователя до 123 запросов каждые 15 месяцев:
+
+``` sql
+CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
+```
+
+
+## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
+
+Создает [профиль настроек](../../operations/access-rights.md#settings-profiles-management), который может быть присвоен пользователю или роли.
+
+### Синтаксис {#create-settings-profile-syntax}
+
+``` sql
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
+
+### Пример {#create-settings-profile-syntax}
+
+Создать профиль настроек `max_memory_usage_profile`, который содержит значение и ограничения для настройки `max_memory_usage`. Присвоить профиль пользователю `robin`:
+
+``` sql
+CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/create/) <!--hide-->

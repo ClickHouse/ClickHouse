@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: "\u53C2\u7167"
 ---
 
-# 関数リファレンス {#function-reference}
+# 集計関数の参照 {#aggregate-functions-reference}
 
 ## カウント {#agg_function-count}
 
-行数またはnull以外の値をカウントします。
+行数またはnot-NULL値をカウントします。
 
 ClickHouseは以下の構文をサポートしています `count`:
 - `count(expr)` または `COUNT(DISTINCT expr)`.
@@ -19,21 +19,21 @@ ClickHouseは以下の構文をサポートしています `count`:
 
 機能は取ることができます:
 
--   ゼロ変数。
+-   ゼロパラメータ。
 -   ワン [式](../syntax.md#syntax-expressions).
 
 **戻り値**
 
--   関数がパラメータなしで呼び出されると、行数がカウントされます。
--   この [式](../syntax.md#syntax-expressions) が渡されると、この関数は、この式がnullではなく返された回数をカウントします。 式がaを返す場合 [Nullable](../../sql-reference/data-types/nullable.md)-タイプ値、そして結果の `count` 滞在しない `Nullable`. 式が返された場合、関数は0を返します `NULL` すべての行について。
+-   関数がパラメータなしで呼び出された場合、行の数がカウントされます。
+-   もし [式](../syntax.md#syntax-expressions) 渡されると、関数はこの式がnot nullを返した回数をカウントします。 式がaを返す場合 [Null可能](../../sql-reference/data-types/nullable.md)-型の値、その後の結果 `count` 滞在しない `Nullable`. 式が返された場合、関数は0を返します `NULL` すべての行について。
 
-どちらの場合も、戻り値の型は次のようになります [UInt64](../../sql-reference/data-types/int-uint.md).
+どちらの場合も、戻り値の型は次のとおりです [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **詳細**
 
-クリックハウスは `COUNT(DISTINCT ...)` 構文。 この構成の動作は、 [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 設定。 それはどれをの定義します [uniq\*](#agg_function-uniq) 関数は、操作を実行するために使用されます。 デフォルトは [ユニキャック](#agg_function-uniqexact) 機能。
+クリックハウスは `COUNT(DISTINCT ...)` 構文。 この構造の動作は、 [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 設定。 それはのどれを定義します [uniq\*](#agg_function-uniq) 関数は、操作を実行するために使用されます。 デフォルトは [uniqExact](#agg_function-uniqexact) 機能。
 
-その `SELECT count() FROM table` テーブル内のエントリの数が別々に格納されていないため、クエリは最適化されません。 テーブルから小さな列を選択し、その中の値の数を数えます。
+その `SELECT count() FROM table` テーブル内のエントリの数が別々に格納されないため、クエリは最適化されません。 テーブルから小さな列を選択し、その中の値の数をカウントします。
 
 **例**
 
@@ -71,21 +71,21 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-この例では、 `count(DISTINCT num)` によって実行される。 `uniqExact` に従う機能 `count_distinct_implementation` 設定値。
+この例では、 `count(DISTINCT num)` によって実行されます。 `uniqExact` に従う機能 `count_distinct_implementation` 設定値。
 
 ## 任意(x) {#agg_function-any}
 
 最初に検出された値を選択します。
-クエリは、毎回異なる順序で実行することができるため、この関数の結果は不確定です。
-確定的な結果を得るには、 ‘min’ または ‘max’ 関数の代わりに ‘any’.
+クエリは毎回異なる順序でも任意の順序で実行できるため、この関数の結果は不確定です。
+決定的な結果を得るには、 ‘min’ または ‘max’ 関数の代わりに ‘any’.
 
-場合によっては、実行順序に頼ることができます。 これは、order byを使用するサブクエリからのselectの場合に適用されます。
+場合によっては、実行の順序に依存することができます。 これは、SELECTがORDER BYを使用するサブクエリから来ている場合に適用されます。
 
-とき `SELECT` クエリには `GROUP BY` 句または少なくとも一つの集計関数、ClickHouse（MySQLとは対照的に）内のすべての式ということが必要です `SELECT`, `HAVING`、と `ORDER BY` 句は、キーまたは集計関数から計算されます。 つまり、テーブルから選択された各列は、キーまたは集計関数内で使用する必要があります。 MySQLのような動作を得るには、他の列を `any` 集計関数。
+ときa `SELECT` クエリには `GROUP BY` クラスタ内のすべての式は、クラスタ内のすべての式を必要とします。 `SELECT`, `HAVING`,and `ORDER BY` 句は、キーまたは集計関数から計算されます。 つまり、テーブルから選択された各列は、キーまたは集計関数内で使用する必要があります。 MySQLのような動作を得るには、他の列を `any` 集計関数。
 
 ## anyHeavy(x) {#anyheavyx}
 
-頻繁に発生する値を選択します。 [ヘビーヒッターズ](http://www.cs.umd.edu/~samir/498/karp.pdf) アルゴリズムだ 各クエリの実行スレッドのケースの半分を超える値がある場合は、この値が返されます。 通常、結果は非決定的です。
+を使用して頻繁に発生する値を選択します。 [ヘビーヒッター](http://www.cs.umd.edu/~samir/498/karp.pdf) アルゴリズム 各クエリの実行スレッドでケースの半分を超える値がある場合、この値が返されます。 通常、結果は非決定的です。
 
 ``` sql
 anyHeavy(column)
@@ -95,9 +95,9 @@ anyHeavy(column)
 
 -   `column` – The column name.
 
-**例えば**
+**例**
 
-を取る [オンタイム](../../getting-started/example-datasets/ontime.md) データセットと選択頻繁に発生する値で `AirlineID` コラム
+を取る [オンタイム](../../getting-started/example-datasets/ontime.md) データ-セットはの頻繁に発生する値を選び、 `AirlineID` 列。
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
@@ -110,14 +110,14 @@ FROM ontime
 └───────┘
 ```
 
-## anyllast(x) {#anylastx}
+## anyLast(x) {#anylastx}
 
 最後に検出された値を選択します。
-結果は、次の場合と同様に不確定です `any` 機能。
+結果は同じように不確定です。 `any` 機能。
 
-## groupBitAnd {#groupbitand}
+## グループビタンド {#groupbitand}
 
-ビットごとの適用 `AND` 一連の数字のために。
+ビット単位で適用 `AND` 数のシリーズのために。
 
 ``` sql
 groupBitAnd(expr)
@@ -131,7 +131,7 @@ groupBitAnd(expr)
 
 の値 `UInt*` タイプ。
 
-**例えば**
+**例**
 
 テストデータ:
 
@@ -149,7 +149,7 @@ binary     decimal
 SELECT groupBitAnd(num) FROM t
 ```
 
-どこに `num` テストデータの列です。
+どこに `num` テストデータを含む列です。
 
 結果:
 
@@ -160,7 +160,7 @@ binary     decimal
 
 ## groupBitOr {#groupbitor}
 
-ビットごとの適用 `OR` 一連の数字のために。
+ビット単位で適用 `OR` 数のシリーズのために。
 
 ``` sql
 groupBitOr(expr)
@@ -174,7 +174,7 @@ groupBitOr(expr)
 
 の値 `UInt*` タイプ。
 
-**例えば**
+**例**
 
 テストデータ:
 
@@ -192,7 +192,7 @@ binary     decimal
 SELECT groupBitOr(num) FROM t
 ```
 
-どこに `num` テストデータの列です。
+どこに `num` テストデータを含む列です。
 
 結果:
 
@@ -203,7 +203,7 @@ binary     decimal
 
 ## groupBitXor {#groupbitxor}
 
-ビットごとの適用 `XOR` 一連の数字のために。
+ビット単位で適用 `XOR` 数のシリーズのために。
 
 ``` sql
 groupBitXor(expr)
@@ -217,7 +217,7 @@ groupBitXor(expr)
 
 の値 `UInt*` タイプ。
 
-**例えば**
+**例**
 
 テストデータ:
 
@@ -235,7 +235,7 @@ binary     decimal
 SELECT groupBitXor(num) FROM t
 ```
 
-どこに `num` テストデータの列です。
+どこに `num` テストデータを含む列です。
 
 結果:
 
@@ -246,7 +246,7 @@ binary     decimal
 
 ## groupBitmap {#groupbitmap}
 
-符号なし整数列からのビットマップ計算または集計計算を行い、uint64型のカーディナリティを返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md).
+符号なし整数列からのビットマップまたは集計計算、uint64型の基数を返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmap(expr)
@@ -260,7 +260,7 @@ groupBitmap(expr)
 
 の値 `UInt64` タイプ。
 
-**例えば**
+**例**
 
 テストデータ:
 
@@ -285,19 +285,19 @@ num
 3
 ```
 
-## 最小(x) {#agg_function-min}
+## min(x) {#agg_function-min}
 
 最小値を計算します。
 
-## 最大(x) {#agg_function-max}
+## max(x) {#agg_function-max}
 
 最大値を計算します。
 
-## argMin(arg,val) {#agg-function-argmin}
+## アルグミン(arg,val) {#agg-function-argmin}
 
-を計算し ‘arg’ 最小値の値 ‘val’ 値。 いくつかの異なる値がある場合 ‘arg’ のための最小値 ‘val’ これらの値のうち、最初に検出された値が出力されます。
+計算します ‘arg’ 最小値の値 ‘val’ 値。 のいくつかの異なる値がある場合 ‘arg’ の最小値に対して ‘val’、検出された最初のこれらの値が出力されます。
 
-**例えば:**
+**例:**
 
 ``` text
 ┌─user─────┬─salary─┐
@@ -317,28 +317,29 @@ SELECT argMin(user, salary) FROM salary
 └──────────────────────┘
 ```
 
-## argMax(arg,val) {#agg-function-argmax}
+## アルグマックス(arg,val) {#agg-function-argmax}
 
-を計算し ‘arg’ 最大値の値 ‘val’ 値。 いくつかの異なる値がある場合 ‘arg’ の最大値 ‘val’ これらの値のうち、最初に検出された値が出力されます。
+計算します ‘arg’ 最大値 ‘val’ 値。 のいくつかの異なる値がある場合 ‘arg’ の最大値の場合 ‘val’、検出された最初のこれらの値が出力されます。
 
 ## sum(x) {#agg_function-sum}
 
 合計を計算します。
-数字のためにのみ動作します。
+数字のみで動作します。
 
 ## sumWithOverflow(x) {#sumwithoverflowx}
 
-入力パラメーターの結果と同じデータ型を使用して、数値の合計を計算します。 合計がこのデータ型の最大値を超えると、関数はエラーを返します。
+結果には、入力パラメーターと同じデータ型を使用して、数値の合計を計算します。 合計がこのデータ型の最大値を超えると、関数はエラーを返します。
 
-数字のためにのみ動作します。
+数字のみで動作します。
 
-## sumMap(キー,値) {#agg_functions-summap}
+## sumMap(キー,値),sumMap(タプル(キー,値))) {#agg_functions-summap}
 
-合計 ‘value’ 配列に指定されたキーに応じて ‘key’ 配列だ
-の要素の数 ‘key’ と ‘value’ 合計される行ごとに同じでなければなりません。
+合計 ‘value’ に指定されたキーに従って配列 ‘key’ 配列
+キーと値の配列のタプルを渡すことは、キーと値の二つの配列を渡すことと同義です。
+要素の数 ‘key’ と ‘value’ 合計される行ごとに同じである必要があります。
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
-例えば:
+例:
 
 ``` sql
 CREATE TABLE sum_map(
@@ -347,30 +348,33 @@ CREATE TABLE sum_map(
     statusMap Nested(
         status UInt16,
         requests UInt64
-    )
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
 SELECT
     timeslot,
-    sumMap(statusMap.status, statusMap.requests)
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
 FROM sum_map
 GROUP BY timeslot
 ```
 
 ``` text
-┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
-└─────────────────────┴──────────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
 ## skewPop {#skewpop}
 
-を計算します [歪み](https://en.wikipedia.org/wiki/Skewness) シーケンスの。
+を計算する [歪み](https://en.wikipedia.org/wiki/Skewness) シーケンスの。
 
 ``` sql
 skewPop(expr)
@@ -384,17 +388,17 @@ skewPop(expr)
 
 The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md)
 
-**例えば**
+**例**
 
 ``` sql
 SELECT skewPop(value) FROM series_with_value_column
 ```
 
-## 串焼き {#skewsamp}
+## skewSamp {#skewsamp}
 
-を計算します [サンプルの歪度](https://en.wikipedia.org/wiki/Skewness) シーケンスの。
+を計算する [サンプル歪度](https://en.wikipedia.org/wiki/Skewness) シーケンスの。
 
-これは、渡された値がそのサンプルを形成する場合、確率変数の歪度の不偏推定値を表します。
+渡された値がサンプルを形成する場合、確率変数の歪度の不偏推定値を表します。
 
 ``` sql
 skewSamp(expr)
@@ -406,17 +410,17 @@ skewSamp(expr)
 
 **戻り値**
 
-The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). もし `n <= 1` (`n` はサンプルのサイズです）、関数は次の値を返します `nan`.
+The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). もし `n <= 1` (`n` はサンプルのサイズです）、その後、関数が返します `nan`.
 
-**例えば**
+**例**
 
 ``` sql
 SELECT skewSamp(value) FROM series_with_value_column
 ```
 
-## kurtPop {#kurtpop}
+## クルトポップ {#kurtpop}
 
-を計算します [尖度](https://en.wikipedia.org/wiki/Kurtosis) シーケンスの。
+を計算する [尖度](https://en.wikipedia.org/wiki/Kurtosis) シーケンスの。
 
 ``` sql
 kurtPop(expr)
@@ -430,17 +434,17 @@ kurtPop(expr)
 
 The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md)
 
-**例えば**
+**例**
 
 ``` sql
 SELECT kurtPop(value) FROM series_with_value_column
 ```
 
-## kurtSamp {#kurtsamp}
+## クルツァンプ {#kurtsamp}
 
-を計算します [サンプル尖度](https://en.wikipedia.org/wiki/Kurtosis) のシーケンスです。
+を計算する [尖度のサンプル](https://en.wikipedia.org/wiki/Kurtosis) シーケンスの。
 
-これは、渡された値がサンプルを形成する場合、確率変数の尖度の不偏推定値を表します。
+渡された値がその標本を形成する場合、確率変数の尖度の不偏推定値を表します。
 
 ``` sql
 kurtSamp(expr)
@@ -452,9 +456,9 @@ kurtSamp(expr)
 
 **戻り値**
 
-The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). もし `n <= 1` (`n` はサンプルのサイズです）、関数は次の値を返します `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). もし `n <= 1` (`n` はサンプルのサイズです）、関数は `nan`.
 
-**例えば**
+**例**
 
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
@@ -465,15 +469,15 @@ SELECT kurtSamp(value) FROM series_with_value_column
 `timeSeriesGroupSum` 総異なる時系列のサンプルのタイムスタンプなアライメントを実施します。
 これは、二つのサンプルタイムスタンプ間の線形補間を使用して、一緒に時系列を合計します。
 
--   `uid` タイムシリーズの一意のidです, `UInt64`.
+-   `uid` 時系列は一意のidですか, `UInt64`.
 -   `timestamp` ミリ秒またはマイクロ秒をサポートするためにInt64型です。
--   `value` メトリックです。
+-   `value` は指標です。
 
-この関数は、以下のタプルの配列を返します `(timestamp, aggregated_value)` のペアになっています。
+この関数は、次のような組の配列を返します `(timestamp, aggregated_value)` ペア。
 
-この機能を使用する前に確認 `timestamp` は昇順です。
+この関数を使用する前に、必ず `timestamp` 昇順です。
 
-例えば:
+例:
 
 ``` text
 ┌─uid─┬─timestamp─┬─value─┐
@@ -512,22 +516,63 @@ FROM (
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
-## timeSeriesGroupRateSum(uid,ts,val) {#agg-function-timeseriesgroupratesum}
+## タイムセリエスグロプラテスム(uid,ts,val) {#agg-function-timeseriesgroupratesum}
 
-同様にtimeseriesgroupratesum、timeseriesgroupratesumは、時系列のレートを計算し、その後、一緒にレートを合計します。
-また、この関数を使用する前にタイムスタンプが昇順になるはずです。
+同様に `timeSeriesGroupSum`, `timeSeriesGroupRateSum` 時系列のレートを計算し、レートを合計します。
+また、timestampはこの関数を使用する前に上昇順にする必要があります。
 
-この関数を使用すると、上記の結果は次のようになります:
+のデータにこの関数を適用します。 `timeSeriesGroupSum` 例では、次の結果が得られます:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
-## 平均(x) {#agg_function-avg}
+## avg(x) {#agg_function-avg}
 
 平均を計算します。
-数字のためにのみ動作します。
-結果は常にfloat64です。
+数字のみで動作します。
+結果は常にFloat64です。
+
+## avgWeighted {#avgweighted}
+
+計算します [加重算術平均](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+
+**構文**
+
+``` sql
+avgWeighted(x, weight)
+```
+
+**パラメータ**
+
+-   `x` — Values. [整数](../data-types/int-uint.md) または [浮動小数点数](../data-types/float.md).
+-   `weight` — Weights of the values. [整数](../data-types/int-uint.md) または [浮動小数点数](../data-types/float.md).
+
+タイプの `x` と `weight` 同じである必要があります。
+
+**戻り値**
+
+-   加重平均。
+-   `NaN`. すべての重みが0に等しい場合。
+
+タイプ: [Float64](../data-types/float.md).
+
+**例**
+
+クエリ:
+
+``` sql
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
+```
+
+結果:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                      8 │
+└────────────────────────┘
+```
 
 ## uniq {#agg_function-uniq}
 
@@ -539,7 +584,7 @@ uniq(x[, ...])
 
 **パラメータ**
 
-この関数は、可変個のパラメータを受け取ります。 変数は `Tuple`, `Array`, `Date`, `DateTime`, `String`、または数値型。
+この関数は、可変数のパラメータを取ります。 変数はあります `Tuple`, `Array`, `Date`, `DateTime`, `String` または数値型。
 
 **戻り値**
 
@@ -547,24 +592,24 @@ uniq(x[, ...])
 
 **実装の詳細**
 
-機能:
+関数:
 
--   集計内のすべてのパラメータのハッシュを計算し、それを計算に使用します。
+-   集計内のすべてのパラメーターのハッシュを計算し、それを計算に使用します。
 
--   を使用して適応サンプリングアルゴリズムです。 計算状態の場合、関数は65536までの要素ハッシュ値のサンプルを使用します。
+-   を使用して適応サンプリングアルゴリズムです。 計算状態では、関数は65536までの要素ハッシュ値のサンプルを使用します。
 
         This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
--   結果を確定的に提供します（クエリ処理の順序に依存しません）。
+-   結果を確定的に提供します(クエリ処理順序に依存しません)。
 
 使用をお勧めしますこの機能はほとんど全てのシナリオ.
 
-**また見なさい**
+**も参照。**
 
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqCombined64](#agg_function-uniqcombined64)
--   [unihll12](#agg_function-uniqhll12)
--   [ユニキャック](#agg_function-uniqexact)
+-   [uniqHLL12](#agg_function-uniqhll12)
+-   [uniqExact](#agg_function-uniqexact)
 
 ## uniqCombined {#agg_function-uniqcombined}
 
@@ -574,53 +619,53 @@ uniq(x[, ...])
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-その `uniqCombined` 関数は、異なる値の数を計算するのに適しています。
+その `uniqCombined` 関数は、異なる値の数を計算するための良い選択です。
 
 **パラメータ**
 
-この関数は、可変個のパラメータを受け取ります。 変数は `Tuple`, `Array`, `Date`, `DateTime`, `String`、または数値型。
+この関数は、可変数のパラメータを取ります。 変数はあります `Tuple`, `Array`, `Date`, `DateTime`, `String` または数値型。
 
-`HLL_precision` は、2のセル数の底の対数です [ハイパーログ](https://en.wikipedia.org/wiki/HyperLogLog). オプションで、次のように関数を使用できます `uniqCombined(x[, ...])`. のデフォルト値 `HLL_precision` は17で、これは効果的に96KiBのスペース（2^17セル、6ビットそれぞれ）です。
+`HLL_precision` は、セルの数の底2対数です。 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). オプションで、次のように関数を使用できます `uniqCombined(x[, ...])`. のデフォルト値 `HLL_precision` は17であり、これは実質的に96KiBの空間（2^17セル、各6ビット）である。
 
 **戻り値**
 
--   を番号 [UInt64](../../sql-reference/data-types/int-uint.md)-タイプ番号。
+-   番号 [UInt64](../../sql-reference/data-types/int-uint.md)-タイプ番号。
 
 **実装の詳細**
 
-機能:
+関数:
 
--   ハッシュを計算します(64ビットのハッシュ `String` それ以外の場合は32ビット）は、集計内のすべてのパラメータに対して、それを計算に使用します。
+-   ハッシュ(64ビットのハッシュ `String` それ以外の場合は32ビット）集計内のすべてのパラメータについて、それを計算に使用します。
 
--   配列、ハッシュテーブル、およびhyperloglogとエラー修正テーブルの組み合わせを使用します。
+-   配列、ハッシュテーブル、HyperLogLogと誤り訂正表の組み合わせを使用します。
 
         For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
--   結果を確定的に提供します（クエリ処理の順序に依存しません）。
+-   結果を確定的に提供します(クエリ処理順序に依存しません)。
 
-!!! note "メモ"
-    それは32ビットハッシュを使用しているので-`String` タイプすると、結果はカーディナリティのエラーが非常に大きくなります `UINT_MAX` （エラーは数十億の異なる値の後にすぐに発生します）、この場合は次のようにしてください [uniqCombined64](#agg_function-uniqcombined64)
+!!! note "注"
+    非32ビットハッシュを使用するので-`String` タイプは、結果よりも有意に大きい基数のための非常に高い誤差を有する `UINT_MAX` （エラーは数十億の異なる値の後にすぐに発生します）、この場合は以下を使用する必要があります [uniqCombined64](#agg_function-uniqcombined64)
 
-に比べて [uniq](#agg_function-uniq) 機能、を `uniqCombined`:
+と比較される [uniq](#agg_function-uniq) 関数は、 `uniqCombined`:
 
--   数回少ないメモリを消費します。
+-   数倍少ないメモリを消費します。
 -   数倍高い精度で計算します。
--   通常は若干低い性能を持っています。 一部のシナリオでは, `uniqCombined` より良い実行できる `uniq` たとえば、ネットワークを介して多数の集約状態を送信する分散クエリを使用します。
+-   通常はやや性能が低い。 シナリオによっては, `uniqCombined` ではどのように絡んでいるのかを調べ `uniq` たとえば、ネットワーク経由で多数の集約状態を送信する分散クエリです。
 
-**また見なさい**
+**も参照。**
 
 -   [uniq](#agg_function-uniq)
 -   [uniqCombined64](#agg_function-uniqcombined64)
--   [unihll12](#agg_function-uniqhll12)
--   [ユニキャック](#agg_function-uniqexact)
+-   [uniqHLL12](#agg_function-uniqhll12)
+-   [uniqExact](#agg_function-uniqexact)
 
 ## uniqCombined64 {#agg_function-uniqcombined64}
 
-と同じ [uniqCombined](#agg_function-uniqcombined) ただし、すべてのデータ型に64ビットハッシュを使用します。
+同じ [uniqCombined](#agg_function-uniqcombined) しかし、すべてのデータ型に64ビットハッシュを使用します。
 
-## unihll12 {#agg_function-uniqhll12}
+## uniqHLL12 {#agg_function-uniqhll12}
 
-を使用して、異なる引数値のおおよその数を計算します [ハイパーログ](https://en.wikipedia.org/wiki/HyperLogLog) アルゴリズムだ
+異なる引数値のおおよその数を計算します。 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) アルゴリズム
 
 ``` sql
 uniqHLL12(x[, ...])
@@ -628,7 +673,7 @@ uniqHLL12(x[, ...])
 
 **パラメータ**
 
-この関数は、可変個のパラメータを受け取ります。 変数は `Tuple`, `Array`, `Date`, `DateTime`, `String`、または数値型。
+この関数は、可変数のパラメータを取ります。 変数はあります `Tuple`, `Array`, `Date`, `DateTime`, `String` または数値型。
 
 **戻り値**
 
@@ -636,25 +681,25 @@ uniqHLL12(x[, ...])
 
 **実装の詳細**
 
-機能:
+関数:
 
--   集計内のすべてのパラメータのハッシュを計算し、それを計算に使用します。
+-   集計内のすべてのパラメーターのハッシュを計算し、それを計算に使用します。
 
 -   HyperLogLogアルゴリズムを使用して、異なる引数値の数を近似します。
 
         212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
--   確定的な結果を提供します（クエリ処理の順序に依存しません）。
+-   決定的な結果を提供します(クエリ処理順序に依存しません)。
 
-この機能を使用することはお勧めしません。 ほとんどの場合、 [uniq](#agg_function-uniq) または [uniqCombined](#agg_function-uniqcombined) 機能。
+この機能の使用はお勧めしません。 ほとんどの場合、 [uniq](#agg_function-uniq) または [uniqCombined](#agg_function-uniqcombined) 機能。
 
-**また見なさい**
+**も参照。**
 
 -   [uniq](#agg_function-uniq)
 -   [uniqCombined](#agg_function-uniqcombined)
--   [ユニキャック](#agg_function-uniqexact)
+-   [uniqExact](#agg_function-uniqexact)
 
-## ユニキャック {#agg_function-uniqexact}
+## uniqExact {#agg_function-uniqexact}
 
 異なる引数値の正確な数を計算します。
 
@@ -662,65 +707,139 @@ uniqHLL12(x[, ...])
 uniqExact(x[, ...])
 ```
 
-を使用 `uniqExact` 機能あなたは絶対に正確な結果が必要な場合。 それ以外の場合は、 [uniq](#agg_function-uniq) 機能。
+使用する `uniqExact` あなたが絶対に正確な結果が必要な場合は、関数。 それ以外の場合は、 [uniq](#agg_function-uniq) 機能。
 
-その `uniqExact` 機能の使用ます。 `uniq`、状態のサイズは、異なる値の数が増加するにつれて無制限の成長を有するからである。
+その `uniqExact` 関数はより多くのメモリを使用 `uniq`、状態の大きさは、異なる値の数が増加するにつれて無限の成長を有するからである。
 
 **パラメータ**
 
-この関数は、可変個のパラメータを受け取ります。 変数は `Tuple`, `Array`, `Date`, `DateTime`, `String`、または数値型。
+この関数は、可変数のパラメータを取ります。 変数はあります `Tuple`, `Array`, `Date`, `DateTime`, `String` または数値型。
 
-**また見なさい**
+**も参照。**
 
 -   [uniq](#agg_function-uniq)
 -   [uniqCombined](#agg_function-uniqcombined)
--   [unihll12](#agg_function-uniqhll12)
+-   [uniqHLL12](#agg_function-uniqhll12)
 
 ## groupArray(x),groupArray(max\_size)(x) {#agg_function-grouparray}
 
-引数の値の配列を作成します。
+引数値の配列を作成します。
 値は、任意の（不確定な）順序で配列に追加できます。
 
-第二のバージョン（ `max_size` パラメータ）結果の配列のサイズを次のように制限します `max_size` 要素。
-例えば, `groupArray (1) (x)` に相当します `[any (x)]`.
+第二のバージョン（と `max_size` パラメータ)結果の配列のサイズを以下に制限します `max_size` 要素。
+例えば, `groupArray (1) (x)` に等しい。 `[any (x)]`.
 
-場合によっては、実行の順序に依拠することもできます。 これは、次の場合に適用されます `SELECT` 使用するサブクエリーから取得されます `ORDER BY`.
+場合によっては、実行順序に依存することもあります。 これは、次の場合に適用されます `SELECT` を使用するサブクエリから来ています `ORDER BY`.
 
-## groupArrayInsertAt(値、位置) {#grouparrayinsertatvalue-position}
+## グループパラインセルタット {#grouparrayinsertat}
 
-指定した位置の配列に値を挿入します。
+指定された位置に配列に値を挿入します。
 
-!!! note "メモ"
-    この関数はゼロベースの位置を使用します。
+**構文**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+``` sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-任意変数:
+あるクエリで複数の値が同じ位置に挿入された場合、関数は次のように動作します:
 
--   空の位置に置き換えるためのデフォルト値。
--   結果の配列の長さ。 これにより、すべての集約キーで同じサイズの配列を受け取ることができます。 このパラメーターを使用する場合は、既定値を指定する必要があります。
+-   クエリが単一のスレッドで実行される場合、挿入された最初の値が使用されます。
+-   クエリが複数のスレッドで実行される場合、結果の値は挿入された値のいずれかになります。
 
-## グルーパーレイモビングサムcity in new mexico usa {#agg_function-grouparraymovingsum}
+**パラメータ**
 
-入力値の移動和を計算します。
+-   `x` — Value to be inserted. [式](../syntax.md#syntax-expressions) のいずれかになります [対応するデータ型](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` 挿入されるべきです。 配列のインデックス番号はゼロから始まります。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [式](../syntax.md#syntax-expressions) その結果、データ型は `x` パラメータ。 もし `default_x` は定義されていない。 [デフォルト値](../../sql-reference/statements/create.md#create-default-values) 使用されます。
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` 指定する必要があります。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**戻り値**
+
+-   値が挿入された配列。
+
+タイプ: [配列](../../sql-reference/data-types/array.md#data-type-array).
+
+**例**
+
+クエリ:
+
+``` sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+結果:
+
+``` text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+クエリ:
+
+``` sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+結果:
+
+``` text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+クエリ:
+
+``` sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+結果:
+
+``` text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+一つの位置に要素のマルチスレッド挿入。
+
+クエリ:
+
+``` sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+このクエリの結果として、あなたはランダムな整数を取得します `[0,9]` 範囲 例えば:
+
+``` text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
+
+## グループパレイモビングスム {#agg_function-grouparraymovingsum}
+
+入力値の移動合計を計算します。
 
 ``` sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
 
-この機能できるウィンドウサイズとしてのパラメータとします。 指定しない場合、この関数は、列の行数と同じウィンドウサイズをとります。
+この機能できるウィンドウサイズとしてのパラメータとします。 指定されていない場合、関数は列の行数に等しいウィンドウサイズを取ります。
 
 **パラメータ**
 
--   `numbers_for_summing` — [式](../syntax.md#syntax-expressions) その結果、数値データ型の値が返されます。
+-   `numbers_for_summing` — [式](../syntax.md#syntax-expressions) 数値データ型の値になります。
 -   `window_size` — Size of the calculation window.
 
 **戻り値**
 
--   入力データと同じサイズおよびタイプの配列。
+-   入力データと同じサイズと型の配列。
 
-**例えば**
+**例**
 
 サンプルテーブル:
 
@@ -773,7 +892,7 @@ FROM t
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-## groupparraymovingavg {#agg_function-grouparraymovingavg}
+## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
 入力値の移動平均を計算します。
 
@@ -782,20 +901,20 @@ groupArrayMovingAvg(numbers_for_summing)
 groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
 
-この機能できるウィンドウサイズとしてのパラメータとします。 指定しない場合、この関数は、列の行数と同じウィンドウサイズをとります。
+この機能できるウィンドウサイズとしてのパラメータとします。 指定されていない場合、関数は列の行数に等しいウィンドウサイズを取ります。
 
 **パラメータ**
 
--   `numbers_for_summing` — [式](../syntax.md#syntax-expressions) その結果、数値データ型の値が返されます。
+-   `numbers_for_summing` — [式](../syntax.md#syntax-expressions) 数値データ型の値になります。
 -   `window_size` — Size of the calculation window.
 
 **戻り値**
 
--   入力データと同じサイズおよびタイプの配列。
+-   入力データと同じサイズと型の配列。
 
-この関数は [ゼロに向かって丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). 結果のデータ型の小数点以下の桁を切り捨てます。
+この関数は [ゼロへの丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). 結果のデータ型の小数点以下の桁数を切り捨てます。
 
-**例えば**
+**例**
 
 サンプルテーブル `b`:
 
@@ -850,18 +969,18 @@ FROM t
 
 ## groupUniqArray(x),groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
-異なる引数値から配列を作成します。 メモリ消費量は、 `uniqExact` 機能。
+異なる引数値から配列を作成します。 メモリ消費量は `uniqExact` 機能。
 
-第二のバージョン（ `max_size` パラメータ）結果の配列のサイズを次のように制限します `max_size` 要素。
-例えば, `groupUniqArray(1)(x)` に相当します `[any(x)]`.
+第二のバージョン（と `max_size` パラメータ)結果の配列のサイズを以下に制限します `max_size` 要素。
+例えば, `groupUniqArray(1)(x)` に等しい。 `[any(x)]`.
 
-## 分位値 {#quantile}
+## 分位数 {#quantile}
 
-近似値を計算します [分位値](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンス。
+近似を計算します [分位数](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンスの。
 
-この関数が適用されます [貯蔵所の見本抽出](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192までの貯蔵所のサイズおよび見本抽出のための乱数発電機を使って。 結果は非決定的です。 正確な分位値を取得するには、以下を使用します [quantileExact](#quantileexact) 機能。
+この関数が適用されます [貯蔵所の見本抽出](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192までの貯蔵所のサイズおよび見本抽出のための乱数発生器を使って。 結果は非決定的です。 正確な分位値を取得するには、次の式を使用します [quantileExact](#quantileexact) 機能。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -869,24 +988,24 @@ FROM t
 quantile(level)(expr)
 ```
 
-エイリアス: `median`.
+別名: `median`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [データ型](../../sql-reference/data-types/index.md#data_types), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 
 **戻り値**
 
--   指定したレベルの概算値。
+-   指定されたレベルの近似分位値。
 
 タイプ:
 
--   [Float64](../../sql-reference/data-types/float.md) 数値データ型の入力。
+-   [Float64](../../sql-reference/data-types/float.md) 数値データ型入力の場合。
 -   [日付](../../sql-reference/data-types/date.md) 入力値が `Date` タイプ。
 -   [DateTime](../../sql-reference/data-types/datetime.md) 入力値が `DateTime` タイプ。
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -913,18 +1032,18 @@ SELECT quantile(val) FROM t
 └───────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
-## quantiedeterministic {#quantiledeterministic}
+## quantileDeterministic {#quantiledeterministic}
 
-近似値を計算します [分位値](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンス。
+近似を計算します [分位数](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンスの。
 
-この関数が適用されます [貯蔵所の見本抽出](https://en.wikipedia.org/wiki/Reservoir_sampling) 8192までの貯蔵所のサイズおよび見本抽出の決定論のアルゴリズムを使って。 結果は決定的です。 正確な分位値を取得するには、以下を使用します [quantileExact](#quantileexact) 機能。
+この関数が適用されます [貯蔵所の見本抽出](https://en.wikipedia.org/wiki/Reservoir_sampling) 貯蔵所のサイズ8192までおよび見本抽出の決定論的なアルゴリズムを使って。 結果は決定的です。 正確な分位値を取得するには、次の式を使用します [quantileExact](#quantileexact) 機能。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -932,25 +1051,25 @@ SELECT quantile(val) FROM t
 quantileDeterministic(level)(expr, determinator)
 ```
 
-エイリアス: `medianDeterministic`.
+別名: `medianDeterministic`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [データ型](../../sql-reference/data-types/index.md#data_types), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 -   `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
 **戻り値**
 
--   指定したレベルの概算値。
+-   指定されたレベルの近似分位値。
 
 タイプ:
 
--   [Float64](../../sql-reference/data-types/float.md) 数値データ型の入力。
+-   [Float64](../../sql-reference/data-types/float.md) 数値データ型入力の場合。
 -   [日付](../../sql-reference/data-types/date.md) 入力値が `Date` タイプ。
 -   [DateTime](../../sql-reference/data-types/datetime.md) 入力値が `DateTime` タイプ。
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -977,18 +1096,18 @@ SELECT quantileDeterministic(val, 1) FROM t
 └───────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
 ## quantileExact {#quantileexact}
 
-正確に計算する [分位値](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンス。
+正確に計算する [分位数](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンスの。
 
-To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` メモリ、どこ `n` 渡された値の数です。 しかし、少数の値の場合、関数は非常に効果的です。
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` メモリ、どこ `n` 渡された値の数です。 しかし、少数の値の場合、この関数は非常に効果的です。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -996,11 +1115,11 @@ To get exact value, all the passed values ​​are combined into an array, whic
 quantileExact(level)(expr)
 ```
 
-エイリアス: `medianExact`.
+別名: `medianExact`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [データ型](../../sql-reference/data-types/index.md#data_types), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 
 **戻り値**
@@ -1009,11 +1128,11 @@ quantileExact(level)(expr)
 
 タイプ:
 
--   [Float64](../../sql-reference/data-types/float.md) 数値データ型の入力。
+-   [Float64](../../sql-reference/data-types/float.md) 数値データ型入力の場合。
 -   [日付](../../sql-reference/data-types/date.md) 入力値が `Date` タイプ。
 -   [DateTime](../../sql-reference/data-types/datetime.md) 入力値が `DateTime` タイプ。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -1029,18 +1148,18 @@ SELECT quantileExact(number) FROM numbers(10)
 └───────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
 ## quantileExactWeighted {#quantileexactweighted}
 
-正確に計算する [分位値](https://en.wikipedia.org/wiki/Quantile) 各要素の重みを考慮した数値データシーケンス。
+正確に計算する [分位数](https://en.wikipedia.org/wiki/Quantile) 各要素の重みを考慮して、数値データシーケンスの重みを指定します。
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). この関数は、次の代わりに使用できます `quantileExact` そして、重み1を指定します。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -1048,11 +1167,11 @@ To get exact value, all the passed values ​​are combined into an array, whic
 quantileExactWeighted(level)(expr, weight)
 ```
 
-エイリアス: `medianExactWeighted`.
+別名: `medianExactWeighted`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [データ型](../../sql-reference/data-types/index.md#data_types), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 -   `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
 
@@ -1062,11 +1181,11 @@ quantileExactWeighted(level)(expr, weight)
 
 タイプ:
 
--   [Float64](../../sql-reference/data-types/float.md) 数値データ型の入力。
+-   [Float64](../../sql-reference/data-types/float.md) 数値データ型入力の場合。
 -   [日付](../../sql-reference/data-types/date.md) 入力値が `Date` タイプ。
 -   [DateTime](../../sql-reference/data-types/datetime.md) 入力値が `DateTime` タイプ。
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -1093,18 +1212,18 @@ SELECT quantileExactWeighted(n, val) FROM t
 └───────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
 ## クオンタイミング {#quantiletiming}
 
-決定された精度では、 [分位値](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンス。
+決定された精度では、 [分位数](https://en.wikipedia.org/wiki/Quantile) 数値データシーケンスの。
 
-結果は決定的です（クエリ処理の順序に依存しません）。 この機能を最適化と配列における分布のような積載ウェブページではバックエンド対応。
+結果は決定的です（クエリ処理順序に依存しません）。 この機能を最適化と配列における分布のような積載ウェブページではバックエンド対応。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -1112,13 +1231,13 @@ SELECT quantileExactWeighted(n, val) FROM t
 quantileTiming(level)(expr)
 ```
 
-エイリアス: `medianTiming`.
+別名: `medianTiming`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [式](../syntax.md#syntax-expressions) aを返す列の値を超える [フロート\*](../../sql-reference/data-types/float.md)-タイプ番号。
+-   `expr` — [式](../syntax.md#syntax-expressions) aを返す列の値に対して [フロート\*](../../sql-reference/data-types/float.md)-タイプ番号。
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
@@ -1128,12 +1247,12 @@ quantileTiming(level)(expr)
 計算は次の場合に正確です:
 
 -   値の総数は5670を超えません。
--   値の総数は5670を超えていますが、ページの読み込み時間は1024ms未満です。
+-   値の総数は5670を超えますが、ページの読み込み時間は1024ms未満です。
 
 それ以外の場合、計算の結果は16msの最も近い倍数に丸められます。
 
-!!! note "メモ"
-    ページの読み込み時間の分位数を計算するために、この関数はより効果的で正確です [分位値](#quantile).
+!!! note "注"
+    ページの読み込み時間の分位数を計算するために、この機能はより有効、正確です [分位数](#quantile).
 
 **戻り値**
 
@@ -1141,10 +1260,10 @@ quantileTiming(level)(expr)
 
 タイプ: `Float32`.
 
-!!! note "メモ"
-    関数に値が渡されない場合（以下を使用する場合 `quantileTimingIf`), [ナン](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 返されます。 この目的は、これらのケースをゼロになるケースと区別することです。 見る [ORDER BY句](../statements/select.md#select-order-by) ソートに関する注意事項 `NaN` 値。
+!!! note "注"
+    関数に値が渡されない場合（使用する場合 `quantileTimingIf`), [ナン](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 返されます。 この目的は、これらのケースをゼロになるケースと区別することです。 見る [ORDER BY句](../statements/select/order-by.md#select-order-by) ソートに関する注意事項 `NaN` 値。
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -1176,18 +1295,18 @@ SELECT quantileTiming(response_time) FROM t
 └───────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
-## quantitimingweighted {#quantiletimingweighted}
+## quantitetimingweighted {#quantiletimingweighted}
 
-決定された精度では、 [分位値](https://en.wikipedia.org/wiki/Quantile) 各シーケンスメンバの重みに応じた数値データシーケンス。
+決定された精度では、 [分位数](https://en.wikipedia.org/wiki/Quantile) 各シーケンスメンバの重みに応じた数値データシーケンスの。
 
-結果は決定的です（クエリ処理の順序に依存しません）。 この機能を最適化と配列における分布のような積載ウェブページではバックエンド対応。
+結果は決定的です（クエリ処理順序に依存しません）。 この機能を最適化と配列における分布のような積載ウェブページではバックエンド対応。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -1195,13 +1314,13 @@ SELECT quantileTiming(response_time) FROM t
 quantileTimingWeighted(level)(expr, weight)
 ```
 
-エイリアス: `medianTimingWeighted`.
+別名: `medianTimingWeighted`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [式](../syntax.md#syntax-expressions) aを返す列の値を超える [フロート\*](../../sql-reference/data-types/float.md)-タイプ番号。
+-   `expr` — [式](../syntax.md#syntax-expressions) aを返す列の値に対して [フロート\*](../../sql-reference/data-types/float.md)-タイプ番号。
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
@@ -1213,12 +1332,12 @@ quantileTimingWeighted(level)(expr, weight)
 計算は次の場合に正確です:
 
 -   値の総数は5670を超えません。
--   値の総数は5670を超えていますが、ページの読み込み時間は1024ms未満です。
+-   値の総数は5670を超えますが、ページの読み込み時間は1024ms未満です。
 
 それ以外の場合、計算の結果は16msの最も近い倍数に丸められます。
 
-!!! note "メモ"
-    ページの読み込み時間の分位数を計算するために、この関数はより効果的で正確です [分位値](#quantile).
+!!! note "注"
+    ページの読み込み時間の分位数を計算するために、この機能はより有効、正確です [分位数](#quantile).
 
 **戻り値**
 
@@ -1226,10 +1345,10 @@ quantileTimingWeighted(level)(expr, weight)
 
 タイプ: `Float32`.
 
-!!! note "メモ"
-    関数に値が渡されない場合（以下を使用する場合 `quantileTimingIf`), [ナン](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 返されます。 この目的は、これらのケースをゼロになるケースと区別することです。 見る [ORDER BY句](../statements/select.md#select-order-by) ソートに関する注意事項 `NaN` 値。
+!!! note "注"
+    関数に値が渡されない場合（使用する場合 `quantileTimingIf`), [ナン](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 返されます。 この目的は、これらのケースをゼロになるケースと区別することです。 見る [ORDER BY句](../statements/select/order-by.md#select-order-by) ソートに関する注意事項 `NaN` 値。
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -1258,20 +1377,20 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 └───────────────────────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
-## quantiletdigestcomment {#quantiletdigest}
+## quantileTDigest {#quantiletdigest}
 
-近似値を計算します [分位値](https://en.wikipedia.org/wiki/Quantile) を使用する数値データシーケンスの [t-ダイジェスト](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズムだ
+近似を計算します [分位数](https://en.wikipedia.org/wiki/Quantile) を用いた数値データシーケンスの [t-ダイジェスト](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズム
 
-最大誤差は1%です。 メモリ消費量は `log(n)`、どこ `n` 値の数です。 結果は、クエリの実行順序によって異なり、非決定的です。
+最大誤差は1%です。 メモリ消費は `log(n)`,ここで `n` 値の数です。 結果は、クエリの実行順序に依存し、非決定的です。
 
-機能の性能は性能より低いですの [分位値](#quantile) または [クオンタイミング](#quantiletiming). 状態サイズと精度の比に関しては、この関数はよりもはるかに優れています `quantile`.
+機能の性能はの性能より低いです [分位数](#quantile) または [クオンタイミング](#quantiletiming). 状態サイズと精度の比に関しては、この関数は `quantile`.
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -1279,24 +1398,24 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 quantileTDigest(level)(expr)
 ```
 
-エイリアス: `medianTDigest`.
+別名: `medianTDigest`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [データ型](../../sql-reference/data-types/index.md#data_types), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 
 **戻り値**
 
--   指定したレベルの概算値。
+-   指定されたレベルの近似分位値。
 
 タイプ:
 
--   [Float64](../../sql-reference/data-types/float.md) 数値データ型の入力。
+-   [Float64](../../sql-reference/data-types/float.md) 数値データ型入力の場合。
 -   [日付](../../sql-reference/data-types/date.md) 入力値が `Date` タイプ。
 -   [DateTime](../../sql-reference/data-types/datetime.md) 入力値が `DateTime` タイプ。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -1312,20 +1431,20 @@ SELECT quantileTDigest(number) FROM numbers(10)
 └─────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
-近似値を計算します [分位値](https://en.wikipedia.org/wiki/Quantile) を使用する数値データシーケンスの [t-ダイジェスト](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズムだ この関数は、各シーケンスメンバーの重みを考慮に入れます。 最大誤差は1%です。 メモリ消費量は `log(n)`、どこ `n` 値の数です。
+近似を計算します [分位数](https://en.wikipedia.org/wiki/Quantile) を用いた数値データシーケンスの [t-ダイジェスト](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズム この関数は、各シーケンスメンバーの重みを考慮に入れます。 最大誤差は1%です。 メモリ消費は `log(n)`,ここで `n` 値の数です。
 
-機能の性能は性能より低いですの [分位値](#quantile) または [クオンタイミング](#quantiletiming). 状態サイズと精度の比に関しては、この関数はよりもはるかに優れています `quantile`.
+機能の性能はの性能より低いです [分位数](#quantile) または [クオンタイミング](#quantiletiming). 状態サイズと精度の比に関しては、この関数は `quantile`.
 
-結果は、クエリの実行順序によって異なり、非決定的です。
+結果は、クエリの実行順序に依存し、非決定的です。
 
-複数を使用する場合 `quantile*` クエリの異なるレベルを持つ関数は、内部状態が結合されていません（つまり、クエリはそれほど効率的ではありません）。 この場合は、 [分位数](#quantiles) 機能。
+複数を使用する場合 `quantile*` クエリ内の異なるレベルを持つ関数では、内部状態は結合されません(つまり、クエリの動作ができるほど効率的ではありません)。 この場合、 [分位数](#quantiles) 機能。
 
 **構文**
 
@@ -1333,25 +1452,25 @@ SELECT quantileTDigest(number) FROM numbers(10)
 quantileTDigest(level)(expr)
 ```
 
-エイリアス: `medianTDigest`.
+別名: `medianTDigest`.
 
 **パラメータ**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲内の値 `[0.01, 0.99]`. デフォルト値:0.5. で `level=0.5` 機能は計算する [中央値](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` の範囲の値 `[0.01, 0.99]`. デフォルト値は0.5です。 で `level=0.5` この関数は [中央値](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [データ型](../../sql-reference/data-types/index.md#data_types), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 -   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
 **戻り値**
 
--   指定したレベルの概算値。
+-   指定されたレベルの近似分位値。
 
 タイプ:
 
--   [Float64](../../sql-reference/data-types/float.md) 数値データ型の入力。
+-   [Float64](../../sql-reference/data-types/float.md) 数値データ型入力の場合。
 -   [日付](../../sql-reference/data-types/date.md) 入力値が `Date` タイプ。
 -   [DateTime](../../sql-reference/data-types/datetime.md) 入力値が `DateTime` タイプ。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -1367,7 +1486,7 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 └────────────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
 -   [中央値](#median)
 -   [分位数](#quantiles)
@@ -1376,18 +1495,18 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 
 その `median*` 関数は、対応する関数のエイリアスです `quantile*` 機能。 数値データサンプルの中央値を計算します。
 
-機能:
+関数:
 
--   `median` — Alias for [分位値](#quantile).
--   `medianDeterministic` — Alias for [quantiedeterministic](#quantiledeterministic).
+-   `median` — Alias for [分位数](#quantile).
+-   `medianDeterministic` — Alias for [quantileDeterministic](#quantiledeterministic).
 -   `medianExact` — Alias for [quantileExact](#quantileexact).
 -   `medianExactWeighted` — Alias for [quantileExactWeighted](#quantileexactweighted).
 -   `medianTiming` — Alias for [クオンタイミング](#quantiletiming).
--   `medianTimingWeighted` — Alias for [quantitimingweighted](#quantiletimingweighted).
--   `medianTDigest` — Alias for [quantiletdigestcomment](#quantiletdigest).
+-   `medianTimingWeighted` — Alias for [quantitetimingweighted](#quantiletimingweighted).
+-   `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
 -   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
 
-**例えば**
+**例**
 
 入力テーブル:
 
@@ -1416,41 +1535,53 @@ SELECT medianDeterministic(val, 1) FROM t
 
 ## quantiles(level1, level2, …)(x) {#quantiles}
 
-すべての分位数関数には、対応する分位数関数もあります: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. これらの関数は、あるパスでリストされたレベルのすべての分位数を計算し、結果の値の配列を返します。
+すべての分位関数にも対応する分位関数があります: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. これらの関数は、リストされたレベルのすべての分位数を一つのパスで計算し、結果の値の配列を返します。
 
 ## varSamp(x) {#varsampx}
 
-金額を計算します `Σ((x - x̅)^2) / (n - 1)`、どこ `n` サンプルサイズは `x̅`の平均値です `x`.
+金額を計算します `Σ((x - x̅)^2) / (n - 1)`,ここで `n` はサンプルサイズであり、 `x̅`の平均値です `x`.
 
-これは、渡された値がそのサンプルを形成する場合、確率変数の分散の不偏推定値を表します。
+渡された値がその標本を形成する場合、確率変数の分散の不偏推定値を表します。
 
-を返します `Float64`. とき `n <= 1`、戻り値 `+∞`.
+ﾂづｩﾂ。 `Float64`. とき `n <= 1`,戻り値 `+∞`.
+
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `varSampStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
 
 ## varPop(x) {#varpopx}
 
-金額を計算します `Σ((x - x̅)^2) / n`、どこ `n` サンプルサイズは `x̅`の平均値です `x`.
+金額を計算します `Σ((x - x̅)^2) / n`,ここで `n` はサンプルサイズであり、 `x̅`の平均値です `x`.
 
-つまり、値のセットの分散。 を返します `Float64`.
+言い換えれば、値の集合に対する分散。 ﾂづｩﾂ。 `Float64`.
+
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `varPopStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
 
 ## stddevSamp(x) {#stddevsampx}
 
-結果はの平方根に等しい `varSamp(x)`.
+結果はの平方根に等しくなります `varSamp(x)`.
+
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `stddevSampStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
 
 ## stddevPop(x) {#stddevpopx}
 
-結果はの平方根に等しい `varPop(x)`.
+結果はの平方根に等しくなります `varPop(x)`.
+
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `stddevPopStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
 
 ## topK(N)(x) {#topknx}
 
-指定された列のほぼ最も頻繁に使用される値の配列を返します。 結果の配列は、値のおおよその頻度の降順でソートされます（値そのものではありません）。
+指定された列の中で最も頻度の高い値の配列を返します。 結果の配列は、値の近似頻度の降順でソートされます（値自体ではありません）。
 
-実装する [ろ過されたスペース節約](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) からのreduce-and-combineアルゴリズムに基づいてTopKを分析するアルゴリズム [パラレル省スペース](https://arxiv.org/pdf/1401.0702.pdf).
+を実装する。 [ろ過されたスペース節約](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) TopKを解析するためのアルゴリズム。 [並列スペース節約](https://arxiv.org/pdf/1401.0702.pdf).
 
 ``` sql
 topK(N)(column)
 ```
 
-この関数は保証された結果を提供しません。 特定の状況では、エラーが発生し、最も頻度の高い値ではない頻繁な値が返されることがあります。
+この関数は保証された結果を提供しません。 特定の状況では、エラーが発生し、最も頻繁な値ではない頻繁な値が返されることがあります。
 
 私達は使用を推薦します `N < 10` 価値;性能は大きいと減ります `N` 値。 の最大値 `N = 65536`.
 
@@ -1458,15 +1589,15 @@ topK(N)(column)
 
 -   ‘N’ 返す要素の数です。
 
-パラメーターを省略すると、既定値10が使用されます。
+このパラメーターを省略すると、既定値10が使用されます。
 
 **引数**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
-**例えば**
+**例**
 
-を取る [オンタイム](../../getting-started/example-datasets/ontime.md) データセットを選択し、最も頻繁に発生する三つの値を選択します。 `AirlineID` コラム
+を取る [オンタイム](../../getting-started/example-datasets/ontime.md) データセットで最も頻繁に発生する三つの値を選択します。 `AirlineID` 列。
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res
@@ -1479,9 +1610,9 @@ FROM ontime
 └─────────────────────┘
 ```
 
-## トップクイット {#topkweighted}
+## トップウェイト {#topkweighted}
 
-に似て `topK` しかし、整数型の一つの追加の引数を取ります - `weight`. あらゆる価値は説明されます `weight` 頻度計算のための時間。
+に類似した `topK` しかし、整数型の追加引数を取ります - `weight`. すべての値が考慮されます `weight` 周波数計算のための時間。
 
 **構文**
 
@@ -1500,9 +1631,9 @@ topKWeighted(N)(x, weight)
 
 **戻り値**
 
-最大およその重みの合計を持つ値の配列を返します。
+おおよその重みの合計が最大の値の配列を返します。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -1518,33 +1649,42 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 └───────────────────────────────────────────┘
 ```
 
-## covarSamp(x,y) {#covarsampx-y}
+## コバルサンプ(x,y) {#covarsampx-y}
 
 の値を計算します `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Float64を返します。 とき `n <= 1`, returns +∞.
 
-## covarPop(x,y) {#covarpopx-y}
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `covarSampStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
+
+## コバルポップ(x,y) {#covarpopx-y}
 
 の値を計算します `Σ((x - x̅)(y - y̅)) / n`.
+
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `covarPopStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
 
 ## corr(x,y) {#corrx-y}
 
 ピアソン相関係数を計算します: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+!!! note "注"
+    この機能の利用を数値的に不安定なアルゴリズムです。 必要とすれば [数値安定性](https://en.wikipedia.org/wiki/Numerical_stability) 計算では、 `corrStable` 機能。 それは遅く動作しますが、計算誤差は低くなります。
+
 ## categoricalInformationValue {#categoricalinformationvalue}
 
-の値を計算します `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` 各カテゴリの。
+の値を計算します `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` カテゴリごとに。
 
 ``` sql
 categoricalInformationValue(category1, category2, ..., tag)
 ```
 
-結果は、離散(カテゴリカル)フィーチャがどのようにして `[category1, category2, ...]` の値を予測する学習モデルに貢献する `tag`.
+結果は、離散(カテゴリカル)フィーチャの方法を示します `[category1, category2, ...]` の値を予測する学習モデルに貢献する `tag`.
 
-## simplelearregression {#simplelinearregression}
+## simpleLinearRegression {#simplelinearregression}
 
-単純な(一次元的な)線形回帰を実行します。
+単純(一次元)線形回帰を実行します。
 
 ``` sql
 simpleLinearRegression(x, y)
@@ -1583,31 +1723,31 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
-この関数は、確率的線形回帰を実装します。 それは率、l2正則化係数、ミニバッチサイズを学ぶための注文変数を支え、重量を更新するための少数の方法を有する ([アダム](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （デフォルトで使用), [シンプルSGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [勢い](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [ネステロフ](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+この関数は、確率的線形回帰を実装します。 学習率、L2正則化係数、ミニバッチサイズのカスタムパラメータをサポートし、重みを更新する方法はほとんどありません ([アダム](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （デフォルトで使用), [シンプルSGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [勢い](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [ネステロフ](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
 ### パラメータ {#agg_functions-stochasticlinearregression-parameters}
 
-が4カスタマイズ可能パラメータ。 それらは関数に順番に渡されますが、すべての四つのデフォルト値を渡す必要はありませんが、良いモデルにはいくつかのパラメータ調整が必要で
+が4カスタマイズ可能パラメータ。 デフォルト値が使用されますが、良いモデルではパラメータの調整が必要です。
 
 ``` text
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  `learning rate` 勾配降下ステップが実行されるときのステップ長の係数です。 大きすぎる学習率の原因となり無限の量のモデルです。 デフォルトは `0.00001`.
-2.  `l2 regularization coefficient` これは過食防止に役立つ可能性があります。 デフォルトは `0.1`.
-3.  `mini-batch size` グラデーションディセントのステップを実行するために、グラデーションを計算して合計する要素の数を設定します。 純粋な確率降下は一つの要素を使用しますが、小さなバッチ（約10の要素）を持つことで勾配ステップがより安定します。 デフォルトは `15`.
-4.  `method for updating weights`、彼らは: `Adam` （デフォルトでは), `SGD`, `Momentum`, `Nesterov`. `Momentum` と `Nesterov` もう少し計算とメモリが必要ですが、確率勾配法の収束と安定性の点で有用です。
+1.  `learning rate` 勾配降下ステップを実行したときのステップ長の係数です。 大きすぎる学習率の原因となり無限の量のモデルです。 デフォルトは `0.00001`.
+2.  `l2 regularization coefficient` 過適合を防ぐのに役立つかもしれません。 デフォルトは `0.1`.
+3.  `mini-batch size` グラデーションが計算され、グラデーション降下のステップを実行するために合計される要素の数を設定します。 純粋な確率降下は一つの要素を使用しますが、小さなバッチ（約10要素）を持つと勾配ステップがより安定します。 デフォルトは `15`.
+4.  `method for updating weights`、彼らは: `Adam` （デフォルトでは), `SGD`, `Momentum`, `Nesterov`. `Momentum` と `Nesterov` もう少し多くの計算とメモリを必要とするが、収束の速度と確率勾配法の安定性の点で有用であることが起こる。
 
-### 使い方 {#agg_functions-stochasticlinearregression-usage}
+### 使用法 {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` モデルのフィッティングと新しいデータの予測です。 モデルを適合させ、後で使用するためにその状態を保存するために、 `-State` 基本的に状態（モデルの重みなど）を保存するcombinator。
-予測するには、関数を使用します [evalMLMethod](../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod) これは、状態を予測する機能と同様に引数として取ります。
+`stochasticLinearRegression` モデルの近似と新しいデータの予測です。 モデルを適合させ、後で使用するためにその状態を保存するために、 `-State` 基本的に状態（モデルの重みなど）を保存するcombinator。
+予測するには関数を使います [evalMLMethod](../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod) は、状態を引数として取り、予測する機能も備えています。
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
-**1.** 継手
+**1.** フィット
 
-このようなクエリを使用できます。
+このようなクエリが使用され得る。
 
 ``` sql
 CREATE TABLE IF NOT EXISTS train_data
@@ -1622,12 +1762,12 @@ stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
 AS state FROM train_data;
 ```
 
-ここでは、データを挿入する必要もあります `train_data` テーブル。 パラメータの数は固定されていません。 `linearRegressionState`. 彼らはすべての必要数値です。
-ターゲット値（予測することを学びたい）を持つ列が最初の引数として挿入されることに注意してください。
+ここでは、データを挿入する必要もあります `train_data` テーブル。 パラメータの数は固定されておらず、渡された引数の数にのみ依存します `linearRegressionState`. すべて数値でなければなりません。
+ターゲット値を持つ列（予測することを学びたい）が最初の引数として挿入されることに注意してください。
 
 **2.** 予測
 
-状態をテーブルに保存した後、予測に複数回使用したり、他の状態とマージして新しいモデルを作成したりすることもできます。
+テーブルに状態を保存した後、予測に複数回使用したり、他の状態とマージして新しいより良いモデルを作成したりすることもできます。
 
 ``` sql
 WITH (SELECT state FROM your_model) AS model SELECT
@@ -1638,28 +1778,28 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 `test_data` のようなテーブルです `train_data` が含まれないことがあります。
 
-### 備考 {#agg_functions-stochasticlinearregression-notes}
+### ノート {#agg_functions-stochasticlinearregression-notes}
 
 1.  統合モデルにはユーザーの作成などのクエリ:
     `sql  SELECT state1 + state2 FROM your_models`
-    どこに `your_models` テーブルの両方のモデルです。 このクエリはnewを返します `AggregateFunctionState` オブジェクト。
+    どこに `your_models` テーブルの両方のモデルです。 このクエリはnewを返します `AggregateFunctionState` オブジェクト
 
-2.  ユーザーのフェッチのウエイトを作成したモデルとして独自の目的で保存しないモデルについていない場合 `-State` combinatorが使用されます。
+2.  ユーザーは、作成されたモデルのウェイトを独自の目的で取得することができます。 `-State` combinatorが使用されます。
     `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
-    そのようなクエリはモデルに適合し、その重みを返します-最初はモデルのパラメータに対応する重みです。 したがって、上記の例では、クエリは3つの値を持つ列を返します。
+    このようなクエリはモデルに適合し、その重みを返します-最初はモデルのパラメータに対応する重みであり、最後はバイアスです。 したがって、上記の例では、クエリは3つの値を持つ列を返します。
 
-**また見なさい**
+**も参照。**
 
 -   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
--   [線形およびロジスティック回帰の違い](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [線形回帰とロジスティック回帰の違い](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 ## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
-この関数は、確率論的ロジスティック回帰を実装します。 これは、バイナリ分類問題に使用することができ、stochasticlinearregressionと同じカスタムパラメータをサポートし、同じ方法で動作します。
+この関数は、確率的ロジスティック回帰を実装します。 これは、バイナリ分類問題に使用することができ、stochasticLinearRegressionと同じカスタムパラメータをサポートし、同じように動作します。
 
 ### パラメータ {#agg_functions-stochasticlogisticregression-parameters}
 
-パラメーターは、stochasticlinearregressionとまったく同じです:
+パラメーターはstochasticLinearRegressionとまったく同じです:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
 詳細については、 [パラメータ](#agg_functions-stochasticlinearregression-parameters).
 
@@ -1667,7 +1807,7 @@ evalMLMethod(model, param1, param2) FROM test_data
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  継手
+1.  フィット
 
 <!-- -->
 
@@ -1700,14 +1840,14 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
     `test_data` is a table like `train_data` but may not contain target value.
 
-**また見なさい**
+**も参照。**
 
 -   [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
--   [線形およびロジスティック回帰の違い。](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [線形回帰とロジスティック回帰の違い。](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
-## groupbitmapandgenericname {#groupbitmapand}
+## groupBitmapAnd {#groupbitmapand}
 
-ビットマップ列のandを計算し、型uint64のカーディナリティを返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md).
+ビットマップ列のANDを計算し、uint64型の基数を返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapAnd(expr)
@@ -1721,7 +1861,7 @@ groupBitmapAnd(expr)
 
 の値 `UInt64` タイプ。
 
-**例えば**
+**例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
@@ -1750,7 +1890,7 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 
 ## groupBitmapOr {#groupbitmapor}
 
-ビットマップ列のorを計算し、型uint64のカーディナリティを返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md). これは `groupBitmapMerge`.
+ビットマップ列のORを計算し、uint64型の基数を返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md). これは `groupBitmapMerge`.
 
 ``` sql
 groupBitmapOr(expr)
@@ -1764,7 +1904,7 @@ groupBitmapOr(expr)
 
 の値 `UInt64` タイプ。
 
-**例えば**
+**例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
@@ -1793,7 +1933,7 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
 
 ## groupBitmapXor {#groupbitmapxor}
 
-ビットマップ列のxorを計算し、uint64型のカーディナリティを返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md).
+ビットマップ列のXORを計算し、uint64型の基数を返します。 [ビットマップ](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapOr(expr)
@@ -1807,7 +1947,7 @@ groupBitmapOr(expr)
 
 の値 `UInt64` タイプ。
 
-**例えば**
+**例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;

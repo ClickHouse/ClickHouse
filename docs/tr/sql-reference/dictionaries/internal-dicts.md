@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u0130\xE7 S\xF6z Dictionariesl\xFCkler"
 ---
 
-# İç söz dictionarieslükler {#internal_dicts}
+# İç Söz Dictionarieslükler {#internal_dicts}
 
 ClickHouse, bir geobase ile çalışmak için yerleşik bir özellik içerir.
 
@@ -25,7 +25,7 @@ Geobase metin dosyalarından yüklenir.
 
 Place the `regions_hierarchy*.txt` dosyaları içine `path_to_regions_hierarchy_file` dizin. Bu yapılandırma parametresi, `regions_hierarchy.txt` dosya (varsayılan bölgesel hiyerarşi) ve diğer dosyalar (`regions_hierarchy_ua.txt`) aynı dizinde bulunmalıdır.
 
-Koy… `regions_names_*.txt` dosyalar içinde `path_to_regions_names_files` dizin.
+Koy... `regions_names_*.txt` dosyalar içinde `path_to_regions_names_files` dizin.
 
 Bu dosyaları kendiniz de oluşturabilirsiniz. Dosya biçimi aşağıdaki gibidir:
 
@@ -39,9 +39,9 @@ Bu dosyaları kendiniz de oluşturabilirsiniz. Dosya biçimi aşağıdaki gibidi
 `regions_names_*.txt`: TabSeparated (başlık yok), sütunlar:
 
 -   bölge kimliği (`UInt32`)
--   bölge adı (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   bölge adı (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
-RAM’de depolamak için düz bir dizi kullanılır. Bu nedenle, IDs bir milyondan fazla olmamalıdır.
+RAM'de depolamak için düz bir dizi kullanılır. Bu nedenle, IDs bir milyondan fazla olmamalıdır.
 
 Sözlükler sunucuyu yeniden başlatmadan güncellenebilir. Ancak, kullanılabilir sözlükler kümesi güncelleştirilmez.
 Güncellemeler için dosya değiştirme süreleri kontrol edilir. Bir dosya değiştiyse, sözlük güncelleştirilir.

@@ -1,0 +1,16 @@
+SELECT 
+    a,
+    b AS x
+FROM table AS t
+INNER JOIN table2 AS t2 ON t.id = t2.t_id
+WHERE 1 = 1
+;
+
+SELECT 
+    a,
+    b AS x,
+    if(x = 0, a, b)
+FROM table2 AS t
+WHERE t.id != 0
+;
+

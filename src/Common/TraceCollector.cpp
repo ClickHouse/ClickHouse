@@ -56,7 +56,7 @@ TraceCollector::~TraceCollector()
 }
 
 
-void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trace, UInt64 size)
+void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trace, Int64 size)
 {
     constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
         8 * sizeof(char) +                     // maximum VarUInt length for string size
@@ -65,7 +65,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
         sizeof(UInt64) +                       // thread_id
-        sizeof(UInt64);                        // size
+        sizeof(Int64);                         // size
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
@@ -81,7 +81,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     size_t stack_trace_offset = stack_trace.getOffset();
     writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
     for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        writePODBinary(stack_trace.getFrames()[i], out);
+        writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
@@ -139,7 +139,7 @@ void TraceCollector::run()
         UInt64 thread_id;
         readPODBinary(thread_id, in);
 
-        UInt64 size;
+        Int64 size;
         readPODBinary(size, in);
 
         if (trace_log)

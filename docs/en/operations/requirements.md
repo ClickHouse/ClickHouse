@@ -22,9 +22,9 @@ The required volume of RAM depends on:
 -   The complexity of queries.
 -   The amount of data that is processed in queries.
 
-To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](../sql-reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select.md#select-distinct), [JOIN](../sql-reference/statements/select.md#select-join) and other operations you use.
+To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) and other operations you use.
 
-ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](../sql-reference/statements/select.md#select-group-by-in-external-memory) for details.
+ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
 
 ## Swap File {#swap-file}
 

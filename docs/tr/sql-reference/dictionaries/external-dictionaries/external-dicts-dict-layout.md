@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "S\xF6zl\xFCkleri bellekte saklama"
 ---
 
-# Sözlükleri Bellekte Saklama {#dicts-external-dicts-dict-layout}
+# Sözlükleri bellekte saklama {#dicts-external-dicts-dict-layout}
 
 Sözlükleri bellekte saklamanın çeşitli yolları vardır.
 
@@ -50,12 +50,13 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Sözlükleri Bellekte Saklamanın Yolları {#ways-to-store-dictionaries-in-memory}
+## Sözlükleri bellekte saklamanın yolları {#ways-to-store-dictionaries-in-memory}
 
 -   [düzlük](#flat)
 -   [karıştırıyordu](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [önbellek](#cache)
+-   [direkt](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
@@ -200,7 +201,7 @@ Bu işlev belirtilen değerin değerini döndürür `id`s ve geçirilen tarihi i
 
 Algoritmanın detayları:
 
--   Eğer… `id` not fo orund veya a range is not fo aund for the `id`, sözlük için varsayılan değeri döndürür.
+-   Eğer... `id` not fo orund veya a range is not fo aund for the `id`, sözlük için varsayılan değeri döndürür.
 -   Çakışan aralıklar varsa, herhangi birini kullanabilirsiniz.
 -   Aralık sınırlayıcı ise `NULL` veya geçersiz bir tarih (örneğin 1900-01-01 veya 2039-01-01), Aralık açık bırakılır. Aralık her iki tarafta da açık olabilir.
 
@@ -263,7 +264,7 @@ Bu, sözlükleri saklamanın tüm yollarından en az etkilidir. Önbelleğin hı
 
 Önbellek performansını artırmak için bir alt sorgu ile kullanın `LIMIT`, ve harici sözlük ile işlevini çağırın.
 
-Destek [kaynaklılar](external-dicts-dict-sources.md): MySQL, ClickHouse, yürütülebilir, HTTP.
+Destek [kaynaklar](external-dicts-dict-sources.md): MySQL, ClickHouse, yürütülebilir, HTTP.
 
 Ayarlar örneği:
 
@@ -295,6 +296,28 @@ Yeterince büyük bir önbellek boyutu ayarlayın. Sen hücre sayısını seçme
 ### complex\_key\_cache {#complex-key-cache}
 
 Bu tür depolama kompozit ile kullanım içindir [anahtarlar](external-dicts-dict-structure.md). Benzer `cache`.
+
+### direkt {#direct}
+
+Sözlük bellekte saklanmaz ve bir isteğin işlenmesi sırasında doğrudan kaynağa gider.
+
+Sözlük anahtarı vardır `UInt64` tür.
+
+Her türlü [kaynaklar](external-dicts-dict-sources.md), yerel dosyalar dışında desteklenir.
+
+Yapılandırma örneği:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+veya
+
+``` sql
+LAYOUT(DIRECT())
+```
 
 ### ıp\_trie {#ip-trie}
 
@@ -368,6 +391,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Diğer türler henüz desteklenmiyor. İşlev, bu IP adresine karşılık gelen önek için özniteliği döndürür. Örtüşen önekler varsa, en spesifik olanı döndürülür.
 
-Veri bir saklanan `trie`. Tamamen RAM’e uyması gerekir.
+Veri bir saklanan `trie`. Tamamen RAM'e uyması gerekir.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
-toc_title: "Funciones agregadas param\xE9tricas"
+toc_title: "Param\xE9trico"
 ---
 
-# Funciones Agregadas paramétricas {#aggregate_functions_parametric}
+# Funciones agregadas paramétricas {#aggregate_functions_parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
@@ -111,7 +111,7 @@ Tipo: `UInt8`.
 
 -   `(?N)` — Matches the condition argument at position `N`. Las condiciones están numeradas en el `[1, 32]` gama. Por ejemplo, `(?1)` coincide con el argumento pasado al `cond1` parámetro.
 
--   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
 -   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` coincide con los eventos que ocurren a más de 1800 segundos el uno del otro. Un número arbitrario de cualquier evento puede estar entre estos eventos. Puede usar el `>=`, `>`, `<`, `<=` operador.
 
@@ -316,7 +316,7 @@ Resultado:
 ## retención {#retention}
 
 La función toma como argumentos un conjunto de condiciones de 1 a 32 argumentos de tipo `UInt8` que indican si se cumplió una determinada condición para el evento.
-Cualquier condición se puede especificar como un argumento (como en [WHERE](../../sql-reference/statements/select.md#select-where)).
+Cualquier condición se puede especificar como un argumento (como en [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 Las condiciones, excepto la primera, se aplican en pares: el resultado del segundo será verdadero si el primero y el segundo son verdaderos, del tercero si el primero y el fird son verdaderos, etc.
 
@@ -335,7 +335,7 @@ retention(cond1, cond2, ..., cond32);
 La matriz de 1 o 0.
 
 -   1 — condition was met for the event.
--   0 — condition wasn’t met for the event.
+-   0 — condition wasn't met for the event.
 
 Tipo: `UInt8`.
 

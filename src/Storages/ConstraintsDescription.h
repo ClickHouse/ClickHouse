@@ -6,12 +6,11 @@
 namespace DB
 {
 
-using ConstraintsASTs = std::vector<std::shared_ptr<ASTConstraintDeclaration>>;
 using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
 
 struct ConstraintsDescription
 {
-    ConstraintsASTs constraints;
+    std::vector<ASTPtr> constraints;
 
     ConstraintsDescription() = default;
 
@@ -21,6 +20,9 @@ struct ConstraintsDescription
     static ConstraintsDescription parse(const String & str);
 
     ConstraintsExpressions getExpressions(const Context & context, const NamesAndTypesList & source_columns_) const;
+
+    ConstraintsDescription(const ConstraintsDescription & other);
+    ConstraintsDescription & operator=(const ConstraintsDescription & other);
 };
 
 }

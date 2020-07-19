@@ -16,7 +16,6 @@ using Pipes = std::vector<Pipe>;
   * Trying to glue the sources with each other uniformly randomly.
   *  (to avoid overweighting if the distribution of the amount of data in different sources is subject to some pattern)
   */
-BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t width);
 Pipes narrowPipes(Pipes pipes, size_t width);
 
 }

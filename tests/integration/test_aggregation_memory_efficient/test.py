@@ -29,21 +29,18 @@ def start_cluster():
 
 def test_remote(start_cluster):
 
-    for flag in (0, 1):
-        node1.query("set experimental_use_processors = {}".format(flag))
+    node1.query("set distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes=1")
+    res = node1.query("select sum(a) from (SELECT B, uniqExact(A) a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY B)")
+    assert res == '200000\n'
 
-        node1.query("set distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes=1")
-        res = node1.query("select sum(a) from (SELECT B, uniqExact(A) a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY B)")
-        assert res == '200000\n'
+    node1.query("set distributed_aggregation_memory_efficient = 0")
+    res = node1.query("select sum(a) from (SELECT B, uniqExact(A) a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY B)")
+    assert res == '200000\n'
 
-        node1.query("set distributed_aggregation_memory_efficient = 0")
-        res = node1.query("select sum(a) from (SELECT B, uniqExact(A) a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY B)")
-        assert res == '200000\n'
+    node1.query("set distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes=1")
+    res = node1.query("SELECT fullHostName() AS h, uniqExact(A) AS a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY h ORDER BY h;")
+    assert res == 'node1\t100000\nnode2\t100000\n'
 
-        node1.query("set distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes=1")
-        res = node1.query("SELECT fullHostName() AS h, uniqExact(A) AS a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY h ORDER BY h;")
-        assert res == 'node1\t100000\nnode2\t100000\n'
-
-        node1.query("set distributed_aggregation_memory_efficient = 0")
-        res = node1.query("SELECT fullHostName() AS h, uniqExact(A) AS a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY h ORDER BY h;")
-        assert res == 'node1\t100000\nnode2\t100000\n'
+    node1.query("set distributed_aggregation_memory_efficient = 0")
+    res = node1.query("SELECT fullHostName() AS h, uniqExact(A) AS a FROM remote('node{1,2}', default.da_memory_efficient_shard) GROUP BY h ORDER BY h;")
+    assert res == 'node1\t100000\nnode2\t100000\n'

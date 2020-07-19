@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: Encodage
 ---
 
-# L’encodage Des Fonctions {#encoding-functions}
+# L'Encodage Des Fonctions {#encoding-functions}
 
 ## char {#char}
 
-Retourne la chaîne avec la longueur que le nombre d’arguments passés et chaque octet a la valeur de l’argument correspondant. Accepte plusieurs arguments de types numériques. Si la valeur de l’argument est hors de portée du type de données UInt8, elle est convertie en UInt8 avec arrondi et débordement possibles.
+Retourne la chaîne avec la longueur que le nombre d'arguments passés et chaque octet a la valeur de l'argument correspondant. Accepte plusieurs arguments de types numériques. Si la valeur de l'argument est hors de portée du type de données UInt8, elle est convertie en UInt8 avec arrondi et débordement possibles.
 
 **Syntaxe**
 
@@ -23,7 +23,7 @@ char(number_1, [number_2, ..., number_n]);
 
 **Valeur renvoyée**
 
--   une chaîne d’octets.
+-   une chaîne d'octets.
 
 Type: `String`.
 
@@ -75,7 +75,7 @@ Résultat:
 
 ## Hex {#hex}
 
-Renvoie une chaîne contenant la représentation hexadécimale de l’argument.
+Renvoie une chaîne contenant la représentation hexadécimale de l'argument.
 
 **Syntaxe**
 
@@ -85,7 +85,7 @@ hex(arg)
 
 La fonction utilise des lettres majuscules `A-F` et ne pas utiliser de préfixes (comme `0x`) ou suffixes (comme `h`).
 
-Pour les arguments entiers, il imprime des chiffres hexadécimaux (“nibbles”) du plus significatif au moins significatif (big endian ou “human readable” ordre). Il commence par l’octet non nul le plus significatif (les octets de début zéro sont omis) mais imprime toujours les deux chiffres de chaque octet même si le chiffre de début est nul.
+Pour les arguments entiers, il imprime des chiffres hexadécimaux (“nibbles”) du plus significatif au moins significatif (big endian ou “human readable” ordre). Il commence par l'octet non nul le plus significatif (les octets de début zéro sont omis) mais imprime toujours les deux chiffres de chaque octet même si le chiffre de début est nul.
 
 Exemple:
 
@@ -103,11 +103,11 @@ Résultat:
 01
 ```
 
-Les valeurs de type `Date` et `DateTime` sont formatés comme des entiers correspondants (le nombre de jours depuis Epoch pour Date et la valeur de L’horodatage Unix pour DateTime).
+Les valeurs de type `Date` et `DateTime` sont formatés comme des entiers correspondants (le nombre de jours depuis Epoch pour Date et la valeur de L'horodatage Unix pour DateTime).
 
 Pour `String` et `FixedString`, tous les octets sont simplement codés en deux nombres hexadécimaux. Zéro octets ne sont pas omis.
 
-Les valeurs des types virgule flottante et décimale sont codées comme leur représentation en mémoire. Comme nous soutenons l’architecture little endian, ils sont codés dans little endian. Zéro octets de début / fin ne sont pas omis.
+Les valeurs des types virgule flottante et décimale sont codées comme leur représentation en mémoire. Comme nous soutenons l'architecture little endian, ils sont codés dans little endian. Zéro octets de début / fin ne sont pas omis.
 
 **Paramètre**
 
@@ -115,7 +115,7 @@ Les valeurs des types virgule flottante et décimale sont codées comme leur rep
 
 **Valeur renvoyée**
 
--   Une chaîne avec la représentation hexadécimale de l’argument.
+-   Une chaîne avec la représentation hexadécimale de l'argument.
 
 Type: `String`.
 
@@ -153,12 +153,12 @@ Résultat:
 
 ## unhex (str) {#unhexstr}
 
-Accepte une chaîne contenant un nombre quelconque de chiffres hexadécimaux, et renvoie une chaîne contenant le correspondant octets. Prend en charge les lettres majuscules et minuscules A-F. Le nombre de chiffres hexadécimaux ne doit pas être pair. S’il est impair, le dernier chiffre est interprété comme la moitié la moins significative de l’octet 00-0F. Si la chaîne d’argument contient autre chose que des chiffres hexadécimaux, un résultat défini par l’implémentation est renvoyé (une exception n’est pas levée).
+Accepte une chaîne contenant un nombre quelconque de chiffres hexadécimaux, et renvoie une chaîne contenant le correspondant octets. Prend en charge les lettres majuscules et minuscules A-F. Le nombre de chiffres hexadécimaux ne doit pas être pair. S'il est impair, le dernier chiffre est interprété comme la moitié la moins significative de l'octet 00-0F. Si la chaîne d'argument contient autre chose que des chiffres hexadécimaux, un résultat défini par l'implémentation est renvoyé (une exception n'est pas levée).
 Si vous voulez convertir le résultat en un nombre, vous pouvez utiliser le ‘reverse’ et ‘reinterpretAsType’ fonction.
 
 ## UUIDStringToNum (str) {#uuidstringtonumstr}
 
-Accepte une chaîne contenant 36 caractères dans le format `123e4567-e89b-12d3-a456-426655440000`, et le renvoie comme un ensemble d’octets dans un FixedString (16).
+Accepte une chaîne contenant 36 caractères dans le format `123e4567-e89b-12d3-a456-426655440000`, et le renvoie comme un ensemble d'octets dans un FixedString (16).
 
 ## UUIDNumToString (str) {#uuidnumtostringstr}
 
@@ -166,10 +166,10 @@ Accepte une valeur FixedString (16). Renvoie une chaîne contenant 36 caractère
 
 ## bitmaskToList(num) {#bitmasktolistnum}
 
-Accepte un entier. Renvoie une chaîne contenant la liste des puissances de deux qui totalisent le nombre source lorsqu’il est additionné. Ils sont séparés par des virgules sans espaces au format texte, dans l’ordre croissant.
+Accepte un entier. Renvoie une chaîne contenant la liste des puissances de deux qui totalisent le nombre source lorsqu'il est additionné. Ils sont séparés par des virgules sans espaces au format texte, dans l'ordre croissant.
 
 ## bitmaskToArray(num) {#bitmasktoarraynum}
 
-Accepte un entier. Renvoie un tableau de nombres UInt64 contenant la liste des puissances de deux qui totalisent le nombre source lorsqu’il est additionné. Les numéros dans le tableau sont dans l’ordre croissant.
+Accepte un entier. Renvoie un tableau de nombres UInt64 contenant la liste des puissances de deux qui totalisent le nombre source lorsqu'il est additionné. Les numéros dans le tableau sont dans l'ordre croissant.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->

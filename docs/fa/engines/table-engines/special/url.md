@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: URL
 ---
 
-# آدرس(url, قالب) {#table_engines-url}
+# آدرس(URL, قالب) {#table_engines-url}
 
 مدیریت داده ها بر روی یک سرور کنترل از راه دور قام/قام. این موتور مشابه است
 به [پرونده](file.md) موتور

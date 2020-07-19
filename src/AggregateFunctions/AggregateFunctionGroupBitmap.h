@@ -6,8 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 
-// TODO include this last because of a broken roaring header. See the comment
-// inside.
+// TODO include this last because of a broken roaring header. See the comment inside.
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
@@ -48,7 +47,7 @@ public:
         this->data(place).rbs.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
@@ -113,7 +112,7 @@ public:
         this->data(place).rbs.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }

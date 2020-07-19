@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -12,24 +13,29 @@ PEERDIR(
 NO_COMPILER_WARNINGS()
 
 SRCS(
+    CacheDictionary.cpp
     CacheDictionary_generate1.cpp
     CacheDictionary_generate2.cpp
     CacheDictionary_generate3.cpp
-    CacheDictionary.cpp
+    CassandraBlockInputStream.cpp
+    CassandraDictionarySource.cpp
+    CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
+    ComplexKeyCacheDictionary.cpp
     ComplexKeyCacheDictionary_createAttributeWithType.cpp
     ComplexKeyCacheDictionary_generate1.cpp
     ComplexKeyCacheDictionary_generate2.cpp
     ComplexKeyCacheDictionary_generate3.cpp
     ComplexKeyCacheDictionary_setAttributeValue.cpp
     ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
-    ComplexKeyCacheDictionary.cpp
+    ComplexKeyDirectDictionary.cpp
     ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
+    DirectDictionary.cpp
     Embedded/GeodataProviders/HierarchiesProvider.cpp
     Embedded/GeodataProviders/HierarchyFormatReader.cpp
     Embedded/GeodataProviders/NamesFormatReader.cpp
@@ -47,7 +53,6 @@ SRCS(
     HTTPDictionarySource.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
-    MongoDBBlockInputStream.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
@@ -56,8 +61,11 @@ SRCS(
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
+    SSDCacheDictionary.cpp
+    SSDComplexKeyCacheDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
+
 )
 
 END()

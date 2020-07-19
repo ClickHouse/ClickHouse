@@ -3,16 +3,17 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
-    contrib/libs/protobuf_std
+    contrib/libs/protobuf
 )
 
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
-    Executors/ParallelPipelineExecutor.cpp
+    Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
-    Executors/SequentialPipelineExecutor.cpp
+    Executors/PullingAsyncPipelineExecutor.cpp
+    Executors/PullingPipelineExecutor.cpp
     Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
@@ -21,6 +22,7 @@ SRCS(
     Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
+    Formats/Impl/JSONAsStringRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowOutputFormat.cpp
     Formats/Impl/JSONCompactRowOutputFormat.cpp
@@ -36,6 +38,7 @@ SRCS(
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
     Formats/Impl/ODBCDriverBlockOutputFormat.cpp
+    Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
     Formats/Impl/PrettySpaceBlockOutputFormat.cpp
@@ -57,6 +60,7 @@ SRCS(
     Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
+    Formats/PullingOutputFormat.cpp
     Formats/RowInputFormatWithDiagnosticInfo.cpp
     IAccumulatingTransform.cpp
     IInflatingTransform.cpp
@@ -98,16 +102,22 @@ SRCS(
     Merges/ReplacingSortedTransform.h
     Merges/SummingSortedTransform.h
     Merges/VersionedCollapsingTransform.h
+    OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
+    printPipeline.cpp
     QueryPipeline.cpp
     ResizeProcessor.cpp
+    Sources/DelayedSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Sources/RemoteSource.cpp
     Transforms/AddingMissedTransform.cpp
+    Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ConvertingTransform.cpp
+    Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
     Transforms/DistinctTransform.cpp
@@ -128,6 +138,35 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
+    Transforms/AggregatingInOrderTransform.cpp
+    QueryPlan/AddingDelayedSourceStep.cpp
+    QueryPlan/AggregatingStep.cpp
+    QueryPlan/ConvertingStep.cpp
+    QueryPlan/CreatingSetsStep.cpp
+    QueryPlan/CubeStep.cpp
+    QueryPlan/DistinctStep.cpp
+    QueryPlan/ExpressionStep.cpp
+    QueryPlan/ExtremesStep.cpp
+    QueryPlan/FillingStep.cpp
+    QueryPlan/FilterStep.cpp
+    QueryPlan/FinishSortingStep.cpp
+    QueryPlan/ISourceStep.cpp
+    QueryPlan/ITransformingStep.cpp
+    QueryPlan/IQueryPlanStep.cpp
+    QueryPlan/LimitByStep.cpp
+    QueryPlan/LimitStep.cpp
+    QueryPlan/MergeSortingStep.cpp
+    QueryPlan/MergingAggregatedStep.cpp
+    QueryPlan/MergingSortedStep.cpp
+    QueryPlan/OffsetStep.cpp
+    QueryPlan/PartialSortingStep.cpp
+    QueryPlan/UnionStep.cpp
+    QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromStorageStep.cpp
+    QueryPlan/ReadNothingStep.cpp
+    QueryPlan/RollupStep.cpp
+    QueryPlan/TotalsHavingStep.cpp
+    QueryPlan/QueryPlan.cpp
 )
 
 END()

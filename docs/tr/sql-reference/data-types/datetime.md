@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: DateTime
 ---
@@ -23,15 +23,15 @@ Desteklenen değerler aralığı: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
 
 Zaman içindeki nokta bir [Unix zaman damgası](https://en.wikipedia.org/wiki/Unix_time), ne olursa olsun saat dilimi veya gün ışığından yararlanma saati. Ayrıca, `DateTime` tür, tüm sütun için aynı olan saat dilimini depolayabilir, bu da `DateTime` tür değerleri metin biçiminde görüntülenir ve dizeler olarak belirtilen değerlerin nasıl ayrıştırılır (‘2020-01-01 05:00:01’). Saat dilimi tablo (veya resultset) satırlarında depolanır, ancak sütun meta verileri depolanır.
 Desteklenen saat dilimlerinin bir listesi şu adreste bulunabilir: [IANA Saat Dilimi veritabanı](https://www.iana.org/time-zones).
-Bu `tzdata` paket, içeren [IANA Saat Dilimi veritabanı](https://www.iana.org/time-zones), sisteme Kurul .malıdır. Kullan… `timedatectl list-timezones` yerel bir sistem tarafından bilinen zaman dilimlerini listelemek için komut.
+Bu `tzdata` paket, içeren [IANA Saat Dilimi veritabanı](https://www.iana.org/time-zones), sisteme Kurul .malıdır. Kullan... `timedatectl list-timezones` yerel bir sistem tarafından bilinen zaman dilimlerini listelemek için komut.
 
 İçin bir saat dilimi açıkça ayarlayabilirsiniz `DateTime`- bir tablo oluştururken sütunları yazın. Saat dilimi ayarlanmamışsa, ClickHouse değerini kullanır [saat dilimi](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) sunucu ayarlarında veya ClickHouse sunucusunun başlatıldığı anda işletim sistemi ayarlarında parametre.
 
-Bu [clickhouse-müşteri](../../interfaces/cli.md) veri türünü başlatırken bir saat dilimi açıkça ayarlanmamışsa, sunucu saat dilimini varsayılan olarak uygular. İstemci saat dilimini kullanmak için `clickhouse-client` ile… `--use_client_time_zone` parametre.
+Bu [clickhouse-müşteri](../../interfaces/cli.md) veri türünü başlatırken bir saat dilimi açıkça ayarlanmamışsa, sunucu saat dilimini varsayılan olarak uygular. İstemci saat dilimini kullanmak için `clickhouse-client` ile... `--use_client_time_zone` parametre.
 
-ClickHouse çıkış değerleri `YYYY-MM-DD hh:mm:ss` varsayılan olarak metin biçimi. Çıkış ile değiştirebilirsiniz [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) işlev.
+ClickHouse çıkış değerleri `YYYY-MM-DD hh:mm:ss` varsayılan olarak metin biçimi. Çıkış ile değiştirebilirsiniz [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) İşlev.
 
-Clickhouse’a veri eklerken, Tarih ve saat dizelerinin farklı biçimlerini kullanabilirsiniz. [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) ayar.
+Clickhouse'a veri eklerken, Tarih ve saat dizelerinin farklı biçimlerini kullanabilirsiniz. [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) ayar.
 
 ## Örnekler {#examples}
 
@@ -123,7 +123,7 @@ FROM dt
 -   [Dizilerle çalışmak için işlevler](../../sql-reference/functions/array-functions.md)
 -   [Bu `date_time_input_format` ayar](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [Bu `timezone` sunucu yapılandırma parametresi](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Tarih ve saatlerle çalışmak için operatörler](../../sql-reference/operators.md#operators-datetime)
+-   [Tarih ve saatlerle çalışmak için operatörler](../../sql-reference/operators/index.md#operators-datetime)
 -   [Bu `Date` veri türü](date.md)
 
 [Orijinal makale](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

@@ -82,7 +82,7 @@ DatabasePtr DatabaseFactory::getImpl(
     else if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, context);
     else if (engine_name == "Memory")
-        return std::make_shared<DatabaseMemory>(database_name);
+        return std::make_shared<DatabaseMemory>(database_name, context);
     else if (engine_name == "Dictionary")
         return std::make_shared<DatabaseDictionary>(database_name, context);
 

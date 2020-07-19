@@ -81,8 +81,8 @@ BlockIO InterpreterDropQuery::executeToTable(
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
     /// If table was already dropped by anyone, an exception will be thrown
-    auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id)
-                                             : DatabaseCatalog::instance().getDatabaseAndTable(table_id);
+    auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context)
+                                             : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
 
     if (database && table)
     {
@@ -93,7 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
@@ -105,8 +105,9 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->checkTableCanBeDropped();
 
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            table->truncate(query_ptr, context, table_lock);
+            table->truncate(query_ptr, metadata_snapshot, context, table_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -115,7 +116,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             table->shutdown();
 
-            TableStructureWriteLockHolder table_lock;
+            TableExclusiveLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
@@ -182,12 +183,13 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
         auto resolved_id = context_handle.tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
         if (resolved_id)
         {
-            StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id);
+            StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, context);
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Drop table data, don't touch metadata
-                table->truncate(query_ptr, context, table_lock);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr();
+                table->truncate(query_ptr, metadata_snapshot, context, table_lock);
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {
@@ -234,7 +236,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 ASTDropQuery query;
                 query.kind = kind;
                 query.database = database_name;
-                for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     query.table = iterator->name();
                     executeToTable({query.database, query.table}, query);

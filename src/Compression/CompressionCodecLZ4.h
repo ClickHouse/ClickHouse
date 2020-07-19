@@ -21,6 +21,9 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
+    bool isCompression() const override { return true; }
+    bool isGenericCompression() const override { return true; }
+
 private:
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
@@ -29,8 +32,6 @@ private:
     mutable LZ4::PerformanceStatistics lz4_stat;
 };
 
-class CompressionCodecFactory;
-void registerCodecLZ4(CompressionCodecFactory & factory);
 
 class CompressionCodecLZ4HC : public CompressionCodecLZ4
 {
@@ -46,8 +47,5 @@ protected:
 private:
     const int level;
 };
-
-class CompressionCodecFactory;
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
 
 }

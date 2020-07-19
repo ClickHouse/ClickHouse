@@ -43,6 +43,7 @@ private:
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
     const char * getFamilyName() const override { return "FixedString"; }
+    TypeIndex getDataType() const override { return TypeIndex::FixedString; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -110,13 +111,25 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override;
+
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
+    {
+        return doCompareColumn<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, row_indexes,
+                                               compare_results, direction, nan_direction_hint);
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 

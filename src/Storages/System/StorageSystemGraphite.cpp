@@ -25,7 +25,7 @@ NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
 /*
  * Looking for (Replicated)*GraphiteMergeTree and get all configuration parameters for them
  */
-static StorageSystemGraphite::Configs getConfigs()
+static StorageSystemGraphite::Configs getConfigs(const Context & context)
 {
     const Databases databases = DatabaseCatalog::instance().getDatabases();
     StorageSystemGraphite::Configs graphite_configs;
@@ -36,9 +36,11 @@ static StorageSystemGraphite::Configs getConfigs()
         if (db.second->getEngineName() == "Lazy")
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
+            if (!table)
+                continue;
 
             const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
             if (!table_data)
@@ -71,9 +73,9 @@ static StorageSystemGraphite::Configs getConfigs()
     return graphite_configs;
 }
 
-void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    Configs graphite_configs = getConfigs();
+    Configs graphite_configs = getConfigs(context);
 
     for (const auto & config : graphite_configs)
     {

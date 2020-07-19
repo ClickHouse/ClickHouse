@@ -64,18 +64,8 @@ TrieDictionary::TrieDictionary(
 {
     createAttributes();
     trie = btrie_create();
-
-    try
-    {
-        loadData();
-        calculateBytesAllocated();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
+    loadData();
+    calculateBytesAllocated();
 }
 
 TrieDictionary::~TrieDictionary()

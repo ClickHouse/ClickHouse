@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: JDBC
 ---
 
 # JDBC {#table-engine-jdbc}
 
-ClickHouseが外部データベースに接続できるようにします [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
+ClickHouseが外部データベースに接続できるようにする [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-JDBC接続を実装するには、ClickHouseは別のプログラムを使用します [clickhouse-jdbc橋](https://github.com/alex-krash/clickhouse-jdbc-bridge) うにしてくれました。
+JDBC接続を実装するには、ClickHouseは別のプログラムを使用します [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge) うにしてくれました。
 
-このエンジンは、 [Nullable](../../../sql-reference/data-types/nullable.md) データ型。
+このエンジンは [Null可能](../../../sql-reference/data-types/nullable.md) データ型。
 
 ## テーブルの作成 {#creating-a-table}
 
@@ -27,7 +27,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 -   `dbms_uri` — URI of an external DBMS.
 
-    書式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+    形式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     MySQLの例: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 -   `external_database` — Database in an external DBMS.
@@ -36,7 +36,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 ## 使用例 {#usage-example}
 
-コンソールクライアントと直接接続してmysqlサーバーにテーブルを作成する:
+コンソールクライアントに直接接続してMySQL serverでテーブルを作成する:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -59,7 +59,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-ClickHouseサーバーでテーブルを作成し、そこからデータを選択する:
+ClickHouse serverでテーブルを作成し、そこからデータを選択する:
 
 ``` sql
 CREATE TABLE jdbc_table
@@ -83,7 +83,7 @@ FROM jdbc_table
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## また見なさい {#see-also}
+## も参照。 {#see-also}
 
 -   [JDBCテーブル関数](../../../sql-reference/table-functions/jdbc.md).
 

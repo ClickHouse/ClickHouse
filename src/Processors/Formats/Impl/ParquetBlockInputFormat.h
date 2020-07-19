@@ -5,26 +5,27 @@
 
 #include <Processors/Formats/IInputFormat.h>
 
+namespace parquet::arrow { class FileReader; }
 
-namespace parquet { namespace arrow { class FileReader; } }
 namespace arrow { class Buffer; }
 
 namespace DB
 {
-class Context;
 
-class ParquetBlockInputFormat: public IInputFormat
+class ParquetBlockInputFormat : public IInputFormat
 {
 public:
     ParquetBlockInputFormat(ReadBuffer & in_, Block header_);
 
     void resetParser() override;
 
-
     String getName() const override { return "ParquetBlockInputFormat"; }
 
 protected:
     Chunk generate() override;
+
+private:
+    void prepareReader();
 
 private:
     std::unique_ptr<parquet::arrow::FileReader> file_reader;

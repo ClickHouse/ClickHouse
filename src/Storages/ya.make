@@ -3,6 +3,7 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/sparsehash
+    contrib/libs/poco/MongoDB
 )
 
 SRCS(
@@ -81,11 +82,17 @@ SRCS(
     MergeTree/ReplicatedMergeTreeTableMetadata.cpp
     MergeTree/SimpleMergeSelector.cpp
     MergeTree/TTLMergeSelector.cpp
+    MergeTree/MergeTreeDataPartInMemory.cpp
+    MergeTree/MergeTreeDataPartWriterInMemory.cpp
+    MergeTree/MergeTreeDataPartWriterOnDisk.cpp
+    MergeTree/MergeTreeReaderInMemory.cpp
+    MergeTree/MergeTreeWriteAheadLog.cpp
     System/attachSystemTables.cpp
     System/StorageSystemAggregateFunctionCombinators.cpp
     System/StorageSystemAsynchronousMetrics.cpp
     System/StorageSystemBuildOptions.cpp
     System/StorageSystemClusters.cpp
+    System/StorageSystemCurrentRoles.cpp
     System/StorageSystemCollations.cpp
     System/StorageSystemColumns.cpp
     System/StorageSystemContributors.cpp
@@ -95,9 +102,11 @@ SRCS(
     System/StorageSystemDetachedParts.cpp
     System/StorageSystemDictionaries.cpp
     System/StorageSystemDisks.cpp
+    System/StorageSystemEnabledRoles.cpp
     System/StorageSystemEvents.cpp
     System/StorageSystemFormats.cpp
     System/StorageSystemFunctions.cpp
+    System/StorageSystemGrants.cpp
     System/StorageSystemGraphite.cpp
     System/StorageSystemMacros.cpp
     System/StorageSystemMerges.cpp
@@ -110,18 +119,27 @@ SRCS(
     System/StorageSystemParts.cpp
     System/StorageSystemPartsBase.cpp
     System/StorageSystemPartsColumns.cpp
+    System/StorageSystemPrivileges.cpp
     System/StorageSystemProcesses.cpp
-    System/StorageSystemQuotas.cpp
+    System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
+    System/StorageSystemQuotas.cpp
+    System/StorageSystemQuotasUsage.cpp
     System/StorageSystemReplicas.cpp
     System/StorageSystemReplicationQueue.cpp
+    System/StorageSystemDistributionQueue.cpp
+    System/StorageSystemRoleGrants.cpp
+    System/StorageSystemRoles.cpp
     System/StorageSystemRowPolicies.cpp
     System/StorageSystemSettings.cpp
+    System/StorageSystemSettingsProfileElements.cpp
+    System/StorageSystemSettingsProfiles.cpp
     System/StorageSystemStackTrace.cpp
     System/StorageSystemStoragePolicies.cpp
     System/StorageSystemTableEngines.cpp
     System/StorageSystemTableFunctions.cpp
     System/StorageSystemTables.cpp
+    System/StorageSystemUsers.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
     AlterCommands.cpp
@@ -153,6 +171,7 @@ SRCS(
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
+    StorageS3Settings.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
     StorageTinyLog.cpp
@@ -162,6 +181,11 @@ SRCS(
     StorageXDBC.cpp
     transformQueryForExternalDatabase.cpp
     VirtualColumnUtils.cpp
+    extractKeyExpressionList.cpp
+    TTLDescription.cpp
+    KeyDescription.cpp
+    SelectQueryDescription.cpp
+    StorageMongoDB.cpp
 )
 
 END()
