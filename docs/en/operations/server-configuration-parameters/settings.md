@@ -145,10 +145,10 @@ Settings:
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
 -   root\_path – Prefix for keys.
--   metrics – Sending data from the [system.metrics](../../operations/system-tables.md#system_tables-metrics) table.
--   events – Sending deltas data accumulated for the time period from the [system.events](../../operations/system-tables.md#system_tables-events) table.
--   events\_cumulative – Sending cumulative data from the [system.events](../../operations/system-tables.md#system_tables-events) table.
--   asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../../operations/system-tables.md#system_tables-asynchronous_metrics) table.
+-   metrics – Sending data from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+-   events – Sending deltas data accumulated for the time period from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+-   events\_cumulative – Sending cumulative data from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+-   asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -229,7 +229,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 
 The path to the file with substitutions.
 
-For more information, see the section “[Configuration files](../configuration-files.md#configuration_files)”.
+For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
 **Example**
 
@@ -307,11 +307,11 @@ Logging settings.
 
 Keys:
 
--   level – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
--   log – The log file. Contains all the entries according to `level`.
--   errorlog – Error log file.
--   size – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
--   count – The number of archived log files that ClickHouse stores.
+-   `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
+-   `log` – The log file. Contains all the entries according to `level`.
+-   `errorlog` – Error log file.
+-   `size` – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   `count` – The number of archived log files that ClickHouse stores.
 
 **Example**
 
@@ -348,6 +348,30 @@ Keys:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
 -   format – Message format. Possible values: `bsd` and `syslog.`
 
+## send\_crash\_reports {#server_configuration_parameters-logger}
+
+Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
+Enabling it, especially in pre-production environments, is greatly appreciated.
+
+The server will need an access to public Internet via IPv4 (at the time of writing IPv6 is not supported by Sentry) for this feature to be functioning properly.
+
+Keys:
+
+-   `enabled` – Boolean flag to enable the feature. Set to `true` to allow sending crash reports.
+-   `endpoint` – Overrides the Sentry endpoint.
+-   `anonymize` - Avoid attaching the server hostname to crash report.
+-   `http_proxy` - Configure HTTP proxy for sending crash reports.
+-   `debug` - Sets the Sentry client into debug mode.
+-   `tmp_path` - Filesystem path for temporary crash report state.
+
+**Recommended way to use**
+
+``` xml
+<send_crash_reports>
+    <enabled>true</enabled>
+</send_crash_reports>
+```
+
 ## macros {#macros}
 
 Parameter substitutions for replicated tables.
@@ -373,6 +397,25 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 ``` xml
 <mark_cache_size>5368709120</mark_cache_size>
 ```
+
+## max\_server\_memory\_usage {#max_server_memory_usage}
+
+Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Additional Info**
+
+On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio > 1`.
+
+**See also**
+
+-   [max\_memory\_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
 
 ## max\_concurrent\_queries {#max-concurrent-queries}
 
@@ -424,6 +467,18 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
+```
+
+## max\_thread\_pool\_size {#max-thread-pool-size}
+
+The maximum number of threads in the Global Thread pool.
+
+Default value: 10000.
+
+**Example**
+
+``` xml
+<max_thread_pool_size>12000</max_thread_pool_size>
 ```
 
 ## merge\_tree {#server_configuration_parameters-merge_tree}
@@ -503,7 +558,7 @@ Keys for server/client settings:
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the [system.part\_log](../../operations/system-tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
+Queries are logged in the [system.part\_log](../../operations/system-tables/part_log.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -544,9 +599,9 @@ Settings:
 
 -   `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 -   `port` – Port for `endpoint`.
--   `metrics` – Flag that sets to expose metrics from the [system.metrics](../system-tables.md#system_tables-metrics) table.
--   `events` – Flag that sets to expose metrics from the [system.events](../system-tables.md#system_tables-events) table.
--   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous\_metrics](../system-tables.md#system_tables-asynchronous_metrics) table.
+-   `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+-   `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
 
 **Example**
 
@@ -562,9 +617,9 @@ Settings:
 
 ## query\_log {#server_configuration_parameters-query-log}
 
-Setting for logging queries received with the [log\_queries=1](../settings/settings.md) setting.
+Setting for logging queries received with the [log\_queries=1](../../operations/settings/settings.md) setting.
 
-Queries are logged in the [system.query\_log](../../operations/system-tables.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -586,11 +641,11 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
-Setting for logging threads of queries received with the [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) setting.
+Setting for logging threads of queries received with the [log\_query\_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
 
-Queries are logged in the [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query-thread-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -614,7 +669,7 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 
 ## trace\_log {#server_configuration_parameters-trace_log}
 
-Settings for the [trace\_log](../../operations/system-tables.md#system_tables-trace_log) system table operation.
+Settings for the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
 Parameters:
 
@@ -675,11 +730,11 @@ Configuration of clusters used by the [Distributed](../../engines/table-engines/
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
-For the value of the `incl` attribute, see the section “[Configuration files](../configuration-files.md#configuration_files)”.
+For the value of the `incl` attribute, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
 
 **See Also**
 
--   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
+-   [skip\_unavailable\_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone {#server_configuration_parameters-timezone}
 
@@ -705,7 +760,7 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
 
@@ -733,7 +788,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#server-settings-tmp_path}
+## tmp\_path {#tmp-path}
 
 Path to temporary data for processing large queries.
 
@@ -746,22 +801,23 @@ Path to temporary data for processing large queries.
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp\_policy {#server-settings-tmp-policy}
+## tmp\_policy {#tmp-policy}
 
-Policy from [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
-If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
+Policy from [storage\_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
+
+If not set, [tmp\_path](#tmp-path) is used, otherwise it is ignored.
 
 !!! note "Note"
-    - `move_factor` is ignored
-- `keep_free_space_bytes` is ignored
-- `max_data_part_size_bytes` is ignored
-- you must have exactly one volume in that policy
+    - `move_factor` is ignored.
+- `keep_free_space_bytes` is ignored.
+- `max_data_part_size_bytes` is ignored.
+- Уou must have exactly one volume in that policy.
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use\_uncompressed\_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
+There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use\_uncompressed\_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
@@ -891,8 +947,11 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
+**See also**
 
-## access_control_path {#access_control_path}
+-   [background\_schedule\_pool\_size](../../operations/settings/settings.md#background_schedule_pool_size)
+
+## access\_control\_path {#access_control_path}
 
 Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
 
@@ -900,6 +959,6 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../access-rights.md#access-control)
+-   [Access Control and Account Management](../../operations/access-rights.md#access-control)
 
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

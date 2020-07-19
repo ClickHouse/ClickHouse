@@ -1,6 +1,6 @@
 [submodule "contrib/poco"]
 	path = contrib/poco
-	url = https://github.com/ClickHouse-Extras/poco
+	url = https://github.com/ClickHouse-Extras/poco.git
 	branch = clickhouse
 [submodule "contrib/zstd"]
 	path = contrib/zstd
@@ -49,7 +49,7 @@
 	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = https://github.com/powturbo/Turbo-Base64.git
+	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/apache/arrow
@@ -157,3 +157,20 @@
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/openldap/openldap.git
+[submodule "contrib/AMQP-CPP"]
+	path = contrib/AMQP-CPP
+	url = https://github.com/CopernicaMarketingSoftware/AMQP-CPP.git
+[submodule "contrib/cassandra"]
+	path = contrib/cassandra
+	url = https://github.com/ClickHouse-Extras/cpp-driver.git
+	branch = clickhouse
+[submodule "contrib/libuv"]
+	path = contrib/libuv
+	url = https://github.com/ClickHouse-Extras/libuv.git
+	branch = clickhouse
+[submodule "contrib/fmtlib"]
+	path = contrib/fmtlib
+	url = https://github.com/fmtlib/fmt.git
+[submodule "contrib/sentry-native"]
+	path = contrib/sentry-native
+	url = https://github.com/getsentry/sentry-native.git

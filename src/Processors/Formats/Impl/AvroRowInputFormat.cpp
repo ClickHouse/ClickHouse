@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -70,6 +71,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
+    extern const int CANNOT_PARSE_UUID;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
@@ -176,6 +178,19 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     {
         case avro::AVRO_STRING: [[fallthrough]];
         case avro::AVRO_BYTES:
+            if (target.isUUID())
+            {
+                return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
+                {
+                    decoder.decodeString(tmp);
+                    if (tmp.length() != 36)
+                        throw Exception(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+
+                    UUID uuid;
+                    parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
+                    assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
+                };
+            }
             if (target.isString() || target.isFixedString())
             {
                 return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
@@ -532,7 +547,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -542,12 +557,15 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
 
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
-
-    for (size_t i = 0; i < header.columns(); ++i)
+    // fail on missing fields when allow_missing_fields = false
+    if (!format_settings.avro.allow_missing_fields)
     {
-        if (!column_found[i])
+        for (size_t i = 0; i < header.columns(); ++i)
         {
-            throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+            if (!column_found[i])
+            {
+                throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+            }
         }
     }
 }
@@ -566,10 +584,10 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 }
 
 
-AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
+AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
-    , deserializer(output.getHeader(), file_reader.dataSchema())
+    , deserializer(output.getHeader(), file_reader.dataSchema(), format_settings_)
 {
     file_reader.init();
 }
@@ -612,7 +630,7 @@ private:
             try
             {
                 Poco::URI url(base_url, "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((&Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = " << id);
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {}", id);
 
                 /// One second for connect/send/receive. Just in case.
                 ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
@@ -629,8 +647,7 @@ private:
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((&Logger::get("AvroConfluentRowInputFormat")),
-                    "Succesfully fetched schema  id = " << id << "\n" << schema);
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Succesfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)
@@ -639,7 +656,7 @@ private:
             }
             catch (const Poco::Exception & e)
             {
-                throw Exception(Exception::CreateFromPoco, e);
+                throw Exception(Exception::CreateFromPocoTag{}, e);
             }
             catch (const avro::Exception & e)
             {
@@ -698,6 +715,7 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , input_stream(std::make_unique<InputStreamReadBufferAdapter>(in))
     , decoder(avro::binaryDecoder())
+    , format_settings(format_settings_)
 
 {
     decoder->init(*input_stream);
@@ -722,7 +740,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(output.getHeader(), schema);
+        AvroDeserializer deserializer(output.getHeader(), schema, format_settings);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;
@@ -734,9 +752,9 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams & params,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowInputFormat>(sample, buf, params);
+        return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
     });
 
     factory.registerInputFormatProcessor("AvroConfluent",[](

@@ -9,7 +9,7 @@ Changelog category (leave one):
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
 - Other
-- Non-significant (changelog entry is not required)
+- Not for changelog (changelog entry is not required)
 
 
 Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):

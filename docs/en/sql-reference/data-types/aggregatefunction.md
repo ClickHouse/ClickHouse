@@ -1,11 +1,11 @@
 ---
-toc_priority: 52
+toc_priority: 53
 toc_title: AggregateFunction
 ---
 
 # AggregateFunction {#data-type-aggregatefunction}
 
-Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [a materialized view](../../sql-reference/statements/create.md#create-view). The common way to produce an aggregate function state is by calling the aggregate function with the `-State` suffix. To get the final result of aggregation in the future, you must use the same aggregate function with the `-Merge`suffix.
+Aggregate functions can have an implementation-defined intermediate state that can be serialized to an `AggregateFunction(…)` data type and stored in a table, usually, by means of [a materialized view](../../sql-reference/statements/create/view.md). The common way to produce an aggregate function state is by calling the aggregate function with the `-State` suffix. To get the final result of aggregation in the future, you must use the same aggregate function with the `-Merge`suffix.
 
 `AggregateFunction(name, types_of_arguments…)` — parametric data type.
 
@@ -28,7 +28,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq), anyIf ([any](../../sql-reference/aggregate-functions/reference.md#agg_function-any)+[If](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-if)) and [quantiles](../../sql-reference/aggregate-functions/reference.md) are the aggregate functions supported in ClickHouse.
+[uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq), anyIf ([any](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)+[If](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-if)) and [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) are the aggregate functions supported in ClickHouse.
 
 ## Usage {#usage}
 

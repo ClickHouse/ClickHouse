@@ -3,12 +3,12 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Columns/ColumnConst.h>
 #include <Storages/ColumnDefault.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
+class Context;
 
 /** This stream adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)

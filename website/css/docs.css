@@ -1,5 +1,6 @@
 details {
     background: #444451;
+    color: #eee;
     padding: 1rem;
     margin-bottom: 1rem;
     margin-top: 1rem;
@@ -7,7 +8,7 @@ details {
 
 summary {
     font-weight: bold;
-    color: #fff;
+    color: #eee;
 }
 
 #sidebar {
@@ -37,7 +38,7 @@ summary {
     margin-left: .5rem;
 }
 
-#content {
+body[data-spy] #content {
     overflow-x: scroll;
 }
 
@@ -69,7 +70,6 @@ summary {
 #content code {
     color: #111;
     background: #eee;
-    padding: 2px;
 }
 
 
@@ -170,9 +170,13 @@ summary {
 }
 
 @media (prefers-color-scheme: dark) {
-    body[data-spy] {
+    body[data-spy], body.amp, body.blog, #to-full-website {
         background: #1c1c1c;
         color: #efefef;
+    }
+
+    .invert-dark {
+        filter: invert(100%);
     }
 
     #sidebar {
@@ -190,12 +194,8 @@ summary {
     #content td {
         border: 1px solid #444451;
     }
-    #content code {
-        background: #444;
-        color: #eee;
-    }
 
-    #content pre {
+    #content code, #content pre, .blog .tag, .blog .dropdown-menu {
         background: #444;
         color: #eee;
     }

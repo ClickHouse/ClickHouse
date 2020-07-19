@@ -124,7 +124,7 @@ public:
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.data(), result_column);
+            agg_func.insertResultInto(place.data(), result_column, arena.get());
 
             ++row_number;
         }

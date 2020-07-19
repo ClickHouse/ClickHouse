@@ -5,7 +5,7 @@ toc_title: file
 
 # file {#file}
 
-Creates a table from a file. This table function is similar to [url](url.md) and [hdfs](hdfs.md) ones.
+Creates a table from a file. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [hdfs](../../sql-reference/table-functions/hdfs.md) ones.
 
 ``` sql
 file(path, format, structure)

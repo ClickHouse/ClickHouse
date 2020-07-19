@@ -67,8 +67,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     - `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
     - <a name="mergetree_setting-merge_with_ttl_timeout"></a>`merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
     - `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
-    - `merge_max_block_size` — Максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
+    - `merge_max_block_size` — максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
     - `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
+    -   `min_bytes_for_wide_part`, `min_rows_for_wide_part` — минимальное количество байт/строк в куске данных для хранения в формате `Wide`. Можно задать одну или обе настройки или не задавать ни одной. Подробнее см. в разделе [Хранение данных](#mergetree-data-storage).
 
 **Пример задания секций**
 
@@ -122,6 +123,10 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 При вставке в таблицу создаются отдельные куски данных, каждый из которых лексикографически отсортирован по первичному ключу. Например, если первичный ключ — `(CounterID, Date)`, то данные в куске будут лежать в порядке `CounterID`, а для каждого `CounterID` в порядке `Date`.
 
 Данные, относящиеся к разным партициям, разбиваются на разные куски. В фоновом режиме ClickHouse выполняет слияния (merge) кусков данных для более эффективного хранения. Куски, относящиеся к разным партициям не объединяются. Механизм слияния не гарантирует, что все строки с одинаковым первичным ключом окажутся в одном куске.
+
+Куски данных могут храниться в формате `Wide` или `Compact`. В формате `Wide` каждый столбец хранится в отдельном файле, а в формате `Compact` все столбцы хранятся в одном файле. Формат `Compact` может быть полезен для повышения производительности при частом добавлении небольших объемов данных. 
+
+Формат хранения определяется настройками движка `min_bytes_for_wide_part` и `min_rows_for_wide_part`. Если число байт или строк в куске данных меньше значения, указанного в соответствующей настройке, тогда этот кусок данных хранится в формате `Compact`. В противном случае кусок данных хранится в формате `Wide`. Если ни одна из настроек не задана, куски данных хранятся в формате `Wide`.
 
 Каждый кусок данных логически делится на гранулы. Гранула — это минимальный неделимый набор данных, который ClickHouse считывает при выборке данных. ClickHouse не разбивает строки и значения и гранула всегда содержит целое число строк. Первая строка гранулы помечается значением первичного ключа для этой строки (засечка). Для каждого куска данных ClickHouse создаёт файл с засечками (индексный файл). Для каждого столбца, независимо от того, входит он в первичный ключ или нет, ClickHouse также сохраняет эти же засечки. Засечки используются для поиска данных напрямую в файлах столбцов.
 
@@ -291,30 +296,30 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
-#### Поддержка для функций {#podderzhka-dlia-funktsii}
+#### Поддержка для функций {#functions-support}
 
 Условия в секции `WHERE` содержат вызовы функций, оперирующих со столбцами. Если столбец - часть индекса, ClickHouse пытается использовать индекс при выполнении функции. Для разных видов индексов, ClickHouse поддерживает различные наборы функций, которые могут использоваться индексами.
 
 Индекс `set` используется со всеми функциями. Наборы функций для остальных индексов представлены в таблице ниже.
 
-| Function (operator) / Index                                                                                    | primary key | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter |
-|----------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
-| [equals (=, ==)](../../../engines/table-engines/mergetree-family/mergetree.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, \<\>)](../../../engines/table-engines/mergetree-family/mergetree.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](../../../engines/table-engines/mergetree-family/mergetree.md#function-like)                             | ✔           | ✔      | ✔           | ✗           | ✗             |
-| [notLike](../../../engines/table-engines/mergetree-family/mergetree.md#function-notlike)                       | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [startsWith](../../../engines/table-engines/mergetree-family/mergetree.md#startswith)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [endsWith](../../../engines/table-engines/mergetree-family/mergetree.md#endswith)                              | ✗           | ✗      | ✔           | ✔           | ✗             |
-| [multiSearchAny](../../../engines/table-engines/mergetree-family/mergetree.md#function-multisearchany)         | ✗           | ✗      | ✔           | ✔           | ✗             |
-| [in](../../../engines/table-engines/mergetree-family/mergetree.md#in-functions)                                | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](../../../engines/table-engines/mergetree-family/mergetree.md#in-functions)                             | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (\<)](../../../engines/table-engines/mergetree-family/mergetree.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (\>)](../../../engines/table-engines/mergetree-family/mergetree.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (\<=)](../../../engines/table-engines/mergetree-family/mergetree.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (\>=)](../../../engines/table-engines/mergetree-family/mergetree.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [empty](../../../engines/table-engines/mergetree-family/mergetree.md#function-empty)                           | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [notEmpty](../../../engines/table-engines/mergetree-family/mergetree.md#function-notempty)                     | ✔           | ✔      | ✗           | ✗           | ✗             |
-| hasToken                                                                                                       | ✗           | ✗      | ✗           | ✔           | ✗             |
+| Функция (оператор) / Индекс                                                                                | primary key | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
+| [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Функции с постоянным агрументом, который меньше, чем размер ngram не могут использовать индекс `ngrambf_v1` для оптимизации запроса.
 
@@ -588,6 +593,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 По умолчанию используется политика хранения `default` в которой есть один том и один диск, указанный в `<path>`. В данный момент менять политику хранения после создания таблицы нельзя.
+
+Количество потоков для фоновых перемещений кусков между дисками можно изменить с помощью настройки [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size)
 
 ### Особенности работы {#osobennosti-raboty}
 

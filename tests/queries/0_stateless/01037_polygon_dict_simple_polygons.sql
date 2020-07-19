@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS test_01037;
 

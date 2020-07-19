@@ -40,6 +40,15 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 }
 
 template <typename T>
+void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                     int direction, int nan_direction_hint) const
+{
+    return this->template doCompareColumn<ColumnDecimal<T>>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+                                                         compare_results, direction, nan_direction_hint);
+}
+
+template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto * pos = arena.allocContinue(sizeof(T), begin);
@@ -90,6 +99,12 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 }
 
 template <typename T>
+void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+}
+
+template <typename T>
 void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
 #if 1 /// TODO: perf test
@@ -106,6 +121,76 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 #endif
 
     permutation(reverse, limit, res);
+}
+
+template <typename T>
+void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const
+{
+    if (limit >= data.size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t n = equal_range.size();
+    if (limit)
+        --n;
+
+    EqualRanges new_ranges;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto& [first, last] = equal_range[i];
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
+        auto new_first = first;
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (data[res[new_first]] != data[res[j]])
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto& [first, last] = equal_range.back();
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (data[res[new_first]] != data[res[j]])
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (data[res[new_first]] == data[res[j]])
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
+    equal_range = std::move(new_ranges);
 }
 
 template <typename T>

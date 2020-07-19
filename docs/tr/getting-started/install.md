@@ -66,7 +66,7 @@ Ayrıca paketleri manuel olarak indirebilir ve yükleyebilirsiniz [burada](https
 
 Resmi önceden derlenmiş kullanılması tavsiye edilir `tgz` Arch ,iv ,es for tüm Linux dağıtım installationları, kurulumu `deb` veya `rpm` paketler mümkün değildir.
 
-Gerekli sürümü ile indirilebilir `curl` veya `wget` depo fromdan https://repo.yandex.ru/clickhouse/tgz/.
+Gerekli sürümü ile indirilebilir `curl` veya `wget` depo fromdan https://repo.clickhouse.tech/tgz/.
 Bundan sonra indirilen arşivler açılmalı ve kurulum komut dosyaları ile kurulmalıdır. En son sürüm için örnek:
 
 ``` bash

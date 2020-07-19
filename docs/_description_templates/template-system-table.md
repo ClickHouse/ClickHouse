@@ -1,10 +1,10 @@
-## system.table\_name {#system-tables_table-name}
+## system.table_name {#system-tables_table-name}
 
 Description.
 
 Columns:
 
--   `column_name` ([data\_type\_name](path/to/data_type.md)) — Description.
+-   `column_name` ([data_type_name](path/to/data_type.md)) — Description.
 
 **Example**
 

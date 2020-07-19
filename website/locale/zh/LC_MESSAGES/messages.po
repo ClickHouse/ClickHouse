@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-06-17 12:20+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: zh\n"
@@ -33,27 +33,27 @@ msgstr "ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人"
 msgid "ClickHouse DBMS"
 msgstr "ﾂ环板msｮﾂ嘉ｯﾂ偲"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "open-source"
 msgstr "开源"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "relational"
 msgstr "关系"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytics"
 msgstr "分析"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "analytical"
 msgstr "分析"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "Big Data"
 msgstr "大数据"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:32
 msgid "web-analytics"
 msgstr "网络分析"
 
@@ -71,15 +71,68 @@ msgstr "软件按\"原样\"分发，不附带任何明示或暗示的担保或�
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
+#: templates/blog/content.html:20 templates/blog/content.html:25
+#: templates/blog/content.html:30
+msgid "Share on"
+msgstr "分享到"
+
+#: templates/blog/content.html:37
+msgid "Published date"
+msgstr "发布日期"
+
+#: templates/blog/nav.html:20
+msgid "New&nbsp;post"
+msgstr "新帖子"
+
+#: templates/blog/nav.html:25
+msgid "Documentation"
+msgstr "文件"
+
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "评分"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "所得票数"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "文章评级"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "这个内容有帮助?？"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "无法使用"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "差"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "很好"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "善乎哉！"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "文件"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "建于"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "发表于"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "修改于"
 

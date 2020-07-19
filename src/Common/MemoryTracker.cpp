@@ -49,16 +49,14 @@ MemoryTracker::~MemoryTracker()
 
 void MemoryTracker::logPeakMemoryUsage() const
 {
-    LOG_DEBUG(&Logger::get("MemoryTracker"),
-        "Peak memory usage" << (description ? " " + std::string(description) : "")
-        << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
-    LOG_DEBUG(&Logger::get("MemoryTracker"),
-        "Current memory usage" << (description ? " " + std::string(description) : "")
-        << ": " << formatReadableSizeWithBinarySuffix(current) << ".");
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
+    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
 
@@ -79,6 +77,21 @@ void MemoryTracker::alloc(Int64 size)
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
+    /// Cap the limit to the total_memory_tracker, since it may include some drift.
+    ///
+    /// And since total_memory_tracker is reseted to the process resident
+    /// memory peridically (in AsynchronousMetrics::update()), any limit can be
+    /// capped to it, to avoid possible drift.
+    if (unlikely(current_hard_limit && will_be > current_hard_limit))
+    {
+        Int64 total_amount = total_memory_tracker.get();
+        if (amount > total_amount)
+        {
+            set(total_amount);
+            will_be = size + total_amount;
+        }
+    }
+
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)))
     {
@@ -89,7 +102,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory tracker";
-        if (description)
+        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
         message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
@@ -121,7 +134,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory limit";
-        if (description)
+        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"

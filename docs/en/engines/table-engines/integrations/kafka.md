@@ -1,5 +1,5 @@
 ---
-toc_priority: 32
+toc_priority: 5
 toc_title: Kafka
 ---
 
@@ -72,7 +72,7 @@ Examples:
                             kafka_format = 'JSONEachRow',
                             kafka_num_consumers = 4;
 
-  CREATE TABLE queue2 (
+  CREATE TABLE queue3 (
     timestamp UInt64,
     level String,
     message String
@@ -173,6 +173,7 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 **See Also**
 
--   [Virtual columns](../index.md#table_engines-virtual_columns)
+-   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+-   [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

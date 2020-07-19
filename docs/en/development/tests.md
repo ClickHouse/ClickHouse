@@ -200,7 +200,7 @@ Debug version of `jemalloc` is used for debug build.
 ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/LibFuzzer.html) and random SQL queries.
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
-LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have "\_fuzzer" name postfixes.
+LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “\_fuzzer” name postfixes.
 Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
 
@@ -210,7 +210,6 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 
 We also use simple fuzz test to generate random SQL queries and to check that the server doesn’t die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
-
 
 ## Security Audit {#security-audit}
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 63
-toc_title: Browse Source Code
+toc_priority: 71
+toc_title: Source Code
 ---
 
 # Browse ClickHouse Source Code {#browse-clickhouse-source-code}

@@ -4,6 +4,7 @@ import sys
 import os
 import os.path
 import re
+import json
 
 from argparse import ArgumentParser
 from argparse import FileType
@@ -30,6 +31,8 @@ from contextlib import closing
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
     "Coordination::Exception: Connection loss",
+    "Operation timed out",
+    "ConnectionPoolWithFailover: Connection failed at try",
 ]
 
 
@@ -199,9 +202,8 @@ def run_tests_array(all_tests_with_params):
         (name, ext) = os.path.splitext(case)
 
         try:
+            sys.stdout.flush()
             sys.stdout.write("{0:72}".format(name + ": "))
-            if run_total == 1:
-                sys.stdout.flush()
 
             if args.skip and any(s in name for s in args.skip):
                 print(MSG_SKIPPED + " - skip")
@@ -269,6 +271,10 @@ def run_tests_array(all_tests_with_params):
                             if stderr:
                                 print(stderr.encode('utf-8'))
 
+                            # Stop on fatal errors like segmentation fault. They are send to client via logs.
+                            if ' <Fatal> ' in stderr:
+                                SERVER_DIED = True
+
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
 
@@ -331,6 +337,116 @@ def run_tests_array(all_tests_with_params):
 server_logs_level = "warning"
 
 
+def check_server_started(client, retry_count):
+    print("Connecting to ClickHouse server...", end='')
+    sys.stdout.flush()
+    while retry_count > 0:
+        clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (stdout, stderr) = clickhouse_proc.communicate("SELECT 1")
+
+        if clickhouse_proc.returncode == 0 and stdout.startswith("1"):
+            print(" OK")
+            sys.stdout.flush()
+            return True
+
+        if clickhouse_proc.returncode == 210:
+            # Connection refused, retry
+            print('.', end = '')
+            sys.stdout.flush()
+            retry_count -= 1
+            sleep(0.5)
+            continue
+
+        # Other kind of error, fail.
+        print('')
+        print("Client invocation failed with code ", clickhouse_proc.returncode, ": ")
+        # We can't print this, because for some reason this is python 2,
+        # and args appeared in 3.3. To hell with it.
+        # print(''.join(clickhouse_proc.args))
+        print("stdout: ")
+        print(stdout)
+        print("stderr: ")
+        print(stderr)
+        sys.stdout.flush()
+        return False
+
+    print('')
+    print('All connection tries failed')
+    sys.stdout.flush()
+
+    return False
+
+
+class BuildFlags(object):
+    THREAD = 'thread-sanitizer'
+    ADDRESS = 'address-sanitizer'
+    UNDEFINED = 'ub-sanitizer'
+    MEMORY = 'memory-sanitizer'
+    DEBUG = 'debug-build'
+    UNBUNDLED = 'unbundled-build'
+    RELEASE = 'release-build'
+    DATABASE_ATOMIC = 'database-atomic'
+    POLYMORPHIC_PARTS = 'polymorphic-parts'
+
+
+def collect_build_flags(client):
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    result = []
+
+    if clickhouse_proc.returncode == 0:
+        if '-fsanitize=thread' in stdout:
+            result.append(BuildFlags.THREAD)
+        elif '-fsanitize=address' in stdout:
+            result.append(BuildFlags.ADDRESS)
+        elif '-fsanitize=undefined' in stdout:
+            result.append(BuildFlags.UNDEFINED)
+        elif '-fsanitize=memory' in stdout:
+            result.append(BuildFlags.MEMORY)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
+
+    if clickhouse_proc.returncode == 0:
+        if 'Debug' in stdout:
+            result.append(BuildFlags.DEBUG)
+        elif 'RelWithDebInfo' in stdout or 'Release' in stdout:
+            result.append(BuildFlags.RELEASE)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+
+    if clickhouse_proc.returncode == 0:
+        if 'ON' in stdout or '1' in stdout:
+            result.append(BuildFlags.UNBUNDLED)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
+
+    if clickhouse_proc.returncode == 0:
+        if 'Atomic' in stdout:
+            result.append(BuildFlags.DATABASE_ATOMIC)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
+
+    if clickhouse_proc.returncode == 0:
+        if '10485760' in stdout:
+            result.append(BuildFlags.POLYMORPHIC_PARTS)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    return result
+
+
 def main(args):
     global SERVER_DIED
     global exit_code
@@ -343,6 +459,19 @@ def main(args):
             raise CalledProcessError(clickhouse_proc.returncode, args.client, stderr)
 
         return stdout.startswith('1')
+
+    if not check_server_started(args.client, args.server_check_retries):
+        raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
+    build_flags = collect_build_flags(args.client)
+    if args.use_skip_list:
+        tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
+    else:
+        tests_to_skip_from_list = set([])
+
+    if args.skip:
+        args.skip = set(args.skip) | tests_to_skip_from_list
+    else:
+        args.skip = tests_to_skip_from_list
 
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
@@ -360,7 +489,7 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -468,23 +597,28 @@ def main(args):
             if jobs > run_total:
                 run_total = jobs
 
+            batch_size = len(all_tests) / jobs
             all_tests_array = []
-            for n in range(1, 1 + int(run_total)):
-                start = int(tests_n / run_total * (n - 1))
-                end = int(tests_n / run_total * n)
-                all_tests_array.append([all_tests[start : end], suite, suite_dir, suite_tmp_dir, run_total])
+            for i in range(0, len(all_tests), batch_size):
+                all_tests_array.append((all_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
 
             if jobs > 1:
                 with closing(multiprocessing.Pool(processes=jobs)) as pool:
                     pool.map(run_tests_array, all_tests_array)
-                    pool.terminate()
             else:
                 run_tests_array(all_tests_array[int(run_n)-1])
 
             total_tests_run += tests_n
 
     if args.hung_check:
-        processlist = get_processlist(args.client)
+
+        # Some queries may execute in background for some time after test was finished. This is normal.
+        for n in range(1, 60):
+            processlist = get_processlist(args.client)
+            if not processlist:
+                break
+            sleep(1)
+
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
@@ -548,6 +682,21 @@ def get_additional_client_options_url(args):
     return ''
 
 
+def collect_tests_to_skip(skip_list_path, build_flags):
+    result = set([])
+    if not os.path.exists(skip_list_path):
+        return result
+
+    with open(skip_list_path, 'r') as skip_list_file:
+        skip_dict = json.load(skip_list_file)
+        for build_flag in build_flags:
+            result |= set(skip_dict[build_flag])
+
+    if len(result) > 0:
+        print("Found file with skip-list {}, {} test will be skipped".format(skip_list_path, len(result)))
+
+    return result
+
 if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
@@ -570,6 +719,9 @@ if __name__ == '__main__':
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
+    parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
+    parser.add_argument('--skip-list-path', help="Path to skip-list file")
+    parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -598,6 +750,10 @@ if __name__ == '__main__':
     if args.queries is None:
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
+
+    if args.skip_list_path is None:
+        args.skip_list_path = os.path.join(args.queries, 'skip_list.json')
+
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:

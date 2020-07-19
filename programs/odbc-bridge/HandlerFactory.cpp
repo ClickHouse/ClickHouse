@@ -10,7 +10,7 @@ namespace DB
 Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco::Net::HTTPServerRequest & request)
 {
     Poco::URI uri{request.getURI()};
-    LOG_TRACE(log, "Request URI: " + uri.toString());
+    LOG_TRACE(log, "Request URI: {}", uri.toString());
 
     if (uri.getPath() == "/ping" && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
         return new PingHandler(keep_alive_timeout);
@@ -27,6 +27,12 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
         else if (uri.getPath() == "/identifier_quote")
 #if USE_ODBC
             return new IdentifierQuoteHandler(keep_alive_timeout, context);
+#else
+            return nullptr;
+#endif
+        else if (uri.getPath() == "/schema_allowed")
+#if USE_ODBC
+            return new SchemaAllowedHandler(keep_alive_timeout, context);
 #else
             return nullptr;
 #endif
