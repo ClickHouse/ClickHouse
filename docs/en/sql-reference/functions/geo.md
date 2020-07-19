@@ -135,7 +135,7 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
-# Functions for Working with Geohash {#geohash}
+## Functions for Working with Geohash {#geohash}
 
 Geohash is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.  
 
@@ -143,7 +143,7 @@ The description of the Geohash system is available in the [Wikipedia](https://en
 
 If you need to convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
-## geohashEncode {#geohashencode}
+### geohashEncode {#geohashencode}
 
 Encodes latitude and longitude as a [geohash](#geohash)-string.
 
@@ -173,7 +173,7 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 └──────────────┘
 ```
 
-## geohashDecode {#geohashdecode}
+### geohashDecode {#geohashdecode}
 
 Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 
@@ -197,7 +197,7 @@ SELECT geohashDecode('ezs42') AS res
 └─────────────────────────────────┘
 ```
 
-## geohashesInBox {#geohashesinbox}
+### geohashesInBox {#geohashesinbox}
 
 Returns an array of [geohash](#geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
 
@@ -243,7 +243,7 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-# Functions for Working with H3 Indexes {#h3_index}
+## Functions for Working with H3 Indexes {#h3_index}
 
 [H3](https://eng.uber.com/h3/) is a geographical indexing system where Earth’s surface divided into a grid of even hexagonal cells. This system is hierarchical, i. e. each hexagon on the top level ("parent") can be splitted into seven even but smaller ones ("children"), and so on. 
 
@@ -255,7 +255,7 @@ The H3 index is used primarily for bucketing locations and other geospatial mani
 
 The full description of the H3 systen is available at [the Uber Engeneering site](https://eng.uber.com/h3/). 
 
-## h3IsValid {#h3isvalid}
+### h3IsValid {#h3isvalid}
 
 Verifies whether the number is a valid [H3](#h3_index) index.
 
@@ -291,7 +291,7 @@ Result:
 └───────────┘
 ```
 
-## h3GetResolution {#h3getresolution}
+### h3GetResolution {#h3getresolution}
 
 Defines the resolution of the given [H3](#h3_index) index.
 
@@ -327,7 +327,7 @@ Result:
 └────────────┘
 ```
 
-## h3EdgeAngle {#h3edgeangle}
+### h3EdgeAngle {#h3edgeangle}
 
 Calculates the average length of the [H3](#h3_index) hexagon edge in grades.
 
@@ -360,7 +360,7 @@ Result:
 └───────────────────────┘
 ```
 
-## h3EdgeLengthM {#h3edgelengthm}
+### h3EdgeLengthM {#h3edgelengthm}
 
 Calculates the average length of the [H3](#h3_index) hexagon edge in meters.
 
@@ -393,7 +393,7 @@ Result:
 └─────────────┘
 ```
 
-## geoToH3 {#geotoh3}
+### geoToH3 {#geotoh3}
 
 Returns [H3](#h3_index) point index `(lon, lat)` with specified resolution.
 
@@ -432,7 +432,7 @@ Result:
 └────────────────────┘
 ```
 
-## h3kRing {#h3kring}
+### h3kRing {#h3kring}
 
  Lists all the [H3](#h3_index) hexagons in the raduis of `k` from the given hexagon in random order.
 
@@ -474,7 +474,7 @@ Result:
 └────────────────────┘
 ```
 
-## h3GetBaseCell {#h3getbasecell}
+### h3GetBaseCell {#h3getbasecell}
 
 Returns the base cell number of the [H3](#h3_index) index.
 
@@ -510,7 +510,7 @@ Result:
 └──────────┘
 ```
 
-## h3HexAreaM2 {#h3hexaream2}
+### h3HexAreaM2 {#h3hexaream2}
 
 Returns average hexagon area in square meters at the given resolution.
 
@@ -546,7 +546,7 @@ Result:
 └──────┘
 ```
 
-## h3IndexesAreNeighbors {#h3indexesareneighbors}
+### h3IndexesAreNeighbors {#h3indexesareneighbors}
 
 Returns whether or not the provided [H3](#h3_index) indexes are neighbors.
 
@@ -584,7 +584,7 @@ Result:
 └───┘
 ```
 
-## h3ToChildren {#h3tochildren}
+### h3ToChildren {#h3tochildren}
 
 Returns an array of child indexes for the given [H3](#h3_index) index.
 
@@ -621,7 +621,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3ToParent {#h3toparent}
+### h3ToParent {#h3toparent}
 
 Returns the parent (coarser) index containing the given [H3](#h3_index) index.
 
@@ -658,7 +658,7 @@ Result:
 └────────────────────┘
 ```
 
-## h3ToString {#h3tostring}
+### h3ToString {#h3tostring}
 
 Converts the `H3Index` representation of the index to the string representation.
 
@@ -692,7 +692,7 @@ Result:
 └─────────────────┘
 ```
 
-## stringToH3 {#stringtoh3}
+### stringToH3 {#stringtoh3}
 
 Converts the string representation to the `H3Index` (UInt64) representation.
 
@@ -726,7 +726,7 @@ Result:
 └────────────────────┘
 ```
 
-## h3GetResolution {#h3getresolution}
+### h3GetResolution {#h3getresolution}
 
 Returns the resolution of the [H3](#h3_index) index.
 
