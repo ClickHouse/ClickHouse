@@ -59,7 +59,6 @@ public:
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
 
 private:
-    ASTPtr inner_query;
     ASTPtr mergeable_query;
     ASTPtr final_query;
 
@@ -118,7 +117,7 @@ private:
 
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
-    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(ASTStorage * storage, const String & database_name, const String & table_name);
+    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name);
     UInt32 getCleanupBound();
     ASTPtr generateCleanupQuery();
 
@@ -137,7 +136,6 @@ private:
 
     static Pipes blocksToPipes(BlocksList & blocks, Block & sample_block);
 
-    ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
     ASTPtr getFinalQuery() const { return final_query->clone(); }
     ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;

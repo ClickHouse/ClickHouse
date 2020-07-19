@@ -216,8 +216,6 @@ namespace
             return IntervalKind::Year;
         __builtin_unreachable();
     }
-
-    String generateInnerTableName(const String & table_name) { return ".inner." + table_name; }
 }
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
@@ -246,9 +244,9 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for WINDOW VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
 
-        auto & inner_query = ast_select->list_of_selects->children.at(0);
+        auto & inner_select_query = ast_select->list_of_selects->children.at(0);
 
-        extractDependentTable(inner_query->as<ASTSelectQuery &>(), select_database_name, select_table_name);
+        extractDependentTable(inner_select_query->as<ASTSelectQuery &>(), select_database_name, select_table_name);
     }
     else
         throw Exception(
@@ -418,14 +416,14 @@ inline void StorageWindowView::fire(UInt32 watermark)
     fire_condition.notify_all();
 }
 
-std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery(ASTStorage * storage, const String & database_name, const String & table_name)
+std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery(const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name)
 {
     /// We will create a query to create an internal table.
     auto inner_create_query = std::make_shared<ASTCreateQuery>();
     inner_create_query->database = database_name;
     inner_create_query->table = table_name;
 
-    auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(getInnerQuery());
+    auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query);
 
     Aliases aliases;
     QueryAliasesVisitor::Data query_aliases_data{aliases};
@@ -835,7 +833,7 @@ StorageWindowView::StorageWindowView(
     String select_table_name;
     extractDependentTable(select_query, select_database_name, select_table_name);
     select_table_id = StorageID(select_database_name, select_table_name);
-    inner_query = innerQueryParser(select_query);
+    auto inner_query = innerQueryParser(select_query);
 
     mergeable_query = inner_query->clone();
 
@@ -926,6 +924,8 @@ StorageWindowView::StorageWindowView(
             throw Exception("Value for ALLOWED_LATENESS function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
+    auto generateInnerTableName = [](const String & table_name) { return ".inner." + table_name; };
+
     if (attach_)
     {
         inner_table_id = StorageID(table_id_.database_name, generateInnerTableName(table_id_.table_name));
@@ -933,7 +933,7 @@ StorageWindowView::StorageWindowView(
     else
     {
         auto inner_create_query
-            = generateInnerTableCreateQuery(query.storage, table_id_.database_name, generateInnerTableName(table_id_.table_name));
+            = generateInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generateInnerTableName(table_id_.table_name));
 
         InterpreterCreateQuery create_interpreter(inner_create_query, *wv_context);
         create_interpreter.setInternal(true);
