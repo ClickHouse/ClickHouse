@@ -200,6 +200,6 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
 
-# TODO: need support ALTER TABLE table_name ADD COLUMN column_name, RENAME COLUMN column_name TO new_column_name;
+# TODO: need ClickHouse support ALTER TABLE table_name ADD COLUMN column_name, RENAME COLUMN column_name TO new_column_name;
 # def test_mysql_alter_change_column_for_materialize_mysql_database(started_cluster):
 #     pass

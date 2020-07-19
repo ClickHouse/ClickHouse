@@ -96,7 +96,7 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
     Block variables_block = variables_input.read();
     if (!variables_block || variables_block.rows() != 4)
     {
-        std::unordered_map<String, String> variable_error_message{
+        std::unordered_map<String, String> variables_error_message{
             {"log_bin", "log_bin = 'ON'"},
             {"binlog_format", "binlog_format='ROW'"},
             {"binlog_row_image", "binlog_row_image='FULL'"},
@@ -106,16 +106,16 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
         {
-            const auto & error_message_it = variable_error_message.find(variable_name_column->getDataAt(index).toString());
+            const auto & error_message_it = variables_error_message.find(variable_name_column->getDataAt(index).toString());
 
-            if (error_message_it != variable_error_message.end())
-                variable_error_message.erase(error_message_it);
+            if (error_message_it != variables_error_message.end())
+                variables_error_message.erase(error_message_it);
         }
 
         bool first = true;
         std::stringstream error_message;
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
-        for (const auto & [variable_name, variable_error_message] : variable_error_message)
+        for (const auto & [variable_name, variable_error_message] : variables_error_message)
         {
             error_message << (first ? "" : ", ") << variable_error_message;
 
