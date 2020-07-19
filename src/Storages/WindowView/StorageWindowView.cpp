@@ -501,42 +501,24 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
                 ErrorCodes::INCORRECT_QUERY);
 
         new_storage->set(new_storage->engine, storage->engine->clone());
-        if (storage->partition_by)
-        {
-            auto partition_by = storage->partition_by->clone();
-            if (is_time_column_func_now)
-                time_now_visitor.visit(partition_by);
-            func_window_visitor.visit(partition_by);
-            to_identifier_visitor.visit(partition_by);
-            new_storage->set(new_storage->partition_by, partition_by);
-        }
-        if (storage->primary_key)
-        {
-            auto tmp_primary_key = storage->primary_key->clone();
-            if (is_time_column_func_now)
-                time_now_visitor.visit(tmp_primary_key);
-            func_window_visitor.visit(tmp_primary_key);
-            to_identifier_visitor.visit(tmp_primary_key);
-            new_storage->set(new_storage->primary_key, tmp_primary_key);
-        }
-        if (storage->order_by)
-        {
-            auto order_by = storage->order_by->clone();
-            if (is_time_column_func_now)
-                time_now_visitor.visit(order_by);
-            func_window_visitor.visit(order_by);
-            to_identifier_visitor.visit(order_by);
-            new_storage->set(new_storage->order_by, order_by);
-        }
-        if (storage->sample_by)
-        {
-            auto sample_by = storage->sample_by->clone();
-            if (is_time_column_func_now)
-                time_now_visitor.visit(sample_by);
-            func_window_visitor.visit(sample_by);
-            to_identifier_visitor.visit(sample_by);
-            new_storage->set(new_storage->sample_by, sample_by);
-        }
+
+        auto visit = [&](const IAST * ast, IAST * & field) {
+            if (ast)
+            {
+                auto node = ast->clone();
+                if (is_time_column_func_now)
+                    time_now_visitor.visit(node);
+                func_window_visitor.visit(node);
+                to_identifier_visitor.visit(node);
+                new_storage->set(field, node);
+            }
+        };
+
+        visit(storage->partition_by, new_storage->partition_by);
+        visit(storage->primary_key, new_storage->primary_key);
+        visit(storage->order_by, new_storage->order_by);
+        visit(storage->sample_by, new_storage->sample_by);
+
         if (storage->settings)
             new_storage->set(new_storage->settings, storage->settings->clone());
     }
