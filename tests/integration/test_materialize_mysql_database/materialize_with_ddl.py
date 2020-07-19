@@ -107,7 +107,7 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
     check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV",
-        "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t\t\t\t\t\n")
+                "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t\t\t\t\t\n")
     mysql_node.query("CREATE TABLE test_database.test_table_2 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\n")
@@ -119,6 +119,9 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     default_expression = "DEFAULT\t0" if service_name == "mysql5_7" else "DEFAULT\tid"
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV",
         "add_column_2\tInt32\t\t\t\t\t\nid\tInt32\t\t\t\t\t\nadd_column_1\tInt32\t\t\t\t\t\nadd_column_3\tInt32\t\t\t\t\t\nadd_column_4\tInt32\t" + default_expression + "\t\t\t\n")
+
+    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2, 3, 4, 5), (6, 7, 8, 9, 10)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\t3\t4\t5\n6\t7\t8\t9\t10\n")
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
@@ -142,6 +145,9 @@ def alter_drop_column_with_materialize_mysql_database(clickhouse_node, mysql_nod
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\ndrop_column\tInt32\t\t\t\t\t\n")
     mysql_node.query("ALTER TABLE test_database.test_table_2 DROP COLUMN drop_column")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\n")
+
+    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
@@ -167,6 +173,9 @@ def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nrename_column\tInt32\t\t\t\t\t\n")
     mysql_node.query("ALTER TABLE test_database.test_table_2 RENAME COLUMN rename_column TO new_column_name")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nnew_column_name\tInt32\t\t\t\t\t\n")
+
+    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\t4\n5\t6\n7\t8\n9\t10\n")
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
@@ -196,6 +205,9 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "modify_column\tNullable(Int32)\t\t\t\t\t\nid\tInt32\t\t\t\t\t\n")
     mysql_node.query("ALTER TABLE test_database.test_table_2 MODIFY COLUMN modify_column INT AFTER id")
     check_query(clickhouse_node, "DESC test_database.test_table_2 FORMAT TSV", "id\tInt32\t\t\t\t\t\nmodify_column\tNullable(Int32)\t\t\t\t\t\n")
+
+    mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, NULL)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\tNULL\n")
 
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
