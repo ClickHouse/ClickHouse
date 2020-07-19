@@ -101,7 +101,7 @@ namespace
         }
     };
 
-    struct ReplaceWindowIdVisitorData
+    struct ReplaceWindowIdData
     {
         using TypeToVisit = ASTFunction;
         bool is_tumble;
@@ -118,7 +118,9 @@ namespace
         }
     };
 
-    struct ReplaceFunctionNowVisitorData
+    using ReplaceWindowIdVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceWindowIdData>, true>;
+
+    struct ReplaceFunctionNowData
     {
         using TypeToVisit = ASTFunction;
 
@@ -139,7 +141,9 @@ namespace
         }
     };
 
-    struct ReplaceFunctionWindowVisitorData
+    using ReplaceFunctionNowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowData>, true>;
+
+    struct ReplaceFunctionWindowData
     {
         using TypeToVisit = ASTFunction;
 
@@ -150,10 +154,12 @@ namespace
         }
     };
 
-    class ReplaceFunctionWindowMatcher
+    using ReplaceFunctionWindowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionWindowData>, true>;
+
+    class ToIdentifierMatcher
     {
     public:
-        using Visitor = InDepthNodeVisitor<ReplaceFunctionWindowMatcher, true>;
+        using Visitor = InDepthNodeVisitor<ToIdentifierMatcher, true>;
 
         struct Data
         {
@@ -451,16 +457,15 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
         columns_list->children.push_back(column_dec);
     }
 
-    ReplaceFunctionWindowMatcher::Data query_data;
+    ToIdentifierMatcher::Data query_data;
     query_data.window_id_name = window_id_name;
     query_data.window_id_alias = window_id_alias;
-    query_data.aliases = &aliases;
-    ReplaceFunctionWindowMatcher::Visitor visitor(query_data);
+    ToIdentifierMatcher::Visitor to_identifier_visitor(query_data);
 
-    ReplaceFunctionNowVisitorData time_now_data;
-    ReplaceFunctionWindowVisitorData func_hop_data;
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowVisitorData>, true> time_now_visitor(time_now_data);
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionWindowVisitorData>, true> func_window_visitor(func_hop_data);
+    ReplaceFunctionNowData time_now_data;
+    ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
+    ReplaceFunctionWindowData func_hop_data;
+    ReplaceFunctionWindowVisitor func_window_visitor(func_hop_data);
 
     auto new_storage = std::make_shared<ASTStorage>();
     if (storage == nullptr)
@@ -479,7 +484,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
         ASTPtr order_by_ptr = order_by;
         if (is_time_column_func_now)
             time_now_visitor.visit(order_by_ptr);
-        visitor.visit(order_by_ptr);
+        to_identifier_visitor.visit(order_by_ptr);
 
         for (auto & child : order_by->arguments->children)
         {
@@ -510,7 +515,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             if (is_time_column_func_now)
                 time_now_visitor.visit(partition_by);
             func_window_visitor.visit(partition_by);
-            visitor.visit(partition_by);
+            to_identifier_visitor.visit(partition_by);
             new_storage->set(new_storage->partition_by, partition_by);
         }
         if (storage->primary_key)
@@ -519,7 +524,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             if (is_time_column_func_now)
                 time_now_visitor.visit(tmp_primary_key);
             func_window_visitor.visit(tmp_primary_key);
-            visitor.visit(tmp_primary_key);
+            to_identifier_visitor.visit(tmp_primary_key);
             new_storage->set(new_storage->primary_key, tmp_primary_key);
         }
         if (storage->order_by)
@@ -528,7 +533,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             if (is_time_column_func_now)
                 time_now_visitor.visit(order_by);
             func_window_visitor.visit(order_by);
-            visitor.visit(order_by);
+            to_identifier_visitor.visit(order_by);
             new_storage->set(new_storage->order_by, order_by);
         }
         if (storage->sample_by)
@@ -537,7 +542,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
             if (is_time_column_func_now)
                 time_now_visitor.visit(sample_by);
             func_window_visitor.visit(sample_by);
-            visitor.visit(sample_by);
+            to_identifier_visitor.visit(sample_by);
             new_storage->set(new_storage->sample_by, sample_by);
         }
         if (storage->settings)
@@ -834,17 +839,17 @@ StorageWindowView::StorageWindowView(
 
     mergeable_query = inner_query->clone();
 
-    ReplaceFunctionNowVisitorData func_now_data;
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowVisitorData>, true>(func_now_data).visit(mergeable_query);
+    ReplaceFunctionNowData func_now_data;
+    ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
     is_time_column_func_now = func_now_data.is_time_column_func_now;
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
     final_query = mergeable_query->clone();
 
-    ReplaceWindowIdVisitorData final_query_data;
+    ReplaceWindowIdData final_query_data;
     final_query_data.is_tumble = is_tumble;
-    InDepthNodeVisitor<OneTypeMatcher<ReplaceWindowIdVisitorData>, true>(final_query_data).visit(final_query);
+    ReplaceWindowIdVisitor(final_query_data).visit(final_query);
 
     is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
     is_watermark_ascending = query.is_watermark_ascending;
