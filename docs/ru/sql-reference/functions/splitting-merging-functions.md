@@ -33,4 +33,42 @@ SELECT alphaTokens('abca1abc')
 └─────────────────────────┘
 ```
 
+## extractAllGroups(text, regexp) {#extractallgroups}
+
+Выделяет все группы из неперекрывающихся подстрок, которые соответствуют регулярному выражению.
+
+**Синтаксис** 
+
+``` sql
+extractAllGroups(text, regexp) 
+```
+
+**Параметры** 
+
+-   `text` — [String](../data-types/string.md) или [FixedString](../data-types/fixedstring.md).
+-   `regexp` — Регулярное выражение. Константа. [String](../data-types/string.md) или [FixedString](../data-types/fixedstring.md).
+
+**Возвращаемые значения**
+
+-   Если найдена хотя бы одна подходящая группа, функция возвращает столбец вида `Массив(Массив(Строка))`, сгруппированный по идентификатору группы (от 1 до N, где N — количество групп с захватом содержимого в `regexp`).
+
+-   Если подходящих групп не найдено, возвращает пустой массив.
+
+Тип: [Array](../data-types/array.md).
+
+**Пример использования**
+
+Запрос:
+
+``` sql
+SELECT extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+```
+
+Результат:
+
+``` text
+┌─extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','123'],['8','"hkl"']]                                         │
+└───────────────────────────────────────────────────────────────────────┘
+```
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/splitting_merging_functions/) <!--hide-->
