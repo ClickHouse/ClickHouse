@@ -36,18 +36,18 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
 
     if (!ast.setting_name.empty())
     {
-        setting_index = Settings::findIndexStrict(ast.setting_name);
+        setting_name = ast.setting_name;
         value = ast.value;
         min_value = ast.min_value;
         max_value = ast.max_value;
         readonly = ast.readonly;
 
         if (!value.isNull())
-            value = Settings::castValue(setting_index, value);
+            value = Settings::castValue(setting_name, value);
         if (!min_value.isNull())
-            min_value = Settings::castValue(setting_index, min_value);
+            min_value = Settings::castValue(setting_name, min_value);
         if (!max_value.isNull())
-            max_value = Settings::castValue(setting_index, max_value);
+            max_value = Settings::castValue(setting_name, max_value);
     }
 }
 
@@ -60,9 +60,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
     if (parent_profile)
         ast->parent_profile = ::DB::toString(*parent_profile);
 
-    if (setting_index != static_cast<size_t>(-1))
-        ast->setting_name = Settings::getName(setting_index).toString();
-
+    ast->setting_name = setting_name;
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
@@ -83,9 +81,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithName
             ast->parent_profile = *parent_profile_name;
     }
 
-    if (setting_index != static_cast<size_t>(-1))
-        ast->setting_name = Settings::getName(setting_index).toString();
-
+    ast->setting_name = setting_name;
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
@@ -136,8 +132,8 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if ((elem.setting_index != static_cast<size_t>(-1)) && !elem.value.isNull())
-            res.set(elem.setting_index, elem.value);
+        if (!elem.setting_name.empty() && !elem.value.isNull())
+            res.set(elem.setting_name, elem.value);
     }
     return res;
 }
@@ -147,8 +143,8 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     SettingsChanges res;
     for (const auto & elem : *this)
     {
-        if ((elem.setting_index != static_cast<size_t>(-1)) && !elem.value.isNull())
-            res.push_back({Settings::getName(elem.setting_index).toString(), elem.value});
+        if (!elem.setting_name.empty() && !elem.value.isNull())
+            res.push_back({elem.setting_name, elem.value});
     }
     return res;
 }
@@ -158,14 +154,14 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints() const
     SettingsConstraints res;
     for (const auto & elem : *this)
     {
-        if (elem.setting_index != static_cast<size_t>(-1))
+        if (!elem.setting_name.empty())
         {
             if (!elem.min_value.isNull())
-                res.setMinValue(elem.setting_index, elem.min_value);
+                res.setMinValue(elem.setting_name, elem.min_value);
             if (!elem.max_value.isNull())
-                res.setMaxValue(elem.setting_index, elem.max_value);
+                res.setMaxValue(elem.setting_name, elem.max_value);
             if (elem.readonly)
-                res.setReadOnly(elem.setting_index, *elem.readonly);
+                res.setReadOnly(elem.setting_name, *elem.readonly);
         }
     }
     return res;
