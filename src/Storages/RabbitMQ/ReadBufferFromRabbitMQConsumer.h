@@ -26,13 +26,13 @@ public:
             ChannelPtr consumer_channel_,
             HandlerPtr event_handler_,
             const String & exchange_name_,
+            const AMQP::ExchangeType & exchange_type_,
             const Names & routing_keys_,
             size_t channel_id_,
             Poco::Logger * log_,
             char row_delimiter_,
-            bool bind_by_id_,
+            bool hash_exchange_,
             size_t num_queues_,
-            const String & exchange_type_,
             const String & local_exchange_,
             const std::atomic<bool> & stopped_);
 
@@ -48,12 +48,12 @@ private:
     HandlerPtr event_handler;
 
     const String exchange_name;
+    const AMQP::ExchangeType exchange_type;
     const Names routing_keys;
     const size_t channel_id;
-    const bool bind_by_id;
+    const bool hash_exchange;
     const size_t num_queues;
 
-    const String exchange_type;
     const String local_exchange;
     const String local_default_exchange;
     const String local_hash_exchange;
@@ -65,7 +65,6 @@ private:
 
     String default_local_exchange;
     bool local_exchange_declared = false, local_hash_exchange_declared = false;
-    bool exchange_type_set = false, hash_exchange = false;
 
     std::atomic<bool> consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;

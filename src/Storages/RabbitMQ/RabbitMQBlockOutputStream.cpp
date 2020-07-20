@@ -56,6 +56,9 @@ void RabbitMQBlockOutputStream::write(const Block & block)
 void RabbitMQBlockOutputStream::writeSuffix()
 {
     child->writeSuffix();
+
+    if (buffer)
+        buffer->finilizeProducer();
 }
 
 }
