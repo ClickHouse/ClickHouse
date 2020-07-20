@@ -385,9 +385,9 @@ namespace MySQLReplication
                         break;
                     }
                     case MYSQL_TYPE_FLOAT: {
-                        Float64 val = 0;
+                        Float32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{Float64{val}});
+                        row.push_back(Field{Float32{val}});
                         break;
                     }
                     case MYSQL_TYPE_DOUBLE: {

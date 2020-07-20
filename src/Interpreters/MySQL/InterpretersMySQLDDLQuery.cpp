@@ -47,14 +47,35 @@ static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_defin
             throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
 
         bool is_nullable = true;
+        bool is_unsigned = false;
         if (declare_column->column_options)
         {
-            if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>();
-                options && options->changes.count("is_null"))
-                is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
+            if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
+            {
+                if (options->changes.count("is_null"))
+                    is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
+
+                if (options->changes.count("is_unsigned"))
+                    is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
+            }
         }
 
         ASTPtr data_type = declare_column->data_type;
+
+        if (is_unsigned)
+        {
+            auto data_type_function = data_type->as<ASTFunction>();
+
+            if (data_type_function)
+            {
+                String type_name_upper = Poco::toUpper(data_type_function->name);
+
+                /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
+                if (type_name_upper.find("INT") != std::string::npos && !endsWith(type_name_upper, "SIGNED")
+                    && !endsWith(type_name_upper, "UNSIGNED"))
+                    data_type_function->name = type_name_upper + " UNSIGNED";
+            }
+        }
 
         if (is_nullable)
             data_type = makeASTFunction("Nullable", data_type);
@@ -72,7 +93,7 @@ static NamesAndTypesList getNames(const ASTFunction & expr, const Context & cont
 
     ASTPtr temp_ast = expr.clone();
     auto syntax = SyntaxAnalyzer(context).analyze(temp_ast, columns);
-    auto expression = ExpressionAnalyzer(temp_ast, syntax, context).getActions(true);
+    auto expression = ExpressionAnalyzer(temp_ast, syntax, context).getActions(false);
     return expression->getRequiredColumnsWithTypes();
 }
 
@@ -160,43 +181,68 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         if (type->isNullable())
             column = makeASTFunction("assumeNotNull", column);
 
-        return makeASTFunction("divide", column, std::make_shared<ASTLiteral>(UInt64(type_max_size / 1000)));
+        return makeASTFunction("intDiv", column, std::make_shared<ASTLiteral>(UInt64(type_max_size / 1000)));
     };
 
+    ASTPtr best_partition;
+    size_t index = 0, best_size = 0;
     for (const auto & primary_key : primary_keys)
     {
-        WhichDataType which(primary_key.type);
+        DataTypePtr type = primary_key.type;
+        WhichDataType which(type);
 
         if (which.isNullable())
-            which = WhichDataType((static_cast<const DataTypeNullable &>(*primary_key.type)).getNestedType());
+        {
+            type = (static_cast<const DataTypeNullable &>(*type)).getNestedType();
+            which = WhichDataType(type);
+        }
 
         if (which.isDateOrDateTime())
         {
+            /// In any case, date or datetime is always the best partitioning key
             ASTPtr res = std::make_shared<ASTIdentifier>(primary_key.name);
             return makeASTFunction("toYYYYMM", primary_key.type->isNullable() ? makeASTFunction("assumeNotNull", res) : res);
         }
 
-        if (which.isInt8() || which.isUInt8())
-            return std::make_shared<ASTIdentifier>(primary_key.name);
-        else if (which.isInt16() || which.isUInt16())
-            return numbers_partition(primary_key.name, primary_key.type, std::numeric_limits<UInt16>::max());
-        else if (which.isInt32() || which.isUInt32())
-            return numbers_partition(primary_key.name, primary_key.type, std::numeric_limits<UInt32>::max());
-        else if (which.isInt64() || which.isUInt64())
-            return numbers_partition(primary_key.name, primary_key.type, std::numeric_limits<UInt64>::max());
+        if (type->haveMaximumSizeOfValue() && (!best_size || type->getSizeOfValueInMemory() < best_size))
+        {
+            if (which.isInt8() || which.isUInt8())
+            {
+                best_size = type->getSizeOfValueInMemory();
+                best_partition = std::make_shared<ASTIdentifier>(primary_key.name);
+            }
+            else if (which.isInt16() || which.isUInt16())
+            {
+                best_size = type->getSizeOfValueInMemory();
+                best_partition = numbers_partition(primary_key.name, type, std::numeric_limits<UInt16>::max());
+            }
+            else if (which.isInt32() || which.isUInt32())
+            {
+                best_size = type->getSizeOfValueInMemory();
+                best_partition = numbers_partition(primary_key.name, type, std::numeric_limits<UInt32>::max());
+            }
+            else if (which.isInt64() || which.isUInt64())
+            {
+                best_size = type->getSizeOfValueInMemory();
+                best_partition = numbers_partition(primary_key.name, type, std::numeric_limits<UInt64>::max());
+            }
+        }
     }
 
-    return {};
+    return best_partition;
 }
 
 static ASTPtr getOrderByPolicy(
     const NamesAndTypesList & primary_keys, const NamesAndTypesList & unique_keys, const NamesAndTypesList & keys, const NameSet & increment_columns)
 {
     NameSet order_by_columns_set;
-    std::deque<String> order_by_columns;
+    std::deque<std::vector<String>> order_by_columns_list;
 
     const auto & add_order_by_expression = [&](const NamesAndTypesList & names_and_types)
     {
+        std::vector<String> increment_keys;
+        std::vector<String> non_increment_keys;
+
         for (const auto & [name, type] : names_and_types)
         {
             if (order_by_columns_set.contains(name))
@@ -204,18 +250,21 @@ static ASTPtr getOrderByPolicy(
 
             if (increment_columns.contains(name))
             {
+                increment_keys.emplace_back(name);
                 order_by_columns_set.emplace(name);
-                order_by_columns.emplace_back(name);
             }
             else
             {
                 order_by_columns_set.emplace(name);
-                order_by_columns.emplace_front(name);
+                non_increment_keys.emplace_back(name);
             }
         }
+
+        order_by_columns_list.emplace_back(increment_keys);
+        order_by_columns_list.emplace_front(non_increment_keys);
     };
 
-    /// primary_key[not increment], key[not increment], unique[not increment], key[increment], unique[increment], primary_key[increment]
+    /// primary_key[not increment], key[not increment], unique[not increment], unique[increment], key[increment], primary_key[increment]
     add_order_by_expression(unique_keys);
     add_order_by_expression(keys);
     add_order_by_expression(primary_keys);
@@ -224,8 +273,11 @@ static ASTPtr getOrderByPolicy(
     order_by_expression->name = "tuple";
     order_by_expression->arguments = std::make_shared<ASTExpressionList>();
 
-    for (const auto & order_by_column : order_by_columns)
-        order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(order_by_column));
+    for (const auto & order_by_columns : order_by_columns_list)
+    {
+        for (const auto & order_by_column : order_by_columns)
+            order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(order_by_column));
+    }
 
     return order_by_expression;
 }

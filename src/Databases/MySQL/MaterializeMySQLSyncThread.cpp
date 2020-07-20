@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_MYSQL_VARIABLE;
 }
 
@@ -357,6 +358,114 @@ static inline void fillSignAndVersionColumnsData(Block & data, Int8 sign_value, 
     data.getByPosition(data.columns() - 1).column = std::move(version_mutable_column);
 }
 
+template <bool assert_nullable = false>
+static void writeFieldsToColumn(
+    IColumn & column_to, const std::vector<Field> & rows_data, size_t column_index, const std::vector<bool> & mask, ColumnUInt8 * null_map_column = nullptr)
+{
+    if (ColumnNullable * column_nullable = typeid_cast<ColumnNullable *>(&column_to))
+        writeFieldsToColumn<true>(column_nullable->getNestedColumn(), rows_data, column_index, mask, &column_nullable->getNullMapColumn());
+    else
+    {
+        const auto & write_data_to_null_map = [&](const Field & field, size_t row_index)
+        {
+            if (!mask.empty() && !mask.at(row_index))
+                return false;
+
+            if constexpr (assert_nullable)
+            {
+                if (field.isNull())
+                {
+                    column_to.insertDefault();
+                    null_map_column->insertDefault();
+                    return false;
+                }
+
+                null_map_column->insertValue(0);
+            }
+
+            return true;
+        };
+
+        const auto & write_data_to_column = [&](auto * casted_column, auto from_type, auto to_type) {
+            for (size_t index = 0; index < rows_data.size(); ++index)
+            {
+                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+
+                if (write_data_to_null_map(value, index))
+                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template get<decltype(from_type)>()));
+            }
+        };
+
+        if (ColumnInt8 * casted_column = typeid_cast<ColumnInt8 *>(&column_to))
+            write_data_to_column(casted_column, UInt8(), Int8());
+        else if (ColumnInt16 * casted_column = typeid_cast<ColumnInt16 *>(&column_to))
+            write_data_to_column(casted_column, UInt16(), Int16());
+        else if (ColumnInt64 * casted_column = typeid_cast<ColumnInt64 *>(&column_to))
+            write_data_to_column(casted_column, UInt64(), Int64());
+        else if (ColumnUInt8 * casted_column = typeid_cast<ColumnUInt8 *>(&column_to))
+            write_data_to_column(casted_column, UInt8(), UInt8());
+        else if (ColumnUInt16 * casted_column = typeid_cast<ColumnUInt16 *>(&column_to))
+            write_data_to_column(casted_column, UInt16(), UInt16());
+        else if (ColumnUInt32 * casted_column = typeid_cast<ColumnUInt32 *>(&column_to))
+            write_data_to_column(casted_column, UInt32(), UInt32());
+        else if (ColumnUInt64 * casted_column = typeid_cast<ColumnUInt64 *>(&column_to))
+            write_data_to_column(casted_column, UInt64(), UInt64());
+        else if (ColumnFloat32 * casted_column = typeid_cast<ColumnFloat32 *>(&column_to))
+            write_data_to_column(casted_column, Float32(), Float32());
+        else if (ColumnFloat64 * casted_column = typeid_cast<ColumnFloat64 *>(&column_to))
+            write_data_to_column(casted_column, Float64(), Float64());
+        else if (ColumnInt32 * casted_column = typeid_cast<ColumnInt32 *>(&column_to))
+        {
+            for (size_t index = 0; index < rows_data.size(); ++index)
+            {
+                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+
+                if (write_data_to_null_map(value, index))
+                {
+                    if (value.getType() == Field::Types::UInt64)
+                        casted_column->insertValue(value.get<Int32>());
+                    else if (value.getType() == Field::Types::Int64)
+                    {
+                        /// For MYSQL_TYPE_INT24
+                        const Int32 & num = value.get<Int32>();
+                        casted_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
+                    }
+                    else
+                        throw Exception("LOGICAL ERROR: it is a bug.", ErrorCodes::LOGICAL_ERROR);
+                }
+            }
+        }
+        else if (ColumnString * casted_column = typeid_cast<ColumnString *>(&column_to))
+        {
+            for (size_t index = 0; index < rows_data.size(); ++index)
+            {
+                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+
+                if (write_data_to_null_map(value, index))
+                {
+                    const String & data = value.get<const String &>();
+                    casted_column->insertData(data.data(), data.size());
+                }
+            }
+        }
+        else if (ColumnFixedString * casted_column = typeid_cast<ColumnFixedString *>(&column_to))
+        {
+            for (size_t index = 0; index < rows_data.size(); ++index)
+            {
+                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+
+                if (write_data_to_null_map(value, index))
+                {
+                    const String & data = value.get<const String &>();
+                    casted_column->insertData(data.data(), data.size());
+                }
+            }
+        }
+        else
+            throw Exception("Unsupported data type from MySQL.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
 template <Int8 sign>
 static size_t onWriteOrDeleteData(const std::vector<Field> & rows_data, Block & buffer, size_t version)
 {
@@ -365,9 +474,7 @@ static size_t onWriteOrDeleteData(const std::vector<Field> & rows_data, Block & 
     {
         MutableColumnPtr col_to = IColumn::mutate(std::move(buffer.getByPosition(column).column));
 
-        for (size_t index = 0; index < rows_data.size(); ++index)
-            col_to->insert(DB::get<const Tuple &>(rows_data[index])[column]);
-
+        writeFieldsToColumn(*col_to, rows_data, column, {});
         buffer.getByPosition(column).column = std::move(col_to);
     }
 
@@ -387,31 +494,23 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
 static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
-        throw Exception("LOGICAL ERROR: ", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     size_t prev_bytes = buffer.bytes();
-    std::vector<bool> difference_sorting_keys_mark(rows_data.size() / 2);
+    std::vector<bool> writeable_rows_mask(rows_data.size());
 
     for (size_t index = 0; index < rows_data.size(); index += 2)
-        difference_sorting_keys_mark[index / 2] = differenceSortingKeys(
+    {
+        writeable_rows_mask[index + 1] = true;
+        writeable_rows_mask[index] = differenceSortingKeys(
             DB::get<const Tuple &>(rows_data[index]), DB::get<const Tuple &>(rows_data[index + 1]), sorting_columns_index);
+    }
 
     for (size_t column = 0; column < buffer.columns() - 2; ++column)
     {
         MutableColumnPtr col_to = IColumn::mutate(std::move(buffer.getByPosition(column).column));
 
-        for (size_t index = 0; index < rows_data.size(); index += 2)
-        {
-            if (likely(!difference_sorting_keys_mark[index / 2]))
-                col_to->insert(DB::get<const Tuple &>(rows_data[index + 1])[column]);
-            else
-            {
-                /// If the sorting keys is modified, we should cancel the old data, but this should not happen frequently
-                col_to->insert(DB::get<const Tuple &>(rows_data[index])[column]);
-                col_to->insert(DB::get<const Tuple &>(rows_data[index + 1])[column]);
-            }
-        }
-
+        writeFieldsToColumn(*col_to, rows_data, column, writeable_rows_mask);
         buffer.getByPosition(column).column = std::move(col_to);
     }
 
@@ -423,7 +522,7 @@ static inline size_t onUpdateData(const std::vector<Field> & rows_data, Block & 
 
     for (size_t index = 0; index < rows_data.size(); index += 2)
     {
-        if (likely(!difference_sorting_keys_mark[index / 2]))
+        if (likely(!writeable_rows_mask[index]))
         {
             sign_column_data.emplace_back(1);
             version_column_data.emplace_back(version);
