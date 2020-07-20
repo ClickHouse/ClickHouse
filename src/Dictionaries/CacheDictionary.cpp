@@ -93,7 +93,7 @@ CacheDictionary::CacheDictionary(
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
 {
-    if (!this->source_ptr->supportsSelectiveLoad())
+    if (!source_ptr->supportsSelectiveLoad())
         throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
@@ -865,20 +865,11 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
     {
         try
         {
-            if (error_count)
-            {
-                /// Update source write write lock
-                std::unique_lock source_lock(source_mutex);
-                /// Recover after error: we have to clone the source here because
-                /// it could keep connections which should be reset after error.
-                source_ptr = source_ptr->clone();
-            }
+            auto current_source_ptr = getDictionarySourceOrUpdate();
 
-            /// Working with source_ptr with read lock. source_ptr has to be alive while stream alive
-            std::shared_lock source_lock(source_mutex);
             Stopwatch watch;
 
-            BlockInputStreamPtr stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
+            BlockInputStreamPtr stream = current_source_ptr->loadIds(bunch_update_unit.getRequestedIds());
             stream->readPrefix();
 
 
