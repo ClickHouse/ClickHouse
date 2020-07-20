@@ -49,7 +49,7 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_request.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_roundrobin_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c
-#  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c # needed to support Kerberos, requires cyrus-sasl
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c # needed to support Kerberos, requires cyrus-sasl
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c
@@ -86,3 +86,4 @@ target_link_libraries(rdkafka PRIVATE lz4 ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${LI
 if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(rdkafka PRIVATE ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 endif()
+# target_link_libraries(rdkafka PRIVATE ${GSASL_LIBRARIES} "-lsasl2")

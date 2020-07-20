@@ -445,6 +445,7 @@ target_sources(krb5 PRIVATE
 )
 
 target_include_directories(krb5 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}  #for autoconf.h
     ${KRB5_SOURCE_DIR}
     ${KRB5_SOURCE_DIR}/include
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue
@@ -462,13 +463,12 @@ target_include_directories(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/krb5/rcache
     ${KRB5_SOURCE_DIR}/lib/krb5/unicode
     ${KRB5_SOURCE_DIR}/lib/krb5/os
-
     ${OPENSSL_INCLUDE_DIR}
 
 )
 target_compile_definitions(krb5 PRIVATE
     KRB5_PRIVATE
-    HAVE_CONFIG_H
+    # HAVE_CONFIG_H
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
     # SHARED
