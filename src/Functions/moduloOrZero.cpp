@@ -14,10 +14,17 @@ struct ModuloOrZeroImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
-            return 0;
+        if constexpr (std::is_floating_point_v<ResultType>)
+        {
+            return ResultType(a) - floor(ResultType(a) / ResultType(b)) * ResultType(b);
+        }
+        else
+        {
+            if (unlikely(divisionLeadsToFPE(a, b)))
+                return 0;
 
-        return ModuloImpl<A, B>::template apply<Result>(a, b);
+            return ModuloImpl<A, B>::template apply<Result>(a, b);
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
