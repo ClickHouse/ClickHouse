@@ -48,7 +48,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , log(log_)
         , row_delimiter(row_delimiter_)
         , stopped(stopped_)
-        , messages(QUEUE_SIZE * num_queues)
+        , received(QUEUE_SIZE * num_queues)
 {
     /* One queue per consumer can handle up to 50000 messages. More queues per consumer can be added.
      * By default there is one queue per consumer.
@@ -65,7 +65,7 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
     consumer_channel->close();
 
-    messages.clear();
+    received.clear();
     BufferBase::set(nullptr, 0, 0);
 }
 
@@ -278,15 +278,16 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
         return;
 
     consumer_channel->consume(queue_name, AMQP::noack)
-    .onSuccess([&](const std::string & /* consumer */)
+    .onSuccess([&](const std::string & consumer)
     {
         subscribed_queue[queue_name] = true;
         consumer_error = false;
         ++count_subscribed;
+        consumer_tag = consumer;
 
         LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
     })
-    .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
+    .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
     {
         size_t message_size = message.bodySize();
         if (message_size && message.body() != nullptr)
@@ -297,7 +298,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 message_received += row_delimiter;
             }
 
-            messages.push(message_received);
+            received.push({deliveryTag, message_received, redelivered});
         }
     })
     .onError([&](const char * message)
@@ -346,10 +347,10 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     if (stopped || !allowed)
         return false;
 
-    if (messages.tryPop(current))
+    if (received.tryPop(current))
     {
-        auto * new_position = const_cast<char *>(current.data());
-        BufferBase::set(new_position, current.size(), 0);
+        auto * new_position = const_cast<char *>(current.message.data());
+        BufferBase::set(new_position, current.message.size(), 0);
         allowed = false;
 
         return true;

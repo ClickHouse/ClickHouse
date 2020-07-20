@@ -21,7 +21,8 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
         , context(context_)
         , column_names(columns)
         , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-        , virtual_header(metadata_snapshot->getSampleBlockForColumns({"_exchange"}, storage.getVirtuals(), storage.getStorageID()))
+        , virtual_header(metadata_snapshot->getSampleBlockForColumns(
+                    {"_exchange_name", "_consumer_tag", "_delivery_tag", "_redelivered"}, storage.getVirtuals(), storage.getStorageID()))
 {
 }
 
@@ -124,10 +125,16 @@ Block RabbitMQBlockInputStream::readImpl()
         auto new_rows = read_rabbitmq_message();
 
         auto exchange_name = buffer->getExchange();
+        auto consumer_tag = buffer->getConsumerTag();
+        auto delivery_tag = buffer->getDeliveryTag();
+        auto redelivered = buffer->getRedelivered();
 
         for (size_t i = 0; i < new_rows; ++i)
         {
             virtual_columns[0]->insert(exchange_name);
+            virtual_columns[1]->insert(consumer_tag);
+            virtual_columns[2]->insert(delivery_tag);
+            virtual_columns[3]->insert(redelivered);
         }
 
         total_rows = total_rows + new_rows;
