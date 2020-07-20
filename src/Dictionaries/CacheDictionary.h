@@ -317,6 +317,7 @@ private:
     Poco::Logger * log;
 
     mutable std::shared_mutex rw_lock;
+    mutable std::shared_mutex source_mutex;
 
     /// Actual size will be increased to match power of 2
     const size_t size;
