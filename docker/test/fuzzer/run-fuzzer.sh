@@ -47,7 +47,8 @@ function configure
     mkdir db ||:
     cp -av "$repo_dir"/programs/server/config* db
     cp -av "$repo_dir"/programs/server/user* db
-    cp -av "$repo_dir"/tests/config db/config.d
+    # TODO figure out which ones are needed
+    cp -av "$repo_dir"/tests/config/listen.xml db/config.d
     cp -av "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
 }
 
@@ -102,7 +103,7 @@ function fuzz
     ./clickhouse-client --query "select elapsed, query from system.processes" ||:
     kill -9 $server_pid ||:
 
-    if [ "$fuzzer_exit_code" == "137" ]
+    if [ "$fuzzer_exit_code" == "143" ]
     then
         # Killed by watchdog, meaning, no errors.
         return 0
@@ -162,7 +163,7 @@ case "$stage" in
         echo "success" > status.txt
     else
         echo "failure" > status.txt
-        if ! grep -m2 "received signal \|Logical error" server-log.txt > description.txt
+        if ! grep "received signal \|Logical error" server.log > description.txt
         then
             echo "Fuzzer exit code $fuzzer_exit_code. See the logs" > description.txt
         fi
