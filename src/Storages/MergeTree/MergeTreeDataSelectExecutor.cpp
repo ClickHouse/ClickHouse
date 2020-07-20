@@ -112,7 +112,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
     for (const auto & part : parts)
     {
-        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings);
+        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
@@ -173,8 +173,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
-    size_t part_index = 0;
-
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
     Names virt_column_names;
@@ -557,8 +555,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (select.prewhere())
         prewhere_column = select.prewhere()->getColumnName();
 
-    RangesInDataParts parts_with_ranges;
-
     std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -569,54 +565,66 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             useful_indices.emplace_back(index_helper, condition);
     }
 
-    /// Parallel loading of data parts.
-    size_t num_threads = std::min(size_t(num_streams), parts.size());
-
-    std::mutex mutex;
-
-    ThreadPool pool(num_threads);
-
-    /// Let's find what range to read from each part.
+    RangesInDataParts parts_with_ranges(parts.size());
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
-    for (size_t i = 0; i < parts.size(); ++i)
+
+    /// Let's find what range to read from each part.
     {
-        pool.scheduleOrThrowOnError([&, i]
+
+        /// Parallel loading of data parts.
+        size_t num_threads = std::min(size_t(num_streams), parts.size());
+        ThreadPool pool(num_threads);
+
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         {
-            auto & part = parts[i];
-
-            RangesInDataPart ranges(part, part_index++);
-
-            if (metadata_snapshot->hasPrimaryKey())
-                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings);
-            else
+            pool.scheduleOrThrowOnError([&, part_index]
             {
-                size_t total_marks_count = part->getMarksCount();
-                if (total_marks_count)
+                auto & part = parts[part_index];
+
+                RangesInDataPart ranges(part, part_index);
+
+                if (metadata_snapshot->hasPrimaryKey())
+                    ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
+                else
                 {
-                    if (part->index_granularity.hasFinalMark())
-                        --total_marks_count;
-                    ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+                    size_t total_marks_count = part->getMarksCount();
+                    if (total_marks_count)
+                    {
+                        if (part->index_granularity.hasFinalMark())
+                            --total_marks_count;
+                        ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+                    }
                 }
-            }
 
-            for (const auto & index_and_condition : useful_indices)
-                ranges.ranges = filterMarksUsingIndex(
-                    index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings);
+                for (const auto & index_and_condition : useful_indices)
+                    ranges.ranges = filterMarksUsingIndex(
+                        index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings, log);
 
-            if (!ranges.ranges.empty())
-            {
-                std::lock_guard loading_lock(mutex);
+                if (!ranges.ranges.empty())
+                    parts_with_ranges[part_index] = std::move(ranges);
+            });
+        }
 
-                parts_with_ranges.push_back(ranges);
+        pool.wait();
 
-                sum_ranges += ranges.ranges.size();
-                sum_marks += ranges.getMarksCount();
-            }
-        });
+        /// Skip empty ranges.
+        size_t next_part = 0;
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            auto & part = parts_with_ranges[part_index];
+            if (!part.data_part)
+                continue;
+
+            sum_ranges += part.ranges.size();
+            sum_marks += part.getMarksCount();
+
+            if (next_part != part_index)
+                std::swap(parts_with_ranges[next_part], part);
+
+            ++next_part;
+        }
     }
-
-    pool.wait();
 
     LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
 
@@ -1308,7 +1316,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const Settings & settings) const
+    const Settings & settings,
+    Poco::Logger * log)
 {
     MarkRanges res;
 
@@ -1515,7 +1524,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings,
-    const MergeTreeReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings,
+    Poco::Logger * log)
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
