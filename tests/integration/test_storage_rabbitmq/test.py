@@ -1520,6 +1520,140 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     assert int(result) == messages_num * num_tables_to_receive, 'ClickHouse lost some messages: {}'.format(result)
 
 
+@pytest.mark.timeout(420)
+def test_rabbitmq_virtual_columns(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'virtuals',
+                     rabbitmq_format = 'JSONEachRow';
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+        SELECT value, key, _exchange_name, _consumer_tag, _delivery_tag, _redelivered FROM test.rabbitmq;
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='virtuals', exchange_type='fanout')
+
+    message_num = 10
+    i = [0]
+    messages = []
+    for _ in range(message_num):
+        messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+        i[0] += 1
+
+    for message in messages:
+        channel.basic_publish(exchange='virtuals', routing_key='', body=message)
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == message_num:
+            break
+
+    connection.close()
+
+    result = instance.query("SELECT count(DISTINCT _delivery_tag) FROM test.view")
+    assert int(result) == 10
+
+    result = instance.query("SELECT count(DISTINCT _consumer_tag) FROM test.view")
+    assert int(result) == 1
+
+    result = instance.query('''
+        SELECT key, value, _exchange_name, SUBSTRING(_consumer_tag, 1, 8), _delivery_tag, _redelivered
+        FROM test.view
+        ORDER BY key
+    ''')
+
+    expected = '''\
+0	0	virtuals	amq.ctag	1	0
+1	1	virtuals	amq.ctag	2	0
+2	2	virtuals	amq.ctag	3	0
+3	3	virtuals	amq.ctag	4	0
+4	4	virtuals	amq.ctag	5	0
+5	5	virtuals	amq.ctag	6	0
+6	6	virtuals	amq.ctag	7	0
+7	7	virtuals	amq.ctag	8	0
+8	8	virtuals	amq.ctag	9	0
+9	9	virtuals	amq.ctag	10	0
+'''
+    assert TSV(result) == TSV(expected)
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'virtuals_mv',
+                     rabbitmq_format = 'JSONEachRow';
+        CREATE TABLE test.view (key UInt64, value UInt64,
+            exchange_name String, consumer_tag String, delivery_tag UInt64, redelivered UInt8) ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT *, _exchange_name as exchange_name, _consumer_tag as consumer_tag, _delivery_tag as delivery_tag, _redelivered as redelivered
+        FROM test.rabbitmq;
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='virtuals_mv', exchange_type='fanout')
+
+    message_num = 10
+    i = [0]
+    messages = []
+    for _ in range(message_num):
+        messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+        i[0] += 1
+
+    for message in messages:
+        channel.basic_publish(exchange='virtuals_mv', routing_key='', body=message)
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == message_num:
+            break
+
+    connection.close()
+
+    result = instance.query("SELECT count(DISTINCT delivery_tag) FROM test.view")
+    assert int(result) == 10
+
+    result = instance.query("SELECT count(DISTINCT consumer_tag) FROM test.view")
+    assert int(result) == 1
+
+    result = instance.query("SELECT key, value, exchange_name, SUBSTRING(consumer_tag, 1, 8), delivery_tag, redelivered FROM test.view")
+    expected = '''\
+0	0	virtuals_mv	amq.ctag	1	0
+1	1	virtuals_mv	amq.ctag	2	0
+2	2	virtuals_mv	amq.ctag	3	0
+3	3	virtuals_mv	amq.ctag	4	0
+4	4	virtuals_mv	amq.ctag	5	0
+5	5	virtuals_mv	amq.ctag	6	0
+6	6	virtuals_mv	amq.ctag	7	0
+7	7	virtuals_mv	amq.ctag	8	0
+8	8	virtuals_mv	amq.ctag	9	0
+9	9	virtuals_mv	amq.ctag	10	0
+'''
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV(expected)
+
+
 if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")

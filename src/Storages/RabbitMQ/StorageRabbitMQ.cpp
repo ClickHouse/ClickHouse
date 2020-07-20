@@ -597,7 +597,10 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 NamesAndTypesList StorageRabbitMQ::getVirtuals() const
 {
     return NamesAndTypesList{
-            {"_exchange", std::make_shared<DataTypeString>()}
+            {"_exchange_name", std::make_shared<DataTypeString>()},
+            {"_consumer_tag", std::make_shared<DataTypeString>()},
+            {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
+            {"_redelivered", std::make_shared<DataTypeUInt8>()}
     };
 }
 

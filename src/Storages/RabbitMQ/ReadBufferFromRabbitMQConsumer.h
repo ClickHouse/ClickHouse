@@ -38,10 +38,20 @@ public:
 
     ~ReadBufferFromRabbitMQConsumer() override;
 
+    struct MessageData
+    {
+        UInt64 delivery_tag;
+        String message;
+        bool redelivered;
+    };
+
     void allowNext() { allowed = true; } // Allow to read next message.
     void checkSubscription();
 
     auto getExchange() const { return exchange_name; }
+    auto getConsumerTag() const { return consumer_tag; }
+    auto getDeliveryTag() const { return current.delivery_tag; }
+    auto getRedelivered() const { return current.redelivered; }
 
 private:
     ChannelPtr consumer_channel;
@@ -69,8 +79,9 @@ private:
     std::atomic<bool> consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 
-    ConcurrentBoundedQueue<String> messages;
-    String current;
+    String consumer_tag;
+    ConcurrentBoundedQueue<MessageData> received;
+    MessageData current;
     std::vector<String> queues;
     std::unordered_map<String, bool> subscribed_queue;
 
