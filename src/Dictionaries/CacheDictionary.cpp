@@ -885,7 +885,6 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
                 const auto & ids = id_column->getData();
 
-
                 /// cache column pointers
                 const auto column_ptrs = ext::map<std::vector>(
                         ext::range(0, attributes.size()), [&block](size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
