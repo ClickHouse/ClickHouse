@@ -386,7 +386,8 @@ static void writeFieldsToColumn(
             return true;
         };
 
-        const auto & write_data_to_column = [&](auto * casted_column, auto from_type, auto to_type) {
+        const auto & write_data_to_column = [&](auto * casted_column, auto from_type, auto to_type)
+        {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
                 const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
