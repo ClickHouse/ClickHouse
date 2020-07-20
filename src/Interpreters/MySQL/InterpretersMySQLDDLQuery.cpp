@@ -185,7 +185,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
     };
 
     ASTPtr best_partition;
-    size_t index = 0, best_size = 0;
+    size_t best_size = 0;
     for (const auto & primary_key : primary_keys)
     {
         DataTypePtr type = primary_key.type;
