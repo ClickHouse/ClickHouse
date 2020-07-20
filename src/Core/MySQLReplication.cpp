@@ -314,7 +314,7 @@ namespace MySQLReplication
 
     void RowsEvent::parseRow(ReadBuffer & payload, Bitmap & bitmap)
     {
-        Tuple row;
+        std::vector<Field> row;
         UInt32 null_index = 0;
 
         UInt32 re_count = 0;
@@ -734,10 +734,10 @@ namespace MySQLReplication
         header.dump();
         std::cerr << "Schema: " << this->schema << std::endl;
         std::cerr << "Table: " << this->table << std::endl;
-        for (auto i = 0U; i < rows.size(); i++)
+/*        for (auto i = 0U; i < rows.size(); i++)
         {
             std::cerr << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << std::endl;
-        }
+        }*/
     }
 
     void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }

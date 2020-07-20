@@ -1,24 +1,37 @@
 #pragma once
 
+#include <ext/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMemory.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Block.h>
 #include <Core/MySQLClient.h>
+#include <Core/MySQLReplication.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
 
-using namespace MySQLReplica;
-
-namespace MySQLReplica
-{
-    class EventBase;
-    using BinlogEventPtr = std::shared_ptr<EventBase>;
-
-    struct MySQLClickHouseEvent;
-}
+#include <string>
+#include <vector>
 
 namespace DB
 {
+
+using namespace MySQLReplication;
+
+namespace MySQLReplication {
+    // https://github.com/mysql/mysql-server/blob/8.0/sql/rpl_binlog_sender.cc#L825
+    // https://github.com/mysql/mysql-server/blob/8.0/libbinlogevents/include/binlog_event.h#L83
+    const UInt64 BIN_LOG_HEADER_SIZE = 4U;
+
+    struct MySQLClickHouseEvent {
+        MySQLEventType type;
+        std::vector<std::vector<Field>> select_rows;
+        std::vector<std::vector<Field>> insert_rows;
+    };
+}
 
 class StorageMySQLReplica final : public  ext::shared_ptr_helper<StorageMySQLReplica>/* do I need this*/, public IStorage
 {
@@ -28,15 +41,11 @@ public:
         return "MySQLReplica";
     }
 
-    bool supportsSettings() const override {
-        return true; /// TODO: ?
-    }
-
     void startup() override;
-    void shutdown() override;
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info, 
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -45,14 +54,14 @@ public:
 
 
 protected:
-    StorageMySQLReplica::StorageMySQLReplica(
+    StorageMySQLReplica(
         const StorageID & table_id_,
         Context & context_,
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         /* slave data */
         std::string & host,
-        std::string & port,
+        Int32 & port,
         std::string & master_user,
         std::string & master_password,
         UInt32 slave_id, // non-zero unique value
@@ -64,24 +73,17 @@ protected:
 
 private:
     Context global_context;
-    StorageMemory storage;
 
-    std::vector<MySQLClickHouseEvent> BinlogEvents;
-    /* FIXME: the binlog stream reader porcess will keep this array
-        as well as all position indexes for all relplica tables for a selected DB
-        and delete items already processed by all of consumers
-        (perhaps also dumping the data to the disk)*/
-    size_t UnprocessedBinlogEventIdx;
+    MySQLClient slave_client;
+    UInt32 slave_id;
+    std::string & replicate_db;
+    std::string & replicate_table;
+    std::string & gtid_sets;
 
-    BackgroundSchedulePool::TaskHolder binlog_reader_task;
-
-    Block RowsToBlock(StorageMetadataPtr & metadata, const std::vector<Field> & rows);
+    void InitBinlogStream();
 
     // listen for master events in the background
-    void ReadBinlogStream();
-
-    // apply received events to the underlying storage
-    void DoReplication();
+    MySQLClickHouseEvent ReadOneBinlogEvent();
 };
 
 }

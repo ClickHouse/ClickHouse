@@ -252,7 +252,7 @@ int main(int argc, char ** argv)
                 "user", boost::program_options::value<std::string>()->default_value("root"), "master user")(
                 "password", boost::program_options::value<std::string>()->required(), "master password")(
                 "gtid", boost::program_options::value<std::string>()->default_value(""), "master executed GTID sets")(
-                "db", boost::program_options::value<std::string>()->required(), "replicate do db");
+                "db", boost::program_options::value<std::string>()->required(), "replicate do db")("file", boost::program_options::value<std::string>()->default_value(""), "binlog filename");
 
             boost::program_options::variables_map options;
             boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -268,8 +268,10 @@ int main(int argc, char ** argv)
             auto replicate_db = options.at("db").as<DB::String>();
             auto gtid_sets = options.at("gtid").as<DB::String>();
 
+            auto binlog_filename = options.at("file").as<DB::String>();
+
             std::cerr << "Master Host: " << host << ", Port: " << port << ", User: " << master_user << ", Password: " << master_password
-                      << ", Replicate DB: " << replicate_db << ", GTID: " << gtid_sets << std::endl;
+                      << ", Replicate DB: " << replicate_db << ", GTID: " << gtid_sets << ", Binlog filename: " << binlog_filename << std::endl;
 
             UInt32 slave_id = 9004;
             MySQLClient slave(host, port, master_user, master_password);
@@ -280,7 +282,7 @@ int main(int argc, char ** argv)
             ///  start to dump binlog.
             if (gtid_sets.empty())
             {
-                slave.startBinlogDump(slave_id, replicate_db, "", 4);
+                slave.startBinlogDump(slave_id, replicate_db, binlog_filename, 4);
             }
             else
             {
