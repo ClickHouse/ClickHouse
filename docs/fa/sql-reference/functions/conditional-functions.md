@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: "\u0634\u0631\u0637\u06CC "
 ---
@@ -115,7 +115,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 ## چندف {#multiif}
 
-اجازه می دهد تا شما را به نوشتن [CASE](../operators.md#operator_case) اپراتور فشرده تر در پرس و جو.
+اجازه می دهد تا شما را به نوشتن [CASE](../operators/index.md#operator_case) اپراتور فشرده تر در پرس و جو.
 
 نحو: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
@@ -170,7 +170,7 @@ FROM LEFT_RIGHT
 
 ## ارزشهای پوچ در شرطی {#null-values-in-conditionals}
 
-زمانی که `NULL` ارزش ها در شرطی درگیر, نتیجه نیز خواهد بود `NULL`.
+چه زمانی `NULL` ارزش ها در شرطی درگیر, نتیجه نیز خواهد بود `NULL`.
 
 ``` sql
 SELECT

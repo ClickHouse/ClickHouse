@@ -124,6 +124,12 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
+void ColumnFixedString::updateHashFast(SipHash & hash) const
+{
+    hash.update(n);
+    hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
+}
+
 template <bool positive>
 struct ColumnFixedString::less
 {
@@ -160,6 +166,71 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
         else
             std::sort(res.begin(), res.end(), less<true>(*this));
     }
+}
+
+void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const
+{
+    if (limit >= size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t k = equal_range.size();
+    if (limit)
+        --k;
+
+    EqualRanges new_ranges;
+
+    for (size_t i = 0; i < k; ++i)
+    {
+        const auto& [first, last] = equal_range[i];
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
+        else
+            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
+        auto new_first = first;
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+    if (limit)
+    {
+        const auto& [first, last] = equal_range.back();
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n)  != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n)  == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
+    equal_range = std::move(new_ranges);
 }
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: "R\xE9f\xE9rence"
 ---
 
-# La Fonction De Référence {#function-reference}
+# Référence De La Fonction Agrégée {#aggregate-functions-reference}
 
 ## compter {#agg_function-count}
 
@@ -25,15 +25,15 @@ La fonction peut prendre:
 **Valeur renvoyée**
 
 -   Si la fonction est appelée sans paramètres, il compte le nombre de lignes.
--   Si l’ [expression](../syntax.md#syntax-expressions) est passé, alors la fonction compte combien de fois cette expression retournée not null. Si l’expression renvoie un [Nullable](../../sql-reference/data-types/nullable.md)- tapez la valeur, puis le résultat de `count` séjours pas `Nullable`. La fonction renvoie 0 si l’expression est retournée `NULL` pour toutes les lignes.
+-   Si l' [expression](../syntax.md#syntax-expressions) est passé, alors la fonction compte combien de fois cette expression retournée not null. Si l'expression renvoie un [Nullable](../../sql-reference/data-types/nullable.md)- tapez la valeur, puis le résultat de `count` séjours pas `Nullable`. La fonction renvoie 0 si l'expression est retournée `NULL` pour toutes les lignes.
 
 Dans les deux cas le type de la valeur renvoyée est [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Détail**
 
-Clickhouse soutient le `COUNT(DISTINCT ...)` syntaxe. Le comportement de cette construction dépend de la [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) paramètre. Il définit lequel des [uniq\*](#agg_function-uniq) fonctions est utilisée pour effectuer l’opération. La valeur par défaut est la [uniqExact](#agg_function-uniqexact) fonction.
+Clickhouse soutient le `COUNT(DISTINCT ...)` syntaxe. Le comportement de cette construction dépend de la [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) paramètre. Il définit lequel des [uniq\*](#agg_function-uniq) fonctions est utilisée pour effectuer l'opération. La valeur par défaut est la [uniqExact](#agg_function-uniqexact) fonction.
 
-Le `SELECT count() FROM table` la requête n’est pas optimisé, car le nombre d’entrées dans la table n’est pas stockée séparément. Il choisit une petite colonne de la table et compte le nombre de valeurs qu’il contient.
+Le `SELECT count() FROM table` la requête n'est pas optimisé, car le nombre d'entrées dans la table n'est pas stockée séparément. Il choisit une petite colonne de la table et compte le nombre de valeurs qu'il contient.
 
 **Exemple**
 
@@ -71,21 +71,21 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-Cet exemple montre que `count(DISTINCT num)` est effectuée par le `uniqExact` en fonction de l’ `count_distinct_implementation` valeur de réglage.
+Cet exemple montre que `count(DISTINCT num)` est effectuée par le `uniqExact` en fonction de l' `count_distinct_implementation` valeur de réglage.
 
 ## tout(x) {#agg_function-any}
 
 Sélectionne la première valeur rencontrée.
-La requête peut être exécutée dans n’importe quel ordre, et même dans un ordre différent à chaque fois, de sorte que le résultat de cette fonction est indéterminée.
+La requête peut être exécutée dans n'importe quel ordre, et même dans un ordre différent à chaque fois, de sorte que le résultat de cette fonction est indéterminée.
 Pour obtenir un résultat déterminé, vous pouvez utiliser le ‘min’ ou ‘max’ fonction au lieu de ‘any’.
 
-Dans certains cas, vous pouvez compter sur l’ordre de l’exécution. Cela s’applique aux cas où SELECT provient d’une sous-requête qui utilise ORDER BY.
+Dans certains cas, vous pouvez compter sur l'ordre de l'exécution. Cela s'applique aux cas où SELECT provient d'une sous-requête qui utilise ORDER BY.
 
-Lorsqu’un `SELECT` la requête a l’ `GROUP BY` ou au moins une fonction d’agrégat, ClickHouse (contrairement à MySQL) exige que toutes les expressions du `SELECT`, `HAVING`, et `ORDER BY` clauses être calculée à partir de clés ou de fonctions d’agrégation. En d’autres termes, chaque colonne sélectionnée dans la table doit être utilisée soit dans les clés, soit dans les fonctions d’agrégation. Pour obtenir un comportement comme dans MySQL, vous pouvez mettre les autres colonnes dans le `any` fonction d’agrégation.
+Lorsqu'un `SELECT` la requête a l' `GROUP BY` ou au moins une fonction d'agrégat, ClickHouse (contrairement à MySQL) exige que toutes les expressions du `SELECT`, `HAVING`, et `ORDER BY` clauses être calculée à partir de clés ou de fonctions d'agrégation. En d'autres termes, chaque colonne sélectionnée dans la table doit être utilisée soit dans les clés, soit dans les fonctions d'agrégation. Pour obtenir un comportement comme dans MySQL, vous pouvez mettre les autres colonnes dans le `any` fonction d'agrégation.
 
 ## anyHeavy (x) {#anyheavyx}
 
-Sélectionne une valeur fréquente à l’aide [poids lourds](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithme. S’il y a une valeur qui se produit plus de la moitié des cas dans chacun des threads d’exécution de la requête, cette valeur est renvoyée. Normalement, le résultat est non déterministe.
+Sélectionne une valeur fréquente à l'aide [poids lourds](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithme. S'il y a une valeur qui se produit plus de la moitié des cas dans chacun des threads d'exécution de la requête, cette valeur est renvoyée. Normalement, le résultat est non déterministe.
 
 ``` sql
 anyHeavy(column)
@@ -97,7 +97,7 @@ anyHeavy(column)
 
 **Exemple**
 
-Prendre la [OnTime](../../getting-started/example-datasets/ontime.md) ensemble de données et sélectionnez n’importe quelle valeur `AirlineID` colonne.
+Prendre la [OnTime](../../getting-started/example-datasets/ontime.md) ensemble de données et sélectionnez n'importe quelle valeur `AirlineID` colonne.
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
@@ -117,7 +117,7 @@ Le résultat est tout aussi indéterminé que pour le `any` fonction.
 
 ## groupBitAnd {#groupbitand}
 
-S’applique au niveau du BIT `AND` pour les séries de nombres.
+S'applique au niveau du BIT `AND` pour les séries de nombres.
 
 ``` sql
 groupBitAnd(expr)
@@ -160,7 +160,7 @@ binary     decimal
 
 ## groupBitOr {#groupbitor}
 
-S’applique au niveau du BIT `OR` pour les séries de nombres.
+S'applique au niveau du BIT `OR` pour les séries de nombres.
 
 ``` sql
 groupBitOr(expr)
@@ -203,7 +203,7 @@ binary     decimal
 
 ## groupBitXor {#groupbitxor}
 
-S’applique au niveau du BIT `XOR` pour les séries de nombres.
+S'applique au niveau du BIT `XOR` pour les séries de nombres.
 
 ``` sql
 groupBitXor(expr)
@@ -246,7 +246,7 @@ binary     decimal
 
 ## groupBitmap {#groupbitmap}
 
-Calculs Bitmap ou agrégés à partir d’une colonne entière non signée, retour cardinalité de type UInt64, si Ajouter suffixe-State, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md).
+Calculs Bitmap ou agrégés à partir d'une colonne entière non signée, retour cardinalité de type UInt64, si Ajouter suffixe-State, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmap(expr)
@@ -295,7 +295,7 @@ Calcule le maximum.
 
 ## argMin (arg, val) {#agg-function-argmin}
 
-Calcule la ‘arg’ valeur pour un minimum ‘val’ valeur. S’il y a plusieurs valeurs différentes de ‘arg’ pour des valeurs minimales de ‘val’ la première de ces valeurs rencontrées est de sortie.
+Calcule la ‘arg’ valeur pour un minimum ‘val’ valeur. S'il y a plusieurs valeurs différentes de ‘arg’ pour des valeurs minimales de ‘val’ la première de ces valeurs rencontrées est de sortie.
 
 **Exemple:**
 
@@ -319,7 +319,7 @@ SELECT argMin(user, salary) FROM salary
 
 ## argMax(arg, val) {#agg-function-argmax}
 
-Calcule la ‘arg’ valeur pour un maximum ‘val’ valeur. S’il y a plusieurs valeurs différentes de ‘arg’ pour les valeurs maximales de ‘val’ la première de ces valeurs rencontrées est de sortie.
+Calcule la ‘arg’ valeur pour un maximum ‘val’ valeur. S'il y a plusieurs valeurs différentes de ‘arg’ pour les valeurs maximales de ‘val’ la première de ces valeurs rencontrées est de sortie.
 
 ## sum(x) {#agg_function-sum}
 
@@ -328,14 +328,15 @@ Ne fonctionne que pour les numéros.
 
 ## sumWithOverflow (x) {#sumwithoverflowx}
 
-Calcule la somme des nombres, en utilisant le même type de données pour le résultat que pour les paramètres d’entrée. Si la somme dépasse la valeur maximale pour ce type de données, la fonction renvoie une erreur.
+Calcule la somme des nombres, en utilisant le même type de données pour le résultat que pour les paramètres d'entrée. Si la somme dépasse la valeur maximale pour ce type de données, la fonction renvoie une erreur.
 
 Ne fonctionne que pour les numéros.
 
-## sumMap (clé, valeur) {#agg_functions-summap}
+## sumMap(clé, valeur), sumMap(Tuple(clé, valeur)) {#agg_functions-summap}
 
 Les totaux de la ‘value’ tableau selon les clés spécifiés dans le ‘key’ tableau.
-Le nombre d’éléments dans ‘key’ et ‘value’ doit être identique pour chaque ligne totalisée.
+Le passage du tuple des tableaux de clés et de valeurs est synonyme du passage de deux tableaux de clés et de valeurs.
+Le nombre d'éléments dans ‘key’ et ‘value’ doit être identique pour chaque ligne totalisée.
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 Exemple:
@@ -347,30 +348,33 @@ CREATE TABLE sum_map(
     statusMap Nested(
         status UInt16,
         requests UInt64
-    )
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
 SELECT
     timeslot,
-    sumMap(statusMap.status, statusMap.requests)
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
 FROM sum_map
 GROUP BY timeslot
 ```
 
 ``` text
-┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
-└─────────────────────┴──────────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
 ## skewPop {#skewpop}
 
-Calcule la [asymétrie](https://en.wikipedia.org/wiki/Skewness) d’une séquence.
+Calcule la [asymétrie](https://en.wikipedia.org/wiki/Skewness) d'une séquence.
 
 ``` sql
 skewPop(expr)
@@ -378,7 +382,7 @@ skewPop(expr)
 
 **Paramètre**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) retour d’un nombre.
+`expr` — [Expression](../syntax.md#syntax-expressions) retour d'un nombre.
 
 **Valeur renvoyée**
 
@@ -392,9 +396,9 @@ SELECT skewPop(value) FROM series_with_value_column
 
 ## skewSamp {#skewsamp}
 
-Calcule la [asymétrie de l’échantillon](https://en.wikipedia.org/wiki/Skewness) d’une séquence.
+Calcule la [asymétrie de l'échantillon](https://en.wikipedia.org/wiki/Skewness) d'une séquence.
 
-Il représente une estimation non biaisée de l’asymétrie d’une variable aléatoire si les valeurs passées forme de son échantillon.
+Il représente une estimation non biaisée de l'asymétrie d'une variable aléatoire si les valeurs passées forme de son échantillon.
 
 ``` sql
 skewSamp(expr)
@@ -402,11 +406,11 @@ skewSamp(expr)
 
 **Paramètre**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) retour d’un nombre.
+`expr` — [Expression](../syntax.md#syntax-expressions) retour d'un nombre.
 
 **Valeur renvoyée**
 
-The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). Si `n <= 1` (`n` est la taille de l’échantillon), alors la fonction renvoie `nan`.
+The skewness of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). Si `n <= 1` (`n` est la taille de l'échantillon), alors la fonction renvoie `nan`.
 
 **Exemple**
 
@@ -416,7 +420,7 @@ SELECT skewSamp(value) FROM series_with_value_column
 
 ## kurtPop {#kurtpop}
 
-Calcule la [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) d’une séquence.
+Calcule la [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) d'une séquence.
 
 ``` sql
 kurtPop(expr)
@@ -424,7 +428,7 @@ kurtPop(expr)
 
 **Paramètre**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) retour d’un nombre.
+`expr` — [Expression](../syntax.md#syntax-expressions) retour d'un nombre.
 
 **Valeur renvoyée**
 
@@ -438,9 +442,9 @@ SELECT kurtPop(value) FROM series_with_value_column
 
 ## kurtSamp {#kurtsamp}
 
-Calcule la [l’échantillon le coefficient d’aplatissement](https://en.wikipedia.org/wiki/Kurtosis) d’une séquence.
+Calcule la [l'échantillon le coefficient d'aplatissement](https://en.wikipedia.org/wiki/Kurtosis) d'une séquence.
 
-Il représente une estimation non biaisée de la kurtose d’une variable aléatoire si les valeurs passées forment son échantillon.
+Il représente une estimation non biaisée de la kurtose d'une variable aléatoire si les valeurs passées forment son échantillon.
 
 ``` sql
 kurtSamp(expr)
@@ -448,11 +452,11 @@ kurtSamp(expr)
 
 **Paramètre**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) retour d’un nombre.
+`expr` — [Expression](../syntax.md#syntax-expressions) retour d'un nombre.
 
 **Valeur renvoyée**
 
-The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). Si `n <= 1` (`n` la taille de l’échantillon), alors la fonction renvoie `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../sql-reference/data-types/float.md). Si `n <= 1` (`n` la taille de l'échantillon), alors la fonction renvoie `nan`.
 
 **Exemple**
 
@@ -462,8 +466,8 @@ SELECT kurtSamp(value) FROM series_with_value_column
 
 ## timeSeriesGroupSum(uid, horodatage, valeur) {#agg-function-timeseriesgroupsum}
 
-`timeSeriesGroupSum` peut agréger différentes séries temporelles qui échantillonnent l’horodatage et non l’alignement.
-Il utilisera une interpolation linéaire entre deux échantillons d’horodatage, puis additionnera les séries temporelles ensemble.
+`timeSeriesGroupSum` peut agréger différentes séries temporelles qui échantillonnent l'horodatage et non l'alignement.
+Il utilisera une interpolation linéaire entre deux échantillons d'horodatage, puis additionnera les séries temporelles ensemble.
 
 -   `uid` la série temporelle est elle unique, `UInt64`.
 -   `timestamp` est de type Int64 afin de prendre en charge la milliseconde ou la microseconde.
@@ -471,7 +475,7 @@ Il utilisera une interpolation linéaire entre deux échantillons d’horodatage
 
 La fonction renvoie un tableau de tuples avec `(timestamp, aggregated_value)` pair.
 
-Avant d’utiliser cette fonction, assurez-vous `timestamp` est dans l’ordre croissant.
+Avant d'utiliser cette fonction, assurez-vous `timestamp` est dans l'ordre croissant.
 
 Exemple:
 
@@ -514,10 +518,10 @@ Et le résultat sera:
 
 ## timeSeriesGroupRateSum(uid, ts, val) {#agg-function-timeseriesgroupratesum}
 
-De même timeSeriesGroupRateSum, timeSeriesGroupRateSum calculera le taux de séries temporelles, puis additionnera les taux ensemble.
-En outre, l’horodatage doit être dans l’ordre croissant avant d’utiliser cette fonction.
+De la même manière à `timeSeriesGroupSum`, `timeSeriesGroupRateSum` calcule le taux de séries chronologiques, puis additionne les taux ensemble.
+En outre, l'horodatage doit être dans l'ordre croissant avant d'utiliser cette fonction.
 
-Utilisez cette fonction, le résultat ci-dessus sera:
+Application de cette fonction aux données du `timeSeriesGroupSum` exemple, vous obtenez le résultat suivant:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
@@ -529,9 +533,50 @@ Calcule la moyenne.
 Ne fonctionne que pour les numéros.
 Le résultat est toujours Float64.
 
+## avgWeighted {#avgweighted}
+
+Calcule la [moyenne arithmétique pondérée](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+
+**Syntaxe**
+
+``` sql
+avgWeighted(x, weight)
+```
+
+**Paramètre**
+
+-   `x` — Values. [Entier](../data-types/int-uint.md) ou [virgule flottante](../data-types/float.md).
+-   `weight` — Weights of the values. [Entier](../data-types/int-uint.md) ou [virgule flottante](../data-types/float.md).
+
+Type de `x` et `weight` doit être le même.
+
+**Valeur renvoyée**
+
+-   Moyenne pondérée.
+-   `NaN`. Si tous les poids sont égaux à 0.
+
+Type: [Float64](../data-types/float.md).
+
+**Exemple**
+
+Requête:
+
+``` sql
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
+```
+
+Résultat:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                      8 │
+└────────────────────────┘
+```
+
 ## uniq {#agg_function-uniq}
 
-Calcule le nombre approximatif des différentes valeurs de l’argument.
+Calcule le nombre approximatif des différentes valeurs de l'argument.
 
 ``` sql
 uniq(x[, ...])
@@ -549,15 +594,15 @@ La fonction prend un nombre variable de paramètres. Les paramètres peuvent êt
 
 Fonction:
 
--   Calcule un hachage pour tous les paramètres de l’agrégat, puis l’utilise dans les calculs.
+-   Calcule un hachage pour tous les paramètres de l'agrégat, puis l'utilise dans les calculs.
 
--   Utilise un algorithme d’échantillonnage adaptatif. Pour l’état de calcul, La fonction utilise un échantillon de valeurs de hachage d’éléments jusqu’à 65536.
+-   Utilise un algorithme d'échantillonnage adaptatif. Pour l'état de calcul, La fonction utilise un échantillon de valeurs de hachage d'éléments jusqu'à 65536.
 
         This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
--   Fournit le résultat de manière déterministe (cela ne dépend pas de l’ordre de traitement de la requête).
+-   Fournit le résultat de manière déterministe (cela ne dépend pas de l'ordre de traitement de la requête).
 
-Nous vous recommandons d’utiliser cette fonction dans presque tous les scénarios.
+Nous vous recommandons d'utiliser cette fonction dans presque tous les scénarios.
 
 **Voir Aussi**
 
@@ -568,7 +613,7 @@ Nous vous recommandons d’utiliser cette fonction dans presque tous les scénar
 
 ## uniqcombiné {#agg_function-uniqcombined}
 
-Calcule le nombre approximatif de différentes valeurs d’argument.
+Calcule le nombre approximatif de différentes valeurs d'argument.
 
 ``` sql
 uniqCombined(HLL_precision)(x[, ...])
@@ -580,7 +625,7 @@ Le `uniqCombined` la fonction est un bon choix pour calculer le nombre de valeur
 
 La fonction prend un nombre variable de paramètres. Les paramètres peuvent être `Tuple`, `Array`, `Date`, `DateTime`, `String` ou des types numériques.
 
-`HLL_precision` est le logarithme en base 2 du nombre de cellules dans [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Facultatif, vous pouvez utiliser la fonction comme `uniqCombined(x[, ...])`. La valeur par défaut pour `HLL_precision` est 17, qui est effectivement 96 Ko d’espace(2 ^ 17 cellules, 6 bits chacune).
+`HLL_precision` est le logarithme en base 2 du nombre de cellules dans [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Facultatif, vous pouvez utiliser la fonction comme `uniqCombined(x[, ...])`. La valeur par défaut pour `HLL_precision` est 17, qui est effectivement 96 Ko d'espace(2 ^ 17 cellules, 6 bits chacune).
 
 **Valeur renvoyée**
 
@@ -590,13 +635,13 @@ La fonction prend un nombre variable de paramètres. Les paramètres peuvent êt
 
 Fonction:
 
--   Calcule un hachage (hachage 64 bits pour `String` et 32 bits sinon) pour tous les paramètres dans l’agrégat, puis l’utilise dans les calculs.
+-   Calcule un hachage (hachage 64 bits pour `String` et 32 bits sinon) pour tous les paramètres dans l'agrégat, puis l'utilise dans les calculs.
 
--   Utilise une combinaison de trois algorithmes: tableau, table de hachage et HyperLogLog avec une table de correction d’erreur.
+-   Utilise une combinaison de trois algorithmes: tableau, table de hachage et HyperLogLog avec une table de correction d'erreur.
 
         For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
--   Fournit le résultat de manière déterministe (cela ne dépend pas de l’ordre de traitement de la requête).
+-   Fournit le résultat de manière déterministe (cela ne dépend pas de l'ordre de traitement de la requête).
 
 !!! note "Note"
     Comme il utilise le hachage 32 bits pour non-`String` type, le résultat aura une erreur très élevée pour les cardinalités significativement plus grandes que `UINT_MAX` (erreur va augmenter rapidement après quelques dizaines de milliards de valeurs distinctes), donc dans ce cas, vous devez utiliser [uniqCombined64](#agg_function-uniqcombined64)
@@ -605,7 +650,7 @@ Par rapport à la [uniq](#agg_function-uniq) la fonction, la `uniqCombined`:
 
 -   Consomme plusieurs fois moins de mémoire.
 -   Calcule avec plusieurs fois plus de précision.
--   A généralement des performances légèrement inférieures. Dans certains scénarios, `uniqCombined` peut faire mieux que `uniq` par exemple, avec des requêtes distribuées qui transmettent un grand nombre d’agrégation des états sur le réseau.
+-   A généralement des performances légèrement inférieures. Dans certains scénarios, `uniqCombined` peut faire mieux que `uniq` par exemple, avec des requêtes distribuées qui transmettent un grand nombre d'agrégation des états sur le réseau.
 
 **Voir Aussi**
 
@@ -620,7 +665,7 @@ Même que [uniqcombiné](#agg_function-uniqcombined), mais utilise le hachage 64
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
-Calcule le nombre approximatif de différentes valeurs d’argument, en utilisant [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithme.
+Calcule le nombre approximatif de différentes valeurs d'argument, en utilisant [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithme.
 
 ``` sql
 uniqHLL12(x[, ...])
@@ -638,15 +683,15 @@ La fonction prend un nombre variable de paramètres. Les paramètres peuvent êt
 
 Fonction:
 
--   Calcule un hachage pour tous les paramètres de l’agrégat, puis l’utilise dans les calculs.
+-   Calcule un hachage pour tous les paramètres de l'agrégat, puis l'utilise dans les calculs.
 
--   Utilise L’algorithme HyperLogLog pour approximer le nombre de valeurs d’argument différentes.
+-   Utilise L'algorithme HyperLogLog pour approximer le nombre de valeurs d'argument différentes.
 
         212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
--   Fournit le résultat déterminé (il ne dépend pas de l’ordre de traitement de la requête).
+-   Fournit le résultat déterminé (il ne dépend pas de l'ordre de traitement de la requête).
 
-Nous ne recommandons pas d’utiliser cette fonction. Dans la plupart des cas, l’utilisation de la [uniq](#agg_function-uniq) ou [uniqcombiné](#agg_function-uniqcombined) fonction.
+Nous ne recommandons pas d'utiliser cette fonction. Dans la plupart des cas, l'utilisation de la [uniq](#agg_function-uniq) ou [uniqcombiné](#agg_function-uniqcombined) fonction.
 
 **Voir Aussi**
 
@@ -656,15 +701,15 @@ Nous ne recommandons pas d’utiliser cette fonction. Dans la plupart des cas, l
 
 ## uniqExact {#agg_function-uniqexact}
 
-Calcule le nombre exact de différentes valeurs d’argument.
+Calcule le nombre exact de différentes valeurs d'argument.
 
 ``` sql
 uniqExact(x[, ...])
 ```
 
-L’utilisation de la `uniqExact` fonction si vous avez absolument besoin d’un résultat exact. Sinon l’utilisation de la [uniq](#agg_function-uniq) fonction.
+L'utilisation de la `uniqExact` fonction si vous avez absolument besoin d'un résultat exact. Sinon l'utilisation de la [uniq](#agg_function-uniq) fonction.
 
-Le `uniqExact` la fonction utilise plus de mémoire que `uniq` parce que la taille de l’état a surabondance de croissance que le nombre de valeurs différentes augmente.
+Le `uniqExact` la fonction utilise plus de mémoire que `uniq` parce que la taille de l'état a surabondance de croissance que le nombre de valeurs différentes augmente.
 
 **Paramètre**
 
@@ -678,31 +723,105 @@ La fonction prend un nombre variable de paramètres. Les paramètres peuvent êt
 
 ## groupArray(x), groupArray (max\_size) (x) {#agg_function-grouparray}
 
-Crée un tableau de valeurs de l’argument.
+Crée un tableau de valeurs de l'argument.
 Les valeurs peuvent être ajoutées au tableau dans une (indéterminée) de commande.
 
 La deuxième version (avec le `max_size` paramètre) limite la taille du tableau résultant à `max_size` élément.
 Exemple, `groupArray (1) (x)` est équivalent à `[any (x)]`.
 
-Dans certains cas, vous pouvez toujours compter sur l’ordre de l’exécution. Cela s’applique aux cas où `SELECT` provient d’une sous-requête qui utilise `ORDER BY`.
+Dans certains cas, vous pouvez toujours compter sur l'ordre de l'exécution. Cela s'applique aux cas où `SELECT` provient d'une sous-requête qui utilise `ORDER BY`.
 
-## groupeparrayinsertat(valeur, position) {#grouparrayinsertatvalue-position}
+## groupeparrayinsertat {#grouparrayinsertat}
 
 Insère une valeur dans le tableau à la position spécifiée.
 
-!!! note "Note"
-    Cette fonction utilise des positions à base zéro, contrairement aux positions à base unique classiques pour les tableaux SQL.
+**Syntaxe**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+``` sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-Paramètres facultatifs:
+Si dans une requête plusieurs valeurs sont insérées dans la même position, la fonction se comporte de la manière suivante:
 
--   Valeur par défaut pour la substitution dans des positions vides.
--   La longueur du tableau résultant. Cela vous permet de recevoir des tableaux de la même taille pour tous les agrégats clés. Lorsque vous utilisez ce paramètre, la valeur par défaut doit être spécifiée.
+-   Si une requête est exécutée dans un seul thread, la première des valeurs insérées est utilisée.
+-   Si une requête est exécutée dans plusieurs threads, le résultat est indéterminé l'une des valeurs insérées.
+
+**Paramètre**
+
+-   `x` — Value to be inserted. [Expression](../syntax.md#syntax-expressions) résultant dans l'un des [types de données pris en charge](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` doit être inséré. L'indice de numérotation dans le tableau commence à partir de zéro. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [Expression](../syntax.md#syntax-expressions) résultant dans le type de données configuré pour le `x` paramètre. Si `default_x` n'est pas définie, la [les valeurs par défaut](../../sql-reference/statements/create.md#create-default-values) sont utilisés.
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` doit être spécifié. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Valeur renvoyée**
+
+-   Tableau avec des valeurs insérées.
+
+Type: [Tableau](../../sql-reference/data-types/array.md#data-type-array).
+
+**Exemple**
+
+Requête:
+
+``` sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+Résultat:
+
+``` text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+Requête:
+
+``` sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+Résultat:
+
+``` text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Requête:
+
+``` sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+Résultat:
+
+``` text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Insertion multi-thread d'éléments dans une position.
+
+Requête:
+
+``` sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+Comme un résultat de cette requête, vous obtenez entier aléatoire dans le `[0,9]` gamme. Exemple:
+
+``` text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
 
 ## groupeparraymovingsum {#agg_function-grouparraymovingsum}
 
-Calcule la somme mobile des valeurs d’entrée.
+Calcule la somme mobile des valeurs d'entrée.
 
 ``` sql
 groupArrayMovingSum(numbers_for_summing)
@@ -718,11 +837,11 @@ La fonction peut prendre la taille de la fenêtre comme paramètre. Si spécifi�
 
 **Valeurs renvoyées**
 
--   Tableau de la même taille et de même type que les données d’entrée.
+-   Tableau de la même taille et de même type que les données d'entrée.
 
 **Exemple**
 
-La table d’échantillon:
+La table d'échantillon:
 
 ``` sql
 CREATE TABLE t
@@ -775,7 +894,7 @@ FROM t
 
 ## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
-Calcule la moyenne mobile des valeurs d’entrée.
+Calcule la moyenne mobile des valeurs d'entrée.
 
 ``` sql
 groupArrayMovingAvg(numbers_for_summing)
@@ -791,13 +910,13 @@ La fonction peut prendre la taille de la fenêtre comme paramètre. Si spécifi�
 
 **Valeurs renvoyées**
 
--   Tableau de la même taille et de même type que les données d’entrée.
+-   Tableau de la même taille et de même type que les données d'entrée.
 
-La fonction utilise [l’arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). Il tronque les décimales insignifiantes pour le type de données résultant.
+La fonction utilise [l'arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). Il tronque les décimales insignifiantes pour le type de données résultant.
 
 **Exemple**
 
-La table d’échantillon `b`:
+La table d'échantillon `b`:
 
 ``` sql
 CREATE TABLE t
@@ -850,7 +969,7 @@ FROM t
 
 ## groupUniqArray(x), groupUniqArray (max\_size) (x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
-Crée un tableau à partir de différentes valeurs d’argument. La consommation de mémoire est la même que pour la `uniqExact` fonction.
+Crée un tableau à partir de différentes valeurs d'argument. La consommation de mémoire est la même que pour la `uniqExact` fonction.
 
 La deuxième version (avec le `max_size` paramètre) limite la taille du tableau résultant à `max_size` élément.
 Exemple, `groupUniqArray(1)(x)` est équivalent à `[any(x)]`.
@@ -859,9 +978,9 @@ Exemple, `groupUniqArray(1)(x)` est équivalent à `[any(x)]`.
 
 Calcule une approximation [quantile](https://en.wikipedia.org/wiki/Quantile) des données numériques de la séquence.
 
-Cette fonction s’applique [réservoir d’échantillonnage](https://en.wikipedia.org/wiki/Reservoir_sampling) avec une taille de réservoir jusqu’à 8192 et un générateur de nombres aléatoires pour l’échantillonnage. Le résultat est non-déterministe. Pour obtenir un quantile exact, Utilisez le [quantileExact](#quantileexact) fonction.
+Cette fonction s'applique [réservoir d'échantillonnage](https://en.wikipedia.org/wiki/Reservoir_sampling) avec une taille de réservoir jusqu'à 8192 et un générateur de nombres aléatoires pour l'échantillonnage. Le résultat est non-déterministe. Pour obtenir un quantile exact, Utilisez le [quantileExact](#quantileexact) fonction.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -882,13 +1001,13 @@ Alias: `median`.
 
 Type:
 
--   [Float64](../../sql-reference/data-types/float.md) pour l’entrée de type de données numériques.
--   [Date](../../sql-reference/data-types/date.md) si les valeurs d’entrée ont le `Date` type.
--   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d’entrée ont le `DateTime` type.
+-   [Float64](../../sql-reference/data-types/float.md) pour l'entrée de type de données numériques.
+-   [Date](../../sql-reference/data-types/date.md) si les valeurs d'entrée ont le `Date` type.
+-   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d'entrée ont le `DateTime` type.
 
 **Exemple**
 
-Table d’entrée:
+Table d'entrée:
 
 ``` text
 ┌─val─┐
@@ -922,9 +1041,9 @@ Résultat:
 
 Calcule une approximation [quantile](https://en.wikipedia.org/wiki/Quantile) des données numériques de la séquence.
 
-Cette fonction s’applique [réservoir d’échantillonnage](https://en.wikipedia.org/wiki/Reservoir_sampling) avec une taille de réservoir jusqu’à 8192 et un algorithme déterministe d’échantillonnage. Le résultat est déterministe. Pour obtenir un quantile exact, Utilisez le [quantileExact](#quantileexact) fonction.
+Cette fonction s'applique [réservoir d'échantillonnage](https://en.wikipedia.org/wiki/Reservoir_sampling) avec une taille de réservoir jusqu'à 8192 et un algorithme déterministe d'échantillonnage. Le résultat est déterministe. Pour obtenir un quantile exact, Utilisez le [quantileExact](#quantileexact) fonction.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -946,13 +1065,13 @@ Alias: `medianDeterministic`.
 
 Type:
 
--   [Float64](../../sql-reference/data-types/float.md) pour l’entrée de type de données numériques.
--   [Date](../../sql-reference/data-types/date.md) si les valeurs d’entrée ont le `Date` type.
--   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d’entrée ont le `DateTime` type.
+-   [Float64](../../sql-reference/data-types/float.md) pour l'entrée de type de données numériques.
+-   [Date](../../sql-reference/data-types/date.md) si les valeurs d'entrée ont le `Date` type.
+-   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d'entrée ont le `DateTime` type.
 
 **Exemple**
 
-Table d’entrée:
+Table d'entrée:
 
 ``` text
 ┌─val─┐
@@ -984,11 +1103,11 @@ Résultat:
 
 ## quantileExact {#quantileexact}
 
-Exactement calcule l’ [quantile](https://en.wikipedia.org/wiki/Quantile) des données numériques de la séquence.
+Exactement calcule l' [quantile](https://en.wikipedia.org/wiki/Quantile) des données numériques de la séquence.
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` de mémoire, où `n` est un nombre de valeurs qui ont été passées. Cependant, pour un petit nombre de valeurs, la fonction est très efficace.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -1009,9 +1128,9 @@ Alias: `medianExact`.
 
 Type:
 
--   [Float64](../../sql-reference/data-types/float.md) pour l’entrée de type de données numériques.
--   [Date](../../sql-reference/data-types/date.md) si les valeurs d’entrée ont le `Date` type.
--   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d’entrée ont le `DateTime` type.
+-   [Float64](../../sql-reference/data-types/float.md) pour l'entrée de type de données numériques.
+-   [Date](../../sql-reference/data-types/date.md) si les valeurs d'entrée ont le `Date` type.
+-   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d'entrée ont le `DateTime` type.
 
 **Exemple**
 
@@ -1036,11 +1155,11 @@ Résultat:
 
 ## quantileExactWeighted {#quantileexactweighted}
 
-Exactement calcule l’ [quantile](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques, en tenant compte du poids de chaque élément.
+Exactement calcule l' [quantile](https://en.wikipedia.org/wiki/Quantile) d'une séquence de données numériques, en tenant compte du poids de chaque élément.
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). Vous pouvez utiliser cette fonction au lieu de `quantileExact` et spécifiez le poids 1.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -1062,13 +1181,13 @@ Alias: `medianExactWeighted`.
 
 Type:
 
--   [Float64](../../sql-reference/data-types/float.md) pour l’entrée de type de données numériques.
--   [Date](../../sql-reference/data-types/date.md) si les valeurs d’entrée ont le `Date` type.
--   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d’entrée ont le `DateTime` type.
+-   [Float64](../../sql-reference/data-types/float.md) pour l'entrée de type de données numériques.
+-   [Date](../../sql-reference/data-types/date.md) si les valeurs d'entrée ont le `Date` type.
+-   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d'entrée ont le `DateTime` type.
 
 **Exemple**
 
-Table d’entrée:
+Table d'entrée:
 
 ``` text
 ┌─n─┬─val─┐
@@ -1102,9 +1221,9 @@ Résultat:
 
 Avec la précision déterminée calcule le [quantile](https://en.wikipedia.org/wiki/Quantile) des données numériques de la séquence.
 
-Le résultat est déterministe (il ne dépend pas de l’ordre de traitement de la requête). La fonction est optimisée pour travailler avec des séquences qui décrivent des distributions comme les temps de chargement des pages web ou les temps de réponse du backend.
+Le résultat est déterministe (il ne dépend pas de l'ordre de traitement de la requête). La fonction est optimisée pour travailler avec des séquences qui décrivent des distributions comme les temps de chargement des pages web ou les temps de réponse du backend.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -1142,11 +1261,11 @@ Sinon, le résultat du calcul est arrondi au plus proche multiple de 16 ms.
 Type: `Float32`.
 
 !!! note "Note"
-    Si aucune valeur n’est transmise à la fonction (lors de l’utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select.md#select-order-by) pour des notes sur le tri `NaN` valeur.
+    Si aucune valeur n'est transmise à la fonction (lors de l'utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select/order-by.md#select-order-by) pour des notes sur le tri `NaN` valeur.
 
 **Exemple**
 
-Table d’entrée:
+Table d'entrée:
 
 ``` text
 ┌─response_time─┐
@@ -1183,11 +1302,11 @@ Résultat:
 
 ## quantileTimingWeighted {#quantiletimingweighted}
 
-Avec la précision déterminée calcule le [quantile](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques en fonction du poids de chaque élément de séquence.
+Avec la précision déterminée calcule le [quantile](https://en.wikipedia.org/wiki/Quantile) d'une séquence de données numériques en fonction du poids de chaque élément de séquence.
 
-Le résultat est déterministe (il ne dépend pas de l’ordre de traitement de la requête). La fonction est optimisée pour travailler avec des séquences qui décrivent des distributions comme les temps de chargement des pages web ou les temps de réponse du backend.
+Le résultat est déterministe (il ne dépend pas de l'ordre de traitement de la requête). La fonction est optimisée pour travailler avec des séquences qui décrivent des distributions comme les temps de chargement des pages web ou les temps de réponse du backend.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -1227,11 +1346,11 @@ Sinon, le résultat du calcul est arrondi au plus proche multiple de 16 ms.
 Type: `Float32`.
 
 !!! note "Note"
-    Si aucune valeur n’est transmise à la fonction (lors de l’utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select.md#select-order-by) pour des notes sur le tri `NaN` valeur.
+    Si aucune valeur n'est transmise à la fonction (lors de l'utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select/order-by.md#select-order-by) pour des notes sur le tri `NaN` valeur.
 
 **Exemple**
 
-Table d’entrée:
+Table d'entrée:
 
 ``` text
 ┌─response_time─┬─weight─┐
@@ -1265,13 +1384,13 @@ Résultat:
 
 ## quantileTDigest {#quantiletdigest}
 
-Calcule une approximation [quantile](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques utilisant [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithme.
+Calcule une approximation [quantile](https://en.wikipedia.org/wiki/Quantile) d'une séquence de données numériques utilisant [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithme.
 
-L’erreur maximale est de 1%. La consommation de mémoire est `log(n)`, où `n` est un certain nombre de valeurs. Le résultat dépend de l’ordre d’exécution de la requête et n’est pas déterministe.
+L'erreur maximale est de 1%. La consommation de mémoire est `log(n)`, où `n` est un certain nombre de valeurs. Le résultat dépend de l'ordre d'exécution de la requête et n'est pas déterministe.
 
-La performance de la fonction est inférieure à la performance de [quantile](#quantile) ou [quantileTiming](#quantiletiming). En termes de rapport entre la taille de L’état et la précision, cette fonction est bien meilleure que `quantile`.
+La performance de la fonction est inférieure à la performance de [quantile](#quantile) ou [quantileTiming](#quantiletiming). En termes de rapport entre la taille de L'état et la précision, cette fonction est bien meilleure que `quantile`.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -1292,9 +1411,9 @@ Alias: `medianTDigest`.
 
 Type:
 
--   [Float64](../../sql-reference/data-types/float.md) pour l’entrée de type de données numériques.
--   [Date](../../sql-reference/data-types/date.md) si les valeurs d’entrée ont le `Date` type.
--   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d’entrée ont le `DateTime` type.
+-   [Float64](../../sql-reference/data-types/float.md) pour l'entrée de type de données numériques.
+-   [Date](../../sql-reference/data-types/date.md) si les valeurs d'entrée ont le `Date` type.
+-   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d'entrée ont le `DateTime` type.
 
 **Exemple**
 
@@ -1319,13 +1438,13 @@ Résultat:
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
-Calcule une approximation [quantile](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques utilisant [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithme. La fonction prend en compte le poids de chaque séquence de membre. L’erreur maximale est de 1%. La consommation de mémoire est `log(n)`, où `n` est un certain nombre de valeurs.
+Calcule une approximation [quantile](https://en.wikipedia.org/wiki/Quantile) d'une séquence de données numériques utilisant [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithme. La fonction prend en compte le poids de chaque séquence de membre. L'erreur maximale est de 1%. La consommation de mémoire est `log(n)`, où `n` est un certain nombre de valeurs.
 
-La performance de la fonction est inférieure à la performance de [quantile](#quantile) ou [quantileTiming](#quantiletiming). En termes de rapport entre la taille de L’état et la précision, cette fonction est bien meilleure que `quantile`.
+La performance de la fonction est inférieure à la performance de [quantile](#quantile) ou [quantileTiming](#quantiletiming). En termes de rapport entre la taille de L'état et la précision, cette fonction est bien meilleure que `quantile`.
 
-Le résultat dépend de l’ordre d’exécution de la requête et n’est pas déterministe.
+Le résultat dépend de l'ordre d'exécution de la requête et n'est pas déterministe.
 
-Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu’il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
+Lorsque vous utilisez plusieurs `quantile*` fonctionne avec différents niveaux dans une requête, les états internes ne sont pas combinées (qui est, la requête fonctionne moins efficacement qu'il le pouvait). Dans ce cas, utilisez la [les quantiles](#quantiles) fonction.
 
 **Syntaxe**
 
@@ -1347,9 +1466,9 @@ Alias: `medianTDigest`.
 
 Type:
 
--   [Float64](../../sql-reference/data-types/float.md) pour l’entrée de type de données numériques.
--   [Date](../../sql-reference/data-types/date.md) si les valeurs d’entrée ont le `Date` type.
--   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d’entrée ont le `DateTime` type.
+-   [Float64](../../sql-reference/data-types/float.md) pour l'entrée de type de données numériques.
+-   [Date](../../sql-reference/data-types/date.md) si les valeurs d'entrée ont le `Date` type.
+-   [DateTime](../../sql-reference/data-types/datetime.md) si les valeurs d'entrée ont le `DateTime` type.
 
 **Exemple**
 
@@ -1374,7 +1493,7 @@ Résultat:
 
 ## médian {#median}
 
-Le `median*` les fonctions sont les Alias pour le correspondant `quantile*` fonction. Ils calculent la médiane d’un échantillon de données numériques.
+Le `median*` les fonctions sont les Alias pour le correspondant `quantile*` fonction. Ils calculent la médiane d'un échantillon de données numériques.
 
 Fonction:
 
@@ -1389,7 +1508,7 @@ Fonction:
 
 **Exemple**
 
-Table d’entrée:
+Table d'entrée:
 
 ``` text
 ┌─val─┐
@@ -1420,31 +1539,43 @@ Toutes les fonctions quantiles ont également des fonctions quantiles correspond
 
 ## varSamp (x) {#varsampx}
 
-Calcule le montant `Σ((x - x̅)^2) / (n - 1)`, où `n` est la taille de l’échantillon et `x̅`est la valeur moyenne de `x`.
+Calcule le montant `Σ((x - x̅)^2) / (n - 1)`, où `n` est la taille de l'échantillon et `x̅`est la valeur moyenne de `x`.
 
-Il représente une estimation non biaisée de la variance d’une variable aléatoire si les valeurs passées forment son échantillon.
+Il représente une estimation non biaisée de la variance d'une variable aléatoire si les valeurs passées forment son échantillon.
 
 Retourner `Float64`. Lorsque `n <= 1`, retourner `+∞`.
 
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `varSampStable` fonction. Il fonctionne plus lentement, mais fournit une erreur de calcul inférieure.
+
 ## varPop (x) {#varpopx}
 
-Calcule le montant `Σ((x - x̅)^2) / n`, où `n` est la taille de l’échantillon et `x̅`est la valeur moyenne de `x`.
+Calcule le montant `Σ((x - x̅)^2) / n`, où `n` est la taille de l'échantillon et `x̅`est la valeur moyenne de `x`.
 
-En d’autres termes, dispersion pour un ensemble de valeurs. Retourner `Float64`.
+En d'autres termes, dispersion pour un ensemble de valeurs. Retourner `Float64`.
+
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `varPopStable` fonction. Il fonctionne plus lentement, mais fournit une erreur de calcul inférieure.
 
 ## stddevSamp (x) {#stddevsampx}
 
 Le résultat est égal à la racine carrée de `varSamp(x)`.
 
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `stddevSampStable` fonction. Il fonctionne plus lentement, mais fournit une erreur de calcul inférieure.
+
 ## stddevPop (x) {#stddevpopx}
 
 Le résultat est égal à la racine carrée de `varPop(x)`.
+
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `stddevPopStable` fonction. Il fonctionne plus lentement, mais fournit une erreur de calcul inférieure.
 
 ## topK (N) (x) {#topknx}
 
 Renvoie un tableau des valeurs approximativement les plus fréquentes dans la colonne spécifiée. Le tableau est trié par ordre décroissant de fréquence approximative des valeurs (et non par les valeurs elles-mêmes).
 
-Met en œuvre la [Gain De Place Filtré](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithme d’analyse de TopK, basé sur l’algorithme de réduction et de combinaison de [Économie D’Espace Parallèle](https://arxiv.org/pdf/1401.0702.pdf).
+Met en œuvre la [Gain De Place Filtré](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithme d'analyse de TopK, basé sur l'algorithme de réduction et de combinaison de [Économie D'Espace Parallèle](https://arxiv.org/pdf/1401.0702.pdf).
 
 ``` sql
 topK(N)(column)
@@ -1452,17 +1583,17 @@ topK(N)(column)
 
 Cette fonction ne fournit pas un résultat garanti. Dans certaines situations, des erreurs peuvent se produire et renvoyer des valeurs fréquentes qui ne sont pas les valeurs les plus fréquentes.
 
-Nous vous recommandons d’utiliser l’ `N < 10` valeur; performance est réduite avec grand `N` valeur. Valeur maximale de `N = 65536`.
+Nous vous recommandons d'utiliser l' `N < 10` valeur; performance est réduite avec grand `N` valeur. Valeur maximale de `N = 65536`.
 
 **Paramètre**
 
--   ‘N’ est le nombre d’éléments de retour.
+-   ‘N’ est le nombre d'éléments de retour.
 
 Si le paramètre est omis, la valeur par défaut 10 est utilisé.
 
 **Argument**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
 **Exemple**
 
@@ -1524,13 +1655,22 @@ Calcule la valeur de `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Renvoie Float64. Lorsque `n <= 1`, returns +∞.
 
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `covarSampStable` fonction. Il fonctionne plus lentement, mais fournit une erreur de calcul inférieure.
+
 ## covarPop (x, y) {#covarpopx-y}
 
 Calcule la valeur de `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `covarPopStable` fonction. Cela fonctionne plus lentement mais fournit une erreur de calcul inférieure.
+
 ## corr (x, y) {#corrx-y}
 
 Calcule le coefficient de corrélation de Pearson: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "Note"
+    Cette fonction utilise un algorithme numériquement instable. Si vous avez besoin d' [stabilité numérique](https://en.wikipedia.org/wiki/Numerical_stability) dans les calculs, utiliser le `corrStable` fonction. Il fonctionne plus lentement, mais fournit une erreur de calcul inférieure.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 
@@ -1540,7 +1680,7 @@ Calcule la valeur de `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)
 categoricalInformationValue(category1, category2, ..., tag)
 ```
 
-Le résultat indique comment une caractéristique discrète (catégorique) `[category1, category2, ...]` contribuer à un modèle d’apprentissage qui prédit la valeur de `tag`.
+Le résultat indique comment une caractéristique discrète (catégorique) `[category1, category2, ...]` contribuer à un modèle d'apprentissage qui prédit la valeur de `tag`.
 
 ## simplelineearregression {#simplelinearregression}
 
@@ -1583,24 +1723,24 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
-Cette fonction implémente la régression linéaire stochastique. Il prend en charge les paramètres personnalisés pour le taux d’apprentissage, le coefficient de régularisation L2, la taille de mini-lot et a peu de méthodes pour mettre à jour les poids ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (utilisé par défaut), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Élan](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+Cette fonction implémente la régression linéaire stochastique. Il prend en charge les paramètres personnalisés pour le taux d'apprentissage, le coefficient de régularisation L2, la taille de mini-lot et a peu de méthodes pour mettre à jour les poids ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (utilisé par défaut), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Élan](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
 ### Paramètre {#agg_functions-stochasticlinearregression-parameters}
 
-Il y a 4 paramètres personnalisables. Ils sont passés à la fonction séquentiellement, mais il n’est pas nécessaire de passer tous les quatre-les valeurs par défaut seront utilisées, mais un bon modèle nécessite un réglage des paramètres.
+Il y a 4 paramètres personnalisables. Ils sont passés à la fonction séquentiellement, mais il n'est pas nécessaire de passer tous les quatre-les valeurs par défaut seront utilisées, mais un bon modèle nécessite un réglage des paramètres.
 
 ``` text
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  `learning rate` est le coefficient sur la longueur de l’étape, lorsque l’étape de descente de gradient est effectuée. Un taux d’apprentissage trop élevé peut entraîner des poids infinis du modèle. Par défaut est `0.00001`.
+1.  `learning rate` est le coefficient sur la longueur de l'étape, lorsque l'étape de descente de gradient est effectuée. Un taux d'apprentissage trop élevé peut entraîner des poids infinis du modèle. Par défaut est `0.00001`.
 2.  `l2 regularization coefficient` ce qui peut aider à éviter le surajustement. Par défaut est `0.1`.
-3.  `mini-batch size` définit le nombre d’éléments, dont les gradients seront calculés et additionnés pour effectuer une étape de descente de gradient. La descente stochastique Pure utilise un élément, mais avoir de petits lots (environ 10 éléments) rend les étapes de gradient plus stables. Par défaut est `15`.
+3.  `mini-batch size` définit le nombre d'éléments, dont les gradients seront calculés et additionnés pour effectuer une étape de descente de gradient. La descente stochastique Pure utilise un élément, mais avoir de petits lots (environ 10 éléments) rend les étapes de gradient plus stables. Par défaut est `15`.
 4.  `method for updating weights` ils sont: `Adam` (par défaut), `SGD`, `Momentum`, `Nesterov`. `Momentum` et `Nesterov` nécessitent un peu plus de calculs et de mémoire, mais ils sont utiles en termes de vitesse de convergence et de stabilité des méthodes de gradient stochastique.
 
 ### Utilisation {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` est utilisé en deux étapes: ajustement du modèle et prédiction sur de nouvelles données. Afin de correspondre le modèle et l’enregistrer son état pour utilisation ultérieure nous utilisons `-State` combinator, qui enregistre essentiellement l’état (poids du modèle, etc.).
+`stochasticLinearRegression` est utilisé en deux étapes: ajustement du modèle et prédiction sur de nouvelles données. Afin de correspondre le modèle et l'enregistrer son état pour utilisation ultérieure nous utilisons `-State` combinator, qui enregistre essentiellement l'état (poids du modèle, etc.).
 Pour prédire nous utilisons la fonction [evalMLMethod](../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod) qui prend un état comme un argument ainsi que des fonctionnalités à prévoir sur.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
@@ -1622,12 +1762,12 @@ stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
 AS state FROM train_data;
 ```
 
-Ici, nous devons également insérer des données dans `train_data` table. Le nombre de paramètres n’est pas fixe, il dépend uniquement du nombre d’arguments, passés dans `linearRegressionState`. Ils doivent tous être des valeurs numériques.
+Ici, nous devons également insérer des données dans `train_data` table. Le nombre de paramètres n'est pas fixe, il dépend uniquement du nombre d'arguments, passés dans `linearRegressionState`. Ils doivent tous être des valeurs numériques.
 Notez que la colonne avec la valeur cible (que nous aimerions apprendre à prédire) est insérée comme premier argument.
 
 **2.** Prédire
 
-Après avoir enregistré un État dans la table, nous pouvons l’utiliser plusieurs fois pour la prédiction, ou même fusionner avec d’autres États et créer de nouveaux modèles encore meilleurs.
+Après avoir enregistré un État dans la table, nous pouvons l'utiliser plusieurs fois pour la prédiction, ou même fusionner avec d'autres États et créer de nouveaux modèles encore meilleurs.
 
 ``` sql
 WITH (SELECT state FROM your_model) AS model SELECT
@@ -1640,13 +1780,13 @@ La requête renvoie une colonne de valeurs prédites. Notez que le premier argum
 
 ### Note {#agg_functions-stochasticlinearregression-notes}
 
-1.  Pour fusionner deux modèles l’utilisateur peut créer une telle requête:
+1.  Pour fusionner deux modèles l'utilisateur peut créer une telle requête:
     `sql  SELECT state1 + state2 FROM your_models`
     où `your_models` le tableau contient les deux modèles. Cette requête renvoie la nouvelle `AggregateFunctionState` objet.
 
-2.  L’utilisateur peut récupérer les poids du modèle pour ses propres fins, sans enregistrer le modèle, si aucune `-State` combinator est utilisé.
+2.  L'utilisateur peut récupérer les poids du modèle pour ses propres fins, sans enregistrer le modèle, si aucune `-State` combinator est utilisé.
     `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
-    Une telle requête s’adaptera au Modèle et retournera ses poids-d’abord sont des poids, qui correspondent aux paramètres du modèle, le dernier est un biais. Ainsi, dans l’exemple ci-dessus, la requête renvoie une colonne avec 3 valeurs.
+    Une telle requête s'adaptera au Modèle et retournera ses poids-d'abord sont des poids, qui correspondent aux paramètres du modèle, le dernier est un biais. Ainsi, dans l'exemple ci-dessus, la requête renvoie une colonne avec 3 valeurs.
 
 **Voir Aussi**
 
@@ -1661,7 +1801,7 @@ Cette fonction implémente la régression logistique stochastique. Il peut être
 
 Les paramètres sont exactement les mêmes que dans stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-Pour plus d’informations, voir [paramètre](#agg_functions-stochasticlinearregression-parameters).
+Pour plus d'informations, voir [paramètre](#agg_functions-stochasticlinearregression-parameters).
 
 ``` text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
@@ -1707,7 +1847,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 ## groupBitmapAnd {#groupbitmapand}
 
-Calculs le et d’une colonne bitmap, retour cardinalité de type UInt64, si Ajouter suffixe-État, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md).
+Calculs le et d'une colonne bitmap, retour cardinalité de type UInt64, si Ajouter suffixe-État, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapAnd(expr)
@@ -1750,7 +1890,7 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 
 ## groupBitmapOr {#groupbitmapor}
 
-Calculs le ou d’une colonne bitmap, retour cardinalité de type UInt64, si Ajouter suffixe-État, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md). C’est l’équivalent de `groupBitmapMerge`.
+Calculs le ou d'une colonne bitmap, retour cardinalité de type UInt64, si Ajouter suffixe-État, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md). C'est l'équivalent de `groupBitmapMerge`.
 
 ``` sql
 groupBitmapOr(expr)
@@ -1793,7 +1933,7 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
 
 ## groupBitmapXor {#groupbitmapxor}
 
-Calculs le XOR d’une colonne bitmap, retour cardinalité de type UInt64, si Ajouter suffixe-État, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md).
+Calculs le XOR d'une colonne bitmap, retour cardinalité de type UInt64, si Ajouter suffixe-État, puis retour [objet bitmap](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapOr(expr)

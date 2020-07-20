@@ -1,5 +1,5 @@
 SET check_query_single_value_result = 0;
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS mt_without_pk;
 

@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
-toc_priority: 39
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 41
 toc_title: "Di\u011Fer"
 ---
 
@@ -48,7 +48,7 @@ Bu `CHECK TABLE` sorgu Aşağıdaki tablo motorlarını destekler:
 
 Başka bir tablo motorları ile tablolar üzerinde gerçekleştirilen bir özel duruma neden olur.
 
-Motor fromlardan `*Log` aile başarısızlık otomatik veri kurtarma sağlamaz. Kullan… `CHECK TABLE` veri kaybını zamanında izlemek için sorgu.
+Motor fromlardan `*Log` aile başarısızlık otomatik veri kurtarma sağlamaz. Kullan... `CHECK TABLE` veri kaybını zamanında izlemek için sorgu.
 
 İçin `MergeTree` aile motorları, `CHECK TABLE` sorgu, yerel sunucudaki bir tablonun her bir veri bölümü için bir kontrol durumunu gösterir.
 
@@ -57,7 +57,7 @@ Motor fromlardan `*Log` aile başarısızlık otomatik veri kurtarma sağlamaz. 
 Tablo bozuksa, bozuk olmayan verileri başka bir tabloya kopyalayabilirsiniz. Bunu yapmak için :
 
 1.  Bozuk tablo ile aynı yapıya sahip yeni bir tablo oluşturun. Bunu yapmak için sorguyu yürütün `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  Ayarla… [max\_threads](../../operations/settings/settings.md#settings-max_threads) bir sonraki sorguyu tek bir iş parçacığında işlemek için 1 değeri. Bunu yapmak için sorguyu çalıştırın `SET max_threads = 1`.
+2.  Ayarla... [max\_threads](../../operations/settings/settings.md#settings-max_threads) bir sonraki sorguyu tek bir iş parçacığında işlemek için 1 değeri. Bunu yapmak için sorguyu çalıştırın `SET max_threads = 1`.
 3.  Sorgu yürütme `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. Bu istek bozuk olmayan verileri bozuk tablodan başka bir tabloya kopyalar. Yalnızca bozuk parçadan önceki veriler kopyalanır.
 4.  Yeniden Başlat `clickhouse-client` sıfırlamak için `max_threads` değer.
 
@@ -88,7 +88,7 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Bu tablonun veri veya meta verileri silmez. Bir sonraki sunucu lansmanında, sunucu meta verileri okuyacak ve tablo hakkında tekrar bilgi edinecektir.
 Benzer şekilde, bir “detached” tablo kullanılarak yeniden eklenebilir `ATTACH` sorgu (bunlar için depolanan meta verilere sahip olmayan sistem tabloları hariç).
 
-Hiç yok… `DETACH DATABASE` sorgu.
+Hiç yok... `DETACH DATABASE` sorgu.
 
 ## DROP {#drop}
 
@@ -113,7 +113,65 @@ Eğer `IF EXISTS` belirtilmişse, tablo yoksa veya veritabanı yoksa bir hata d�
 Sözlük Delets.
 Eğer `IF EXISTS` belirtilmişse, tablo yoksa veya veritabanı yoksa bir hata döndürmez.
 
-## EXISTS {#exists}
+## DROP USER {#drop-user-statement}
+
+Bir kullanıcıyı siler.
+
+### Sözdizimi {#drop-user-syntax}
+
+``` sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROLE {#drop-role-statement}
+
+Bir rolü siler.
+
+Silinen rol, verildiği tüm varlıklardan iptal edilir.
+
+### Sözdizimi {#drop-role-syntax}
+
+``` sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROW POLICY {#drop-row-policy-statement}
+
+Bir satır ilkesi siler.
+
+Silinen satır ilkesi, atandığı tüm varlıklardan iptal edilir.
+
+### Sözdizimi {#drop-row-policy-syntax}
+
+``` sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP QUOTA {#drop-quota-statement}
+
+Bir kota siler.
+
+Silinen kota, atandığı tüm varlıklardan iptal edilir.
+
+### Sözdizimi {#drop-quota-syntax}
+
+``` sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
+
+Bir kota siler.
+
+Silinen kota, atandığı tüm varlıklardan iptal edilir.
+
+### Sözdizimi {#drop-settings-profile-syntax}
+
+``` sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## EXISTS {#exists-statement}
 
 ``` sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -121,7 +179,7 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT 
 
 Bir tek döndürür `UInt8`- tek değeri içeren sütun yazın `0` tablo veya veritabanı yoksa veya `1` tablo belirtilen veritabanında varsa.
 
-## KILL QUERY {#kill-query}
+## KILL QUERY {#kill-query-statement}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -152,7 +210,7 @@ Yanıt içerir `kill_status` aşağıdaki değerleri alabilen sütun:
 
 1.  ‘finished’ – The query was terminated successfully.
 2.  ‘waiting’ – Waiting for the query to end after sending it a signal to terminate.
-3.  The other values ​​explain why the query can’t be stopped.
+3.  The other values ​​explain why the query can't be stopped.
 
 Bir test sorgusu (`TEST`) yalnızca kullanıcının haklarını denetler ve durdurulacak sorguların bir listesini görüntüler.
 
@@ -191,9 +249,9 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 Bu sorgu, bir tablo altyapısı ile tablolar için veri parçaları planlanmamış birleştirme başlatmaya çalışır. [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) aile.
 
-Bu `OPTMIZE` sorgu için de desteklenmektedir [MaterializedView](../../engines/table-engines/special/materializedview.md) ve… [Arabellek](../../engines/table-engines/special/buffer.md) motorlar. Diğer tablo motorları desteklenmiyor.
+Bu `OPTMIZE` sorgu için de desteklenmektedir [MaterializedView](../../engines/table-engines/special/materializedview.md) ve... [Arabellek](../../engines/table-engines/special/buffer.md) motorlar. Diğer tablo motorları desteklenmiyor.
 
-Ne zaman `OPTIMIZE` ile kullanılır [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) Tablo motorları ailesi, ClickHouse birleştirme için bir görev oluşturur ve tüm düğümlerde yürütülmeyi bekler (eğer `replication_alter_partitions_sync` ayar etkinse) ’ dir.
+Ne zaman `OPTIMIZE` ile kullanılır [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) Tablo motorları ailesi, ClickHouse birleştirme için bir görev oluşturur ve tüm düğümlerde yürütülmeyi bekler (eğer `replication_alter_partitions_sync` ayar etkinse) ' dir.
 
 -   Eğer `OPTIMIZE` herhangi bir nedenle bir birleştirme gerçekleştirmez, müşteriye bildirmez. Bildirimleri etkinleştirmek için [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) ayar.
 -   Belirtir aseniz bir `PARTITION`, sadece belirtilen bölüm optimize edilmiştir. [Bölüm ifadesi nasıl ayarlanır](alter.md#alter-how-to-specify-part-expr).
@@ -211,7 +269,7 @@ Bir veya daha fazla tabloyu yeniden adlandırır.
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
-Tüm tablolar genel kilitleme altında yeniden adlandırılır. Tabloları yeniden adlandırma hafif bir işlemdir. İÇİN’DEN sonra başka bir veritabanı belirttiyseniz, tablo bu veritabanına taşınacaktır. Ancak, veritabanlarına sahip dizinlerin aynı dosya sisteminde bulunması gerekir (aksi takdirde bir hata döndürülür).
+Tüm tablolar genel kilitleme altında yeniden adlandırılır. Tabloları yeniden adlandırma hafif bir işlemdir. İÇİN'DEN sonra başka bir veritabanı belirttiyseniz, tablo bu veritabanına taşınacaktır. Ancak, veritabanlarına sahip dizinlerin aynı dosya sisteminde bulunması gerekir (aksi takdirde bir hata döndürülür).
 
 ## SET {#query-set}
 
@@ -229,7 +287,55 @@ SET profile = 'profile-name-from-the-settings-file'
 
 Daha fazla bilgi için, bkz. [Ayarlar](../../operations/settings/settings.md).
 
-## TRUNCATE {#truncate}
+## SET ROLE {#set-role-statement}
+
+Geçerli kullanıcı için rolleri etkinleştirir.
+
+### Sözdizimi {#set-role-syntax}
+
+``` sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+## SET DEFAULT ROLE {#set-default-role-statement}
+
+Varsayılan rolleri bir kullanıcıya ayarlar.
+
+Varsayılan roller kullanıcı girişinde otomatik olarak etkinleştirilir. Varsayılan olarak yalnızca önceden verilen rolleri ayarlayabilirsiniz. Rol bir kullanıcıya verilmezse, ClickHouse bir istisna atar.
+
+### Sözdizimi {#set-default-role-syntax}
+
+``` sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+### Örnekler {#set-default-role-examples}
+
+Bir kullanıcıya birden çok varsayılan rol ayarlama:
+
+``` sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+Verilen tüm rolleri bir kullanıcıya varsayılan olarak ayarlayın:
+
+``` sql
+SET DEFAULT ROLE ALL TO user
+```
+
+Bir kullanıcıdan varsayılan rolleri temizleme:
+
+``` sql
+SET DEFAULT ROLE NONE TO user
+```
+
+Verilen tüm rolleri bazıları hariç varsayılan olarak ayarlayın:
+
+``` sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```
+
+## TRUNCATE {#truncate-statement}
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]

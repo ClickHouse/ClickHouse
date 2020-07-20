@@ -40,6 +40,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -66,7 +67,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Databases/DatabaseMemory.h>
-#include <Common/StatusFile.h>
 
 #include "Aliases.h"
 
@@ -197,8 +197,6 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast);
 ASTPtr extractPrimaryKey(const ASTPtr & storage_ast);
 
 ASTPtr extractOrderBy(const ASTPtr & storage_ast);
-
-String createCommaSeparatedStringFrom(const Names & names);
 
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast);
 

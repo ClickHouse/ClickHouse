@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "\u95F4\u9694"
 ---
 
 # 间隔 {#data-type-interval}
 
-表示时间和日期间隔的数据类型族。 由此产生的类型 [INTERVAL](../../../sql-reference/operators.md#operator-interval) 接线员
+表示时间和日期间隔的数据类型族。 由此产生的类型 [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) 接线员
 
 !!! warning "警告"
     `Interval` 数据类型值不能存储在表中。
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## 另请参阅 {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) 接线员
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) 接线员
 -   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) 类型转换函数

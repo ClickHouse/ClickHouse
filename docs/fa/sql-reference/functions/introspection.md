@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 65
 toc_title: "\u062F\u0631\u0648\u0646 \u0646\u06AF\u0631\u06CC"
 ---
@@ -24,7 +24,7 @@ toc_title: "\u062F\u0631\u0648\u0646 \u0646\u06AF\u0631\u06CC"
 
 ## افزودن مدخل جدید {#addresstoline}
 
-تبدیل آدرس حافظه مجازی در داخل clickhouse فرایند سرور به نام فایل و شماره خط در clickhouse کد منبع.
+تبدیل آدرس حافظه مجازی در داخل ClickHouse فرایند سرور به نام فایل و شماره خط در ClickHouse کد منبع.
 
 اگر شما استفاده از بسته های رسمی تاتر, شما نیاز به نصب `clickhouse-common-static-dbg` بسته
 
@@ -42,7 +42,7 @@ addressToLine(address_of_binary_instruction)
 
 -   نام فایل کد منبع و شماره خط در این فایل حد و مرز مشخصی توسط روده بزرگ.
 
-        For example, `/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
 -   نام یک باینری, اگر تابع می تواند اطلاعات اشکال زدایی پیدا کنید.
 
@@ -87,7 +87,7 @@ SELECT addressToLine(94784076370703) \G
 ``` text
 Row 1:
 ──────
-addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
+addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
 
 استفاده از تابع به ردیابی کل پشته:
@@ -100,15 +100,15 @@ LIMIT 1
 \G
 ```
 
-این [اررایماپ](higher-order-functions.md#higher_order_functions-array-map) تابع اجازه می دهد تا برای پردازش هر عنصر منحصر به فرد از `trace` تنظیم توسط `addressToLine` تابع. در نتیجه این پردازش می بینید در `trace_source_code_lines` ستون خروجی.
+این [اررایماپ](higher-order-functions.md#higher_order_functions-array-map) تابع اجازه می دهد تا برای پردازش هر عنصر منحصر به فرد از `trace` تنظیم توسط `addressToLine` تابع. نتیجه این پردازش شما در دیدن `trace_source_code_lines` ستون خروجی.
 
 ``` text
 Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
-/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
-/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.h:155
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.h:155
 /usr/include/c++/9/bits/atomic_base.h:551
 /usr/lib/debug/usr/bin/clickhouse
 /lib/x86_64-linux-gnu/libpthread-2.27.so
@@ -117,7 +117,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 ## افزودن موقعیت {#addresstosymbol}
 
-تبدیل آدرس حافظه مجازی در داخل clickhouse سرور روند به نمادی از clickhouse شی فایل های.
+تبدیل آدرس حافظه مجازی در داخل ClickHouse سرور روند به نمادی از ClickHouse شی فایل های.
 
 **نحو**
 
@@ -131,7 +131,7 @@ addressToSymbol(address_of_binary_instruction)
 
 **مقدار بازگشتی**
 
--   نمادی از clickhouse شی فایل های.
+-   نماد از فایل های شی کلیکهاوس.
 -   رشته خالی, اگر نشانی معتبر نیست.
 
 نوع: [رشته](../../sql-reference/data-types/string.md).
@@ -259,7 +259,7 @@ query_id:      724028bf-f550-45aa-910d-2af6212b94ac
 trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 ```
 
-این `trace` زمینه شامل ردیابی پشته در لحظه نمونه برداری.
+این `trace` درست شامل ردیابی پشته در حال حاضر نمونه برداری.
 
 گرفتن نام تابع برای یک نشانی واحد:
 
@@ -283,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-این [اررایماپ](higher-order-functions.md#higher_order_functions-array-map) تابع اجازه می دهد تا برای پردازش هر عنصر منحصر به فرد از `trace` تنظیم توسط `demangle` تابع. در نتیجه این پردازش می بینید در `trace_functions` ستون خروجی.
+این [اررایماپ](higher-order-functions.md#higher_order_functions-array-map) تابع اجازه می دهد تا برای پردازش هر عنصر منحصر به فرد از `trace` تنظیم توسط `demangle` تابع. نتیجه این پردازش شما در دیدن `trace_functions` ستون خروجی.
 
 ``` text
 Row 1:

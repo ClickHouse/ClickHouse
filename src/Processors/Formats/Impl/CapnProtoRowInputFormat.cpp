@@ -240,7 +240,7 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
 
     auto array = readMessage();
 
-#if CAPNP_VERSION >= 8000
+#if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
     capnp::UnalignedFlatArrayMessageReader msg(array);
 #else
     capnp::FlatArrayMessageReader msg(array);

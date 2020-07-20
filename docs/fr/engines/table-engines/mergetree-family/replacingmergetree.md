@@ -1,19 +1,19 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: ReplacingMergeTree
 ---
 
-# Replacingmergetree {#replacingmergetree}
+# ReplacingMergeTree {#replacingmergetree}
 
-Le moteur diffère de [MergeTree](mergetree.md#table_engines-mergetree) en ce qu’il supprime les doublons avec la même valeur de clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md) valeur).
+Le moteur diffère de [MergeTree](mergetree.md#table_engines-mergetree) en ce qu'il supprime les doublons avec la même valeur de clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md) valeur).
 
-La déduplication des données se produit uniquement lors d’une fusion. La fusion se produit en arrière-plan à un moment inconnu, vous ne pouvez donc pas le planifier. Certaines des données peuvent rester non traitées. Bien que vous puissiez exécuter une fusion imprévue en utilisant le `OPTIMIZE` requête, ne comptez pas l’utiliser, parce que la `OPTIMIZE` requête va lire et écrire une grande quantité de données.
+La déduplication des données se produit uniquement lors d'une fusion. La fusion se produit en arrière-plan à un moment inconnu, vous ne pouvez donc pas le planifier. Certaines des données peuvent rester non traitées. Bien que vous puissiez exécuter une fusion imprévue en utilisant le `OPTIMIZE` requête, ne comptez pas l'utiliser, parce que la `OPTIMIZE` requête va lire et écrire une grande quantité de données.
 
-Ainsi, `ReplacingMergeTree` convient pour effacer les données en double en arrière-plan afin d’économiser de l’espace, mais cela ne garantit pas l’absence de doublons.
+Ainsi, `ReplacingMergeTree` convient pour effacer les données en double en arrière-plan afin d'économiser de l'espace, mais cela ne garantit pas l'absence de doublons.
 
-## Création d’une Table {#creating-a-table}
+## Création d'une Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -35,21 +35,21 @@ Pour une description des paramètres de requête, voir [demande de description](
 
 -   `ver` — column with version. Type `UInt*`, `Date` ou `DateTime`. Paramètre facultatif.
 
-    Lors de la fusion, `ReplacingMergeTree` de toutes les lignes avec la même clé primaire ne laisse qu’un:
+    Lors de la fusion, `ReplacingMergeTree` de toutes les lignes avec la même clé primaire ne laisse qu'un:
 
     -   Dernier dans la sélection, si `ver` pas ensemble.
     -   Avec la version maximale, si `ver` défini.
 
 **Les clauses de requête**
 
-Lors de la création d’un `ReplacingMergeTree` la table de la même [clause](mergetree.md) sont nécessaires, comme lors de la création d’un `MergeTree` table.
+Lors de la création d'un `ReplacingMergeTree` la table de la même [clause](mergetree.md) sont nécessaires, comme lors de la création d'un `MergeTree` table.
 
 <details markdown="1">
 
 <summary>Méthode obsolète pour créer une Table</summary>
 
 !!! attention "Attention"
-    N’utilisez pas cette méthode dans les nouveaux projets et, si possible, remplacez les anciens projets par la méthode décrite ci-dessus.
+    N'utilisez pas cette méthode dans les nouveaux projets et, si possible, remplacez les anciens projets par la méthode décrite ci-dessus.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

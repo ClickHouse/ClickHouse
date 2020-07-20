@@ -360,7 +360,6 @@ def test_max_data_part_size(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("mt_with_overflow","MergeTree()"),
     ("replicated_mt_with_overflow","ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')",),
@@ -455,7 +454,6 @@ def test_background_move(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("stopped_moving_mt","MergeTree()"),
     ("stopped_moving_replicated_mt","ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')",),
@@ -722,7 +720,6 @@ def produce_alter_move(node, name):
         pass
 
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("concurrently_altering_mt","MergeTree()"),
     ("concurrently_altering_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",),
@@ -776,7 +773,6 @@ def test_concurrent_alter_move(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("concurrently_dropping_mt","MergeTree()"),
     ("concurrently_dropping_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_dropping_replicated_mt', '1')",),
@@ -905,8 +901,6 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
-
-@pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine", [
     ("alter_modifying_mt","MergeTree()"),
     ("replicated_alter_modifying_mt","ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')",),
@@ -939,7 +933,11 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
         def alter_modify(num):
             for i in range(num):
                 column_type = random.choice(["UInt64", "String"])
-                node1.query("ALTER TABLE {} MODIFY COLUMN number {}".format(name, column_type))
+                try:
+                    node1.query("ALTER TABLE {} MODIFY COLUMN number {}".format(name, column_type))
+                except:
+                    if "Replicated" not in engine:
+                        raise
 
         insert(100)
 

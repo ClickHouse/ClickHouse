@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
@@ -56,16 +57,19 @@ void buildLifetimeConfiguration(
     const ASTDictionaryLifetime * lifetime)
 {
 
-    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
-    AutoPtr<Element> min_element(doc->createElement("min"));
-    AutoPtr<Element> max_element(doc->createElement("max"));
-    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
-    min_element->appendChild(min_sec);
-    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
-    max_element->appendChild(max_sec);
-    lifetime_element->appendChild(min_element);
-    lifetime_element->appendChild(max_element);
-    root->appendChild(lifetime_element);
+    if (lifetime)
+    {
+        AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+        AutoPtr<Element> min_element(doc->createElement("min"));
+        AutoPtr<Element> max_element(doc->createElement("max"));
+        AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+        min_element->appendChild(min_sec);
+        AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+        max_element->appendChild(max_sec);
+        lifetime_element->appendChild(min_element);
+        lifetime_element->appendChild(max_element);
+        root->appendChild(lifetime_element);
+    }
 }
 
 /*
@@ -94,13 +98,22 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-    if (layout->parameter.has_value())
+    for (const auto & param : layout->parameters)
     {
-        const auto & param = layout->parameter;
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param->first));
-        const ASTLiteral & literal = param->second->as<const ASTLiteral &>();
-        AutoPtr<Text> value(doc->createTextNode(toString(literal.value.get<UInt64>())));
-        layout_type_parameter_element->appendChild(value);
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param.first));
+        const ASTLiteral & literal = param.second->as<const ASTLiteral &>();
+        Field::dispatch([&](auto & value)
+        {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, UInt64> || std::is_same_v<std::decay_t<decltype(value)>, String>)
+            {
+                AutoPtr<Text> value_to_append(doc->createTextNode(toString(value)));
+                layout_type_parameter_element->appendChild(value_to_append);
+            }
+            else
+            {
+                throw DB::Exception{"Wrong type of layout argument.", ErrorCodes::BAD_ARGUMENTS};
+            }
+        }, literal.value);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
 }
@@ -411,7 +424,9 @@ void checkAST(const ASTCreateQuery & query)
     if (query.dictionary->layout == nullptr)
         throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
-    if (query.dictionary->lifetime == nullptr)
+    const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct") ||
+                                !strcasecmp(query.dictionary->layout->layout_type.data(), "complex_key_direct");
+    if (query.dictionary->lifetime == nullptr && !is_direct_layout)
         throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->primary_key == nullptr)

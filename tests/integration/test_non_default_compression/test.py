@@ -7,11 +7,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', main_configs=['configs/zstd_compression_by_default.xml'])
-node2 = cluster.add_instance('node2', main_configs=['configs/lz4hc_compression_by_default.xml'])
-node3 = cluster.add_instance('node3', main_configs=['configs/custom_compression_by_default.xml'])
-node4 = cluster.add_instance('node4', user_configs=['configs/enable_uncompressed_cache.xml'])
-node5 = cluster.add_instance('node5', main_configs=['configs/zstd_compression_by_default.xml'], user_configs=['configs/enable_uncompressed_cache.xml'])
+node1 = cluster.add_instance('node1', main_configs=['configs/zstd_compression_by_default.xml'], user_configs=['configs/allow_suspicious_codecs.xml'])
+node2 = cluster.add_instance('node2', main_configs=['configs/lz4hc_compression_by_default.xml'], user_configs=['configs/allow_suspicious_codecs.xml'])
+node3 = cluster.add_instance('node3', main_configs=['configs/custom_compression_by_default.xml'], user_configs=['configs/allow_suspicious_codecs.xml'])
+node4 = cluster.add_instance('node4', user_configs=['configs/enable_uncompressed_cache.xml', 'configs/allow_suspicious_codecs.xml'])
+node5 = cluster.add_instance('node5', main_configs=['configs/zstd_compression_by_default.xml'], user_configs=['configs/enable_uncompressed_cache.xml', 'configs/allow_suspicious_codecs.xml'])
 
 @pytest.fixture(scope="module")
 def start_cluster():

@@ -1,25 +1,25 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 55
 toc_title: "IP\u30A2\u30C9\u30EC\u30B9\u306E\u64CD\u4F5C"
 ---
 
-# IPアドレスを操作するための機能 {#functions-for-working-with-ip-addresses}
+# IPアドレスを操作するための関数 {#functions-for-working-with-ip-addresses}
 
 ## IPv4NumToString(num) {#ipv4numtostringnum}
 
-UInt32番号を受け取ります。 ビッグエンディアンのIPv4アドレスとして解釈します。 対応するIPv4アドレスをA.B.C.dという形式で含む文字列を返します。
+UInt32番号を取ります。 ビッグエンディアンのIPv4アドレスとして解釈します。 対応するIPv4アドレスを含む文字列を、a.B.C.d(小数点以下のドット区切りの数値)の形式で返します。
 
 ## IPv4StringToNum(s) {#ipv4stringtonums}
 
-IPv4NumToStringの逆関数. IPv4アドレスの形式が無効な場合は、0を返します。
+IPv4NumToStringの逆関数。 IPv4アドレスの形式が無効な場合は、0を返します。
 
 ## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
 IPv4NumToStringに似ていますが、最後のオクテットの代わりにxxxを使用します。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -46,12 +46,12 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-使用して以来 ‘xxx’ 非常に珍しいです、これは将来変更されるかもしれません。 このフラグメントの正確なフォーマットに依存しないことをお勧めします。
+を使用して以来 ‘xxx’ 非常に珍しいですが、これは将来的に変更される可能性があります。 このフラグメントの正確な形式に依存しないことをお勧めします。
 
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
-バイナリ形式のipv6アドレスを含むfixedstring(16)値を受け入れます。 このアドレスを含む文字列をテキスト形式で返します。
-IPv6にマップされたIPv4アドレスは、::ffff:111.222.33.44の形式で出力されます。 例:
+バイナリ形式のIPv6アドレスを含むFixedString(16)値を受け入れます。 このアドレスを含む文字列をテキスト形式で返します。
+IPv6マップされたIPv4アドレスは、::ffff:111.222.33.44の形式で出力されます。 例:
 
 ``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
@@ -117,12 +117,12 @@ LIMIT 10
 
 ## IPv6StringToNum(s) {#ipv6stringtonums}
 
-IPv6NumToStringの逆関数. IPv6アドレスの形式が無効な場合は、nullバイトの文字列を返します。
-HEXは大文字または小文字にできます。
+IPv6NumToStringの逆関数。 IPv6アドレスの形式が無効な場合は、nullバイトの文字列を返します。
+HEXは大文字または小文字です。
 
 ## IPv4ToIPv6(x) {#ipv4toipv6x}
 
-を取る `UInt32` 番号 IPv4アドレスとして解釈します。 [ビッグエンディアン](https://en.wikipedia.org/wiki/Endianness). Aを返します `FixedString(16)` バイナリ形式のIPv6アドレスを含む値。 例:
+を取る `UInt32` 番号 これをIPv4アドレスとして解釈します。 [ビッグエンディアン](https://en.wikipedia.org/wiki/Endianness). Aを返します `FixedString(16)` IPv6アドレスをバイナリ形式で含む値。 例:
 
 ``` sql
 SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
@@ -134,9 +134,9 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 └────────────────────┘
 ```
 
-## cutIPv6(x,bitsToCutForIPv6,bitsToCutForIPv4) {#cutipv6x-bitstocutforipv6-bitstocutforipv4}
+## cutIPv6(x,bytesToCutForIPv6,bytesToCutForIPv4) {#cutipv6x-bytestocutforipv6-bytestocutforipv4}
 
-バイナリ形式のipv6アドレスを含むfixedstring(16)値を受け入れます。 テキスト形式で削除された指定されたビット数のアドレスを含む文字列を返します。 例えば:
+バイナリ形式のIPv6アドレスを含むFixedString(16)値を受け入れます。 テキスト形式で削除された指定されたバイト数のアドレスを含む文字列を返します。 例えば:
 
 ``` sql
 WITH
@@ -153,9 +153,9 @@ SELECT
 └─────────────────────────────────────┴─────────────────────┘
 ```
 
-## IPv4CIDRToRange(ipv4,cidr), {#ipv4cidrtorangeipv4-cidr}
+## IPv4CIDRToRange(ipv4,Cidr), {#ipv4cidrtorangeipv4-cidr}
 
-IPv4とUInt8の値を受け取ります。 [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). 下位のサブネットの範囲と上位の範囲を含むIPv4を持つタプルを返します。
+IPv4およびuint8の値を受け入れます。 [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). サブネットの低い範囲と高い範囲を含むIPv4のタプルを返します。
 
 ``` sql
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
@@ -167,9 +167,9 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 └────────────────────────────────────────────┘
 ```
 
-## IPv6CIDRToRange(ipv6,cidr), {#ipv6cidrtorangeipv6-cidr}
+## IPv6CIDRToRange(ipv6,Cidr), {#ipv6cidrtorangeipv6-cidr}
 
-Cidrを含むIPv6およびUInt8値を受け入れます。 IPv6の下位範囲と上位のサブネットを含むタプルを返します。
+IPv6およびCidrを含むUInt8値を受け入れます。 サブネットの下位範囲と上位の範囲を含むIPv6のタプルを返します。
 
 ``` sql
 SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
@@ -183,7 +183,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toIPv4(文字列) {#toipv4string}
 
-別名を指定する `IPv4StringToNum()` これはIPv4アドレスの文字列形式をとり、その値を返します。 [IPv4](../../sql-reference/data-types/domains/ipv4.md) 返される値に等しいバイナリです `IPv4StringToNum()`.
+エイリアス `IPv4StringToNum()` これは、IPv4アドレスの文字列形式をとり、の値を返します [IPv4](../../sql-reference/data-types/domains/ipv4.md) 返される値と等しいバイナリ型 `IPv4StringToNum()`.
 
 ``` sql
 WITH
@@ -215,7 +215,7 @@ SELECT
 
 ## toIPv6(文字列) {#toipv6string}
 
-別名を指定する `IPv6StringToNum()` これはIPv6アドレスの文字列形式を取り、値をの戻します [IPv6](../../sql-reference/data-types/domains/ipv6.md) 返される値に等しいバイナリです `IPv6StringToNum()`.
+エイリアス `IPv6StringToNum()` これは、IPv6アドレスの文字列形式を取り、の値を返します [IPv6](../../sql-reference/data-types/domains/ipv6.md) 返される値と等しいバイナリ型 `IPv6StringToNum()`.
 
 ``` sql
 WITH

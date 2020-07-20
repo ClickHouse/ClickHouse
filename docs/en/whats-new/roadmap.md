@@ -5,13 +5,14 @@ toc_title: Roadmap
 
 # Roadmap {#roadmap}
 
-## Q1 2020 {#q1-2020}
+## Q3 2020 {#q3-2020}
 
--   Role-based access control
+-   High durability mode (`fsync` and WAL)
+-   Support spilling data to disk in `GLOBAL JOIN`
 
-## Q2 2020 {#q2-2020}
+## Q4 2020 {#q4-2020}
 
--   Integration with external authentication services
+-   Improved efficiency of distributed queries
 -   Resource pools for more precise distribution of cluster capacity between users
 
 {## [Original article](https://clickhouse.tech/docs/en/roadmap/) ##}

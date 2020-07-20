@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: "\u5916\u90E8\u8F9E\u66F8\u306E\u30BD\u30FC\u30B9"
 ---
@@ -9,7 +9,7 @@ toc_title: "\u5916\u90E8\u8F9E\u66F8\u306E\u30BD\u30FC\u30B9"
 
 外部辞書は、さまざまなソースから接続できます。
 
-辞書がxmlファイルを使用して設定されている場合、設定は次のようになります:
+辞書がxml-fileを使用して構成されている場合、構成は次のようになります:
 
 ``` xml
 <yandex>
@@ -35,11 +35,33 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 ...
 ```
 
-ソースは、 `source` セクション。
+ソースは、 `source` セクション
+
+ソースタイプの場合 [ローカル](#dicts-external_dicts_dict_sources-local_file), [実行可能ファイル](#dicts-external_dicts_dict_sources-executable), [HTTP(s)](#dicts-external_dicts_dict_sources-http), [クリックハウス](#dicts-external_dicts_dict_sources-clickhouse)
+任意設定は利用できる:
+
+``` xml
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+  <settings>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+  </settings>
+</source>
+```
+
+または
+
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 0)
+```
 
 ソースの種類 (`source_type`):
 
--   [Localファイル](#dicts-external_dicts_dict_sources-local_file)
+-   [ローカル](#dicts-external_dicts_dict_sources-local_file)
 -   [実行可能ファイル](#dicts-external_dicts_dict_sources-executable)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   DBMS
@@ -47,9 +69,9 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
     -   [クリックハウス](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
-    -   [レディス](#dicts-external_dicts_dict_sources-redis)
+    -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
-## Localファイル {#dicts-external_dicts_dict_sources-local_file}
+## ローカル {#dicts-external_dicts_dict_sources-local_file}
 
 設定例:
 
@@ -75,7 +97,7 @@ SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 
 ## 実行可能ファイル {#dicts-external_dicts_dict_sources-executable}
 
-実行可能ファイルの操作は [辞書がメモリにどのように格納されるか](external-dicts-dict-layout.md). 辞書が以下を使用して格納されている場合 `cache` と `complex_key_cache` ClickHouseは、実行可能ファイルのSTDINに要求を送信することによって、必要なキーを要求します。 その他、ClickHouse始まり実行可能ファイルを扱い、その出力としての辞書のデータです。
+実行可能ファイルを操作するには [辞書をメモリに格納する方法](external-dicts-dict-layout.md). 辞書が以下を使用して格納されている場合 `cache` と `complex_key_cache`,ClickHouseは、実行可能ファイルのSTDINに要求を送信することによって、必要なキーを要求します。 その他、ClickHouse始まり実行可能ファイルを扱い、その出力としての辞書のデータです。
 
 設定例:
 
@@ -101,7 +123,7 @@ SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
-HTTP(s)サーバーの操作は次の条件によって異なります [辞書がメモリにどのように格納されるか](external-dicts-dict-layout.md). 辞書が以下を使用して格納されている場合 `cache` と `complex_key_cache`、ClickHouse要求を送信することによって必要なキーを経由して `POST` 方法。
+HTTPサーバーでの作業は次のように依存します [辞書をメモリに格納する方法](external-dicts-dict-layout.md). 辞書が以下を使用して格納されている場合 `cache` と `complex_key_cache` クトを送信することにより、必要なキーを要求します。 `POST` 方法。
 
 設定例:
 
@@ -135,7 +157,7 @@ SOURCE(HTTP(
 ))
 ```
 
-ClickHouseがHTTPSリソースにアクセスするには、次のことが必要です [openSSLを設定](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) サーバー構成で。
+ClickHouseがHTTPSリソースにアクセスするには、次の操作が必要です [openSSLの設定](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) サーバー構成で。
 
 フィールドの設定:
 
@@ -151,7 +173,7 @@ ClickHouseがHTTPSリソースにアクセスするには、次のことが必�
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
-このメソッドを使用して、odbcドライバーを持つデータベースを接続できます。
+このメソッドを使用して、ODBCドライバーを持つデータベースに接続できます。
 
 設定例:
 
@@ -179,23 +201,23 @@ SOURCE(ODBC(
 
 フィールドの設定:
 
--   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` パラメータ。
+-   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` 変数。
 -   `table` – Name of the table and schema if exists.
 -   `connection_string` – Connection string.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [辞書の更新](external-dicts-dict-lifetime.md).
 
-ClickHouseはODBCドライバからクォート記号を受け取り、クエリのすべての設定をドライバに引用するので、データベースのテーブル名に応じてテーブル名を設定する
+ClickHouseはODBC-driverから引用シンボルを受け取り、クエリ内のすべての設定をdriverに引用するため、データベース内のテーブル名の大文字と小文字に応じてテーブル名を
 
-Oracleを使用しているときにエンコードに問題がある場合は、対応する [FAQ](../../../faq/general.md#oracle-odbc-encodings) 記事。
+Oracleの使用時にエンコーディングに問題がある場合は、対応するものを参照してください [FAQ](../../../faq/general.md#oracle-odbc-encodings) 記事だ
 
 ### ODBCディクショナリ機能の既知の脆弱性 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 !!! attention "注意"
-    ODBC driver connectionパラメーターを使用してデータベースに接続する場合 `Servername` 置換することができる。 この場合、 `USERNAME` と `PASSWORD` から `odbc.ini` リモートサーバーに送信され、侵害される可能性があります。
+    ODBCドライバー接続パラメーターでデータベースに接続する場合 `Servername` 置換可能である。 この場合の値は `USERNAME` と `PASSWORD` から `odbc.ini` リモートサーバーに送信され、侵害される可能性があります。
 
-**安全でない使用例**
+**安全でない使用の例**
 
-PostgreSQL用にunixODBCを設定してみましょう。 の内容 `/etc/odbc.ini`:
+PostgreSQL用のunixODBCを設定しましょう。 の内容 `/etc/odbc.ini`:
 
 ``` text
 [gregtest]
@@ -208,19 +230,19 @@ USERNAME = test
 PASSWORD = test
 ```
 
-次に、次のようなクエリを作成します
+次に、次のようなクエリを作成する場合
 
 ``` sql
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
-ODBCドライバーの値を送信します `USERNAME` と `PASSWORD` から `odbc.ini` に `some-server.com`.
+ODBCドライバは、次の値を送信します `USERNAME` と `PASSWORD` から `odbc.ini` に `some-server.com`.
 
 ### Postgresqlの接続例 {#example-of-connecting-postgresql}
 
-UbuntuのOS。
+Ubuntu OS。
 
-UnixODBCとPostgreSQL用のODBCドライバのインストール:
+UnixodbcとPOSTGRESQL用ODBCドライバのインストール:
 
 ``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
@@ -247,7 +269,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
     ConnSettings        =
 ```
 
-クリックハウスの辞書構成:
+ClickHouseの辞書構成:
 
 ``` xml
 <yandex>
@@ -295,13 +317,13 @@ LAYOUT(HASHED())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-編集が必要な場合があります `odbc.ini` ドライバを使用してライブラリへのフルパスを指定するには `DRIVER=/usr/local/lib/psqlodbcw.so`.
+編集が必要な場合があります `odbc.ini` ドライバを使用してライブラリへの完全パスを指定するには `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
 ### MS SQL Serverの接続例 {#example-of-connecting-ms-sql-server}
 
-UbuntuのOS。
+Ubuntu OS。
 
-設置のドライバー: :
+ドライバの取り付け: :
 
 ``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
@@ -342,7 +364,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
     Port            = 1433
 ```
 
-ClickHouseでの辞書の設定:
+ClickHouseでの辞書の構成:
 
 ``` xml
 <yandex>
@@ -452,11 +474,11 @@ SOURCE(MYSQL(
 
 -   `table` – Name of the table.
 
--   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` たとえば、MySQLの句, `id > 10 AND id < 20`. 省略可能なパラメータ。
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` MySQLの句、例えば, `id > 10 AND id < 20`. 任意パラメータ。
 
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [辞書の更新](external-dicts-dict-lifetime.md).
 
-MySQLは、ローカルホスト上でソケット経由で接続できます。 これを行うには、 `host` と `socket`.
+MySQLはソケットを介してローカルホストに接続できます。 これを行うには、 `host` と `socket`.
 
 設定例:
 
@@ -572,7 +594,7 @@ SOURCE(MONGO(
 -   `db` – Name of the database.
 -   `collection` – Name of the collection.
 
-### レディス {#dicts-external_dicts_dict_sources-redis}
+### Redis {#dicts-external_dicts_dict_sources-redis}
 
 設定例:
 
@@ -602,7 +624,7 @@ SOURCE(REDIS(
 
 -   `host` – The Redis host.
 -   `port` – The port on the Redis server.
--   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` 単純なソースとハッシュされた単一のキーソース用です, `hash_map` は用ハッシュソースで二つのキー。 距源およびキャッシュ源の複雑な鍵サポートされていません。 省略することができ、デフォルト値は `simple`.
+-   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` は簡単な源のためのハッシュされたシングルキー源, `hash_map` 二つのキーを持つハッシュソース用です。 距源およびキャッシュ源の複雑な鍵サポートされていません。 省略可能であり、デフォルト値は `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

@@ -16,6 +16,7 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"Real", static_cast<UInt8>(TraceType::Real)},
     {"CPU", static_cast<UInt8>(TraceType::CPU)},
     {"Memory", static_cast<UInt8>(TraceType::Memory)},
+    {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
 };
 
 Block TraceLogElement::createBlock()
@@ -30,14 +31,12 @@ Block TraceLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),                                  "thread_id"},
         {std::make_shared<DataTypeString>(),                                  "query_id"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"},
-        {std::make_shared<DataTypeUInt64>(),                                  "size"},
+        {std::make_shared<DataTypeInt64>(),                                   "size"},
     };
 }
 
-void TraceLogElement::appendToBlock(Block & block) const
+void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
@@ -49,6 +48,4 @@ void TraceLogElement::appendToBlock(Block & block) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
-
-    block.setColumns(std::move(columns));
 }

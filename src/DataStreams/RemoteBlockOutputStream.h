@@ -4,6 +4,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/Throttler.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Interpreters/ClientInfo.h>
 
 
 namespace DB
@@ -22,8 +23,8 @@ public:
     RemoteBlockOutputStream(Connection & connection_,
                             const ConnectionTimeouts & timeouts,
                             const String & query_,
-                            const Settings * settings_ = nullptr,
-                            const ClientInfo * client_info_ = nullptr);
+                            const Settings & settings_,
+                            const ClientInfo & client_info_);
 
     Block getHeader() const override { return header; }
 
@@ -38,8 +39,6 @@ public:
 private:
     Connection & connection;
     String query;
-    const Settings * settings;
-    const ClientInfo * client_info;
     Block header;
     bool finished = false;
 };

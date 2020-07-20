@@ -191,7 +191,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
             /// TODO: FixedString
             if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
             {
-                MutableColumnPtr column_mixed = (*std::move(column_read.column)).mutate();
+                MutableColumnPtr column_mixed = IColumn::mutate(std::move(column_read.column));
                 mixNumberColumns(column_read.type->getTypeId(), column_mixed, column_def.column, defaults_mask);
                 column_read.column = std::move(column_mixed);
             }

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: ODBC
 ---
@@ -103,7 +103,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Clickhouse’daki tablo, MySQL tablosundan veri alma:
+Clickhouse'daki tablo, MySQL tablosundan veri alma:
 
 ``` sql
 CREATE TABLE odbc_t

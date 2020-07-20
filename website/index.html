@@ -4,6 +4,40 @@
 
 {% extends "templates/base.html" %}
 
+{% block extra_meta %}
+<script type="application/ld+json">{
+"@context": "https://schema.org",
+"@type": "SoftwareApplication",
+"name": "ClickHouse",
+"operatingSystem": ["Linux", "FreeBSD", "Mac OS X"],
+"featureList": ["SQL", "columnar storage", "fault-tolerance", "distributed queries"],
+"softwareHelp": "https://clickhouse.tech/docs/en/",
+"license": "https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE",
+"applicationCategory": "https://schema.org/DeveloperApplication",
+"applicationSubCategory": "Database Management System",
+"copyrightHolder": {
+  "@type": "Organization",
+  "name": "Yandex LLC",
+  "logo": {
+    "@type": "ImageObject",
+    "url": "https://clickhouse.tech/images/yandex.png",
+    "width": 163,
+    "height": 60
+  }
+},
+"copyrightYear": 2016,
+"mainEntityOfPage": {
+  "@type": "WebSite",
+  "@id": "https://clickhouse.tech"
+},
+"offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "USD"
+}
+}</script>
+{% endblock %}
+
 {% block content %}
 
 {% include "templates/index/nav.html" %}

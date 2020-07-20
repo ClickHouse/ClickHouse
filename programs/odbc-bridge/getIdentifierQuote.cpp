@@ -1,22 +1,22 @@
 #include "getIdentifierQuote.h"
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
-#if USE_POCO_SQLODBC
-#include <Poco/SQL/ODBC/ODBCException.h>
-#include <Poco/SQL/ODBC/SessionImpl.h>
-#include <Poco/SQL/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
-#endif
-#if USE_POCO_DATAODBC
-#include <Poco/Data/ODBC/ODBCException.h>
-#include <Poco/Data/ODBC/SessionImpl.h>
-#include <Poco/Data/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
-#endif
+#if USE_ODBC
+
+#    include <Poco/Data/ODBC/ODBCException.h>
+#    include <Poco/Data/ODBC/SessionImpl.h>
+#    include <Poco/Data/ODBC/Utility.h>
+
+#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 std::string getIdentifierQuote(SQLHDBC hdbc)
 {
     std::string identifier;
@@ -40,5 +40,20 @@ std::string getIdentifierQuote(SQLHDBC hdbc)
     }
     return identifier;
 }
+
+IdentifierQuotingStyle getQuotingStyle(SQLHDBC hdbc)
+{
+    auto identifier_quote = getIdentifierQuote(hdbc);
+    if (identifier_quote.length() == 0)
+        return IdentifierQuotingStyle::None;
+    else if (identifier_quote[0] == '`')
+        return IdentifierQuotingStyle::Backticks;
+    else if (identifier_quote[0] == '"')
+        return IdentifierQuotingStyle::DoubleQuotes;
+    else
+        throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
+
+}
+
 #endif

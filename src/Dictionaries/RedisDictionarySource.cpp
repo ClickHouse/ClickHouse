@@ -5,48 +5,33 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int SUPPORT_IS_DISABLED;
-    }
 
-    void registerDictionarySourceRedis(DictionarySourceFactory & factory)
-    {
-        auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                     const Poco::Util::AbstractConfiguration & config,
-                                     const String & config_prefix,
-                                     Block & sample_block,
-                                     const Context & /* context */,
-                                     bool /* check_config */) -> DictionarySourcePtr {
-#if USE_POCO_REDIS
+void registerDictionarySourceRedis(DictionarySourceFactory & factory)
+{
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+                                   const Poco::Util::AbstractConfiguration & config,
+                                   const String & config_prefix,
+                                   Block & sample_block,
+                                   const Context & /* context */,
+                                   bool /* check_config */) -> DictionarySourcePtr {
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
-#else
-        UNUSED(dict_struct);
-        UNUSED(config);
-        UNUSED(config_prefix);
-        UNUSED(sample_block);
-        throw Exception{"Dictionary source of type `redis` is disabled because poco library was built without redis support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-        };
-        factory.registerSource("redis", create_table_source);
-    }
+    };
+    factory.registerSource("redis", create_table_source);
+}
 
 }
 
 
-#if USE_POCO_REDIS
+#include <Poco/Redis/Array.h>
+#include <Poco/Redis/Client.h>
+#include <Poco/Redis/Command.h>
+#include <Poco/Redis/Type.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
-#    include <Poco/Redis/Array.h>
-#    include <Poco/Redis/Client.h>
-#    include <Poco/Redis/Command.h>
-#    include <Poco/Redis/Type.h>
-#    include <Poco/Util/AbstractConfiguration.h>
+#include <IO/WriteHelpers.h>
+#include <Common/FieldVisitors.h>
 
-#    include <Common/FieldVisitors.h>
-#    include <IO/WriteHelpers.h>
-
-#    include "RedisBlockInputStream.h"
+#include "RedisBlockInputStream.h"
 
 
 namespace DB
@@ -88,7 +73,7 @@ namespace DB
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
 
             if (dict_struct.key->size() != 2)
-                throw Exception{"Redis source with storage type \'hash_map\' requiers 2 keys",
+                throw Exception{"Redis source with storage type \'hash_map\' requires 2 keys",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
             // suppose key[0] is primary key, key[1] is secondary key
         }
@@ -233,5 +218,3 @@ namespace DB
         return RedisStorageType::SIMPLE;
     }
 }
-
-#endif

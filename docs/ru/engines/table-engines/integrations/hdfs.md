@@ -1,6 +1,6 @@
 # HDFS {#table_engines-hdfs}
 
-Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md) и [URL](../special/url.md).
+Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
 
 ## Использование движка {#ispolzovanie-dvizhka}
 

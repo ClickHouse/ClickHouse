@@ -50,7 +50,7 @@ sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
 
 Then run these commands to install packages:
 
@@ -64,7 +64,7 @@ You can also download and install packages manually from [here](https://repo.cli
 
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
-The required version can be downloaded with `curl` or `wget` from repository https://repo.yandex.ru/clickhouse/tgz/.
+The required version can be downloaded with `curl` or `wget` from repository https://repo.clickhouse.tech/tgz/.
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 
 ``` bash
@@ -93,6 +93,18 @@ For production environments, it’s recommended to use the latest `stable`-versi
 ### From Docker Image {#from-docker-image}
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
+
+### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
+
+For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+
+-   [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+
+After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data. To run `clickhouse server`, you have to additionally download [server](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) and [users](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml) configuration files from GitHub.
+
+These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
 
 ### From Sources {#from-sources}
 

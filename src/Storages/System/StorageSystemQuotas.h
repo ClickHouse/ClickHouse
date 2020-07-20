@@ -6,9 +6,7 @@
 
 namespace DB
 {
-
 class Context;
-
 
 /** Implements the `quotas` system tables, which allows you to get information about quotas.
   */

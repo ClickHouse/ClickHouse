@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: Permisos para consultas
 ---
 
-# Permisos Para Consultas {#permissions_for_queries}
+# Permisos para consultas {#permissions_for_queries}
 
 Las consultas en ClickHouse se pueden dividir en varios tipos:
 
@@ -43,7 +43,7 @@ de cambiar sólo ajustes específicos, para más detalles ver [restricciones en 
 
 Valor predeterminado: 0
 
-## Método De codificación De Datos: {#settings_allow_ddl}
+## Método de codificación de datos: {#settings_allow_ddl}
 
 Permite o niega [DDL](https://en.wikipedia.org/wiki/Data_definition_language) consulta.
 

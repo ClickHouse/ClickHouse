@@ -1,5 +1,6 @@
 #include "Internals.h"
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/extractKeyExpressionList.h>
 
 namespace DB
 {
@@ -168,25 +169,14 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 }
 
 
-String createCommaSeparatedStringFrom(const Names & names)
-{
-    std::ostringstream ss;
-    if (!names.empty())
-    {
-        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
-        ss << names.back();
-    }
-    return ss.str();
-}
-
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 {
     const auto sorting_key_ast = extractOrderBy(storage_ast);
     const auto primary_key_ast = extractPrimaryKey(storage_ast);
 
-    const auto sorting_key_expr_list = MergeTreeData::extractKeyExpressionList(sorting_key_ast);
+    const auto sorting_key_expr_list = extractKeyExpressionList(sorting_key_ast);
     const auto primary_key_expr_list = primary_key_ast
-                           ? MergeTreeData::extractKeyExpressionList(primary_key_ast) : sorting_key_expr_list->clone();
+                           ? extractKeyExpressionList(primary_key_ast) : sorting_key_expr_list->clone();
 
     /// Maybe we have to handle VersionedCollapsing engine separately. But in our case in looks pointless.
 
@@ -260,7 +250,7 @@ ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std
         return res;
 
     res.is_remote = 1;
-    for (auto & replica : replicas)
+    for (const auto & replica : replicas)
     {
         if (isLocalAddress(DNSResolver::instance().resolveHost(replica.host_name)))
         {
@@ -270,7 +260,7 @@ ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std
     }
 
     res.hostname_difference = std::numeric_limits<size_t>::max();
-    for (auto & replica : replicas)
+    for (const auto & replica : replicas)
     {
         size_t difference = getHostNameDifference(local_hostname, replica.host_name);
         res.hostname_difference = std::min(difference, res.hostname_difference);
