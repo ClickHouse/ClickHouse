@@ -49,6 +49,16 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ;
 }
 
+namespace ExchangeType
+{
+    /// Note that default here means default by implementation and not by rabbitmq settings
+    static const String DEFAULT = "default";
+    static const String FANOUT = "fanout";
+    static const String DIRECT = "direct";
+    static const String TOPIC = "topic";
+    static const String HASH = "consistent_hash";
+    static const String HEADERS = "headers";
+}
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
@@ -72,7 +82,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
         , num_queues(num_queues_)
-        , exchange_type(exchange_type_)
         , use_transactional_channel(use_transactional_channel_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
@@ -107,7 +116,22 @@ StorageRabbitMQ::StorageRabbitMQ(
     heartbeat_task = global_context.getSchedulePool().createTask("RabbitMQHeartbeatTask", [this]{ heartbeatFunc(); });
     heartbeat_task->deactivate();
 
-    bind_by_id = num_consumers > 1 || num_queues > 1;
+    hash_exchange = num_consumers > 1 || num_queues > 1;
+
+    exchange_type_set = exchange_type_ != ExchangeType::DEFAULT;
+    if (exchange_type_set)
+    {
+        if      (exchange_type_ == ExchangeType::FANOUT)         exchange_type = AMQP::ExchangeType::fanout;
+        else if (exchange_type_ == ExchangeType::DIRECT)         exchange_type = AMQP::ExchangeType::direct;
+        else if (exchange_type_ == ExchangeType::TOPIC)          exchange_type = AMQP::ExchangeType::topic;
+        else if (exchange_type_ == ExchangeType::HASH)           exchange_type = AMQP::ExchangeType::consistent_hash;
+        else if (exchange_type_ == ExchangeType::HEADERS)        exchange_type = AMQP::ExchangeType::headers;
+        else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
+    }
+    else
+    {
+        exchange_type = AMQP::ExchangeType::fanout;
+    }
 
     auto table_id = getStorageID();
     String table_name = table_id.table_name;
@@ -264,17 +288,17 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, event_handler, exchange_name, routing_keys,
-        next_channel_id, log, row_delimiter, bind_by_id, num_queues,
-        exchange_type, local_exchange_name, stream_cancelled);
+        consumer_channel, event_handler, exchange_name, exchange_type, routing_keys,
+        next_channel_id, log, row_delimiter, hash_exchange, num_queues,
+        local_exchange_name, stream_cancelled);
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
-        parsed_address, global_context, login_password, routing_keys[0], local_exchange_name,
-        log, num_consumers * num_queues, bind_by_id, use_transactional_channel,
+        parsed_address, global_context, login_password, routing_keys, exchange_name, exchange_type,
+        log, num_consumers * num_queues, use_transactional_channel,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 

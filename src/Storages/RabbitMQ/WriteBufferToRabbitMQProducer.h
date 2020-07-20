@@ -23,11 +23,11 @@ public:
             std::pair<String, UInt16> & parsed_address,
             Context & global_context,
             const std::pair<String, String> & login_password_,
-            const String & routing_key_,
-            const String & exchange_,
+            const Names & routing_keys_,
+            const String & exchange_name_,
+            const AMQP::ExchangeType exchange_type_,
             Poco::Logger * log_,
             size_t num_queues_,
-            bool bind_by_id_,
             bool use_transactional_channel_,
             std::optional<char> delimiter,
             size_t rows_per_message,
@@ -38,21 +38,22 @@ public:
 
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }
+    void finilizeProducer();
 
 private:
     void nextImpl() override;
-    void checkExchange();
+    void initExchange();
     void iterateEventLoop();
     void writingFunc();
-    void finilizeProducer();
 
     const std::pair<String, String> login_password;
-    const String routing_key;
+    const Names routing_keys;
     const String exchange_name;
-    const bool bind_by_id;
+    AMQP::ExchangeType exchange_type;
     const size_t num_queues;
     const bool use_transactional_channel;
 
+    AMQP::Table key_arguments;
     BackgroundSchedulePool::TaskHolder writing_task;
     std::atomic<bool> stop_loop = false;
 

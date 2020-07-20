@@ -76,15 +76,15 @@ private:
 
     Names routing_keys;
     const String exchange_name;
+    AMQP::ExchangeType exchange_type;
     String local_exchange_name;
 
     const String format_name;
     char row_delimiter;
     size_t num_consumers;
     size_t num_created_consumers = 0;
-    bool bind_by_id;
+    bool hash_exchange;
     size_t num_queues;
-    const String exchange_type;
     const bool use_transactional_channel;
 
     Poco::Logger * log;
@@ -99,6 +99,7 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
+    bool exchange_type_set = false;
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;
     std::atomic<bool> loop_started = false;

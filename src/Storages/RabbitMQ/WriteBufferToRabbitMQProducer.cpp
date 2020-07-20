@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_RABBITMQ;
+    extern const int LOGICAL_ERROR;
 }
 
 static const auto QUEUE_SIZE = 50000;
@@ -27,20 +28,20 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address,
         Context & global_context,
         const std::pair<String, String> & login_password_,
-        const String & routing_key_,
-        const String & exchange_,
+        const Names & routing_keys_,
+        const String & exchange_name_,
+        const AMQP::ExchangeType exchange_type_,
         Poco::Logger * log_,
         size_t num_queues_,
-        bool bind_by_id_,
         bool use_transactional_channel_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_)
         : WriteBuffer(nullptr, 0)
         , login_password(login_password_)
-        , routing_key(routing_key_)
-        , exchange_name(exchange_ + "_direct")
-        , bind_by_id(bind_by_id_)
+        , routing_keys(routing_keys_)
+        , exchange_name(exchange_name_)
+        , exchange_type(exchange_type_)
         , num_queues(num_queues_)
         , use_transactional_channel(use_transactional_channel_)
         , payloads(QUEUE_SIZE * num_queues)
@@ -73,7 +74,6 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     }
 
     producer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
-    checkExchange();
 
     /// If publishing should be wrapped in transactions
     if (use_transactional_channel)
@@ -83,6 +83,17 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 
     writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
     writing_task->deactivate();
+
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        std::vector<String> matching;
+        for (const auto & header : routing_keys)
+        {
+            boost::split(matching, header, [](char c){ return c == '='; });
+            key_arguments[matching[0]] = matching[1];
+            matching.clear();
+        }
+    }
 }
 
 
@@ -90,7 +101,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     stop_loop.store(true);
     writing_task->deactivate();
-    checkExchange();
+    initExchange();
 
     connection->close();
     assert(rows == 0 && chunks.empty());
@@ -133,28 +144,34 @@ void WriteBufferToRabbitMQProducer::writingFunc()
         while (!payloads.empty())
         {
             payloads.pop(payload);
-            next_queue = next_queue % num_queues + 1;
 
-            if (bind_by_id)
+            if (exchange_type == AMQP::ExchangeType::consistent_hash)
             {
+                next_queue = next_queue % num_queues + 1;
                 producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
+            }
+            else if (exchange_type == AMQP::ExchangeType::headers)
+            {
+                AMQP::Envelope envelope(payload.data(), payload.size());
+                envelope.setHeaders(key_arguments);
+                producer_channel->publish(exchange_name, "", envelope, key_arguments);
             }
             else
             {
-                producer_channel->publish(exchange_name, routing_key, payload);
+                producer_channel->publish(exchange_name, routing_keys[0], payload);
             }
         }
+
         iterateEventLoop();
     }
 }
 
 
-void WriteBufferToRabbitMQProducer::checkExchange()
+void WriteBufferToRabbitMQProducer::initExchange()
 {
     std::atomic<bool> exchange_declared = false, exchange_error = false;
 
-    /// The AMQP::passive flag indicates that it should only be checked if there is a valid exchange with the given name.
-    producer_channel->declareExchange(exchange_name, AMQP::direct, AMQP::passive)
+    producer_channel->declareExchange(exchange_name, exchange_type)
     .onSuccess([&]()
     {
         exchange_declared = true;
@@ -162,10 +179,10 @@ void WriteBufferToRabbitMQProducer::checkExchange()
     .onError([&](const char * message)
     {
         exchange_error = true;
-        LOG_ERROR(log, "Exchange for INSERT query was not declared. Reason: {}", message);
+        LOG_ERROR(log, "Exchange error: {}", message);
     });
 
-    /// These variables are updated in a separate thread and starting the loop blocks current thread
+    /// These variables are updated in a separate thread.
     while (!exchange_declared && !exchange_error)
     {
         iterateEventLoop();
@@ -175,9 +192,6 @@ void WriteBufferToRabbitMQProducer::checkExchange()
 
 void WriteBufferToRabbitMQProducer::finilizeProducer()
 {
-    /// This will make sure everything is published
-    checkExchange();
-
     if (use_transactional_channel)
     {
         std::atomic<bool> answer_received = false, wait_rollback = false;
