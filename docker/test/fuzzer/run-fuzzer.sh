@@ -67,19 +67,7 @@ function watchdog
         sleep 1
     done
 
-    ./clickhouse-client --query "select elapsed, query from system.processes" ||:
-
-    killall clickhouse-server ||:
-    for x in {1..10}
-    do
-        if ! pgrep -f clickhouse-server
-        then
-            break
-        fi
-        sleep 1
-    done
-
-    killall -9 clickhouse-server clickhouse-client ||:
+    killall -9 clickhouse-client ||:
 }
 
 function fuzz
@@ -100,8 +88,18 @@ function fuzz
         || fuzzer_exit_code=$?
     
     echo "Fuzzer exit code is $fuzzer_exit_code"
+
     ./clickhouse-client --query "select elapsed, query from system.processes" ||:
-    kill -9 $server_pid ||:
+    killall clickhouse-server ||:
+    for x in {1..10}
+    do
+        if ! pgrep -f clickhouse-server
+        then
+            break
+        fi
+        sleep 1
+    done
+    killall -9 clickhouse-server ||:
 
     if [ "$fuzzer_exit_code" == "143" ]
     then
