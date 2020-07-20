@@ -1,53 +1,37 @@
 #pragma once
 
-#include <Core/SettingsCollection.h>
+#include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
 
 
-namespace Poco
+namespace Poco::Util
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+    class AbstractConfiguration;
 }
 
-namespace boost
+namespace boost::program_options
 {
-    namespace program_options
-    {
-        class options_description;
-    }
+    class options_description;
 }
 
 
 namespace DB
 {
-
 class IColumn;
 
 
-/** Settings of query execution.
-  * These settings go to users.xml.
+/** List of settings: type, name, default value, description, flags
+  *
+  * This looks rather unconvenient. It is done that way to avoid repeating settings in different places.
+  * Note: as an alternative, we could implement settings to be completely dynamic in form of map: String -> Field,
+  *  but we are not going to do it, because settings is used everywhere as static struct fields.
+  *
+  * `flags` can be either 0 or IMPORTANT.
+  * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
   */
-struct Settings : public SettingsCollection<Settings>
-{
-    /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
-    /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
-    Settings() {}
 
-    /** List of settings: type, name, default value, description, flags
-      *
-      * This looks rather unconvenient. It is done that way to avoid repeating settings in different places.
-      * Note: as an alternative, we could implement settings to be completely dynamic in form of map: String -> Field,
-      *  but we are not going to do it, because settings is used everywhere as static struct fields.
-      *
-      * `flags` can be either 0 or IMPORTANT.
-      * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
-      */
-
-#define COMMON_SETTINGS(M)                                            \
+#define COMMON_SETTINGS(M) \
     M(UInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.", 0) \
     M(UInt64, max_compress_block_size, 1048576, "The maximum size of blocks of uncompressed data before compressing for writing to a table.", 0) \
     M(UInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading", 0) \
@@ -412,7 +396,7 @@ struct Settings : public SettingsCollection<Settings>
     M(Bool, force_optimize_skip_unused_shards_no_nested, false, "Obsolete setting, does nothing. Will be removed after 2020-12-01. Use force_optimize_skip_unused_shards_nesting instead.", 0) \
     M(Bool, experimental_use_processors, true, "Obsolete setting, does nothing. Will be removed after 2020-11-29.", 0)
 
-#define FORMAT_FACTORY_SETTINGS(M)                                            \
+#define FORMAT_FACTORY_SETTINGS(M) \
     M(Char, format_csv_delimiter, ',', "The character to be considered as a delimiter in CSV data. If setting with a string, a string has to have a length of 1.", 0) \
     M(Bool, format_csv_allow_single_quotes, 1, "If it is set to true, allow strings in single quotes.", 0) \
     M(Bool, format_csv_allow_double_quotes, 1, "If it is set to true, allow strings in double quotes.", 0) \
@@ -475,11 +459,21 @@ struct Settings : public SettingsCollection<Settings>
     M(Bool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0) \
     M(Bool, allow_non_metadata_alters, true, "Allow to execute alters which affects not only tables metadata, but also data on disk", 0) \
 
-    #define LIST_OF_SETTINGS(M)    \
-        COMMON_SETTINGS(M)         \
-        FORMAT_FACTORY_SETTINGS(M)
+#define LIST_OF_SETTINGS(M)    \
+    COMMON_SETTINGS(M)         \
+    FORMAT_FACTORY_SETTINGS(M)
 
-    DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
+DECLARE_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
+
+
+/** Settings of query execution.
+  * These settings go to users.xml.
+  */
+struct Settings : public BaseSettings<SettingsTraits>
+{
+    /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
+    /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
+    Settings() {}
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
      * The profile can also be set using the `set` functions, like the profile setting.

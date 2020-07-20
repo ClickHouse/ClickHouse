@@ -8,6 +8,7 @@ PEERDIR(
 
 SRCS(
     BackgroundSchedulePool.cpp
+    BaseSettings.cpp
     Block.cpp
     BlockInfo.cpp
     ColumnWithTypeAndName.cpp
@@ -19,7 +20,6 @@ SRCS(
     PostgreSQLProtocol.cpp
     NamesAndTypes.cpp
     Settings.cpp
-    SettingsCollection.cpp
     SettingsEnums.cpp
     SettingsFields.cpp
     SortDescription.cpp

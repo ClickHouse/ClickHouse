@@ -141,7 +141,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
             else
             {
-                String str = Settings::valueToString(setting_name, element.value);
+                String str = Settings::valueToStringUtil(setting_name, element.value);
                 column_value.insertData(str.data(), str.length());
                 column_value_null_map.push_back(false);
             }
@@ -153,7 +153,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
             else
             {
-                String str = Settings::valueToString(setting_name, element.min_value);
+                String str = Settings::valueToStringUtil(setting_name, element.min_value);
                 column_min.insertData(str.data(), str.length());
                 column_min_null_map.push_back(false);
             }
@@ -165,7 +165,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
             else
             {
-                String str = Settings::valueToString(setting_name, element.max_value);
+                String str = Settings::valueToStringUtil(setting_name, element.max_value);
                 column_max.insertData(str.data(), str.length());
                 column_max_null_map.push_back(false);
             }
