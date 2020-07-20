@@ -105,11 +105,6 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-StringRef ColumnNullable::getDataAt(size_t /*n*/) const
-{
-    throw Exception{"Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
-}
-
 void ColumnNullable::insertData(const char * pos, size_t length)
 {
     if (pos == nullptr)

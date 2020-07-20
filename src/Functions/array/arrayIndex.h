@@ -769,30 +769,55 @@ private:
     }
 
     /**
-     * 1. Obtain the right-side argument column @e C. If @e C is a non-const column (thus the argument is not constant,
-     * loop through all @e C's values).
+     * 1. Obtain the right-side argument column @e C. If @e C is a non-const column (thus the argument is not constant),
+     * loop through all @e C's values.
      * 2. Obtain the value's index.
-     * 3. Invoke the ArrayIndexNumImpl to find the desired value
+     * 3. Invoke the ArrayIndexNum*Impl to find the desired value
      * 4. Fill the desired values in the resulting column
+     *
+     * Catches arguments of type T, LC(T), Nullable(LC(T)) and so on.
      */
     bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
 
-        if (col_array)
+        if (!col_array)
             return false;
 
-        const ColumnLowCardinality * col_lc =
+        /**
+         * Here we have four general cases:
+         * 1. LC(T), just search for T in the index.
+         * 2. Nullable(LC(T)), which is handled in nullMapsBuilder below. We can process this type as simple as the
+         * first one as all the *Impls take the null maps argument.
+         * 3. LC(Nullable(T)) and Nullable(LC(Nullable(T))). These cases are somewhat special as Nullable's getDataAt
+         * is slightly slower (due to nested column invocation).
+         *
+         * The array most outer nested type must be either LC(U) or Nullable(LC(U)).
+         * We do not care for LC(Nullable(U)) as it may be processed as V = Nullable(U) for LC(V).
+         */
+        const ColumnLowCardinality * col_array_nested_lc =
             checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
 
-        if (!col_lc)
-            return false;
+        if (!col_array_nested_lc)
+        {
+            const ColumnNullable * const col_array_nested_nullable =
+                checkAndGetColumn<ColumnNullable>(&col_array->getData());
+
+            if (!col_array_nested_nullable)
+                return false;
+
+            col_array_nested_lc = checkAndGetColumn<ColumnLowCardinality>(
+                    &col_array_nested_nullable->getNestedColumn());
+
+            if (!col_array_nested_lc)
+                return false;
+        }
 
         auto col_res = ResultColumnType::create();
         col_res->getData().resize_fill(col_array->getOffsets().size()); /// fill with default values
 
-        const auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
+        const auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments); //null maps for outer Nullable.
         const IColumn * col_arg = block.getByPosition(arguments[1]).column.get();
 
         const size_t size = isColumnConst(*col_arg)
@@ -814,7 +839,7 @@ private:
             }
 
             const StringRef elem = col_arg->getDataAt(i);
-            const std::optional<UInt64> value_index = col_lc->getDictionary().getOrFindIndex(elem);
+            const std::optional<UInt64> value_index = col_array_nested_lc->getDictionary().getOrFindIndex(elem);
 
             if (!value_index)
                 continue; /// position already zeroed out
@@ -824,7 +849,7 @@ private:
                 /* Resulting data type -- same */ UInt64,
                 ConcreteAction,
                 /* Resize col_res -- already resized */ false>::vector(
-                    /* data -- indices column */ col_lc->getIndexes(),
+                    /* data -- indices column */ col_array_nested_lc->getIndexes(),
                     col_array->getOffsets(),
                     /* target value */ *value_index,
                     col_res->getData(),
@@ -1052,8 +1077,8 @@ public:
 
         if (!arguments[1]->onlyNull() && !allowArguments(array_type->getNestedType(), arguments[1]))
             throw Exception("Types of array and 2nd argument of function \""
-                + getName() + "\" must be identical up to nullability or cardinality or "
-                "numeric types or Enum and numeric type. Passed: "
+                + getName() + "\" must be identical up to nullability, cardinality, "
+                "numeric types, or Enum and numeric type. Passed: "
                 + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1166,7 +1191,7 @@ private:
                 UInt8, UInt16, UInt32, UInt64,
                 Int8, Int16, Int32, Int64,
                 Float32, Float64>(block, arguments, result)
-            || executeConst(block, arguments, result) // special case
+            || executeConst(block, arguments, result)
             || executeString(block, arguments, result)
             || executeLowCardinality(block, arguments, result)
             || executeGeneric(block, arguments, result)))
