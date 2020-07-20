@@ -139,6 +139,12 @@ private:
     BOOST_TTI_HAS_MEMBER_FUNCTION(reserve)
     BOOST_TTI_HAS_MEMBER_FUNCTION(prepare)
 
+    template <class T, class = void>
+    struct has_index_operator : std::false_type {};
+
+    template <class T>
+    struct has_index_operator<T, std::void_t<decltype(std::declval<T>()[0])>> : std::true_type {};
+
     /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
     /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
     /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
@@ -217,38 +223,32 @@ private:
         {
             auto array = element.getArray();
             if (index >= 0)
-            {
                 --index;
-                if (static_cast<size_t>(index) >= array.size())
-                    return false;
-                element = array[index];
-                out_key = {};
-                return true;
-            }
-            index += array.size();
-            if (index < 0)
+            else
+                index += array.size();
+
+            if (static_cast<size_t>(index) >= array.size())
                 return false;
             element = array[index];
             out_key = {};
             return true;
         }
 
-        if (element.isObject())
+        if constexpr (has_index_operator<typename JSONParser::Object>::value)
         {
-            auto object = element.getObject();
-            if (index >= 0)
+            if (element.isObject())
             {
-                --index;
+                auto object = element.getObject();
+                if (index >= 0)
+                    --index;
+                else
+                    index += object.size();
+
                 if (static_cast<size_t>(index) >= object.size())
                     return false;
                 std::tie(out_key, element) = object[index];
                 return true;
             }
-            index += object.size();
-            if (index < 0)
-                return false;
-            std::tie(out_key, element) = object[index];
-            return true;
         }
 
         return {};

@@ -20,6 +20,8 @@ struct RapidJSONParser
     class Array;
     class Object;
 
+    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
+    /// array or object.
     class Element
     {
     public:
@@ -47,6 +49,7 @@ struct RapidJSONParser
         const rapidjson::Value * ptr = nullptr;
     };
 
+    /// References an array in a JSON document.
     class Array
     {
     public:
@@ -67,17 +70,18 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
         ALWAYS_INLINE Iterator end() const { return ptr->End(); }
         ALWAYS_INLINE size_t size() const { return ptr->Size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { return *(ptr->Begin() + index); }
+        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return *(ptr->Begin() + index); }
 
     private:
         const rapidjson::Value * ptr = nullptr;
     };
 
+    using KeyValuePair = std::pair<std::string_view, Element>;
+
+    /// References an object in a JSON document.
     class Object
     {
     public:
-        using KeyValuePair = std::pair<std::string_view, Element>;
-
         class Iterator
         {
         public:
@@ -96,14 +100,7 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
 
-        ALWAYS_INLINE KeyValuePair operator[](size_t index) const
-        {
-            auto it = ptr->MemberBegin() + index;
-            std::string_view key{it->name.GetString(), it->name.GetStringLength()};
-            return KeyValuePair{key, it->value};
-        }
-
-        ALWAYS_INLINE bool find(const std::string_view & key, Element & result) const
+        bool find(const std::string_view & key, Element & result) const
         {
             auto it = ptr->FindMember(rapidjson::StringRef(key.data(), key.length()));
             if (it == ptr->MemberEnd())
@@ -113,10 +110,20 @@ struct RapidJSONParser
             return true;
         }
 
+        /// Optional: Provides access to an object's element by index.
+        ALWAYS_INLINE KeyValuePair operator[](size_t index) const
+        {
+            assert (index < size());
+            auto it = ptr->MemberBegin() + index;
+            std::string_view key{it->name.GetString(), it->name.GetStringLength()};
+            return {key, it->value};
+        }
+
     private:
         const rapidjson::Value * ptr = nullptr;
     };
 
+    /// Parses a JSON document, returns the reference to its root element if succeeded.
     bool parse(const std::string_view & json, Element & result)
     {
         rapidjson::MemoryStream ms(json.data(), json.size());
@@ -127,6 +134,11 @@ struct RapidJSONParser
         result = document;
         return true;
     }
+
+#if 0
+    /// Optional: Allocates memory to parse JSON documents faster.
+    void reserve(size_t max_size);
+#endif
 
 private:
     rapidjson::Document document;
