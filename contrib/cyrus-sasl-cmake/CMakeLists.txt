@@ -20,6 +20,7 @@ target_sources(sasl2 PRIVATE
     ${CYRUS_SASL_SOURCE_DIR}/lib/checkpw.c
 )
 target_include_directories(sasl2 PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}  # for config.h
     ${CYRUS_SASL_SOURCE_DIR}/plugins
     ${CYRUS_SASL_SOURCE_DIR}
     ${CYRUS_SASL_SOURCE_DIR}/include
