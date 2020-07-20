@@ -867,16 +867,17 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         {
             if (error_count)
             {
+                /// Update source write write lock
                 std::unique_lock source_lock(source_mutex);
                 /// Recover after error: we have to clone the source here because
                 /// it could keep connections which should be reset after error.
                 source_ptr = source_ptr->clone();
             }
 
+            /// Working with source_ptr with read lock. source_ptr has to be alive while stream alive
             std::shared_lock source_lock(source_mutex);
             Stopwatch watch;
 
-            /// To perform parallel loading.
             BlockInputStreamPtr stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
             stream->readPrefix();
 
@@ -900,6 +901,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
+                    /// Modifying cache with write lock
                     ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
                     const auto id = ids[i];
 
@@ -937,6 +939,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
             stream->readSuffix();
 
+            /// Lock just for last_exception safety
             ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
             error_count = 0;
@@ -947,6 +950,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         }
         catch (...)
         {
+            /// Lock just for last_exception safety
             ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
             ++error_count;
             last_exception = std::current_exception();
@@ -957,6 +961,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         }
     }
 
+    /// Modifying cache state again with write lock
     ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
     size_t not_found_num = 0;
     size_t found_num = 0;

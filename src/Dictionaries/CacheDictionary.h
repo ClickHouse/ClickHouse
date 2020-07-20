@@ -316,7 +316,13 @@ private:
 
     Poco::Logger * log;
 
+    /// This lock is used for the inner cache state update function lock it for
+    /// write, when it need to update cache state all other functions just
+    /// readers. Suprisingly this lock is also used for last_exception pointer.
     mutable std::shared_mutex rw_lock;
+    /// This lock is used in update function because it is called from different
+    /// threads. If one thread deside to update source_ptr, than all other
+    /// threads should not use previous version of the ptr.
     mutable std::shared_mutex source_mutex;
 
     /// Actual size will be increased to match power of 2
