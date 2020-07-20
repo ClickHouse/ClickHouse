@@ -17,6 +17,8 @@ struct DummyJSONParser
     class Array;
     class Object;
 
+    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
+    /// array or object.
     class Element
     {
     public:
@@ -39,6 +41,7 @@ struct DummyJSONParser
         Object getObject() const;
     };
 
+    /// References an array in a JSON document.
     class Array
     {
     public:
@@ -46,10 +49,10 @@ struct DummyJSONParser
         {
         public:
             Element operator*() const { return {}; }
-            Iterator & operator ++() { return *this; }
-            Iterator operator ++(int) { return *this; }
-            friend bool operator ==(const Iterator &, const Iterator &) { return true; }
-            friend bool operator !=(const Iterator &, const Iterator &) { return false; }
+            Iterator & operator++() { return *this; }
+            Iterator operator++(int) { return *this; }
+            friend bool operator==(const Iterator &, const Iterator &) { return true; }
+            friend bool operator!=(const Iterator &, const Iterator &) { return false; }
         };
 
         Iterator begin() const { return {}; }
@@ -58,29 +61,40 @@ struct DummyJSONParser
         Element operator[](size_t) const { return {}; }
     };
 
+    using KeyValuePair = std::pair<std::string_view, Element>;
+
+    /// References an object in a JSON document.
     class Object
     {
     public:
-        using KeyValuePair = std::pair<std::string_view, Element>;
-
         class Iterator
         {
         public:
-            KeyValuePair operator *() const { return {}; }
-            Iterator & operator ++() { return *this; }
-            Iterator operator ++(int) { return *this; }
-            friend bool operator ==(const Iterator &, const Iterator &) { return true; }
-            friend bool operator !=(const Iterator &, const Iterator &) { return false; }
+            KeyValuePair operator*() const { return {}; }
+            Iterator & operator++() { return *this; }
+            Iterator operator++(int) { return *this; }
+            friend bool operator==(const Iterator &, const Iterator &) { return true; }
+            friend bool operator!=(const Iterator &, const Iterator &) { return false; }
         };
 
         Iterator begin() const { return {}; }
         Iterator end() const { return {}; }
         size_t size() const { return 0; }
-        KeyValuePair operator[](size_t) const { return {}; }
         bool find(const std::string_view &, Element &) const { return false; }
+
+#if 0
+        /// Optional: Provides access to an object's element by index.
+        KeyValuePair operator[](size_t) const { return {}; }
+#endif
     };
 
+    /// Parses a JSON document, returns the reference to its root element if succeeded.
     bool parse(const std::string_view &, Element &) { throw Exception{"Functions JSON* are not supported", ErrorCodes::NOT_IMPLEMENTED}; }
+
+#if 0
+    /// Optional: Allocates memory to parse JSON documents faster.
+    void reserve(size_t max_size);
+#endif
 };
 
 }
