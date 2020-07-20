@@ -23,6 +23,7 @@ INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
 SRCS(
     ActionLock.cpp
     AlignedBuffer.cpp
+    Allocator.cpp
     checkStackSize.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp

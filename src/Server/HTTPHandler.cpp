@@ -232,15 +232,12 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 
 void HTTPHandler::processQuery(
+    Context & context,
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
-    Context context = server.context();
-
-    CurrentThread::QueryScope query_scope(context);
-
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     std::istream & istr = request.stream();
@@ -683,6 +680,11 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
+    /// Should be initialized before anything,
+    /// For correct memory accounting.
+    Context context = server.context();
+    CurrentThread::QueryScope query_scope(context);
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.
@@ -706,7 +708,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(request, params, response, used_output);
+        processQuery(context, request, params, response, used_output);
         LOG_INFO(log, "Done processing query");
     }
     catch (...)

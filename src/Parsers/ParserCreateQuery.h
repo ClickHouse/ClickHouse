@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
 
 
@@ -24,10 +25,9 @@ protected:
 };
 
 
-/** Parametric type or Storage. For example:
- *         FixedString(10) or
- *         Partitioned(Log, ChunkID) or
- *         Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+/** Storage engine or Codec. For example:
+ *         Memory()
+ *         ReplicatedMergeTree('/path', 'replica')
  * Result of parsing - ASTFunction with or without parameters.
  */
 class ParserIdentifierWithParameters : public IParserBase
@@ -47,14 +47,12 @@ protected:
 
 /** The name and type are separated by a space. For example, URL String. */
 using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
-/** Name and type separated by a space. The name can contain a dot. For example, Hits.URL String. */
-using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
 template <typename NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
 
     ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
@@ -115,7 +113,7 @@ template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_null{"NULL"};
     ParserKeyword s_not{"NOT"};

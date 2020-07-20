@@ -19,27 +19,27 @@ The table engine (type of table) determines:
 
 ### MergeTree {#mergetree}
 
-The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated*](mergetree-family/replication.md#table_engines-replication) versions of engines), partitioning, and other features not supported in other engines.
+The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated\*](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) versions of engines), partitioning, secondary data-skipping indexes, and other features not supported in other engines.
 
 Engines in the family:
 
--   [MergeTree](mergetree-family/mergetree.md#mergetree)
--   [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
--   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
--   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
--   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
--   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
--   [GraphiteMergeTree](mergetree-family/graphitemergetree.md#graphitemergetree)
+-   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#mergetree)
+-   [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md#replacingmergetree)
+-   [SummingMergeTree](../../engines/table-engines/mergetree-family/summingmergetree.md#summingmergetree)
+-   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [CollapsingMergeTree](../../engines/table-engines/mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
+-   [VersionedCollapsingMergeTree](../../engines/table-engines/mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
+-   [GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree)
 
 ### Log {#log}
 
-Lightweight [engines](log-family/index.md) with minimum functionality. They’re the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
+Lightweight [engines](../../engines/table-engines/log-family/index.md) with minimum functionality. They’re the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
 
 Engines in the family:
 
--   [TinyLog](log-family/tinylog.md#tinylog)
--   [StripeLog](log-family/stripelog.md#stripelog)
--   [Log](log-family/log.md#log)
+-   [TinyLog](../../engines/table-engines/log-family/tinylog.md#tinylog)
+-   [StripeLog](../../engines/table-engines/log-family/stripelog.md#stripelog)
+-   [Log](../../engines/table-engines/log-family/log.md#log)
 
 ### Integration Engines {#integration-engines}
 
@@ -47,28 +47,28 @@ Engines for communicating with other data storage and processing systems.
 
 Engines in the family:
 
--   [Kafka](integrations/kafka.md#kafka)
--   [MySQL](integrations/mysql.md#mysql)
--   [ODBC](integrations/odbc.md#table-engine-odbc)
--   [JDBC](integrations/jdbc.md#table-engine-jdbc)
--   [HDFS](integrations/hdfs.md#hdfs)
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka)
+-   [MySQL](../../engines/table-engines/integrations/mysql.md#mysql)
+-   [ODBC](../../engines/table-engines/integrations/odbc.md#table-engine-odbc)
+-   [JDBC](../../engines/table-engines/integrations/jdbc.md#table-engine-jdbc)
+-   [HDFS](../../engines/table-engines/integrations/hdfs.md#hdfs)
 
 ### Special Engines {#special-engines}
 
 Engines in the family:
 
--   [Distributed](special/distributed.md#distributed)
--   [MaterializedView](special/materializedview.md#materializedview)
--   [Dictionary](special/dictionary.md#dictionary)
--   [Merge](special/merge.md#merge)
--   [File](special/file.md#file)
--   [Null](special/null.md#null)
--   [Set](special/set.md#set)
--   [Join](special/join.md#join)
--   [URL](special/url.md#table_engines-url)
--   [View](special/view.md#table_engines-view)
--   [Memory](special/memory.md#memory)
--   [Buffer](special/buffer.md#buffer)
+-   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [MaterializedView](../../engines/table-engines/special/materializedview.md#materializedview)
+-   [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary)
+-   [Merge](../../engines/table-engines/special/merge.md#merge)
+-   [File](../../engines/table-engines/special/file.md#file)
+-   [Null](../../engines/table-engines/special/null.md#null)
+-   [Set](../../engines/table-engines/special/set.md#set)
+-   [Join](../../engines/table-engines/special/join.md#join)
+-   [URL](../../engines/table-engines/special/url.md#table_engines-url)
+-   [View](../../engines/table-engines/special/view.md#table_engines-view)
+-   [Memory](../../engines/table-engines/special/memory.md#memory)
+-   [Buffer](../../engines/table-engines/special/buffer.md#buffer)
 
 ## Virtual Columns {#table_engines-virtual_columns}
 
@@ -80,4 +80,4 @@ To select data from a virtual column, you must specify its name in the `SELECT` 
 
 If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We don’t recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/) <!--hide-->

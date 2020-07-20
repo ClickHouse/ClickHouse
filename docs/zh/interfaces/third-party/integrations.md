@@ -91,5 +91,10 @@
 -   仙丹
     -   [Ecto](https://github.com/elixir-ecto/ecto)
     -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/integrations/) <!--hide-->

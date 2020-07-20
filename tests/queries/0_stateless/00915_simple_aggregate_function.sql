@@ -1,3 +1,5 @@
+set optimize_throw_if_noop = 1;
+
 -- basic test
 drop table if exists simple;
 
@@ -41,3 +43,15 @@ select toTypeName(nullable_str),toTypeName(low_str),toTypeName(ip),toTypeName(st
 optimize table simple final;
 
 drop table simple;
+
+create table with_overflow (
+    id UInt64,
+    s SimpleAggregateFunction(sumWithOverflow, UInt8)
+) engine AggregatingMergeTree order by id;
+
+insert into with_overflow select 1, 1 from numbers(256);
+
+optimize table with_overflow final;
+
+select 'with_overflow', * from with_overflow;
+

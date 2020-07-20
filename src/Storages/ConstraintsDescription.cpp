@@ -54,4 +54,19 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context 
     return res;
 }
 
+ConstraintsDescription::ConstraintsDescription(const ConstraintsDescription & other)
+{
+    constraints.reserve(other.constraints.size());
+    for (const auto & constraint : other.constraints)
+        constraints.emplace_back(constraint->clone());
+}
+
+ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDescription & other)
+{
+    constraints.resize(other.constraints.size());
+    for (size_t i = 0; i < constraints.size(); ++i)
+        constraints[i] = other.constraints[i]->clone();
+    return *this;
+}
+
 }

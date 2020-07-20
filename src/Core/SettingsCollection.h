@@ -225,11 +225,14 @@ enum class LoadBalancing
     /// a replica is selected among the replicas with the minimum number of errors
     /// with the minimum number of distinguished characters in the replica name and local hostname
     NEAREST_HOSTNAME,
-    /// replicas are walked through strictly in order; the number of errors does not matter
+    // replicas with the same number of errors are accessed in the same order
+    // as they are specified in the configuration.
     IN_ORDER,
     /// if first replica one has higher number of errors,
     ///   pick a random one from replicas with minimum number of errors
     FIRST_OR_RANDOM,
+    // round robin across replicas with the same number of errors.
+    ROUND_ROBIN,
 };
 using SettingLoadBalancing = SettingEnum<LoadBalancing>;
 
@@ -299,6 +302,7 @@ using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputForm
 enum class LogsLevel
 {
     none = 0,    /// Disable
+    fatal,
     error,
     warning,
     information,
@@ -327,7 +331,7 @@ using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
 
 enum class SettingsBinaryFormat
 {
-    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
+    OLD,     /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
     STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
     DEFAULT = STRINGS,
 };
@@ -545,6 +549,9 @@ public:
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;
+
+    // A debugging aid.
+    std::string dumpChangesToString() const;
 
     /// Applies change to concrete setting.
     void applyChange(const SettingChange & change);

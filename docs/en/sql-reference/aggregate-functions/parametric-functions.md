@@ -20,7 +20,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 **Parameters**
 
 `number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
-`values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
+`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
 
 **Returned values**
 
@@ -494,4 +494,4 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 ## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
-Same behavior as [sumMap](reference.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.

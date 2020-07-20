@@ -11,7 +11,7 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 
 The `Merge` engine accepts parameters: the database name and a regular expression for tables.
 
-## Examples
+## Examples {#examples}
 
 Example 1:
 
@@ -67,6 +67,6 @@ FROM WatchLog
 
 **See Also**
 
--   [Virtual columns](index.md#table_engines-virtual_columns)
+-   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/merge/) <!--hide-->

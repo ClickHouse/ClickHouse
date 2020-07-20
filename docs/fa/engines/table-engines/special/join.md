@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **پارامترهای موتور**
 
--   `join_strictness` – [پیوستن به سختی](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [پیوستن به سختی](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [پیوستن به نوع](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` بند که `JOIN` عملیات با ساخته شده.
 

@@ -1,9 +1,9 @@
 ---
 toc_priority: 55
-toc_title: Working with IP Addresses
+toc_title: IP Addresses
 ---
 
-# Functions for Working with IP Addresses {#functions-for-working-with-ip-addresses}
+# Functions for Working with IPv4 and IPv6 Addresses {#functions-for-working-with-ip-addresses}
 
 ## IPv4NumToString(num) {#ipv4numtostringnum}
 

@@ -95,7 +95,6 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     if (asynchronous_metric_log)
         logs.emplace_back(asynchronous_metric_log.get());
 
-
     try
     {
         for (auto & log : logs)

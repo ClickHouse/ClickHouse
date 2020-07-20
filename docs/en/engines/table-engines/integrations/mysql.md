@@ -1,9 +1,9 @@
 ---
-toc_priority: 33
+toc_priority: 3
 toc_title: MySQL
 ---
 
-# Mysql {#mysql}
+# MySQL {#mysql}
 
 The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
 
@@ -18,7 +18,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the original MySQL table structure:
 

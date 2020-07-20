@@ -49,8 +49,11 @@ public:
     {
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' must have type AggregateFunction - state of aggregate function."
+                " Got '{}' instead", getName(), arguments[0]->getName());
+        }
 
         return type->getReturnType();
     }

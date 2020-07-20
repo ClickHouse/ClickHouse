@@ -74,6 +74,7 @@ SELECT name, status FROM system.dictionaries;
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
 Записывает буферы логов в системные таблицы (например system.query\_log). Позволяет не ждать 7.5 секунд при отладке.
+Если буфер логов пустой, то этот запрос просто создаст системные таблицы.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 

@@ -167,7 +167,7 @@ static auto getNameRange(const ColumnsDescription::Container & columns, const St
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -175,7 +175,9 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
 
     auto insert_it = columns.cend();
 
-    if (!after_column.empty())
+    if (first)
+        insert_it = columns.cbegin();
+    else if (!after_column.empty())
     {
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
@@ -211,6 +213,38 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     });
 }
 
+void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
+{
+    const auto & reorder_column = [&](auto get_new_pos)
+    {
+        auto column_range = getNameRange(columns, column_name);
+
+        if (column_range.first == column_range.second)
+            throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+        std::vector<ColumnDescription> moving_columns;
+        for (auto list_it = column_range.first; list_it != column_range.second;)
+        {
+            moving_columns.emplace_back(*list_it);
+            list_it = columns.get<0>().erase(list_it);
+        }
+
+        columns.get<0>().insert(get_new_pos(), moving_columns.begin(), moving_columns.end());
+    };
+
+    if (first)
+        reorder_column([&]() { return columns.cbegin(); });
+    else if (!after_column.empty() && column_name != after_column)
+    {
+        /// Checked first
+        auto range = getNameRange(columns, after_column);
+        if (range.first == range.second)
+            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+        reorder_column([&]() { return getNameRange(columns, after_column).second; });
+    }
+}
 
 void ColumnsDescription::flattenNested()
 {

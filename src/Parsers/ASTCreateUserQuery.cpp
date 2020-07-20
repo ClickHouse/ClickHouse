@@ -1,5 +1,6 @@
 #include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTUserNameWithHost.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
 
@@ -32,27 +33,32 @@ namespace
         }
 
         String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
-        std::optional<String> password;
+        std::optional<String> by_value;
 
-        if (show_password)
+        if (show_password || authentication_type == Authentication::LDAP_SERVER)
         {
             switch (authentication_type)
             {
                 case Authentication::PLAINTEXT_PASSWORD:
                 {
-                    password = authentication.getPassword();
+                    by_value = authentication.getPassword();
                     break;
                 }
                 case Authentication::SHA256_PASSWORD:
                 {
                     authentication_type_name = "sha256_hash";
-                    password = authentication.getPasswordHashHex();
+                    by_value = authentication.getPasswordHashHex();
                     break;
                 }
                 case Authentication::DOUBLE_SHA1_PASSWORD:
                 {
                     authentication_type_name = "double_sha1_hash";
-                    password = authentication.getPasswordHashHex();
+                    by_value = authentication.getPasswordHashHex();
+                    break;
+                }
+                case Authentication::LDAP_SERVER:
+                {
+                    by_value = authentication.getServerName();
                     break;
                 }
 
@@ -64,9 +70,9 @@ namespace
 
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
-        if (password)
+        if (by_value)
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << (settings.hilite ? IAST::hilite_none : "")
-                << quoteString(*password);
+                << quoteString(*by_value);
     }
 
 
@@ -167,7 +173,7 @@ namespace
     }
 
 
-    void formatDefaultRoles(const ASTExtendedRoleSet & default_roles, const IAST::FormatSettings & settings)
+    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
         default_roles.format(settings);
@@ -213,7 +219,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     else if (or_replace)
         format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    format.ostr << " " << backQuoteIfNeed(name);
+    format.ostr << " ";
+    names->format(format);
 
     formatOnCluster(format);
 

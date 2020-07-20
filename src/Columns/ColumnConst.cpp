@@ -120,7 +120,9 @@ void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_d
         res[i] = i;
 }
 
-void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const {}
+void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const
+{
+}
 
 void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 {

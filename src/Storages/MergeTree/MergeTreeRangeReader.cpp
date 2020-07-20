@@ -914,6 +914,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     else
     {
         result.columns[prewhere_column_pos] = result.getFilterHolder()->convertToFullColumnIfConst();
+        if (getSampleBlock().getByName(prewhere->prewhere_column_name).type->isNullable())
+            result.columns[prewhere_column_pos] = makeNullable(std::move(result.columns[prewhere_column_pos]));
         result.clearFilter(); // Acting as a flag to not filter in PREWHERE
     }
 }

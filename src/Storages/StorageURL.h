@@ -21,13 +21,14 @@ class IStorageURLBase : public IStorage
 public:
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
 protected:
     IStorageURLBase(
@@ -49,6 +50,7 @@ private:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
@@ -56,45 +58,34 @@ private:
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    virtual Block getHeaderBlock(const Names & column_names) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
 };
 
 class StorageURLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    StorageURLBlockOutputStream(const Poco::URI & uri,
-                                const String & format,
-                                const Block & sample_block_,
-                                const Context & context,
-                                const ConnectionTimeouts & timeouts,
-                                const CompressionMethod compression_method);
+    StorageURLBlockOutputStream(
+        const Poco::URI & uri,
+        const String & format,
+        const Block & sample_block_,
+        const Context & context,
+        const ConnectionTimeouts & timeouts,
+        const CompressionMethod compression_method);
 
     Block getHeader() const override
     {
         return sample_block;
     }
 
-    void write(const Block & block) override
-    {
-        writer->write(block);
-    }
-
-    void writePrefix() override
-    {
-        writer->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        writer->writeSuffix();
-        writer->flush();
-        write_buf->finalize();
-    }
+    void write(const Block & block) override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
     Block sample_block;
@@ -123,9 +114,9 @@ public:
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return getSampleBlock();
+        return metadata_snapshot->getSampleBlock();
     }
 };
 }
