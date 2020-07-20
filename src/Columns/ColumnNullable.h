@@ -53,7 +53,18 @@ public:
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
-    StringRef getDataAt(size_t n) const override;
+
+    /**
+     * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
+     * StringRef{nullptr, 0} indicating that data is not present.
+     */
+    StringRef getDataAt(size_t n) const override
+    {
+        if (isNullAt(n))
+            return StringRef{static_cast<char *>(nullptr), 0};
+
+        return getNestedColumn().getDataAt(n);
+    }
 
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
