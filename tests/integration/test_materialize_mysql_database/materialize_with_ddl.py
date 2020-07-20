@@ -15,6 +15,74 @@ def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seco
     assert lastest_result == result_set
 
 
+def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    # existed before the mapping was created
+    # TODO: Add check test BIT[(M)] BOOL, BOOLEAN, Enum
+
+    mysql_node.query("CREATE TABLE test_database.test_table_1 ("
+        "`key` INT NOT NULL PRIMARY KEY, "
+        "unsigned_tiny_int TINYINT UNSIGNED, tiny_int TINYINT, "
+        "unsigned_small_int SMALLINT UNSIGNED, small_int SMALLINT, "
+        "unsigned_medium_int MEDIUMINT UNSIGNED, medium_int MEDIUMINT, "
+        "unsigned_int INT UNSIGNED, _int INT, "
+        "unsigned_integer INTEGER UNSIGNED, _integer INTEGER, "
+        "unsigned_bigint BIGINT UNSIGNED, _bigint BIGINT, "
+        "/* Need ClickHouse support read mysql decimal unsigned_decimal DECIMAL(19, 10) UNSIGNED, _decimal DECIMAL(19, 10), */"
+        "unsigned_float FLOAT UNSIGNED, _float FLOAT, "
+        "unsigned_double DOUBLE UNSIGNED, _double DOUBLE, "
+        "_varchar VARCHAR(10), _char CHAR(10), "
+        "_date Date, _datetime DateTime, _timestamp TIMESTAMP) ENGINE = InnoDB;")
+
+    # it already has some data
+    mysql_node.query(
+        "INSERT INTO test_database.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', "
+        "'2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00');")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+
+    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+        "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+        "2020-01-01 00:00:00\t2020-01-01 00:00:00\n")
+
+    mysql_node.query(
+        "INSERT INTO test_database.test_table_1 VALUES(2, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', "
+        "'2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00');")
+
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+        "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+        "2020-01-01 00:00:00\t2020-01-01 00:00:00\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\t"
+        "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\n")
+
+    mysql_node.query("UPDATE test_database.test_table_1 SET unsigned_tiny_int = 2 WHERE `key` = 1")
+
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+        "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+        "2020-01-01 00:00:00\t2020-01-01 00:00:00\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\t"
+        "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\n")
+
+    # update primary key
+    mysql_node.query("UPDATE test_database.test_table_1 SET `key` = 3 WHERE `tiny_int` = -1")
+
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+        "2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\t"
+        "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\n3\t2\t-1\t2\t-2\t3\t-3\t"
+        "4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\n")
+
+    mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `key` = 2')
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
+        "3\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t-1.0842022e-19\t-1.0842022e-19\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+        "2020-01-01 00:00:00\t2020-01-01 00:00:00\n")
+
+    mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `unsigned_tiny_int` = 2')
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV", "")
+
+    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database")
+
+
 def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY) ENGINE = InnoDB;")

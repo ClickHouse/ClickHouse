@@ -70,6 +70,8 @@ bool ParserDeclareColumn::parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr &
     ParserDeclareOptions p_non_generate_options{
         {
             OptionDescribe("ZEROFILL", "zero_fill", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("SIGNED", "is_unsigned", std::make_unique<ParserAlwaysFalse>()),
+            OptionDescribe("UNSIGNED", "is_unsigned", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("NULL", "is_null", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("NOT NULL", "is_null", std::make_unique<ParserAlwaysFalse>()),
             OptionDescribe("DEFAULT", "default", std::make_unique<ParserExpression>()),
