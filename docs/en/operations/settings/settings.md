@@ -585,6 +585,31 @@ Possible values:
 
 Default value: 0.
 
+## network_compression_method {#network_compression_method}
+
+Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+
+Possible values:
+
+-   `LZ4` — sets LZ4 compression method.
+-   `ZSTD` — sets ZSTD compression method.
+
+Default value: `LZ4`.
+
+**See Also**
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
+
+Possible values:
+
+-   Positive integer from 1 to 15.
+
+Default value: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Setting up query logging.
