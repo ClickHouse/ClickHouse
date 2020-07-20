@@ -62,19 +62,19 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
             scale = 250.0 / (1 + 250.0 * ys[i]);
 
             std::vector<Float64> samples = stats::rgamma<std::vector<Float64>>(r, c, shape, scale);
-            for (size_t j = 0; j < samples.size(); ++j)
-                samples[j] = 1 / samples[j];
+            for (auto & sample : samples)
+                sample = 1 / sample;
             samples_matrix.emplace_back(std::move(samples));
         }
     }
 
     PODArray<Float64> means;
-    for (size_t i = 0; i < xs.size(); ++i)
+    for (auto & samples : samples_matrix)
     {
         Float64 total = 0.0;
-        for (size_t j = 0; j < samples_matrix[i].size(); ++j)
-            total += samples_matrix[i][j];
-        means.push_back(total / samples_matrix[i].size());
+        for (auto sample : samples)
+            total += sample;
+        means.push_back(total / samples.size());
     }
 
     // Beats control
@@ -95,8 +95,8 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
         }
     }
 
-    for (size_t i = 1; i < xs.size(); ++i)
-        variants[i].beats_control = static_cast<Float64>(variants[i].beats_control) / r / c;
+    for (auto & variant : variants)
+        variant.beats_control = static_cast<Float64>(variant.beats_control) / r / c;
 
     // To be best
     PODArray<size_t> count_m(xs.size(), 0);
@@ -123,8 +123,8 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
         }
     }
 
-    for (size_t i = 0; i < xs.size(); ++i)
-        variants[i].best = static_cast<Float64>(variants[i].best) / r / c;
+    for (auto & variant : variants)
+        variant.best = static_cast<Float64>(variant.best) / r / c;
 
     return variants;
 }
@@ -243,8 +243,11 @@ public:
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doen't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
 
+        if (variant_names.size() < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments must be larger than 1. variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
+
         if (std::count_if(xs.begin(), xs.end(), [](Float64 v) { return v < 0; }) > 0 ||
-            std::count_if(ys.begin(), ys.end(), [](Float64  v) { return v < 0; }) > 0)
+            std::count_if(ys.begin(), ys.end(), [](Float64 v) { return v < 0; }) > 0)
             throw Exception("Negative values don't allowed", ErrorCodes::BAD_ARGUMENTS);
 
         Variants variants;
@@ -254,7 +257,7 @@ public:
             variants = bayesian_ab_test<false>(dist, xs, ys);
 
         auto dst = ColumnString::create();
-        std::string result_str = convertToJson(variant_names, variants).c_str();
+        std::string result_str = convertToJson(variant_names, variants);
         dst->insertData(result_str.c_str(), result_str.length());
         block.getByPosition(result).column = std::move(dst);
     }
