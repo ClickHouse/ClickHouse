@@ -62,63 +62,74 @@ namespace
 {
     const auto RESCHEDULE_MS = 500;
 
-    struct MergeableQueryVisitorData
+    struct MergeableQueryMatcher
     {
+        using Visitor = InDepthNodeVisitor<MergeableQueryMatcher, true>;
         using TypeToVisit = ASTFunction;
 
-        ASTPtr window_function;
-        String window_id_name;
-        String window_id_alias;
-        String serialized_window_function;
-        String timestamp_column_name;
-        bool is_tumble = false;
-        bool is_hop = false;
-
-        void visit(const ASTFunction & node, ASTPtr & node_ptr)
+        struct Data
         {
-            if (node.name == "TUMBLE" || node.name == "HOP")
+            ASTPtr window_function;
+            String window_id_name;
+            String window_id_alias;
+            String serialized_window_function;
+            String timestamp_column_name;
+            bool is_tumble = false;
+            bool is_hop = false;
+        };
+
+        static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (auto * t = ast->as<ASTFunction>())
             {
-                is_tumble = node.name == "TUMBLE";
-                is_hop = node.name == "HOP";
-                if (!window_function)
+                if (t->name == "TUMBLE" || t->name == "HOP")
                 {
-                    std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
-                    window_id_name = node.getColumnName();
-                    window_id_alias = node.alias;
-                    window_function = node.clone();
-                    window_function->setAlias("");
-                    serialized_window_function = serializeAST(*window_function);
-                    timestamp_column_name = node.arguments->children[0]->getColumnName();
-                }
-                else
-                {
-                    auto temp_node = node.clone();
-                    temp_node->setAlias("");
-                    if (serializeAST(*temp_node) != serialized_window_function)
-                        throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                    data.is_tumble = t->name == "TUMBLE";
+                    data.is_hop = t->name == "HOP";
+                    if (!data.window_function)
+                    {
+                        t->name = "WINDOW_ID";
+                        data.window_id_name = t->getColumnName();
+                        data.window_id_alias = t->alias;
+                        data.window_function = t->clone();
+                        data.window_function->setAlias("");
+                        data.serialized_window_function = serializeAST(*data.window_function);
+                        data.timestamp_column_name = t->arguments->children[0]->getColumnName();
+                    }
+                    else
+                    {
+                        auto temp_node = t->clone();
+                        temp_node->setAlias("");
+                        if (serializeAST(*temp_node) != data.serialized_window_function)
+                            throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                    }
                 }
             }
         }
     };
 
-    struct ReplaceWindowIdData
+    struct ReplaceWindowIdMatcher
     {
-        using TypeToVisit = ASTFunction;
-        bool is_tumble;
-
-        void visit(const ASTFunction & node, ASTPtr & node_ptr) const
+    public:
+        using Visitor = InDepthNodeVisitor<ReplaceWindowIdMatcher, true>;
+        struct Data
         {
-            if (node.name == "WINDOW_ID")
+            String window_name;
+        };
+
+        static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (auto * t = ast->as<ASTFunction>())
             {
-                if (is_tumble)
-                    std::static_pointer_cast<ASTFunction>(node_ptr)->name = "TUMBLE";
-                else
-                    std::static_pointer_cast<ASTFunction>(node_ptr)->name = "HOP";
+                if (t->name == "WINDOW_ID")
+                    t->name = data.window_name;
             }
         }
     };
-
-    using ReplaceWindowIdVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceWindowIdData>, true>;
 
     struct ReplaceFunctionNowData
     {
@@ -143,18 +154,23 @@ namespace
 
     using ReplaceFunctionNowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionNowData>, true>;
 
-    struct ReplaceFunctionWindowData
+    struct ReplaceFunctionWindowMatcher
     {
-        using TypeToVisit = ASTFunction;
+        using Visitor = InDepthNodeVisitor<ReplaceFunctionWindowMatcher, true>;
 
-        static void visit(ASTFunction & node, ASTPtr & node_ptr)
+        struct Data{};
+
+        static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data &)
         {
-            if (node.name == "HOP" || node.name == "TUMBLE")
-                std::static_pointer_cast<ASTFunction>(node_ptr)->name = "WINDOW_ID";
+            if (auto * t = ast->as<ASTFunction>())
+            {
+            if (t->name == "HOP" || t->name == "TUMBLE")
+                t->name = "WINDOW_ID";
+            }
         }
     };
-
-    using ReplaceFunctionWindowVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceFunctionWindowData>, true>;
 
     class ToIdentifierMatcher
     {
@@ -414,6 +430,26 @@ inline void StorageWindowView::fire(UInt32 watermark)
     fire_condition.notify_all();
 }
 
+void StorageWindowView::extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
+{
+    const auto * arg = ast->as<ASTFunction>();
+    if (!arg || !startsWith(arg->name, "toInterval"))
+        throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    kind = strToIntervalKind(arg->name.substr(10));
+    const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
+    if (!interval_unit
+        || (interval_unit->value.getType() != Field::Types::String && interval_unit->value.getType() != Field::Types::UInt64))
+        throw Exception("Interval argument must be integer", ErrorCodes::BAD_ARGUMENTS);
+    if (interval_unit->value.getType() == Field::Types::String)
+        num_units = std::stoi(interval_unit->value.safeGet<String>());
+    else
+        num_units = interval_unit->value.safeGet<UInt64>();
+
+    if (num_units <= 0)
+        throw Exception("Value for Interval argument must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+}
+
 std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery(const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name)
 {
     /// We will create a query to create an internal table.
@@ -456,8 +492,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
 
     ReplaceFunctionNowData time_now_data;
     ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
-    ReplaceFunctionWindowData func_hop_data;
-    ReplaceFunctionWindowVisitor func_window_visitor(func_hop_data);
+    ReplaceFunctionWindowMatcher::Data func_hop_data;
+    ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
 
     auto new_storage = std::make_shared<ASTStorage>();
     if (storage == nullptr)
@@ -808,100 +844,48 @@ StorageWindowView::StorageWindowView(
     String select_database_name = global_context.getCurrentDatabase();
     String select_table_name;
     extractDependentTable(select_query, select_database_name, select_table_name);
-    select_table_id = StorageID(select_database_name, select_table_name);
-    auto inner_query = innerQueryParser(select_query);
-
-    mergeable_query = inner_query->clone();
-
-    ReplaceFunctionNowData func_now_data;
-    ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
-    is_time_column_func_now = func_now_data.is_time_column_func_now;
-    if (is_time_column_func_now)
-        window_id_name = func_now_data.window_id_name;
-
-    final_query = mergeable_query->clone();
-
-    ReplaceWindowIdData final_query_data;
-    final_query_data.is_tumble = is_tumble;
-    ReplaceWindowIdVisitor(final_query_data).visit(final_query);
-
-    is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
-    is_watermark_ascending = query.is_watermark_ascending;
-    is_watermark_bounded = query.is_watermark_bounded;
-
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
     {
         select_database_name = "system";
         select_table_name = "one";
     }
-
+    select_table_id = StorageID(select_database_name, select_table_name);
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
+    // Parser inner query
+    auto inner_query = innerQueryParser(select_query);
+
+    // Parser mergeable query
+    mergeable_query = inner_query->clone();
+    ReplaceFunctionNowData func_now_data;
+    ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
+    is_time_column_func_now = func_now_data.is_time_column_func_now;
+    if (is_time_column_func_now)
+        window_id_name = func_now_data.window_id_name;
+
+    // Parser final query
+    final_query = mergeable_query->clone();
+    ReplaceWindowIdMatcher::Data final_query_data;
+    if (is_tumble)
+        final_query_data.window_name = "TUMBLE";
+    else
+        final_query_data.window_name = "HOP";
+    ReplaceWindowIdMatcher::Visitor(final_query_data).visit(final_query);
+
+    is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
+    is_watermark_ascending = query.is_watermark_ascending;
+    is_watermark_bounded = query.is_watermark_bounded;
     target_table_id = query.to_table_id;
 
-    clean_interval = global_context.getSettingsRef().window_view_clean_interval.totalSeconds();
-    next_fire_signal = getWindowUpperBound(std::time(nullptr));
+    eventTimeParser(query);
 
-    if (query.is_watermark_strictly_ascending || query.is_watermark_ascending || query.is_watermark_bounded)
-    {
-        is_proctime = false;
-        if (is_time_column_func_now)
-            throw Exception("now() is not support for Event time processing.", ErrorCodes::INCORRECT_QUERY);
-        if (query.is_watermark_ascending)
-        {
-            is_watermark_bounded = true;
-            watermark_kind = IntervalKind::Second;
-            watermark_num_units = 1;
-        }
-        else if (query.is_watermark_bounded)
-        {
-            // parser watermark function
-            const auto & watermark_function = std::static_pointer_cast<ASTFunction>(query.watermark_function);
-            if (!startsWith(watermark_function->name, "toInterval"))
-                throw Exception("Illegal type of WATERMARK function, should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-
-            const auto & interval_units_p1 = std::static_pointer_cast<ASTLiteral>(watermark_function->children.front()->children.front());
-            watermark_kind = strToIntervalKind(watermark_function->name.substr(10));
-            try
-            {
-                watermark_num_units = boost::lexical_cast<int>(interval_units_p1->value.get<String>());
-            }
-            catch (const boost::bad_lexical_cast &)
-            {
-                throw Exception("Cannot parse string '" + interval_units_p1->value.get<String>() + "' as Integer.", ErrorCodes::CANNOT_PARSE_TEXT);
-            }
-            if (watermark_num_units <= 0)
-                throw Exception("Value for WATERMARK function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        }
-    }
-
-    if (query.allowed_lateness)
-    {
-        allowed_lateness = true;
-
-        // parser lateness function
-        const auto & lateness_function = std::static_pointer_cast<ASTFunction>(query.lateness_function);
-        if (!startsWith(lateness_function->name, "toInterval"))
-            throw Exception("Illegal type of ALLOWED_LATENESS function, should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-
-        const auto & interval_units_p1 = std::static_pointer_cast<ASTLiteral>(lateness_function->children.front()->children.front());
-        lateness_kind = strToIntervalKind(lateness_function->name.substr(10));
-        try
-        {
-            lateness_num_units = boost::lexical_cast<int>(interval_units_p1->value.get<String>());
-        }
-        catch (const boost::bad_lexical_cast &)
-        {
-            throw Exception(
-                "Cannot parse string '" + interval_units_p1->value.get<String>() + "' as Integer.", ErrorCodes::CANNOT_PARSE_TEXT);
-        }
-        if (lateness_num_units <= 0)
-            throw Exception("Value for ALLOWED_LATENESS function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-    }
+    if (is_tumble)
+        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "TUMBLE");
+    else
+        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
 
     auto generateInnerTableName = [](const String & table_name) { return ".inner." + table_name; };
-
     if (attach_)
     {
         inner_table_id = StorageID(table_id_.database_name, generateInnerTableName(table_id_.table_name));
@@ -918,10 +902,8 @@ StorageWindowView::StorageWindowView(
         inner_table_id = inner_storage->getStorageID();
     }
 
-    if (is_tumble)
-        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "TUMBLE");
-    else
-        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
+    clean_interval = global_context.getSettingsRef().window_view_clean_interval.totalSeconds();
+    next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
     clean_cache_task = wv_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     if (is_proctime)
@@ -941,8 +923,8 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     // parse stage mergeable
     ASTPtr result = query.clone();
     ASTPtr expr_list = result;
-    MergeableQueryVisitorData stage_mergeable_data;
-    InDepthNodeVisitor<OneTypeMatcher<MergeableQueryVisitorData, NeedChild::all>, true>(stage_mergeable_data).visit(expr_list);
+    MergeableQueryMatcher::Data stage_mergeable_data;
+    MergeableQueryMatcher::Visitor(stage_mergeable_data).visit(expr_list);
     if (!stage_mergeable_data.is_tumble && !stage_mergeable_data.is_hop)
         throw Exception("WINDOW FUNCTION is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
     window_id_name = stage_mergeable_data.window_id_name;
@@ -953,31 +935,52 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     // parser window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*stage_mergeable_data.window_function);
     const auto & arguments = window_function.arguments->children;
-    const auto & arg1 = std::static_pointer_cast<ASTFunction>(arguments.at(1));
-    if (!arg1 || !startsWith(arg1->name, "toInterval"))
-        throw Exception("Illegal type of second argument of function " + arg1->name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-    window_kind = strToIntervalKind(arg1->name.substr(10));
-    const auto & interval_units_p1 = std::static_pointer_cast<ASTLiteral>(arg1->children.front()->children.front());
-    window_num_units = stoi(interval_units_p1->value.get<String>());
-    if (window_num_units <= 0)
-        throw Exception("Interval value for WINDOW function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    extractWindowArgument(
+        arguments.at(1),
+        window_kind,
+        window_num_units,
+        "Illegal type of second argument of function " + window_function.name + " should be Interval");
 
     if (!is_tumble)
     {
         hop_kind = window_kind;
         hop_num_units = window_num_units;
-        const auto & arg2 = std::static_pointer_cast<ASTFunction>(arguments.at(2));
-        if (!arg2 || !startsWith(arg2->name, "toInterval"))
-            throw Exception("Illegal type of last argument of function " + arg2->name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-        window_kind = strToIntervalKind(arg2->name.substr(10));
-        const auto & interval_units_p2 = std::static_pointer_cast<ASTLiteral>(arg2->children.front()->children.front());
-        window_num_units = stoi(interval_units_p2->value.get<String>());
-        if (window_num_units <= 0)
-            throw Exception("Interval value for WINDOW function must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
+        extractWindowArgument(
+            arguments.at(2),
+            window_kind,
+            window_num_units,
+            "Illegal type of third argument of function " + window_function.name + " should be Interval");
         slice_num_units= std::gcd(hop_num_units, window_num_units);
     }
     return result;
+}
+
+void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
+{
+    if (query.is_watermark_strictly_ascending || query.is_watermark_ascending || query.is_watermark_bounded)
+    {
+        is_proctime = false;
+        if (is_time_column_func_now)
+            throw Exception("now() is not support for Event time processing.", ErrorCodes::INCORRECT_QUERY);
+        if (query.is_watermark_ascending)
+        {
+            is_watermark_bounded = true;
+            watermark_kind = IntervalKind::Second;
+            watermark_num_units = 1;
+        }
+        else if (query.is_watermark_bounded)
+        {
+            extractWindowArgument(
+                query.watermark_function, watermark_kind, watermark_num_units, "Illegal type WATERMARK function should be Interval");
+        }
+    }
+
+    if (query.allowed_lateness)
+    {
+        allowed_lateness = true;
+        extractWindowArgument(
+            query.lateness_function, lateness_kind, lateness_num_units, "Illegal type ALLOWED_LATENESS function should be Interval");
+    }
 }
 
 void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context)
@@ -1057,8 +1060,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
             UInt32 block_max_timestamp = 0;
             if (window_view.is_watermark_bounded || window_view.allowed_lateness)
             {
-                const auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
-                const ColumnUInt32::Container & timestamp_data = static_cast<const ColumnUInt32 &>(*column_timestamp).getData();
+                const auto & timestamp_data = typeid_cast<const ColumnUInt32 &>(*block.getByName(window_view.timestamp_column_name).column).getData();
                 for (const auto & timestamp : timestamp_data)
                 {
                     if (timestamp > block_max_timestamp)
