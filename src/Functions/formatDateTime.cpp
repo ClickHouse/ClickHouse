@@ -188,6 +188,16 @@ private:
             writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
         }
 
+        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        {
+            writeNumber2(target, ToISOYearImpl::execute(source, timezone) % 100);
+        }
+
+        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        {
+            writeNumber4(target, ToISOYearImpl::execute(source, timezone));
+        }
+
         static void year2(char * target, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToYearImpl::execute(source, timezone) % 100);
@@ -458,6 +468,18 @@ public:
                         instructions.emplace_back(&Action<T>::ISO8601Date, 10);
                         result.append("0000-00-00");
                         break;
+
+                    // Last two digits of year of ISO 8601 week number (see %G)
+                    case 'g':
+                      instructions.emplace_back(&Action<T>::ISO8601Year2, 2);
+                      result.append("00");
+                      break;
+
+                    // Year of ISO 8601 week number (see %V)
+                    case 'G':
+                      instructions.emplace_back(&Action<T>::ISO8601Year4, 4);
+                      result.append("0000");
+                      break;
 
                     // Day of the year (001-366)   235
                     case 'j':

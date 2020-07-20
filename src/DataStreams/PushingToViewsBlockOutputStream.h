@@ -17,8 +17,12 @@ class ReplicatedMergeTreeBlockOutputStream;
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(const StoragePtr & storage_,
-        const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
+    PushingToViewsBlockOutputStream(
+        const StoragePtr & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const Context & context_,
+        const ASTPtr & query_ptr_,
+        bool no_destination = false);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -29,6 +33,7 @@ public:
 
 private:
     StoragePtr storage;
+    StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
 
@@ -44,7 +49,8 @@ private:
     };
 
     std::vector<ViewInfo> views;
-    std::unique_ptr<Context> views_context;
+    std::unique_ptr<Context> select_context;
+    std::unique_ptr<Context> insert_context;
 
     void process(const Block & block, size_t view_num);
 };

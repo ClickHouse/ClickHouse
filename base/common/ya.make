@@ -2,7 +2,7 @@ LIBRARY()
 
 ADDINCL(
     GLOBAL clickhouse/base
-    contrib/libs/cctz/include
+    GLOBAL contrib/libs/cctz/include
 )
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)
@@ -24,6 +24,7 @@ PEERDIR(
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
+    contrib/libs/fmt
     contrib/restricted/boost
     contrib/restricted/cityhash-1.0.2
 )
@@ -46,6 +47,7 @@ SRCS(
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
+    errnoToString.cpp
 )
 
 END()

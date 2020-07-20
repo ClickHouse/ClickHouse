@@ -1,4 +1,6 @@
 #include "ClusterCopierApp.h"
+#include <Common/StatusFile.h>
+
 
 namespace DB
 {
@@ -91,15 +93,11 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
 void ClusterCopierApp::mainImpl()
 {
-    StatusFile status_file(process_path + "/status");
+    StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
     ThreadStatus thread_status;
 
-    auto log = &logger();
-    LOG_INFO(log, "Starting clickhouse-copier ("
-        << "id " << process_id << ", "
-        << "host_id " << host_id << ", "
-        << "path " << process_path << ", "
-        << "revision " << ClickHouseRevision::get() << ")");
+    auto * log = &logger();
+    LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::get());
 
     SharedContextHolder shared_context = Context::createShared();
     auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
@@ -118,7 +116,7 @@ void ClusterCopierApp::mainImpl()
     registerDisks();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
     context->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.

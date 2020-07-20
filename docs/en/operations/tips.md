@@ -120,6 +120,7 @@ zoo.cfg:
 tickTime=2000
 # The number of ticks that the initial
 # synchronization phase can take
+# This value is not quite motivated
 initLimit=30000
 # The number of ticks that can pass between
 # sending a request and getting an acknowledgement
@@ -127,6 +128,9 @@ syncLimit=10
 
 maxClientCnxns=2000
 
+# It is the maximum value that client may request and the server will accept.
+# It is Ok to have high maxSessionTimeout on server to allow clients to work with high session timeout if they want.
+# But we request session timeout of 30 seconds by default (you can change it with session_timeout_ms in ClickHouse config).
 maxSessionTimeout=60000000
 # the directory where the snapshot is stored.
 dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/data

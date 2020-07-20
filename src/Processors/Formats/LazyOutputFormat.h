@@ -9,7 +9,7 @@ namespace DB
 
 /// LazyOutputFormat is used to retrieve ready data from executing pipeline.
 /// You can periodically call `getChunk` from separate thread.
-/// Used in PullingPipelineExecutor.
+/// Used in PullingAsyncPipelineExecutor.
 class LazyOutputFormat : public IOutputFormat
 {
 

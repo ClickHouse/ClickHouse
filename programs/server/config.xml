@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
+  If you have accidentially specified user-level settings here, server won't start.
+  You can either move the settings to the right place inside "users.xml" file
+   or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <yandex>
     <logger>
@@ -42,6 +45,18 @@
         -->
     </logger>
 
+    <send_crash_reports>
+        <!-- Changing <enabled> to true allows sending crash reports to -->
+        <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
+        <!-- Doing so at least in pre-production environments is highly appreciated -->
+        <enabled>false</enabled>
+        <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
+        <anonymize>false</anonymize>
+        <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
+        <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
+        <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
+    </send_crash_reports>
+
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
@@ -51,7 +66,6 @@
     <https_port>8443</https_port>
     <tcp_port_secure>9440</tcp_port_secure>
     -->
-
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -133,6 +147,15 @@
       -->
     <max_server_memory_usage>0</max_server_memory_usage>
 
+    <!-- Maximum number of threads in the Global thread pool.
+    This will default to a maximum of 10000 threads if not specified.
+    This setting will be useful in scenarios where there are a large number
+    of distributed queries that are running concurrently but are idling most
+    of the time, in which case a higher number of threads might be required.
+    -->
+
+     <max_thread_pool_size>10000</max_thread_pool_size>
+
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
@@ -191,7 +214,48 @@
 
     <!-- Path to folder where users and roles created by SQL commands are stored. -->
     <access_control_path>/var/lib/clickhouse/access/</access_control_path>
-    
+
+    <!-- External user directories (LDAP). -->
+    <ldap_servers>
+        <!-- List LDAP servers with their connection parameters here to later use them as authenticators for dedicated users,
+             who have 'ldap' authentication mechanism specified instead of 'password'.
+             Parameters:
+                host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
+                port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
+                auth_dn_prefix, auth_dn_suffix - prefix and suffix used to construct the DN to bind to.
+                        Effectively, the resulting DN will be constructed as auth_dn_prefix + escape(user_name) + auth_dn_suffix string.
+                        Note, that this implies that auth_dn_suffix should usually have comma ',' as its first non-space character.
+                enable_tls - flag to trigger use of secure connection to the LDAP server.
+                        Specify 'no' for plain text (ldap://) protocol (not recommended).
+                        Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
+                        Specify 'starttls' for legacy StartTLS protocol (plain text (ldap://) protocol, upgraded to TLS).
+                tls_minimum_protocol_version - the minimum protocol version of SSL/TLS.
+                        Accepted values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2' (the default).
+                tls_require_cert - SSL/TLS peer certificate verification behavior.
+                        Accepted values are: 'never', 'allow', 'try', 'demand' (the default).
+                tls_cert_file - path to certificate file.
+                tls_key_file - path to certificate key file.
+                tls_ca_cert_file - path to CA certificate file.
+                tls_ca_cert_dir - path to the directory containing CA certificates.
+                tls_cipher_suite - allowed cipher suite.
+             Example:
+                <my_ldap_server>
+                    <host>localhost</host>
+                    <port>636</port>
+                    <auth_dn_prefix>uid=</auth_dn_prefix>
+                    <auth_dn_suffix>,ou=users,dc=example,dc=com</auth_dn_suffix>
+                    <enable_tls>yes</enable_tls>
+                    <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+                    <tls_require_cert>demand</tls_require_cert>
+                    <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+                    <tls_key_file>/path/to/tls_key_file</tls_key_file>
+                    <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+                    <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+                    <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
+                </my_ldap_server>
+        -->
+    </ldap_servers>
+
     <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
     <users_config>users.xml</users_config>
 
@@ -227,7 +291,7 @@
           and to prevent clickhouse executable from being paged out under high IO load.
          Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
     -->
-    <mlock_executable>false</mlock_executable>
+    <mlock_executable>true</mlock_executable>
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
@@ -238,9 +302,13 @@
             <shard>
                 <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <!-- <internal_replication>false</internal_replication> -->
+                <!-- Optional. Shard weight when writing data. Default: 1. -->
+                <!-- <weight>1</weight> -->
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>
+                    <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
+                    <!-- <priority>1</priority> -->
                 </replica>
             </shard>
         </test_shard_localhost>
@@ -477,6 +545,20 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
+
+    <!--
+        Asynchronous metric log contains values of metrics from
+        system.asynchronous_metrics.
+    -->
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <!--
+            Asynchronous metrics are updated once a minute, so there is
+            no need to flush more often.
+        -->
+        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+    </asynchronous_metric_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/

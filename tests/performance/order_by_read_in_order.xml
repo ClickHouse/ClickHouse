@@ -4,7 +4,7 @@
 
 
     <preconditions>
-        <table_exists>default.hits_100m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
 <query>SELECT * FROM hits_100m_single ORDER BY CounterID, EventDate LIMIT 100</query>

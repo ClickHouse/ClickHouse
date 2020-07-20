@@ -73,7 +73,7 @@ namespace DB
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
 
             if (dict_struct.key->size() != 2)
-                throw Exception{"Redis source with storage type \'hash_map\' requiers 2 keys",
+                throw Exception{"Redis source with storage type \'hash_map\' requires 2 keys",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
             // suppose key[0] is primary key, key[1] is secondary key
         }

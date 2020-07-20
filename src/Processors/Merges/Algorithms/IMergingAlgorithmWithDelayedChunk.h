@@ -23,12 +23,13 @@ protected:
 
     ColumnRawPtrs last_chunk_sort_columns; /// Point to last_chunk if valid.
 
-    void initializeQueue(Chunks chunks);
-    void updateCursor(Chunk & chunk, size_t source_num);
+    void initializeQueue(Inputs inputs);
+    void updateCursor(Input & input, size_t source_num);
+    bool skipLastRowFor(size_t input_number) const { return current_inputs[input_number].skip_last_row; }
 
 private:
-    /// Chunks currently being merged.
-    std::vector<Chunk> source_chunks;
+    /// Inputs currently being merged.
+    Inputs current_inputs;
     SortCursorImpls cursors;
 
     /// In merging algorithm, we need to compare current sort key with the last one.

@@ -28,6 +28,7 @@
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/System/StorageSystemDistributionQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -124,6 +125,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     system_database.attachTable("mutations", StorageSystemMutations::create("mutations"));
     system_database.attachTable("replicas", StorageSystemReplicas::create("replicas"));
     system_database.attachTable("replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
+    system_database.attachTable("distribution_queue", StorageSystemDistributionQueue::create("distribution_queue"));
     system_database.attachTable("dictionaries", StorageSystemDictionaries::create("dictionaries"));
     system_database.attachTable("models", StorageSystemModels::create("models"));
     system_database.attachTable("clusters", StorageSystemClusters::create("clusters"));

@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class IQueryPlanStep;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -158,11 +160,11 @@ public:
 
     static std::string statusToName(Status status);
 
-    /** Method 'prepare' is responsible for all cheap ("instantenous": O(1) of data volume, no wait) calculations.
+    /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate the absense of work by returning Finished or Unneeded,
+      *  or indicate the absence of work by returning Finished or Unneeded,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
@@ -288,6 +290,16 @@ public:
     void enableQuota() { has_quota = true; }
     bool hasQuota() const { return has_quota; }
 
+    /// Step of QueryPlan from which processor was created.
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
+    {
+        query_plan_step = step;
+        query_plan_step_group = group;
+    }
+
+    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
+
 protected:
     virtual void onCancel() {}
 
@@ -299,6 +311,9 @@ private:
     size_t stream_number = NO_STREAM;
 
     bool has_quota = false;
+
+    IQueryPlanStep * query_plan_step = nullptr;
+    size_t query_plan_step_group = 0;
 };
 
 

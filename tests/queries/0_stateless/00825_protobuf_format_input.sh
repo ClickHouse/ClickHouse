@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-set -e -o pipefail
+set -eo pipefail
 
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<'EOF'
@@ -47,6 +47,13 @@ source $CURDIR/00825_protobuf_format_input.insh
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
+
+# Try to input malformed data.
+set +eo pipefail
+echo -ne '\xe0\x80\x3f\x0b' \
+    | $CLICKHOUSE_CLIENT --query="INSERT INTO in_persons_00825 FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'" 2>&1 \
+    | grep -qF "Protobuf messages are corrupted" && echo "ok" || echo "fail"
+set -eo pipefail
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS in_persons_00825;"
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS in_squares_00825;"

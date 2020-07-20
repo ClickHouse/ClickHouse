@@ -133,7 +133,9 @@ $(document).ready(function () {
               'class="rating-star text-reset text-decoration-none">' + star + '</a>';
         }
         rating_stars.html(replacement);
-        $('[data-toggle="tooltip"]').tooltip();
+        $('[data-toggle="tooltip"]').tooltip({
+            trigger: 'hover'
+        });
         var rating_star_item = $('.rating-star');
         rating_star_item.hover(function() {
             var current = $(this);
@@ -157,6 +159,11 @@ $(document).ready(function () {
                 dataType: 'json',
                 data: JSON.stringify({rating: $(this).prevAll().length + 1}),
                 success: function () {
+                    try {
+                        window.yaCounter18343495.reachGoal('docs_feedback');
+                    } catch (e) {
+                        Sentry.captureException(e);
+                    }
                 },
                 error: function () {
                     rating_stars.removeClass('text-orange');

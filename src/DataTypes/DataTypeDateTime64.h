@@ -17,7 +17,9 @@ class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public 
 {
 public:
     static constexpr UInt8 default_scale = 3;
+
     static constexpr auto family_name = "DateTime64";
+    static constexpr auto type_id = TypeIndex::DateTime64;
 
     explicit DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name = "");
 
@@ -26,7 +28,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeIndex::DateTime64; }
+    TypeIndex getTypeId() const override { return type_id; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -43,6 +45,8 @@ public:
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     bool equals(const IDataType & rhs) const override;
+
+    bool canBePromoted() const override { return false; }
 };
 
 /** Tansform-type wrapper for DateTime64, applies given Transform to DateTime64 value or only to a whole part of it.
@@ -58,7 +62,7 @@ public:
  * OR
  *      R execute(DateTime64 value, Int64 scale_factor, ... , const TimeZoneImpl &)
  *
- * Wehere R and T could be arbitrary types.
+ * Where R and T could be arbitrary types.
 */
 template <typename Transform>
 class TransformDateTime64 : public Transform

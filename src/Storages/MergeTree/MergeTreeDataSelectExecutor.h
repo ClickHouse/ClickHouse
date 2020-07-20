@@ -26,6 +26,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -35,6 +36,7 @@ public:
     Pipes readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -44,12 +46,13 @@ public:
 private:
     const MergeTreeData & data;
 
-    Logger * log;
+    Poco::Logger * log;
 
     Pipes spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
@@ -62,6 +65,7 @@ private:
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
@@ -75,6 +79,7 @@ private:
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
@@ -86,26 +91,23 @@ private:
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
+        const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
-    /// Create the expression "Sign == 1".
-    void createPositiveSignCondition(
-        ExpressionActionsPtr & out_expression,
-        String & out_column,
-        const Context & context) const;
-
     MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
+        const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
     MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index,
+        MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const Settings & settings) const;
+        const Settings & settings,
+        const MergeTreeReaderSettings & reader_settings) const;
 };
 
 }

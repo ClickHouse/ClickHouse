@@ -4,10 +4,10 @@
 #include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/Stopwatch.h>
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Interpreters/Context.h>
 #include <filesystem>
 
 
@@ -287,15 +287,15 @@ void DatabaseAtomic::assertCanBeDetached(bool cleenup)
                         "because some tables are still in use. Retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
 }
 
-DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const Context & context, const IDatabase::FilterByNameFunction & filter_by_table_name)
 {
-    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(filter_by_table_name);
+    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(context, filter_by_table_name);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name))
+    if (auto table = tryGetTable(table_name, global_context))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

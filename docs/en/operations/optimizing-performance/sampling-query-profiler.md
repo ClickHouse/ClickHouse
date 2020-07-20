@@ -9,11 +9,11 @@ ClickHouse runs sampling profiler that allows analyzing query execution. Using p
 
 To use profiler:
 
--   Setup the [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
+-   Setup the [trace\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
 
-    This section configures the [trace\_log](../../operations/system-tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse doesn’t clean up the table and all the stored virtual memory address may become invalid.
+    This section configures the [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse doesn’t clean up the table and all the stored virtual memory address may become invalid.
 
--   Setup the [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) or [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
+-   Setup the [query\_profiler\_cpu\_time\_period\_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) or [query\_profiler\_real\_time\_period\_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
 
     These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
 
@@ -23,7 +23,7 @@ To analyze the `trace_log` system table:
 
 -   Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
--   Allow introspection functions by the [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) setting.
+-   Allow introspection functions by the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting.
 
     For security reasons, introspection functions are disabled by default.
 
