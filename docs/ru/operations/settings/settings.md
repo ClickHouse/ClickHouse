@@ -1216,6 +1216,17 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## validate\_polygons {#validate_polygons}
+
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+
+Допустимые значения:
+
+- 0 — генерирование исключения отключено. `pointInPolygon` принимает недопустимые многоугольники и возвращает для них, возможно, неверные результаты.
+- 1 — генерирование исключения включено.
+
+Значение по умолчанию: 1.
+
 ## always_fetch_merged_part {#always_fetch_merged_part}
 
 Запрещает слияние данных для таблиц семейства [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md).
