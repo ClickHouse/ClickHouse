@@ -880,10 +880,10 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                      : SettingsBinaryFormat::OLD;
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
     Settings passed_settings;
-    passed_settings.deserialize(*in, settings_format);
+    passed_settings.read(*in, settings_format);
     auto settings_changes = passed_settings.changes();
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -925,9 +925,9 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_client_info.read(*in, client_revision);
 
     Settings skip_settings;
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                      : SettingsBinaryFormat::OLD;
-    skip_settings.deserialize(*in, settings_format);
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
+    skip_settings.read(*in, settings_format);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);

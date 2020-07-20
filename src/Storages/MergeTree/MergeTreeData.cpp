@@ -103,7 +103,6 @@ namespace ErrorCodes
     extern const int BAD_TTL_EXPRESSION;
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
-    extern const int UNKNOWN_SETTING;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
     extern const int UNKNOWN_PART_TYPE;
@@ -1467,17 +1466,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     if (old_metadata.hasSettingsChanges())
     {
-
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {
             const auto & setting_name = changed_setting.name;
             const auto & new_value = changed_setting.value;
-            if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
-                throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'",
-                                ErrorCodes::UNKNOWN_SETTING};
-
+            MergeTreeSettings::checkCanSet(setting_name, new_value);
             const Field * current_value = current_changes.tryGet(setting_name);
 
             if ((!current_value || *current_value != new_value)

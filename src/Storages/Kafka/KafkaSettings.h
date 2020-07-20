@@ -1,21 +1,15 @@
 #pragma once
 
-#include <Core/SettingsCollection.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+
 
 namespace DB
 {
-
 class ASTStorage;
 
-/** Settings for the Kafka engine.
-  * Could be loaded from a CREATE TABLE query (SETTINGS clause).
-  */
-struct KafkaSettings : public SettingsCollection<KafkaSettings>
-{
 
-
-#define KAFKA_RELATED_SETTINGS(M)                                      \
+#define KAFKA_RELATED_SETTINGS(M) \
     M(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
     M(String, kafka_topic_list, "", "A list of Kafka topics.", 0) \
     M(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
@@ -44,8 +38,14 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
     KAFKA_RELATED_SETTINGS(M) \
     FORMAT_FACTORY_SETTINGS(M)
 
-    DECLARE_SETTINGS_COLLECTION(LIST_OF_KAFKA_SETTINGS)
+DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
 
+
+/** Settings for the Kafka engine.
+  * Could be loaded from a CREATE TABLE query (SETTINGS clause).
+  */
+struct KafkaSettings : public BaseSettings<KafkaSettingsTraits>
+{
     void loadFromQuery(ASTStorage & storage_def);
 };
 

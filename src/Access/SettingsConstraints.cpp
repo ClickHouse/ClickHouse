@@ -32,7 +32,7 @@ void SettingsConstraints::clear()
 
 void SettingsConstraints::setMinValue(const std::string_view & setting_name, const Field & min_value)
 {
-    getConstraintRef(setting_name).min_value = Settings::castValue(setting_name, min_value);
+    getConstraintRef(setting_name).min_value = Settings::castValueUtil(setting_name, min_value);
 }
 
 Field SettingsConstraints::getMinValue(const std::string_view & setting_name) const
@@ -47,7 +47,7 @@ Field SettingsConstraints::getMinValue(const std::string_view & setting_name) co
 
 void SettingsConstraints::setMaxValue(const std::string_view & setting_name, const Field & max_value)
 {
-    getConstraintRef(setting_name).max_value = Settings::castValue(setting_name, max_value);
+    getConstraintRef(setting_name).max_value = Settings::castValueUtil(setting_name, max_value);
 }
 
 Field SettingsConstraints::getMaxValue(const std::string_view & setting_name) const
@@ -78,8 +78,8 @@ bool SettingsConstraints::isReadOnly(const std::string_view & setting_name) cons
 void SettingsConstraints::set(const std::string_view & setting_name, const Field & min_value, const Field & max_value, bool read_only)
 {
     auto & ref = getConstraintRef(setting_name);
-    ref.min_value = Settings::castValue(setting_name, min_value);
-    ref.max_value = Settings::castValue(setting_name, max_value);
+    ref.min_value = Settings::castValueUtil(setting_name, min_value);
+    ref.max_value = Settings::castValueUtil(setting_name, max_value);
     ref.read_only = read_only;
 }
 
@@ -150,14 +150,58 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
     const String & setting_name = change.name;
+    bool cannot_cast;
+    auto cast_value = [&](const Field & x) -> Field
+    {
+        cannot_cast = false;
+        if (reaction == THROW_ON_VIOLATION)
+            return Settings::castValueUtil(setting_name, x);
+        else
+        {
+            try
+            {
+                return Settings::castValueUtil(setting_name, x);
+            }
+            catch (...)
+            {
+                cannot_cast = true;
+                return {};
+            }
+        }
+    };
+
+    bool cannot_compare = false;
+    auto less = [&](const Field & left, const Field & right)
+    {
+        cannot_compare = false;
+        if (reaction == THROW_ON_VIOLATION)
+            return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+        else
+        {
+            try
+            {
+                return applyVisitor(FieldVisitorAccurateLess{}, left, right);
+            }
+            catch (...)
+            {
+                cannot_compare = true;
+                return false;
+            }
+        }
+    };
+
+    Field current_value;
+    if (reaction == THROW_ON_VIOLATION)
+        current_value = current_settings.get(setting_name);
+    else if (!current_settings.tryGet(setting_name, current_value))
+        return false;
 
     /// Setting isn't checked if value has not changed.
-    Field current_value = current_settings.get(setting_name);
     if (change.value == current_value)
         return false;
 
-    Field new_value = Settings::castValue(setting_name, change.value);
-    if (new_value == current_value)
+    Field new_value = cast_value(change.value);
+    if ((new_value == current_value) || cannot_cast)
         return false;
 
     if (!current_settings.allow_ddl && setting_name == "allow_ddl")
@@ -202,27 +246,6 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 
         const Field & min_value = constraint->min_value;
         const Field & max_value = constraint->max_value;
-
-        bool cannot_compare = false;
-        auto less = [&](const Field & left, const Field & right)
-        {
-            cannot_compare = false;
-            if (reaction == THROW_ON_VIOLATION)
-                return applyVisitor(FieldVisitorAccurateLess{}, left, right);
-            else
-            {
-                try
-                {
-                    return applyVisitor(FieldVisitorAccurateLess{}, left, right);
-                }
-                catch (...)
-                {
-                    cannot_compare = true;
-                    return false;
-                }
-            }
-        };
-
         if (!min_value.isNull() && !max_value.isNull() && (less(max_value, min_value) || cannot_compare))
         {
             if (reaction == THROW_ON_VIOLATION)

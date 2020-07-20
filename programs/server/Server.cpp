@@ -223,9 +223,9 @@ void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & co
         return;
 
     Settings settings;
-    for (const auto & setting : settings)
+    for (auto setting : settings.all())
     {
-        std::string name = setting.getName().toString();
+        const auto & name = setting.getName();
         if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."

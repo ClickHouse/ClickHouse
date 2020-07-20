@@ -1,30 +1,21 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/SettingsCollection.h>
+#include <Core/BaseSettings.h>
 
 
-namespace Poco
+namespace Poco::Util
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+    class AbstractConfiguration;
 }
 
 
 namespace DB
 {
-
 class ASTStorage;
 
-/** Settings for the MergeTree family of engines.
-  * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
-  */
-struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
-{
 
-#define LIST_OF_MERGE_TREE_SETTINGS(M)                                 \
+#define LIST_OF_MERGE_TREE_SETTINGS(M) \
     M(UInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
     \
     /** Data storing format settings. */ \
@@ -104,12 +95,18 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(UInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
     M(UInt64, check_delay_period, 60, "Obsolete setting, does nothing.", 0) \
 
-    DECLARE_SETTINGS_COLLECTION(LIST_OF_MERGE_TREE_SETTINGS)
-
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
 
+DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
+
+
+/** Settings for the MergeTree family of engines.
+  * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
+  */
+struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
+{
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
