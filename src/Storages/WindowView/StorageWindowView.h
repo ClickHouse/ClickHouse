@@ -116,8 +116,11 @@ private:
     BackgroundSchedulePool::TaskHolder fire_task;
 
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
+    void eventTimeParser(const ASTCreateQuery & query);
 
-    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name);
+    void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg);
+    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(
+        const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name);
     UInt32 getCleanupBound();
     ASTPtr generateCleanupQuery();
 
