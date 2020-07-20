@@ -291,8 +291,10 @@ private:
 
     using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
 
-    /// Update dictionary source pointer if required and return
-    /// it. Thread safe.
+    /// Update dictionary source pointer if required and return it. Thread safe.
+    /// MultiVersion is not used here because it works with constant pointers.
+    /// For some reason almost all methods in IDictionarySource interface are
+    /// not constant.
     SharedDictionarySourcePtr getDictionarySourceOrUpdate() const
     {
         std::lock_guard lock(source_mutex);
