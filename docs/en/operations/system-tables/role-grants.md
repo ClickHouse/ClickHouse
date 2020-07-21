@@ -2,6 +2,7 @@
 Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`.
 
 Columns:
+
 - `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.
 - `role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Role name.
 - `granted_role_name` ([String](../../sql-reference/data-types/string.md)) — Name of role granted to the `role_name` role. To grant one role to another one use `GRANT role1 TO role2`.
