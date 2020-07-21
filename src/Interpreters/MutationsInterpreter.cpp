@@ -465,7 +465,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
-    /// We cares about affected indices because we also need to rewrite them
+    /// We care about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about colums, that are needed for calculation of TTL expressions.
     if (!dependencies.empty())
