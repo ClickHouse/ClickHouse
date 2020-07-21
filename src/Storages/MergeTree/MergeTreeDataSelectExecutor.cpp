@@ -624,6 +624,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
             ++next_part;
         }
+
+        parts_with_ranges.resize(next_part);
     }
 
     LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
