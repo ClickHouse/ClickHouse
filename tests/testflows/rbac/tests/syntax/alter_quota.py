@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from testflows.core import *
 
 from rbac.requirements import *
-import rbac.tests.errors
+import rbac.tests.errors as errors
 
 @TestFeature
 @Name("alter quota")
@@ -154,7 +154,7 @@ def feature(self, node="clickhouse1"):
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment("1.0")]):
             with When("I alter quota to a role and a user"):
                 node.query("ALTER QUOTA quota0 TO role0, user0")
-        
+
         with Scenario("I alter quota assigned to none", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_Quota_Alter_Assignment_None("1.0")]):
             with When("I alter quota to none"):
