@@ -1654,5 +1654,36 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
+## optimize_read_in_order {#optimize_read_in_order}
+
+Enables `ORDER BY` optimization in `SELECT` queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `ORDER BY` optimization is disabled. 
+-   1 — `ORDER BY` optimization is enabled. 
+
+Default value: `1`.
+
+**Usage**
+
+Consider a query with `ORDER BY expression` clause, where `expression` has coinciding prefix with sorting key in `MergeTree` table. When the `optimize_read_in_order` setting is enabled, the Clickhouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified `LIMIT`. So queries on big data with small limit are processed faster.
+
+Optimization works with both `ASC` and `DESC` and doesn't work together with `GROUP BY` clause and `FINAL` modifier.
+
+When the `optimize_read_in_order` setting is disabled, the Clickhouse server does not use the table index while processing `SELECT` queries.
+
+There are queries that have `ORDER BY` clause, large `LIMIT` and `WHERE` condition that requires to read huge amount of records before queried data is found. For these queries you should consider disabling `optimize_read_in_order` manually.
+
+Optimization is supported also in [Merge](../../engines/table-engines/special/merge.md), [Buffer](../../engines/table-engines/special/buffer.md) and [MaterializedView](../../engines/table-engines/special/materializedveiw.md) storages with underlying `MergeTree` tables.
+
+For `MaterializedView` storage the optimization works with saved queries like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the saved query doesn't have `ORDER BY` clause.
+
+**See Also**
+
+-   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family 
+-   [Merge](../../engines/table-engines/special/merge.md) table engine
+-   [Buffer](../../engines/table-engines/special/buffer.md) table engine
+-   [MaterializedView](../../engines/table-engines/special/materializedveiw.md) table engine
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
