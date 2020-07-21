@@ -49,8 +49,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW;
@@ -210,7 +210,7 @@ namespace
         }
     };
 
-    IntervalKind strToIntervalKind(const String& interval_str)
+    static IntervalKind strToIntervalKind(const String& interval_str)
     {
         if (interval_str == "Second")
             return IntervalKind::Second;
@@ -229,6 +229,26 @@ namespace
         else if (interval_str == "Year")
             return IntervalKind::Year;
         __builtin_unreachable();
+    }
+
+    static void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
+    {
+        const auto * arg = ast->as<ASTFunction>();
+        if (!arg || !startsWith(arg->name, "toInterval"))
+            throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        kind = strToIntervalKind(arg->name.substr(10));
+        const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
+        if (!interval_unit
+            || (interval_unit->value.getType() != Field::Types::String && interval_unit->value.getType() != Field::Types::UInt64))
+            throw Exception("Interval argument must be integer", ErrorCodes::BAD_ARGUMENTS);
+        if (interval_unit->value.getType() == Field::Types::String)
+            num_units = std::stoi(interval_unit->value.safeGet<String>());
+        else
+            num_units = interval_unit->value.safeGet<UInt64>();
+
+        if (num_units <= 0)
+            throw Exception("Value for Interval argument must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 }
 
@@ -430,26 +450,6 @@ inline void StorageWindowView::fire(UInt32 watermark)
     fire_condition.notify_all();
 }
 
-void StorageWindowView::extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
-{
-    const auto * arg = ast->as<ASTFunction>();
-    if (!arg || !startsWith(arg->name, "toInterval"))
-        throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    kind = strToIntervalKind(arg->name.substr(10));
-    const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
-    if (!interval_unit
-        || (interval_unit->value.getType() != Field::Types::String && interval_unit->value.getType() != Field::Types::UInt64))
-        throw Exception("Interval argument must be integer", ErrorCodes::BAD_ARGUMENTS);
-    if (interval_unit->value.getType() == Field::Types::String)
-        num_units = std::stoi(interval_unit->value.safeGet<String>());
-    else
-        num_units = interval_unit->value.safeGet<UInt64>();
-
-    if (num_units <= 0)
-        throw Exception("Value for Interval argument must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-}
-
 std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery(const ASTPtr & inner_query, ASTStorage * storage, const String & database_name, const String & table_name)
 {
     /// We will create a query to create an internal table.
@@ -538,7 +538,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
 
         new_storage->set(new_storage->engine, storage->engine->clone());
 
-        auto visit = [&](const IAST * ast, IAST * & field) {
+        auto visit = [&](const IAST * ast, IAST *& field) {
             if (ast)
             {
                 auto node = ast->clone();
@@ -885,15 +885,15 @@ StorageWindowView::StorageWindowView(
     else
         window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
 
-    auto generateInnerTableName = [](const String & table_name) { return ".inner." + table_name; };
+    auto generate_inner_table_name = [](const String & table_name) { return ".inner." + table_name; };
     if (attach_)
     {
-        inner_table_id = StorageID(table_id_.database_name, generateInnerTableName(table_id_.table_name));
+        inner_table_id = StorageID(table_id_.database_name, generate_inner_table_name(table_id_.table_name));
     }
     else
     {
         auto inner_create_query
-            = generateInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generateInnerTableName(table_id_.table_name));
+            = generateInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_.table_name));
 
         InterpreterCreateQuery create_interpreter(inner_create_query, *wv_context);
         create_interpreter.setInternal(true);
