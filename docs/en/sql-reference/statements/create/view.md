@@ -38,7 +38,7 @@ SELECT a, b, c FROM (SELECT ...)
 ## Materialized {#materialized}
 
 ``` sql
-CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
 
