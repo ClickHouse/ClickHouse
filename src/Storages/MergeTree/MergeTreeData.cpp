@@ -3629,7 +3629,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
         {
             std::ostringstream message;
             message << "Table can't create parts with adaptive granularity, but settings"
-                    << "min_rows_for_wide_part = " << settings.min_rows_for_wide_part
+                    << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
                     << ", min_rows_for_compact_part = " << settings.min_rows_for_compact_part
                     << ", min_bytes_for_compact_part = " << settings.min_bytes_for_compact_part
