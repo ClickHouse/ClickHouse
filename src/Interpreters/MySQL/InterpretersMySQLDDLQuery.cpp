@@ -64,7 +64,7 @@ static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_defin
 
         if (is_unsigned)
         {
-            auto data_type_function = data_type->as<ASTFunction>();
+            auto * data_type_function = data_type->as<ASTFunction>();
 
             if (data_type_function)
             {

@@ -57,6 +57,114 @@ ASTPtr ASTDeclareIndex::clone() const
 
     return res;
 }
+
+static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_name, String & index_type, Expected & expected)
+{
+    ASTPtr temp_node;
+    ParserKeyword k_key("KEY");
+    ParserKeyword k_index("INDEX");
+
+    ParserExpression p_expression;
+    ParserIdentifier p_identifier;
+
+    if (ParserKeyword("SPATIAL").ignore(pos, expected))
+    {
+        if (!k_key.ignore(pos, expected))
+            k_index.ignore(pos, expected);
+
+        index_type = "SPATIAL";
+        if (p_identifier.parse(pos, temp_node, expected))
+            index_name = temp_node->as<ASTIdentifier>()->name;
+    }
+    else if (ParserKeyword("FULLTEXT").ignore(pos, expected))
+    {
+        if (!k_key.ignore(pos, expected))
+            k_index.ignore(pos, expected);
+
+        index_type = "FULLTEXT";
+        if (p_identifier.parse(pos, temp_node, expected))
+            index_name = temp_node->as<ASTIdentifier>()->name;
+    }
+    else
+    {
+        if (!k_key.ignore(pos, expected))
+        {
+            if (!k_index.ignore(pos, expected))
+                return false;
+        }
+
+        index_type = "KEY_BTREE";   /// default index type
+        if (p_identifier.parse(pos, temp_node, expected))
+            index_name = temp_node->as<ASTIdentifier>()->name;
+
+        if (ParserKeyword("USING").ignore(pos, expected))
+        {
+            if (!p_identifier.parse(pos, temp_node, expected))
+                return false;
+
+            index_type = "KEY_" + temp_node->as<ASTIdentifier>()->name;
+        }
+    }
+
+    return true;
+}
+
+static inline bool parseDeclareConstraintIndex(IParser::Pos & pos, String & index_name, String & index_type, Expected & expected)
+{
+    ASTPtr temp_node;
+    ParserIdentifier p_identifier;
+
+    if (ParserKeyword("CONSTRAINT").ignore(pos, expected))
+    {
+
+        if (!ParserKeyword("PRIMARY").checkWithoutMoving(pos, expected) && !ParserKeyword("UNIQUE").checkWithoutMoving(pos, expected)
+            && !ParserKeyword("FOREIGN").checkWithoutMoving(pos, expected))
+        {
+            if (!p_identifier.parse(pos, temp_node, expected))
+                return false;
+
+            index_name = temp_node->as<ASTIdentifier>()->name;
+        }
+    }
+
+    if (ParserKeyword("UNIQUE").ignore(pos, expected))
+    {
+        if (!ParserKeyword("KEY").ignore(pos, expected))
+            ParserKeyword("INDEX").ignore(pos, expected);
+
+        if (p_identifier.parse(pos, temp_node, expected))
+            index_name = temp_node->as<ASTIdentifier>()->name;  /// reset index_name
+
+        index_type = "UNIQUE_BTREE"; /// default btree index_type
+        if (ParserKeyword("USING").ignore(pos, expected))
+        {
+            if (!p_identifier.parse(pos, temp_node, expected))
+                return false;
+
+            index_type = "UNIQUE_" + temp_node->as<ASTIdentifier>()->name;
+        }
+    }
+    else if (ParserKeyword("PRIMARY KEY").ignore(pos, expected))
+    {
+        index_type = "PRIMARY_KEY_BTREE"; /// default btree index_type
+        if (ParserKeyword("USING").ignore(pos, expected))
+        {
+            if (!p_identifier.parse(pos, temp_node, expected))
+                return false;
+
+            index_type = "PRIMARY_KEY_" + temp_node->as<ASTIdentifier>()->name;
+        }
+    }
+    else if (ParserKeyword("FOREIGN KEY").ignore(pos, expected))
+    {
+        index_type = "FOREIGN";
+        if (p_identifier.parse(pos, temp_node, expected))
+            index_name = temp_node->as<ASTIdentifier>()->name;  /// reset index_name
+    }
+
+    return true;
+}
+
 bool ParserDeclareIndex::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     String index_name;
@@ -124,112 +232,7 @@ bool ParserDeclareIndex::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
     node = declare_index;
     return true;
 }
-bool ParserDeclareIndex::parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_name, String & index_type, Expected & expected)
-{
-    ASTPtr temp_node;
-    ParserKeyword k_key("KEY");
-    ParserKeyword k_index("INDEX");
 
-    ParserExpression p_expression;
-    ParserIdentifier p_identifier;
-
-    if (ParserKeyword("SPATIAL").ignore(pos, expected))
-    {
-        if (!k_key.ignore(pos, expected))
-            k_index.ignore(pos, expected);
-
-        index_type = "SPATIAL";
-        if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;
-    }
-    else if (ParserKeyword("FULLTEXT").ignore(pos, expected))
-    {
-        if (!k_key.ignore(pos, expected))
-            k_index.ignore(pos, expected);
-
-        index_type = "FULLTEXT";
-        if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;
-    }
-    else
-    {
-        if (!k_key.ignore(pos, expected))
-        {
-            if (!k_index.ignore(pos, expected))
-                return false;
-        }
-
-        index_type = "KEY_BTREE";   /// default index type
-        if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;
-
-        if (ParserKeyword("USING").ignore(pos, expected))
-        {
-            if (!p_identifier.parse(pos, temp_node, expected))
-                return false;
-
-            index_type = "KEY_" + temp_node->as<ASTIdentifier>()->name;
-        }
-    }
-
-    return true;
-}
-
-bool ParserDeclareIndex::parseDeclareConstraintIndex(IParser::Pos & pos, String & index_name, String & index_type, Expected & expected)
-{
-    ASTPtr temp_node;
-    ParserIdentifier p_identifier;
-
-    if (ParserKeyword("CONSTRAINT").ignore(pos, expected))
-    {
-
-        if (!ParserKeyword("PRIMARY").checkWithoutMoving(pos, expected) && !ParserKeyword("UNIQUE").checkWithoutMoving(pos, expected)
-            && !ParserKeyword("FOREIGN").checkWithoutMoving(pos, expected))
-        {
-            if (!p_identifier.parse(pos, temp_node, expected))
-                return false;
-
-            index_name = temp_node->as<ASTIdentifier>()->name;
-        }
-    }
-
-    if (ParserKeyword("UNIQUE").ignore(pos, expected))
-    {
-        if (!ParserKeyword("KEY").ignore(pos, expected))
-            ParserKeyword("INDEX").ignore(pos, expected);
-
-        if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;  /// reset index_name
-
-        index_type = "UNIQUE_BTREE"; /// default btree index_type
-        if (ParserKeyword("USING").ignore(pos, expected))
-        {
-            if (!p_identifier.parse(pos, temp_node, expected))
-                return false;
-
-            index_type = "UNIQUE_" + temp_node->as<ASTIdentifier>()->name;
-        }
-    }
-    else if (ParserKeyword("PRIMARY KEY").ignore(pos, expected))
-    {
-        index_type = "PRIMARY_KEY_BTREE"; /// default btree index_type
-        if (ParserKeyword("USING").ignore(pos, expected))
-        {
-            if (!p_identifier.parse(pos, temp_node, expected))
-                return false;
-
-            index_type = "PRIMARY_KEY_" + temp_node->as<ASTIdentifier>()->name;
-        }
-    }
-    else if (ParserKeyword("FOREIGN KEY").ignore(pos, expected))
-    {
-        index_type = "FOREIGN";
-        if (p_identifier.parse(pos, temp_node, expected))
-            index_name = temp_node->as<ASTIdentifier>()->name;  /// reset index_name
-    }
-
-    return true;
-}
 }
 
 }

@@ -29,7 +29,7 @@ ASTPtr ASTAlterCommand::clone() const
         res->set(res->additional_columns, additional_columns->clone());
 
     if (order_by_columns)
-        res->set(res->order_by_columns, additional_columns->clone());
+        res->set(res->order_by_columns, order_by_columns->clone());
 
     if (properties)
         res->set(res->properties, properties->clone());
@@ -37,32 +37,7 @@ ASTPtr ASTAlterCommand::clone() const
     return res;
 }
 
-bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword k_add("ADD");
-    ParserKeyword k_drop("DROP");
-    ParserKeyword k_alter("ALTER");
-    ParserKeyword k_rename("RENAME");
-    ParserKeyword k_modify("MODIFY");
-    ParserKeyword k_change("CHANGE");
-
-    if (k_add.ignore(pos, expected))
-        return parseAddCommand(pos, node, expected);
-    else if (k_drop.ignore(pos, expected))
-        return parseDropCommand(pos, node, expected);
-    else if (k_alter.ignore(pos, expected))
-        return parseAlterCommand(pos, node, expected);
-    else if (k_rename.ignore(pos, expected))
-        return parseRenameCommand(pos, node, expected);
-    else if (k_modify.ignore(pos, expected))
-        return parseModifyCommand(pos, node, expected);
-    else if (k_change.ignore(pos, expected))
-        return parseModifyCommand(pos, node, expected, true);
-    else
-        return parseOtherCommand(pos, node, expected);
-}
-
-bool ParserAlterCommand::parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr declare_index;
     ASTPtr additional_columns;
@@ -120,7 +95,7 @@ bool ParserAlterCommand::parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expe
     return true;
 }
 
-bool ParserAlterCommand::parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr name;
     ParserIdentifier identifier_p;
@@ -173,7 +148,7 @@ bool ParserAlterCommand::parseDropCommand(IParser::Pos & pos, ASTPtr & node, Exp
     return true;
 }
 
-bool ParserAlterCommand::parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static inline bool parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr name;
 
@@ -241,7 +216,7 @@ bool ParserAlterCommand::parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Ex
     return true;
 }
 
-bool ParserAlterCommand::parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr old_name;
     ASTPtr new_name;
@@ -296,7 +271,7 @@ bool ParserAlterCommand::parseRenameCommand(IParser::Pos & pos, ASTPtr & node, E
     return true;
 }
 
-bool ParserAlterCommand::parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
@@ -346,7 +321,7 @@ bool ParserAlterCommand::parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Ex
     return true;
 }
 
-bool ParserAlterCommand::parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool exists_old_column_name)
+static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool exists_old_column_name = false)
 {
     ASTPtr old_column_name;
     auto alter_command = std::make_shared<ASTAlterCommand>();
@@ -380,6 +355,31 @@ bool ParserAlterCommand::parseModifyCommand(IParser::Pos & pos, ASTPtr & node, E
         alter_command->old_name = getIdentifierName(old_column_name);
 
     return true;
+}
+
+bool ParserAlterCommand::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword k_add("ADD");
+    ParserKeyword k_drop("DROP");
+    ParserKeyword k_alter("ALTER");
+    ParserKeyword k_rename("RENAME");
+    ParserKeyword k_modify("MODIFY");
+    ParserKeyword k_change("CHANGE");
+
+    if (k_add.ignore(pos, expected))
+        return parseAddCommand(pos, node, expected);
+    else if (k_drop.ignore(pos, expected))
+        return parseDropCommand(pos, node, expected);
+    else if (k_alter.ignore(pos, expected))
+        return parseAlterCommand(pos, node, expected);
+    else if (k_rename.ignore(pos, expected))
+        return parseRenameCommand(pos, node, expected);
+    else if (k_modify.ignore(pos, expected))
+        return parseModifyCommand(pos, node, expected);
+    else if (k_change.ignore(pos, expected))
+        return parseModifyCommand(pos, node, expected, true);
+    else
+        return parseOtherCommand(pos, node, expected);
 }
 }
 

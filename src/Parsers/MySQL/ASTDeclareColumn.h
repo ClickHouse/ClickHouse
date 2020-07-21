@@ -27,8 +27,6 @@ protected:
     const char * getName() const override { return "index declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    bool parseColumnDeclareOptions(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 

@@ -68,7 +68,7 @@ private:
 
         void add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes);
 
-        bool checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes);
+        bool checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const;
 
         BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
     };

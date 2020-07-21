@@ -377,7 +377,7 @@ static void writeFieldsToColumn(
                 if (field.isNull())
                 {
                     column_to.insertDefault();
-                    null_map_column->insertDefault();
+                    null_map_column->insertValue(1);
                     return false;
                 }
 
@@ -391,7 +391,8 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                     casted_column->insertValue(static_cast<decltype(to_type)>(value.template get<decltype(from_type)>()));
@@ -420,7 +421,8 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
@@ -441,7 +443,8 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
@@ -454,7 +457,8 @@ static void writeFieldsToColumn(
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
-                const Field & value = DB::get<const Tuple &>(rows_data[index])[column_index];
+                const Tuple & row_data = DB::get<const Tuple &>(rows_data[index]);
+                const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
                 {
@@ -600,7 +604,7 @@ void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_by
     max_block_bytes = std::max(block_bytes, max_block_bytes);
 }
 
-bool MaterializeMySQLSyncThread::Buffers::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes)
+bool MaterializeMySQLSyncThread::Buffers::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const
 {
     return max_block_rows >= check_block_rows || max_block_bytes >= check_block_bytes || total_blocks_rows >= check_total_rows
         || total_blocks_bytes >= check_total_bytes;

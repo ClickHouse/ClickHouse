@@ -155,7 +155,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         out.close();
     }
 
-    commitMetadata(fun, persistent_tmp_path, persistent_path);
+    commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
 }
 
 MaterializeMetadata::MaterializeMetadata(

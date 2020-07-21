@@ -398,6 +398,7 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_TIMESTAMP: {
                         UInt32 val = 0;
+
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
                         row.push_back(Field{val});
                         break;

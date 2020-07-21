@@ -34,6 +34,39 @@ ASTPtr ASTDeclareColumn::clone() const
     return res;
 }
 
+static inline bool parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserDeclareOptions p_non_generate_options{
+        {
+            OptionDescribe("ZEROFILL", "zero_fill", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("SIGNED", "is_unsigned", std::make_unique<ParserAlwaysFalse>()),
+            OptionDescribe("UNSIGNED", "is_unsigned", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("NULL", "is_null", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("NOT NULL", "is_null", std::make_unique<ParserAlwaysFalse>()),
+            OptionDescribe("DEFAULT", "default", std::make_unique<ParserExpression>()),
+            OptionDescribe("ON UPDATE", "on_update", std::make_unique<ParserExpression>()),
+            OptionDescribe("AUTO_INCREMENT", "auto_increment", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("UNIQUE", "unique_key", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("UNIQUE KEY", "unique_key", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("PRIMARY KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
+            OptionDescribe("CHARACTER SET", "charset_name", std::make_unique<ParserCharsetName>()),
+            OptionDescribe("COLLATE", "collate", std::make_unique<ParserCharsetName>()),
+            OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserIdentifier>()),
+            OptionDescribe("STORAGE", "storage", std::make_unique<ParserIdentifier>()),
+            OptionDescribe("AS", "generated", std::make_unique<ParserExpression>()),
+            OptionDescribe("GENERATED ALWAYS AS", "generated", std::make_unique<ParserExpression>()),
+            OptionDescribe("STORED", "is_stored", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("VIRTUAL", "is_stored", std::make_unique<ParserAlwaysFalse>()),
+            OptionDescribe("", "reference", std::make_unique<ParserDeclareReference>()),
+            OptionDescribe("", "constraint", std::make_unique<ParserDeclareConstraint>()),
+        }
+    };
+
+    return p_non_generate_options.parse(pos, node, expected);
+}
+
 bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr column_name;
@@ -64,37 +97,6 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     node = declare_column;
     return true;
-}
-bool ParserDeclareColumn::parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserDeclareOptions p_non_generate_options{
-        {
-            OptionDescribe("ZEROFILL", "zero_fill", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("SIGNED", "is_unsigned", std::make_unique<ParserAlwaysFalse>()),
-            OptionDescribe("UNSIGNED", "is_unsigned", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("NULL", "is_null", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("NOT NULL", "is_null", std::make_unique<ParserAlwaysFalse>()),
-            OptionDescribe("DEFAULT", "default", std::make_unique<ParserExpression>()),
-            OptionDescribe("AUTO_INCREMENT", "auto_increment", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("UNIQUE", "unique_key", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("UNIQUE KEY", "unique_key", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("PRIMARY KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
-            OptionDescribe("CHARACTER SET", "charset_name", std::make_unique<ParserCharsetName>()),
-            OptionDescribe("COLLATE", "collate", std::make_unique<ParserCharsetName>()),
-            OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserIdentifier>()),
-            OptionDescribe("STORAGE", "storage", std::make_unique<ParserIdentifier>()),
-            OptionDescribe("AS", "generated", std::make_unique<ParserExpression>()),
-            OptionDescribe("GENERATED ALWAYS AS", "generated", std::make_unique<ParserExpression>()),
-            OptionDescribe("STORED", "is_stored", std::make_unique<ParserAlwaysTrue>()),
-            OptionDescribe("VIRTUAL", "is_stored", std::make_unique<ParserAlwaysFalse>()),
-            OptionDescribe("", "reference", std::make_unique<ParserDeclareReference>()),
-            OptionDescribe("", "constraint", std::make_unique<ParserDeclareConstraint>()),
-        }
-    };
-
-    return p_non_generate_options.parse(pos, node, expected);
 }
 
 }
