@@ -59,6 +59,8 @@ namespace ProfileEvents
     extern const Event PerfDataTLBMisses;
     extern const Event PerfInstructionTLBReferences;
     extern const Event PerfInstructionTLBMisses;
+    extern const Event PerfLocalMemoryReferences;
+    extern const Event PerfLocalMemoryMisses;
 #endif
 }
 
@@ -162,7 +164,7 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-static constexpr size_t NUMBER_OF_RAW_EVENTS = 20;
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 22;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {

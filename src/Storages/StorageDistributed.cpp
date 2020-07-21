@@ -618,6 +618,26 @@ void StorageDistributed::shutdown()
     std::lock_guard lock(cluster_nodes_mutex);
     cluster_nodes_data.clear();
 }
+void StorageDistributed::drop()
+{
+    // shutdown() should be already called
+    // and by the same reason we cannot use truncate() here, since
+    // cluster_nodes_data already cleaned
+    if (!cluster_nodes_data.empty())
+        throw Exception("drop called before shutdown", ErrorCodes::LOGICAL_ERROR);
+
+    // Distributed table w/o sharding_key does not allows INSERTs
+    if (relative_data_path.empty())
+        return;
+
+    LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
+
+    auto disks = volume->getDisks();
+    for (const auto & disk : disks)
+        disk->removeRecursive(relative_data_path);
+
+    LOG_DEBUG(log, "Removed");
+}
 
 Strings StorageDistributed::getDataPaths() const
 {
@@ -636,11 +656,15 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, co
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
+    LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");
+
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
         it->second.shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const

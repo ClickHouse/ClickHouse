@@ -102,6 +102,8 @@ private:
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
+    /// Return number of messages with an error.
+    size_t filterMessageErrors();
 
     bool nextImpl() override;
 };

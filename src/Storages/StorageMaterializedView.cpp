@@ -257,6 +257,13 @@ void StorageMaterializedView::alterPartition(
     getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
 }
 
+void StorageMaterializedView::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
+}
+
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
