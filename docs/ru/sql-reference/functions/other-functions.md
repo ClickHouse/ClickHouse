@@ -1346,7 +1346,7 @@ randomStringUTF8(length);
 
 **Параметры**
 
--   `length` — Длина итоговой строки. [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `length` — Длина итоговой строки в кодовых точках. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
 
