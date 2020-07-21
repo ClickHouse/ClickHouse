@@ -1459,6 +1459,23 @@ Possible values:
 
 Default value: 16.
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true). 
+
+Possible values:
+
+-   0 — Data is inserted in asynchronous mode.
+-   1 — Data is inserted in synchronous mode.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
+-   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
