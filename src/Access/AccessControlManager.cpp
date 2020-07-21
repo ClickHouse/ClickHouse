@@ -9,6 +9,7 @@
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
 #include <Poco/ExpireCache.h>
 #include <mutex>
@@ -64,7 +65,8 @@ AccessControlManager::AccessControlManager()
       role_cache(std::make_unique<RoleCache>(*this)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
-      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this))
+      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
+      external_authenticators(std::make_unique<ExternalAuthenticators>())
 {
 }
 
@@ -76,6 +78,12 @@ void AccessControlManager::setLocalDirectory(const String & directory_path)
 {
     auto & disk_access_storage = dynamic_cast<DiskAccessStorage &>(getStorageByIndex(DISK_ACCESS_STORAGE_INDEX));
     disk_access_storage.setDirectory(directory_path);
+}
+
+
+void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    external_authenticators->setConfig(config, getLogger());
 }
 
 
@@ -161,6 +169,11 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
 std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
 {
     return settings_profiles_cache->getProfileSettings(profile_name);
+}
+
+const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
+{
+    return *external_authenticators;
 }
 
 }

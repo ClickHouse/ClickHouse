@@ -30,6 +30,7 @@ void registerStorages()
 
 #if USE_AWS_S3
     registerStorageS3(factory);
+    registerStorageCOS(factory);
     #endif
 
     #if USE_HDFS

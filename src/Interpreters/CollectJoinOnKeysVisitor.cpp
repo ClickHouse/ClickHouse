@@ -62,6 +62,11 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
     if (func.name == "equals")
     {
+        if (func.arguments->children.size() != 2)
+        {
+            throwSyntaxException("Function 'equals' takes two arguments, got '"
+                + func.formatForErrorMessage() + "' instead.");
+        }
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(ast, left, right, data);

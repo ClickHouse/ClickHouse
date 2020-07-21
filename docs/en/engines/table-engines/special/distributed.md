@@ -22,7 +22,7 @@ The Distributed engine accepts parameters:
 
     See also:
 
-    -   `insert_distributed_sync` setting
+    -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
     -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 Example:

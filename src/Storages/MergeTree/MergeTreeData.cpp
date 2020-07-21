@@ -2453,19 +2453,6 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
-
-    /// If the checksums file is not present, calculate the checksums and write them to disk.
-    /// Check the data while we are at it.
-    if (part->checksums.empty())
-    {
-        part->checksums = checkDataPart(part, false);
-        {
-            auto out = disk->writeFile(full_part_path + "checksums.txt.tmp", 4096);
-            part->checksums.write(*out);
-        }
-
-        disk->moveFile(full_part_path + "checksums.txt.tmp", full_part_path + "checksums.txt");
-    }
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const
@@ -3642,7 +3629,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
         {
             std::ostringstream message;
             message << "Table can't create parts with adaptive granularity, but settings"
-                    << "min_rows_for_wide_part = " << settings.min_rows_for_wide_part
+                    << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
                     << ", min_rows_for_compact_part = " << settings.min_rows_for_compact_part
                     << ", min_bytes_for_compact_part = " << settings.min_bytes_for_compact_part
