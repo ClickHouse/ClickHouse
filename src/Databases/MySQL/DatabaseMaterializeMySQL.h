@@ -13,6 +13,10 @@
 namespace DB
 {
 
+/** Real-time pull table structure and data from remote MySQL
+ *
+ *  All table structure and data will be written to the local file system
+ */
 class DatabaseMaterializeMySQL : public IDatabase
 {
 public:

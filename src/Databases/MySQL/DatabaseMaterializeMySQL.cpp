@@ -69,9 +69,8 @@ void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_for
 {
     try
     {
-        LOG_DEBUG(log, "Loading MySQL nested database stored objects.");
         getNestedDatabase()->loadStoredObjects(context, has_force_restore_data_flag);
-        LOG_DEBUG(log, "Loaded MySQL nested database stored objects.");
+        materialize_thread.startSynchronization();
     }
     catch (...)
     {
@@ -220,7 +219,14 @@ bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context &
 StoragePtr DatabaseMaterializeMySQL::tryGetTable(const String & name, const Context & context) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-        return std::make_shared<StorageMaterializeMySQL>(getNestedDatabase()->tryGetTable(name, context));
+    {
+        StoragePtr nested_storage = getNestedDatabase()->tryGetTable(name, context);
+
+        if (!nested_storage)
+            return {};
+
+        return std::make_shared<StorageMaterializeMySQL>(std::move(nested_storage));
+    }
 
     return getNestedDatabase()->tryGetTable(name, context);
 }

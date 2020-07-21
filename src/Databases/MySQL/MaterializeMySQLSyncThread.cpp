@@ -144,9 +144,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread")), global_context(context.getGlobalContext()), database_name(database_name_)
     , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
 {
-    const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
-    startSynchronization(mysql_server_version);
 }
 
 void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
@@ -210,10 +208,12 @@ void MaterializeMySQLSyncThread::stopSynchronization()
     }
 }
 
-void MaterializeMySQLSyncThread::startSynchronization(const String & mysql_version)
+void MaterializeMySQLSyncThread::startSynchronization()
 {
-    /// TODO: reset exception.
-    background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this, mysql_version = mysql_version]() { synchronization(mysql_version); });
+    const auto & mysql_server_version = checkVariableAndGetVersion(pool.get());
+
+    background_thread_pool = std::make_unique<ThreadFromGlobalPool>(
+        [this, mysql_server_version = mysql_server_version]() { synchronization(mysql_server_version); });
 }
 
 static inline void cleanOutdatedTables(const String & database_name, const Context & context)

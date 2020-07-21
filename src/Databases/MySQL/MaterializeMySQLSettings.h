@@ -8,7 +8,7 @@ namespace DB
 
 class ASTStorage;
 
-/** Settings for the MySQL Database engine(materialize mode).
+/** Settings for the MaterializeMySQL database engine.
   * Could be loaded from a CREATE DATABASE query (SETTINGS clause).
   */
 struct MaterializeMySQLSettings : public SettingsCollection<MaterializeMySQLSettings>
