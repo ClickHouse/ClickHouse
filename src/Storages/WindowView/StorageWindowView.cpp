@@ -210,7 +210,7 @@ namespace
         }
     };
 
-    static IntervalKind strToIntervalKind(const String& interval_str)
+    IntervalKind strToIntervalKind(const String& interval_str)
     {
         if (interval_str == "Second")
             return IntervalKind::Second;
@@ -231,7 +231,7 @@ namespace
         __builtin_unreachable();
     }
 
-    static void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
+    void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
     {
         const auto * arg = ast->as<ASTFunction>();
         if (!arg || !startsWith(arg->name, "toInterval"))
