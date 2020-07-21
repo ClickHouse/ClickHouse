@@ -1,6 +1,6 @@
 ---
 toc_priority: 66
-toc_title: How to Build ClickHouse on Linux for Mac OS X
+toc_title: Build on Linux for Mac OS X
 ---
 
 # How to Build ClickHouse on Linux for Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
@@ -9,7 +9,7 @@ This is for the case when you have Linux machine and want to use it to build `cl
 
 The cross-build for Mac OS X is based on the [Build instructions](../development/build.md), follow them first.
 
-# Install Clang-8 {#install-clang-8}
+## Install Clang-8 {#install-clang-8}
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
 For example the commands for Bionic are like:
@@ -19,7 +19,7 @@ sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8
 sudo apt-get install clang-8
 ```
 
-# Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
 
@@ -47,7 +47,7 @@ mkdir -p build-darwin/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX10.14.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
-# Build ClickHouse {#build-clickhouse}
+## Build ClickHouse {#build-clickhouse}
 
 ``` bash
 cd ClickHouse
