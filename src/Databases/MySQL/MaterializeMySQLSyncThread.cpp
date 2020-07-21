@@ -6,8 +6,8 @@
 
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 
-#    include <random>
 #    include <cstdlib>
+#    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <DataStreams/AddingVersionsBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
@@ -22,6 +22,7 @@
 #    include <Common/quoteString.h>
 #    include <Common/setThreadName.h>
 #    include <common/sleep.h>
+#    include <ext/bit_cast.h>
 
 namespace DB
 {
@@ -397,25 +398,25 @@ static void writeFieldsToColumn(
             }
         };
 
-        if (ColumnInt8 * casted_column = typeid_cast<ColumnInt8 *>(&column_to))
-            write_data_to_column(casted_column, UInt8(), Int8());
-        else if (ColumnInt16 * casted_column = typeid_cast<ColumnInt16 *>(&column_to))
-            write_data_to_column(casted_column, UInt16(), Int16());
-        else if (ColumnInt64 * casted_column = typeid_cast<ColumnInt64 *>(&column_to))
-            write_data_to_column(casted_column, UInt64(), Int64());
-        else if (ColumnUInt8 * casted_column = typeid_cast<ColumnUInt8 *>(&column_to))
-            write_data_to_column(casted_column, UInt8(), UInt8());
-        else if (ColumnUInt16 * casted_column = typeid_cast<ColumnUInt16 *>(&column_to))
-            write_data_to_column(casted_column, UInt16(), UInt16());
-        else if (ColumnUInt32 * casted_column = typeid_cast<ColumnUInt32 *>(&column_to))
-            write_data_to_column(casted_column, UInt32(), UInt32());
-        else if (ColumnUInt64 * casted_column = typeid_cast<ColumnUInt64 *>(&column_to))
-            write_data_to_column(casted_column, UInt64(), UInt64());
-        else if (ColumnFloat32 * casted_column = typeid_cast<ColumnFloat32 *>(&column_to))
-            write_data_to_column(casted_column, Float32(), Float32());
-        else if (ColumnFloat64 * casted_column = typeid_cast<ColumnFloat64 *>(&column_to))
-            write_data_to_column(casted_column, Float64(), Float64());
-        else if (ColumnInt32 * casted_column = typeid_cast<ColumnInt32 *>(&column_to))
+        if (ColumnInt8 * casted_int8_column = typeid_cast<ColumnInt8 *>(&column_to))
+            write_data_to_column(casted_int8_column, UInt64(), Int8());
+        else if (ColumnInt16 * casted_int16_column = typeid_cast<ColumnInt16 *>(&column_to))
+            write_data_to_column(casted_int16_column, UInt64(), Int16());
+        else if (ColumnInt64 * casted_int64_column = typeid_cast<ColumnInt64 *>(&column_to))
+            write_data_to_column(casted_int64_column, UInt64(), Int64());
+        else if (ColumnUInt8 * casted_uint8_column = typeid_cast<ColumnUInt8 *>(&column_to))
+            write_data_to_column(casted_uint8_column, UInt64(), UInt8());
+        else if (ColumnUInt16 * casted_uint16_column = typeid_cast<ColumnUInt16 *>(&column_to))
+            write_data_to_column(casted_uint16_column, UInt64(), UInt16());
+        else if (ColumnUInt32 * casted_uint32_column = typeid_cast<ColumnUInt32 *>(&column_to))
+            write_data_to_column(casted_uint32_column, UInt64(), UInt32());
+        else if (ColumnUInt64 * casted_uint64_column = typeid_cast<ColumnUInt64 *>(&column_to))
+            write_data_to_column(casted_uint64_column, UInt64(), UInt64());
+        else if (ColumnFloat32 * casted_float32_column = typeid_cast<ColumnFloat32 *>(&column_to))
+            write_data_to_column(casted_float32_column, Float64(), Float32());
+        else if (ColumnFloat64 * casted_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
+            write_data_to_column(casted_float64_column, Float64(), Float64());
+        else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -424,19 +425,19 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_column->insertValue(value.get<Int32>());
+                        casted_int32_column->insertValue(value.get<Int32>());
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
                         const Int32 & num = value.get<Int32>();
-                        casted_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
+                        casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
                         throw Exception("LOGICAL ERROR: it is a bug.", ErrorCodes::LOGICAL_ERROR);
                 }
             }
         }
-        else if (ColumnString * casted_column = typeid_cast<ColumnString *>(&column_to))
+        else if (ColumnString * casted_string_column = typeid_cast<ColumnString *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -445,11 +446,11 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     const String & data = value.get<const String &>();
-                    casted_column->insertData(data.data(), data.size());
+                    casted_string_column->insertData(data.data(), data.size());
                 }
             }
         }
-        else if (ColumnFixedString * casted_column = typeid_cast<ColumnFixedString *>(&column_to))
+        else if (ColumnFixedString * casted_fixed_string_column = typeid_cast<ColumnFixedString *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -458,7 +459,7 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     const String & data = value.get<const String &>();
-                    casted_column->insertData(data.data(), data.size());
+                    casted_fixed_string_column->insertData(data.data(), data.size());
                 }
             }
         }
