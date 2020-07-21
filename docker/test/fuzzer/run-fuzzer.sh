@@ -160,7 +160,7 @@ case "$stage" in
         echo "success" > status.txt
     else
         echo "failure" > status.txt
-        if ! grep "received signal \|Logical error" server.log > description.txt
+        if ! grep -a "received signal \|Logical error" server.log > description.txt
         then
             echo "Fuzzer exit code $fuzzer_exit_code. See the logs" > description.txt
         fi
