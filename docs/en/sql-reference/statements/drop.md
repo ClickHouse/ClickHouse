@@ -77,3 +77,11 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 Deletes a settings profile.
 
 Deleted settings profile is revoked from all the entities where it was assigned.
+
+## DROP VIEW {#drop-view}
+
+``` sql
+DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+Deletes the view. Views can deleted by `DROP TABLE` command as well but `DROP VIEW` checks that `[db.]name` is a view.
