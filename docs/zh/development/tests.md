@@ -183,9 +183,7 @@ LibFuzzer用于对库代码进行独立的模糊测试。模糊器作为测试�
 模糊测试示例在`src/Parsers/tests/lexer_fuzzer.cpp`。LibFuzzer配置、字典及语料库存放在`tests/fuzz`。
 我们鼓励您为每个处理用户输入的功能编写模糊测试。
 
-默认情况下不构建模糊器。可通过设置`-DENABLE_FUZZING=1`和`-DENABLE_TESTS=1`来构建模糊器。
-我们建议在构建模糊器时关闭Jemalloc。
-
+默认情况下不构建模糊器。可通过设置`-DENABLE_FUZZING=1`和`-DENABLE_TESTS=1`来构建模糊器。 我们建议在构建模糊器时关闭Jemalloc。 
 用于将ClickHouse模糊测试集成到的Google OSS-Fuzz的配置文件位于`docker/fuzz`。
 
 此外，我们使用简单的模糊测试来生成随机SQL查询并检查服务器是否正常。你可以在`00746_sql_fuzzy.pl` 找到它。测试应连续进行（过夜和更长时间）。
