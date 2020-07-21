@@ -92,7 +92,7 @@ public:
                 database,
                 name,
                 dict_struct,
-                getDictionarySourceOrUpdate()->clone(),
+                getSourceAndUpdateIfNeeded()->clone(),
                 dict_lifetime,
                 strict_max_lifetime_seconds,
                 size,
@@ -295,7 +295,7 @@ private:
     /// MultiVersion is not used here because it works with constant pointers.
     /// For some reason almost all methods in IDictionarySource interface are
     /// not constant.
-    SharedDictionarySourcePtr getDictionarySourceOrUpdate() const
+    SharedDictionarySourcePtr getSourceAndUpdateIfNeeded() const
     {
         std::lock_guard lock(source_mutex);
         if (error_count)
@@ -326,7 +326,7 @@ private:
     const std::string full_name;
     const DictionaryStructure dict_struct;
 
-    /// Dictionary source should be used without mutex
+    /// Dictionary source should be used with mutex
     mutable std::mutex source_mutex;
     mutable SharedDictionarySourcePtr source_ptr;
 

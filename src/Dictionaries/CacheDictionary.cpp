@@ -865,7 +865,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
     {
         try
         {
-            auto current_source_ptr = getDictionarySourceOrUpdate();
+            auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
 
