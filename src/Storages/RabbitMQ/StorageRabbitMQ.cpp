@@ -118,8 +118,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     hash_exchange = num_consumers > 1 || num_queues > 1;
 
-    exchange_type_set = exchange_type_ != ExchangeType::DEFAULT;
-    if (exchange_type_set)
+    if (exchange_type_ != ExchangeType::DEFAULT)
     {
         if      (exchange_type_ == ExchangeType::FANOUT)         exchange_type = AMQP::ExchangeType::fanout;
         else if (exchange_type_ == ExchangeType::DIRECT)         exchange_type = AMQP::ExchangeType::direct;
@@ -133,11 +132,23 @@ StorageRabbitMQ::StorageRabbitMQ(
         exchange_type = AMQP::ExchangeType::fanout;
     }
 
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        std::vector<String> matching;
+        for (const auto & header : routing_keys)
+        {
+            boost::split(matching, header, [](char c){ return c == '='; });
+            bind_headers[matching[0]] = matching[1];
+            matching.clear();
+        }
+    }
+
     auto table_id = getStorageID();
     String table_name = table_id.table_name;
 
     /// Make sure that local exchange name is unique for each table and is not the same as client's exchange name
-    local_exchange_name = exchange_name + "_" + table_name;
+    local_exchange = exchange_name + "_" + table_name;
+    bridge_exchange = local_exchange + "_bridge";
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     looping_task = global_context.getSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
@@ -160,6 +171,133 @@ void StorageRabbitMQ::loopingFunc()
 {
     LOG_DEBUG(log, "Starting event looping iterations");
     event_handler->startLoop();
+}
+
+
+void StorageRabbitMQ::initExchange()
+{
+    /* Declare client's exchange of the specified type and bind it to hash-exchange (if it is not already hash-exchange), which
+     * will evenly distribute messages between all consumers.
+     */
+    setup_channel->declareExchange(exchange_name, exchange_type, AMQP::durable)
+    .onError([&](const char * message)
+    {
+        throw Exception("Unable to declare exchange. Make sure specified exchange is not already declared. Error: "
+                + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    });
+
+    /// Bridge exchange is needed to easily disconnect consumer queues.
+    setup_channel->declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable + AMQP::autodelete)
+    .onError([&](const char * message)
+    {
+        throw Exception("Unable to declare exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    });
+
+    if (!hash_exchange)
+    {
+        consumer_exchange = bridge_exchange;
+        return;
+    }
+
+    /// Declare exchange for sharding.
+    AMQP::Table binding_arguments;
+    binding_arguments["hash-property"] = "message_id";
+
+    setup_channel->declareExchange(local_exchange, AMQP::consistent_hash, AMQP::durable + AMQP::autodelete, binding_arguments)
+    .onError([&](const char * message)
+    {
+        throw Exception("Unable to declare exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    });
+
+    setup_channel->bindExchange(bridge_exchange, local_exchange, routing_keys[0])
+    .onError([&](const char * message)
+    {
+        throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    });
+
+    consumer_exchange = local_exchange;
+}
+
+
+void StorageRabbitMQ::bindExchange()
+{
+    std::atomic<bool> binding_created = false;
+
+    /// Bridge exchange connects client's exchange with consumers' queues.
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
+        .onSuccess([&]()
+        {
+            binding_created = true;
+        })
+        .onError([&](const char * message)
+        {
+            throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+        });
+    }
+    else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
+    {
+        setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0])
+        .onSuccess([&]()
+        {
+            binding_created = true;
+        })
+        .onError([&](const char * message)
+        {
+            throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+        });
+    }
+    else
+    {
+        for (const auto & routing_key : routing_keys)
+        {
+            setup_channel->bindExchange(exchange_name, bridge_exchange, routing_key)
+            .onSuccess([&]()
+            {
+                binding_created = true;
+            })
+            .onError([&](const char * message)
+            {
+                throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+            });
+        }
+    }
+
+    while (!binding_created)
+    {
+        event_handler->iterateLoop();
+    }
+}
+
+
+void StorageRabbitMQ::unbindExchange()
+{
+    if (bridge.try_lock())
+    {
+        if (exchange_removed.load())
+            return;
+
+        setup_channel->removeExchange(bridge_exchange)
+        .onSuccess([&]()
+        {
+            exchange_removed.store(true);
+        })
+        .onError([&](const char * message)
+        {
+            throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+        });
+
+        while (!exchange_removed)
+        {
+            event_handler->iterateLoop();
+        }
+
+        event_handler->stop();
+        looping_task->deactivate();
+
+        bridge.unlock();
+    }
 }
 
 
@@ -207,6 +345,10 @@ BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadat
 
 void StorageRabbitMQ::startup()
 {
+    setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    initExchange();
+    bindExchange();
+
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
@@ -288,9 +430,9 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, event_handler, exchange_name, exchange_type, routing_keys,
+        consumer_channel, setup_channel, event_handler, consumer_exchange, exchange_type, routing_keys,
         next_channel_id, log, row_delimiter, hash_exchange, num_queues,
-        local_exchange_name, stream_cancelled);
+        local_exchange, stream_cancelled);
 }
 
 

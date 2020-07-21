@@ -171,15 +171,14 @@ void WriteBufferToRabbitMQProducer::initExchange()
 {
     std::atomic<bool> exchange_declared = false, exchange_error = false;
 
-    producer_channel->declareExchange(exchange_name, exchange_type)
+    producer_channel->declareExchange(exchange_name, exchange_type, AMQP::durable + AMQP::passive)
     .onSuccess([&]()
     {
         exchange_declared = true;
     })
-    .onError([&](const char * message)
+    .onError([&](const char * /* message */)
     {
         exchange_error = true;
-        LOG_ERROR(log, "Exchange error: {}", message);
     });
 
     /// These variables are updated in a separate thread.
