@@ -538,7 +538,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
 
         new_storage->set(new_storage->engine, storage->engine->clone());
 
-        auto visit = [&](const IAST * ast, IAST *& field) {
+        auto visit = [&](const IAST * ast, IAST * & field)
+        {
             if (ast)
             {
                 auto node = ast->clone();
