@@ -1014,7 +1014,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
                 lateness_bound = watermark_lower_bound;
         }
     }
-    else
+    else if (! window_view.is_time_column_func_now)
     {
         lateness_bound = t_max_fired_watermark;
     }
