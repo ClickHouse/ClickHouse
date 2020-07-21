@@ -1324,29 +1324,50 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.mutations {#system_tables-mutations}
 
-Таблица содержит информацию о ходе выполнения [мутаций](../sql-reference/statements/alter.md#alter-mutations) MergeTree-таблиц. Каждой команде мутации соответствует одна строка. В таблице есть следующие столбцы:
+Таблица содержит информацию о ходе выполнения [мутаций](../sql-reference/statements/alter.md#alter-mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы. 
 
-**database**, **table** - имя БД и таблицы, к которой была применена мутация.
+Столбцы:
 
-**mutation\_id** - ID запроса. Для реплицированных таблиц эти ID соответствуют именам записей в директории `<table_path_in_zookeeper>/mutations/` в ZooKeeper, для нереплицированных - именам файлов в директории с данными таблицы.
+-   `database` ([String](../sql-reference/data-types/string.md)) — имя БД, к которой была применена мутация.
 
-**command** - Команда мутации (часть запроса после `ALTER TABLE [db.]table`).
+-   `table` ([String](../sql-reference/data-types/string.md)) — имя таблицы, к которой была применена мутация.
 
-**create\_time** - Время создания мутации.
+-   `mutation_id` ([String](../sql-reference/data-types/string.md)) — ID запроса. Для реплицированных таблиц эти ID соответствуют именам записей в директории `<table_path_in_zookeeper>/mutations/` в ZooKeeper, для нереплицированных — именам файлов в директории с данными таблицы.
 
-**block\_numbers.partition\_id**, **block\_numbers.number** - Nested-столбец. Для мутаций реплицированных таблиц для каждой партиции содержит номер блока, полученный этой мутацией (в каждой партиции будут изменены только куски, содержащие блоки с номерами, меньшими номера, полученного мутацией в этой партиции). Для нереплицированных таблиц нумерация блоков сквозная по партициям, поэтому столбец содержит одну запись с единственным номером блока, полученным мутацией.
+-   `command` ([String](../sql-reference/data-types/string.md)) — команда мутации (часть запроса после `ALTER TABLE [db.]table`).
 
-**parts\_to\_do** - Количество кусков таблицы, которые ещё предстоит изменить.
+-   `create_time` ([Datetime](../sql-reference/data-types/datetime.md)) — дата и время создания мутации.
 
-**is\_done** - Завершена ли мутация. Замечание: даже если `parts_to_do = 0`, для реплицированной таблицы возможна ситуация, когда мутация ещё не завершена из-за долго выполняющейся вставки, которая добавляет данные, которые нужно будет мутировать.
+-   `block_numbers.partition_id` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — Для мутаций реплицированных таблиц массив содержит содержит номера партиций (по одной записи для каждой партиции). Для мутаций нереплицированных таблиц массив пустой.
+
+-   `block_numbers.number` ([Array](../sql-reference/data-types/array.md)([Int64](../sql-reference/data-types/int-uint.md))) — Для мутаций реплицированных таблиц массив содержит по одной записи для каждой партиции, с номером блока, полученным этой мутацией. В каждой партиции будут изменены только куски, содержащие блоки с номерами меньше чем данный номер.
+
+    Для нереплицированных таблиц нумерация блоков сквозная по партициям. Поэтому массив содержит единственную запись с номером блока, полученным мутацией.
+
+-   `parts_to_do_names` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — массив с именами кусков данных, которые должны быть изменены для завершения мутации.
+
+-   `parts_to_do` ([Int64](../sql-reference/data-types/int-uint.md)) — количество кусков данных, которые должны быть изменены для завершения мутации.
+
+-   `is_done` ([UInt8](../sql-reference/data-types/int-uint.md)) — Признак, завершена ли мутация. Возможные значения:
+    -   `1` — мутация завершена,
+    -   `0` — мутация еще продолжается.
+
+!!! info "Замечание"
+    Даже если `parts_to_do = 0`, для реплицированной таблицы возможна ситуация, когда мутация ещё не завершена из-за долго выполняющейся операции `INSERT`, которая добавляет данные, которые нужно будет мутировать.
 
 Если во время мутации какого-либо куска возникли проблемы, заполняются следующие столбцы:
 
-**latest\_failed\_part** - Имя последнего куска, мутация которого не удалась.
+-   `latest_failed_part` ([String](../sql-reference/data-types/string.md)) — имя последнего куска, мутация которого не удалась.
 
-**latest\_fail\_time** — время последней ошибки мутации.
+-   `latest_fail_time` ([Datetime](../sql-reference/data-types/datetime.md)) — дата и время последней ошибки мутации.
 
-**latest\_fail\_reason** — причина последней ошибки мутации.
+-   `latest_fail_reason` ([String](../sql-reference/data-types/string.md)) — причина последней ошибки мутации.
+
+**См. также**
+
+-   [Мутации](../sql-reference/statements/alter.md#alter-mutations)
+-   [Движок MergeTree](../engines/table-engines/mergetree-family/mergetree.md)
+-   [Репликация данных](../engines/table-engines/mergetree-family/replication.md) (семейство ReplicatedMergeTree)
 
 ## system.disks {#system_tables-disks}
 
