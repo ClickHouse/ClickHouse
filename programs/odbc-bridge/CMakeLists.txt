@@ -8,12 +8,13 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ODBCBlockOutputStream.cpp
     ODBCBridge.cpp
     PingHandler.cpp
+    SchemaAllowedHandler.cpp
     validateODBCConnectionString.cpp
 )
-
 set (CLICKHOUSE_ODBC_BRIDGE_LINK
     PRIVATE
         clickhouse_parsers
+        clickhouse_aggregate_functions
         daemon
         dbms
         Poco::Data

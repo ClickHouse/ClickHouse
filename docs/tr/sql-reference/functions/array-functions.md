@@ -702,13 +702,13 @@ arrayDifference(array)
 
 **Parametre**
 
--   `array` – [Dizi](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Dizi](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Döndürülen değerler**
 
 Bitişik öğeler arasındaki farklar dizisini döndürür.
 
-Tür: [Uİnt\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Tamsayı\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [Yüzdürmek\*](https://clickhouse.yandex/docs/en/data_types/float/).
+Tür: [Uİnt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Tamsayı\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Yüzdürmek\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **Örnek**
 
@@ -754,7 +754,7 @@ arrayDistinct(array)
 
 **Parametre**
 
--   `array` – [Dizi](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Dizi](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Döndürülen değerler**
 

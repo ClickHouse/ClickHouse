@@ -13,5 +13,5 @@ CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite\\\\.com\', \'.*\\\\
 CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite2\\\\.com\', \'.*\\\\.anothersite2\\\\.org\'
 CREATE USER test_user_01075 HOST REGEXP \'.*\\\\.anothersite3\\\\.com\', \'.*\\\\.anothersite3\\\\.org\'
 CREATE USER `test_user_01075_x@localhost` HOST LOCAL
-CREATE USER test_user_01075_x
-CREATE USER `test_user_01075_x@192.168.23.15` HOST LIKE \'192.168.23.15\'
+CREATE USER test_user_01075_x HOST LOCAL
+CREATE USER `test_user_01075_x@192.168.23.15` HOST LOCAL

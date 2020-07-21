@@ -3,6 +3,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
+#include <Functions/PerformanceAdaptors.h>
+#include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <common/arithmeticOverflow.h>
@@ -21,12 +23,11 @@ namespace ErrorCodes
 
 
 /* Generate random fixed string with fully random bytes (including zero). */
-class FunctionRandomFixedString : public IFunction
+template <typename RandImpl>
+class FunctionRandomFixedStringImpl : public IFunction
 {
 public:
     static constexpr auto name = "randomFixedString";
-
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomFixedString>(); }
 
     String getName() const override { return name; }
 
@@ -68,18 +69,38 @@ public:
 
         /// Fill random bytes.
         data_to.resize(total_size);
-        pcg64_fast rng(randomSeed()); /// TODO It is inefficient. We should use SIMD PRNG instead.
-
-        auto * pos = data_to.data();
-        auto * end = pos + data_to.size();
-        while (pos < end)
-        {
-            unalignedStore<UInt64>(pos, rng());
-            pos += sizeof(UInt64); // We have padding in column buffers that we can overwrite.
-        }
+        RandImpl::execute(reinterpret_cast<char *>(data_to.data()), total_size);
 
         block.getByPosition(result).column = std::move(col_to);
     }
+};
+
+class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
+{
+public:
+    explicit FunctionRandomFixedString(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomFixedStringImpl<TargetSpecific::AVX2::RandImpl>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionRandomFixedString>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 void registerFunctionRandomFixedString(FunctionFactory & factory)

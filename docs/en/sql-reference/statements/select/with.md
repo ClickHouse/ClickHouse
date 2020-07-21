@@ -6,13 +6,13 @@ toc_title: WITH
 
 This section provides support for Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), so the results of `WITH` clause can be used in the rest of `SELECT` query.
 
-## Limitations
+## Limitations {#limitations}
 
-1. Recursive queries are not supported.
-2. When subquery is used inside WITH section, it’s result should be scalar with exactly one row.
-3. Expression’s results are not available in subqueries.
+1.  Recursive queries are not supported.
+2.  When subquery is used inside WITH section, it’s result should be scalar with exactly one row.
+3.  Expression’s results are not available in subqueries.
 
-## Examples
+## Examples {#examples}
 
 **Example 1:** Using constant expression as “variable”
 

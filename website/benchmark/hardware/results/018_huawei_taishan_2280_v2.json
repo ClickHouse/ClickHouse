@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Huawei TaiShan 2280 v2 (AArch64) 64 core (2-die), one physical HDD",
+        "system":       "Huawei TaiShan",
+        "system_full":      "Huawei TaiShan 2280 v2 (AArch64) 64 core (2-die), one physical HDD",
         "time":         "2020-01-15 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.356, 0.002, 0.002],

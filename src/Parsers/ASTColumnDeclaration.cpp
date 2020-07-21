@@ -49,9 +49,6 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
 {
     frame.need_parens = false;
 
-    if (!settings.one_line)
-        settings.ostr << settings.nl_or_ws << std::string(4 * frame.indent, ' ');
-
     /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
     settings.ostr << backQuote(name);
 
@@ -59,6 +56,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         type->formatImpl(settings, state, frame);
+    }
+
+    if (null_modifier)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
+                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)

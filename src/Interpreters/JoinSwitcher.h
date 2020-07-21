@@ -62,11 +62,6 @@ public:
         return join->createStreamWithNonJoinedRows(block, max_block_size);
     }
 
-    bool hasStreamWithNonJoinedRows() const override
-    {
-        return join->hasStreamWithNonJoinedRows();
-    }
-
 private:
     JoinPtr join;
     SizeLimits limits;

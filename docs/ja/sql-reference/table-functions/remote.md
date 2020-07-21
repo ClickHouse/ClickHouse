@@ -14,6 +14,8 @@ toc_title: "\u30EA\u30E2\u30FC\u30C8"
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`、または単に `host`. ホストは、サーバー名またはIPv4またはIPv6アドレスとして指定できます。 IPv6アドレスは角かっこで指定します。 ポートは、リモートサーバー上のTCPポートです。 ポートが省略されると、次のようになります `tcp_port` サーバーの設定ファイルから(デフォルトでは9000)。

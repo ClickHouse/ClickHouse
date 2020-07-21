@@ -16,13 +16,13 @@ bool Lock::tryLock()
     else
     {
         std::string dummy;
-        int32_t code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
+        Coordination::Error code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
 
-        if (code == Coordination::ZNODEEXISTS)
+        if (code == Coordination::Error::ZNODEEXISTS)
         {
             locked.reset();
         }
-        else if (code == Coordination::ZOK)
+        else if (code == Coordination::Error::ZOK)
         {
             locked = std::make_unique<ZooKeeperHandler>(zookeeper);
         }

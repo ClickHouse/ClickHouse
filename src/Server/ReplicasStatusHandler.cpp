@@ -7,8 +7,11 @@
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPHandlerRequestFilter.h>
 
 
 namespace DB
@@ -104,5 +107,9 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
     }
 }
 
+Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
+{
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server), server.config(), config_prefix);
+}
 
 }

@@ -305,7 +305,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & column = static_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).get());

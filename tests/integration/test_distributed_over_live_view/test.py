@@ -81,7 +81,10 @@ class TestLiveViewOverDistributedSuite:
             client1.expect(prompt)
 
             client1.send(select_query)
-            client1.expect('"node1",0,0\r\n.*"node1",1,1\r\n.*"node2",0,10\r\n.*"node2",1,11\r\n')
+            client1.expect('"node1",0,0')
+            client1.expect('"node1",1,1')
+            client1.expect('"node2",0,10')
+            client1.expect('"node2",1,11')
             client1.expect(prompt)
 
             client1.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 2, 3)")
@@ -90,7 +93,13 @@ class TestLiveViewOverDistributedSuite:
             client2.expect(prompt)
             time.sleep(2)
             client1.send(select_query)
-            client1.expect('"node1",0,0\r\n.*"node1",1,1\r\n.*"node1",1,3\r\n.*"node1",2,3\r\n.*"node1",3,3\r\n.*"node2",0,10\r\n.*"node2",1,11\r\n')
+            client1.expect('"node1",0,0')
+            client1.expect('"node1",1,1')
+            client1.expect('"node1",1,3')
+            client1.expect('"node1",2,3')
+            client1.expect('"node1",3,3')
+            client1.expect('"node2",0,10')
+            client1.expect('"node2",1,11')
             client1.expect(prompt)
 
     def test_distributed_over_live_view_order_by_key(self, started_cluster, node, source):
@@ -110,7 +119,10 @@ class TestLiveViewOverDistributedSuite:
             client1.expect(prompt)
 
             client1.send(select_query)
-            client1.expect('"node1",0,0\r\n"node2",0,10\r\n"node1",1,1\r\n.*"node2",1,11\r\n')
+            client1.expect('"node1",0,0')
+            client1.expect('"node2",0,10')
+            client1.expect('"node1",1,1')
+            client1.expect('"node2",1,11')
             client1.expect(prompt)
 
             client1.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 2, 3)")
@@ -119,7 +131,13 @@ class TestLiveViewOverDistributedSuite:
             client2.expect(prompt)
             time.sleep(2)
             client1.send(select_query)
-            client1.expect('"node1",0,0\r\n.*"node2",0,10.*\r\n"node1",1,1\r\n.*"node1",1,3\r\n.*"node2",1,11\r\n.*"node1",2,3\r\n.*"node1",3,3\r\n')
+            client1.expect('"node1",0,0')
+            client1.expect('"node2",0,10')
+            client1.expect('"node1",1,1')
+            client1.expect('"node1",1,3')
+            client1.expect('"node2",1,11')
+            client1.expect('"node1",2,3')
+            client1.expect('"node1",3,3')
             client1.expect(prompt)
 
     def test_distributed_over_live_view_group_by_node(self, started_cluster, node, source):
@@ -139,14 +157,16 @@ class TestLiveViewOverDistributedSuite:
             client1.expect(prompt)
 
             client1.send(select_query)
-            client1.expect('"node1",1\r\n"node2",21\r\n')
+            client1.expect('"node1",1')
+            client1.expect('"node2",21')
             client1.expect(prompt)
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
             time.sleep(2)
             client1.send(select_query)
-            client1.expect('"node1",3\r\n.*"node2",21\r\n')
+            client1.expect('"node1",3')
+            client1.expect('"node2",21')
             client1.expect(prompt)
 
             client1.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 3, 3)")
@@ -155,7 +175,8 @@ class TestLiveViewOverDistributedSuite:
             client2.expect(prompt)
             time.sleep(2)
             client1.send(select_query)
-            client1.expect('"node1",12\r\n.*"node2",21\r\n')
+            client1.expect('"node1",12')
+            client1.expect('"node2",21')
             client1.expect(prompt)
 
     def test_distributed_over_live_view_group_by_key(self, started_cluster, node, source):
@@ -175,21 +196,27 @@ class TestLiveViewOverDistributedSuite:
             client1.expect(prompt)
 
             client1.send(select_query)
-            client1.expect("0,10\r\n1,12\r\n")
+            client1.expect('0,10')
+            client1.expect('1,12')
             client1.expect(prompt)
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
             time.sleep(2)
             client1.send(select_query)
-            client1.expect("0,10\r\n1,12\r\n2,2\r\n")
+            client1.expect('0,10')
+            client1.expect('1,12')
+            client1.expect('2,2')
             client1.expect(prompt)
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 3, 3)")
             client2.expect(prompt)
             time.sleep(2)
             client1.send(select_query)
-            client1.expect("0,10\r\n.*1,15\r\n.*2,2\r\n.*3,3\r\n")
+            client1.expect('0,10')
+            client1.expect('1,15')
+            client1.expect('2,2')
+            client1.expect('3,3')
             client1.expect(prompt)
 
     def test_distributed_over_live_view_sum(self, started_cluster, node, source):

@@ -155,7 +155,7 @@ ENGINE = <Engine>
 فشرده سازی برای موتورهای جدول زیر پشتیبانی می شود:
 
 -   [ادغام](../../engines/table-engines/mergetree-family/mergetree.md) خانواده پشتیبانی از کدک های فشرده سازی ستون و انتخاب روش فشرده سازی پیش فرض توسط [فشردهسازی](../../operations/server-configuration-parameters/settings.md#server-settings-compression) تنظیمات.
--   [ثبت](../../engines/table-engines/log-family/log-family.md) خانواده با استفاده از `lz4` روش فشرده سازی به طور پیش فرض و پشتیبانی از کدک های فشرده سازی ستون.
+-   [ثبت](../../engines/table-engines/log-family/index.md) خانواده با استفاده از `lz4` روش فشرده سازی به طور پیش فرض و پشتیبانی از کدک های فشرده سازی ستون.
 -   [تنظیم](../../engines/table-engines/special/set.md). فقط فشرده سازی پیش فرض پشتیبانی می کند.
 -   [پیوستن](../../engines/table-engines/special/join.md). فقط فشرده سازی پیش فرض پشتیبانی می کند.
 

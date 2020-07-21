@@ -3,12 +3,11 @@ toc_priority: 37
 toc_title: File
 ---
 
-# File {#table_engines-file}
+# File Table Engine {#table_engines-file}
 
-The File table engine keeps the data in a file in one of the supported [file
-formats](../../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](../../../interfaces/formats.md#formats) (`TabSeparated`, `Native`, etc.).
 
-Usage examples:
+Usage scenarios:
 
 -   Data export from ClickHouse to file.
 -   Convert data from one format to another.
@@ -29,12 +28,12 @@ ClickHouse does not allow to specify filesystem path for`File`. It will use fold
 
 When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it’s put into `data.Format` file in that subdirectory.
 
-You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/misc.md) it to table information with matching name, so you can query data from that file.
+You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 
 !!! warning "Warning"
     Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
-**Example:**
+## Example {#example}
 
 **1.** Set up the `file_engine_table` table:
 

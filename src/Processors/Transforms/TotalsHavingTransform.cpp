@@ -21,18 +21,13 @@ void finalizeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
-    {
         if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-        {
-            auto mut_column = IColumn::mutate(std::move(column));
-            column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
-        }
-    }
+            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
 
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression, bool final)
+Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
 {
     if (final)
         finalizeBlock(block);
@@ -51,7 +46,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, createOutputHeader(header, expression_, final_), true)
+    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)

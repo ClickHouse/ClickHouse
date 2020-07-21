@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Selectel Cloud, 16 vCPU, 32 GB RAM, 'fast disk'",
+        "system":       "Selectel Cloud 'fast disk'",
+        "system_full":       "Selectel Cloud, 16 vCPU, 32 GB RAM, 'fast disk'",
         "time":         "2020-01-26 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.017, 0.002, 0.002],
@@ -50,8 +52,10 @@
         ]
     },
     {
-        "system":       "Selectel Cloud, 16 vCPU, 32 GB RAM, 'basic disk'",
+        "system":       "Selectel Cloud 'basic disk'",
+        "system_full":       "Selectel Cloud, 16 vCPU, 32 GB RAM, 'basic disk'",
         "time":         "2020-01-26 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.142, 0.002, 0.002],
@@ -100,8 +104,10 @@
         ]
     },
     {
-        "system":       "Selectel Cloud, 16 vCPU, 32 GB RAM, 'universal disk'",
+        "system":       "Selectel Cloud 'universal disk'",
+        "system_full":       "Selectel Cloud, 16 vCPU, 32 GB RAM, 'universal disk'",
         "time":         "2020-01-26 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.016, 0.002, 0.002],

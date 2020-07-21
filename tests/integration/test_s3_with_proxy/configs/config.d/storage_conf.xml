@@ -7,8 +7,8 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
                 <proxy>
-                    <uri>http://proxy1:8888</uri>
-                    <uri>http://proxy2:8888</uri>
+                    <uri>http://proxy1</uri>
+                    <uri>http://proxy2</uri>
                 </proxy>
             </s3>
             <s3_with_resolver>
@@ -25,7 +25,7 @@
                     <resolver>
                         <endpoint>http://resolver:8080/hostname</endpoint>
                         <proxy_scheme>http</proxy_scheme>
-                        <proxy_port>8888</proxy_port>
+                        <proxy_port>80</proxy_port>
                     </resolver>
                 </proxy>
             </s3_with_resolver>

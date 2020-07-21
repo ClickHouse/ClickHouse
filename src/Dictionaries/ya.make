@@ -17,6 +17,9 @@ SRCS(
     CacheDictionary_generate1.cpp
     CacheDictionary_generate2.cpp
     CacheDictionary_generate3.cpp
+    CassandraBlockInputStream.cpp
+    CassandraDictionarySource.cpp
+    CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
     ComplexKeyCacheDictionary.cpp
     ComplexKeyCacheDictionary_createAttributeWithType.cpp
@@ -50,7 +53,6 @@ SRCS(
     HTTPDictionarySource.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
-    MongoDBBlockInputStream.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
@@ -59,6 +61,8 @@ SRCS(
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
+    SSDCacheDictionary.cpp
+    SSDComplexKeyCacheDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
 
