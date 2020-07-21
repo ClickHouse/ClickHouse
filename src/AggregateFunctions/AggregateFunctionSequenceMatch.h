@@ -560,7 +560,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).sort();
 
@@ -588,7 +588,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         const_cast<Data &>(this->data(place)).sort();
         assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));

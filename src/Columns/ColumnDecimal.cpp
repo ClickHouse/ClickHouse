@@ -40,6 +40,15 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 }
 
 template <typename T>
+void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                     int direction, int nan_direction_hint) const
+{
+    return this->template doCompareColumn<ColumnDecimal<T>>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+                                                         compare_results, direction, nan_direction_hint);
+}
+
+template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto * pos = arena.allocContinue(sizeof(T), begin);
@@ -87,6 +96,12 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
         ++begin;
         ++hash_data;
     }
+}
+
+template <typename T>
+void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
 }
 
 template <typename T>
@@ -331,17 +346,6 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 
     min = NearestFieldType<T>(cur_min, scale);
     max = NearestFieldType<T>(cur_max, scale);
-}
-
-TypeIndex columnDecimalDataType(const IColumn * column)
-{
-    if (checkColumn<ColumnDecimal<Decimal32>>(column))
-        return TypeIndex::Decimal32;
-    else if (checkColumn<ColumnDecimal<Decimal64>>(column))
-        return TypeIndex::Decimal64;
-    else if (checkColumn<ColumnDecimal<Decimal128>>(column))
-        return TypeIndex::Decimal128;
-    return TypeIndex::Nothing;
 }
 
 template class ColumnDecimal<Decimal32>;

@@ -18,8 +18,32 @@ namespace ErrorCodes
 static constexpr UInt64 SEED_GEN_A = 845897321;
 static constexpr UInt64 SEED_GEN_B = 217728422;
 
+static constexpr UInt64 MAX_BLOOM_FILTER_SIZE = 1 << 30;
+
+
+BloomFilterParameters::BloomFilterParameters(size_t filter_size_, size_t filter_hashes_, size_t seed_)
+    : filter_size(filter_size_), filter_hashes(filter_hashes_), seed(seed_)
+{
+    if (filter_size == 0)
+        throw Exception("The size of bloom filter cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+    if (filter_hashes == 0)
+        throw Exception("The number of hash functions for bloom filter cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+    if (filter_size > MAX_BLOOM_FILTER_SIZE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of bloom filter cannot be more than {}", MAX_BLOOM_FILTER_SIZE);
+}
+
+
+BloomFilter::BloomFilter(const BloomFilterParameters & params)
+    : BloomFilter(params.filter_size, params.filter_hashes, params.seed)
+{
+}
+
 BloomFilter::BloomFilter(size_t size_, size_t hashes_, size_t seed_)
-    : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0) {}
+    : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0)
+{
+    assert(size != 0);
+    assert(hashes != 0);
+}
 
 bool BloomFilter::find(const char * data, size_t len)
 {

@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -62,13 +63,13 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
-class Context;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class AsynchronousMetricLog;
 
 
 class ISystemLog
@@ -76,7 +77,8 @@ class ISystemLog
 public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
-    virtual void flush() = 0;
+    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
+    virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
@@ -99,6 +101,8 @@ struct SystemLogs
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+    /// Metrics from system.asynchronous_metrics.
+    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -133,7 +137,7 @@ public:
     void stopFlushThread();
 
     /// Flush data in the buffer to disk
-    void flush() override;
+    void flush(bool force = false) override;
 
     /// Start the background thread.
     void startup() override;
@@ -174,6 +178,7 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
+    bool is_force_prepare_tables = false;
     std::condition_variable flush_event;
     // Requested to flush logs up to this index, exclusive
     uint64_t requested_flush_before = 0;
@@ -214,7 +219,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::startup()
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -228,51 +233,61 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-    std::unique_lock lock(mutex);
+    /// Should not log messages under mutex.
+    bool queue_is_half_full = false;
 
-    if (is_shutdown)
-        return;
-
-    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
     {
-        // The queue more than half full, time to flush.
-        // We only check for strict equality, because messages are added one
-        // by one, under exclusive lock, so we will see each message count.
-        // It is enough to only wake the flushing thread once, after the message
-        // count increases past half available size.
-        const uint64_t queue_end = queue_front_index + queue.size();
-        if (requested_flush_before < queue_end)
-            requested_flush_before = queue_end;
+        std::unique_lock lock(mutex);
 
-        flush_event.notify_all();
-        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
-    }
+        if (is_shutdown)
+            return;
 
-    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
-    {
-        // Ignore all further entries until the queue is flushed.
-        // Log a message about that. Don't spam it -- this might be especially
-        // problematic in case of trace log. Remember what the front index of the
-        // queue was when we last logged the message. If it changed, it means the
-        // queue was flushed, and we can log again.
-        if (queue_front_index != logged_queue_full_at_index)
+        if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
         {
-            logged_queue_full_at_index = queue_front_index;
+            queue_is_half_full = true;
 
-            // TextLog sets its logger level to 0, so this log is a noop and
-            // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
+            // The queue more than half full, time to flush.
+            // We only check for strict equality, because messages are added one
+            // by one, under exclusive lock, so we will see each message count.
+            // It is enough to only wake the flushing thread once, after the message
+            // count increases past half available size.
+            const uint64_t queue_end = queue_front_index + queue.size();
+            if (requested_flush_before < queue_end)
+                requested_flush_before = queue_end;
+
+            flush_event.notify_all();
         }
 
-        return;
+        if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
+        {
+            // Ignore all further entries until the queue is flushed.
+            // Log a message about that. Don't spam it -- this might be especially
+            // problematic in case of trace log. Remember what the front index of the
+            // queue was when we last logged the message. If it changed, it means the
+            // queue was flushed, and we can log again.
+            if (queue_front_index != logged_queue_full_at_index)
+            {
+                logged_queue_full_at_index = queue_front_index;
+
+                // TextLog sets its logger level to 0, so this log is a noop and
+                // there is no recursive logging.
+                lock.unlock();
+                LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
+            }
+
+            return;
+        }
+
+        queue.push_back(element);
     }
 
-    queue.push_back(element);
+    if (queue_is_half_full)
+        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
 }
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush()
+void SystemLog<LogElement>::flush(bool force)
 {
     std::unique_lock lock(mutex);
 
@@ -281,7 +296,8 @@ void SystemLog<LogElement>::flush()
 
     const uint64_t queue_end = queue_front_index + queue.size();
 
-    if (requested_flush_before < queue_end)
+    is_force_prepare_tables = force;
+    if (requested_flush_before < queue_end || force)
     {
         requested_flush_before = queue_end;
         flush_event.notify_all();
@@ -290,7 +306,7 @@ void SystemLog<LogElement>::flush()
     // Use an arbitrary timeout to avoid endless waiting.
     const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
-        [&] { return flushed_before >= queue_end; });
+        [&] { return flushed_before >= queue_end && !is_force_prepare_tables; });
 
     if (!result)
     {
@@ -304,7 +320,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::stopFlushThread()
 {
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
 
         if (!saving_thread.joinable())
         {
@@ -347,8 +363,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_before > flushed_before
-                            || is_shutdown;
+                        return requested_flush_before > flushed_before || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
@@ -364,10 +379,26 @@ void SystemLog<LogElement>::savingThreadFunction()
 
             if (to_flush.empty())
             {
-                continue;
-            }
+                bool force;
+                {
+                    std::lock_guard lock(mutex);
+                    force = is_force_prepare_tables;
+                }
 
-            flushImpl(to_flush, to_flush_end);
+                if (force)
+                {
+                    prepareTable();
+                    LOG_TRACE(log, "Table created (force)");
+
+                    std::lock_guard lock(mutex);
+                    is_force_prepare_tables = false;
+                    flush_event.notify_all();
+                }
+            }
+            else
+            {
+                flushImpl(to_flush, to_flush_end);
+            }
         }
         catch (...)
         {
@@ -404,7 +435,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
 
-        InterpreterInsertQuery interpreter(query_ptr, context);
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context(context);
+        insert_context.makeQueryContext();
+
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         io.out->writePrefix();
@@ -417,8 +452,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
 
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         flushed_before = to_flush_end;
+        is_force_prepare_tables = false;
         flush_event.notify_all();
     }
 
@@ -435,8 +471,9 @@ void SystemLog<LogElement>::prepareTable()
 
     if (table)
     {
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
         const Block expected = LogElement::createBlock();
-        const Block actual = table->getSampleBlockNonMaterialized();
+        const Block actual = metadata_snapshot->getSampleBlockNonMaterialized();
 
         if (!blocksHaveEqualStructure(actual, expected))
         {

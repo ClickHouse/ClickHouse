@@ -260,6 +260,14 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return res;
 }
 
+void ColumnString::compareColumn(
+    const IColumn & rhs, size_t rhs_row_num,
+    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+    int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
+                                         compare_results, direction, nan_direction_hint);
+}
 
 template <bool positive>
 struct ColumnString::less

@@ -43,7 +43,7 @@ SELECT COUNT() FROM bloom_filter_types_test WHERE f32 = 1 SETTINGS max_rows_to_r
 SELECT COUNT() FROM bloom_filter_types_test WHERE f64 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE date = '1970-01-02' SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE date_time = toDateTime('1970-01-01 03:00:01', 'Europe/Moscow') SETTINGS max_rows_to_read = 6;
-SELECT COUNT() FROM bloom_filter_types_test WHERE str = '1' SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
 SELECT COUNT() FROM bloom_filter_types_test WHERE str IN ( SELECT str FROM bloom_filter_types_test);
@@ -122,7 +122,7 @@ SELECT COUNT() FROM bloom_filter_null_types_test WHERE f32 = 1 SETTINGS max_rows
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE f64 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE date = '1970-01-02' SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE date_time = toDateTime('1970-01-01 03:00:01', 'Europe/Moscow') SETTINGS max_rows_to_read = 6;
-SELECT COUNT() FROM bloom_filter_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE isNull(i8);
@@ -150,7 +150,7 @@ CREATE TABLE bloom_filter_lc_null_types_test (order_key UInt64, str LowCardinali
 INSERT INTO bloom_filter_lc_null_types_test SELECT number AS order_key, toString(number) AS str, toFixedString(toString(number), 5) AS fixed_string FROM system.numbers LIMIT 100;
 INSERT INTO bloom_filter_lc_null_types_test SELECT 0 AS order_key, NULL AS str, NULL AS fixed_string;
 
-SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
 SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE isNull(str);

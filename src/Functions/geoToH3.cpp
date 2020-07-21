@@ -1,5 +1,3 @@
-#include "config_functions.h"
-#if USE_H3
 #include <array>
 #include <math.h>
 #include <Columns/ColumnConst.h>
@@ -10,11 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
-#if __has_include(<h3/h3api.h>)
-#    include <h3/h3api.h>
-#else
-#    include <h3api.h>
-#endif
+#include <h3api.h>
 
 
 namespace DB
@@ -97,4 +91,3 @@ void registerFunctionGeoToH3(FunctionFactory & factory)
 }
 
 }
-#endif

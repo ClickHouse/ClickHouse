@@ -35,7 +35,7 @@ protected:
 private:
     std::unique_ptr<QueryPipeline> pipeline;
     /// One of executors is used.
-    std::unique_ptr<PullingPipelineExecutor> executor; /// for singe thread.
+    std::unique_ptr<PullingPipelineExecutor> executor; /// for single thread.
     std::unique_ptr<PullingAsyncPipelineExecutor> async_executor; /// for many threads.
     bool is_execution_started = false;
 

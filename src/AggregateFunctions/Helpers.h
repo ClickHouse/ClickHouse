@@ -33,6 +33,19 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     return nullptr;
 }
 
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
+static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<TYPE>>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Data<Int8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Data<Int16>>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
 template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {

@@ -8,6 +8,7 @@
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
+#include <common/errnoToString.h>
 
 #include <random>
 

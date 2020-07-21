@@ -18,14 +18,17 @@ namespace ErrorCodes
 }
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
-    const Context & context_, const TablesWithColumnNames & tables_with_columns_, const Settings & settings_)
-    : context(context_), tables_with_columns(tables_with_columns_), settings(settings_)
+    const Context & context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
+    : enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
+    , enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery)
+    , context(context_)
+    , tables_with_columns(tables_with_columns_)
 {
 }
 
 bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
 {
-    if (!settings.enable_optimize_predicate_expression)
+    if (!enable_optimize_predicate_expression)
         return false;
 
     if (select_query.having() && (!select_query.group_by_with_cube && !select_query.group_by_with_rollup && !select_query.group_by_with_totals))
@@ -133,7 +136,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
                 break;  /// Skip left and right table optimization
 
             is_rewrite_tables |= tryRewritePredicatesToTable(tables_element[table_pos], tables_predicates[table_pos],
-                tables_with_columns[table_pos].columns);
+                tables_with_columns[table_pos].columns.getNames());
 
             if (table_element->table_join && isRight(table_element->table_join->as<ASTTableJoin>()->kind))
                 break;  /// Skip left table optimization
@@ -143,12 +146,12 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     return is_rewrite_tables;
 }
 
-bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const Names & table_column) const
+bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, Names && table_columns) const
 {
     if (!table_predicates.empty())
     {
-        auto optimize_final = settings.enable_optimize_predicate_expression_to_final_subquery;
-        PredicateRewriteVisitor::Data data(context, table_predicates, table_column, optimize_final);
+        auto optimize_final = enable_optimize_predicate_expression_to_final_subquery;
+        PredicateRewriteVisitor::Data data(context, table_predicates, std::move(table_columns), optimize_final);
 
         PredicateRewriteVisitor(data).visit(table_element);
         return data.is_rewrite;
