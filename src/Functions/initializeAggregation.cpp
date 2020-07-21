@@ -40,7 +40,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     mutable AggregateFunctionPtr aggregate_function;
@@ -86,7 +86,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
 }
 
 
-void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
