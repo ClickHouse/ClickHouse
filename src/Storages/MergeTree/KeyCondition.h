@@ -346,7 +346,7 @@ private:
         Range range;
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
+        using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
         MonotonicFunctionsChain monotonic_functions_chain;
