@@ -142,6 +142,7 @@ SRCS(
     ThreadStatusExt.cpp
     TraceLog.cpp
     TranslateQualifiedNamesVisitor.cpp
+    TreeOptimizer.cpp
 )
 
 END()

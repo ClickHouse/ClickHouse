@@ -76,18 +76,16 @@ struct SyntaxAnalyzerResult
 
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
-/// AST syntax analysis.
-/// Optimises AST tree and collect information for further expression analysis.
+/// AST rewriter
+/// Tree Rewriter in terms of CMU slides @sa https://15721.courses.cs.cmu.edu/spring2020/slides/19-optimizer1.pdf
+///
+/// Optimises AST tree and collect information for further expression analysis in ExpressionAnalyzer.
 /// Result AST has the following invariants:
 ///  * all aliases are substituted
 ///  * qualified names are translated
 ///  * scalar subqueries are executed replaced with constants
 ///  * unneeded columns are removed from SELECT clause
 ///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
-/// Motivation:
-///  * group most of the AST-changing operations in single place
-///  * avoid AST rewriting in ExpressionAnalyzer
-///  * decompose ExpressionAnalyzer
 class SyntaxAnalyzer
 {
 public:
