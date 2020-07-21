@@ -31,9 +31,11 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
+    loop_started.store(true);
     /// stop_loop variable is updated in a separate thread
     while (!stop_loop.load())
         uv_run(loop, UV_RUN_NOWAIT);
+    loop_started.store(false);
 }
 
 void RabbitMQHandler::iterateLoop()

@@ -24,6 +24,7 @@ class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
+            ChannelPtr setup_channel_,
             HandlerPtr event_handler_,
             const String & exchange_name_,
             const AMQP::ExchangeType & exchange_type_,
@@ -48,13 +49,13 @@ public:
     void allowNext() { allowed = true; } // Allow to read next message.
     void checkSubscription();
 
-    auto getExchange() const { return exchange_name; }
     auto getConsumerTag() const { return consumer_tag; }
     auto getDeliveryTag() const { return current.delivery_tag; }
     auto getRedelivered() const { return current.redelivered; }
 
 private:
     ChannelPtr consumer_channel;
+    ChannelPtr setup_channel;
     HandlerPtr event_handler;
 
     const String exchange_name;
@@ -64,18 +65,12 @@ private:
     const bool hash_exchange;
     const size_t num_queues;
 
-    const String local_exchange;
-    const String local_default_exchange;
-    const String local_hash_exchange;
-
     Poco::Logger * log;
     char row_delimiter;
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    String default_local_exchange;
-    bool local_exchange_declared = false, local_hash_exchange_declared = false;
-
+    const String local_exchange;
     std::atomic<bool> consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 
@@ -87,7 +82,7 @@ private:
 
     bool nextImpl() override;
 
-    void initExchange();
+    void connectAlternateExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
     void iterateEventLoop();

@@ -54,6 +54,9 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
+    const String getExchange() const { return exchange_name; }
+    bool checkBridge() const { return !exchange_removed.load(); }
+    void unbindExchange();
 
 protected:
     StorageRabbitMQ(
@@ -77,7 +80,6 @@ private:
     Names routing_keys;
     const String exchange_name;
     AMQP::ExchangeType exchange_type;
-    String local_exchange_name;
 
     const String format_name;
     char row_delimiter;
@@ -99,10 +101,13 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    bool exchange_type_set = false;
+    String local_exchange, bridge_exchange, consumer_exchange;
+    std::mutex bridge;
+    AMQP::Table bind_headers;
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;
-    std::atomic<bool> loop_started = false;
+    std::atomic<bool> loop_started = false, exchange_removed = false;
+    ChannelPtr setup_channel;
 
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder heartbeat_task;
@@ -115,6 +120,8 @@ private:
     void threadFunc();
     void heartbeatFunc();
     void loopingFunc();
+    void initExchange();
+    void bindExchange();
 
     void pingConnection() { connection->heartbeat(); }
     bool streamToViews();

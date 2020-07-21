@@ -124,7 +124,7 @@ Block RabbitMQBlockInputStream::readImpl()
 
         auto new_rows = read_rabbitmq_message();
 
-        auto exchange_name = buffer->getExchange();
+        auto exchange_name = storage.getExchange();
         auto consumer_tag = buffer->getConsumerTag();
         auto delivery_tag = buffer->getDeliveryTag();
         auto redelivered = buffer->getRedelivered();
