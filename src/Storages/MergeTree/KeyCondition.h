@@ -306,7 +306,7 @@ public:
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        MonotonicFunctionsChain & functions,
+        const MonotonicFunctionsChain & functions,
         DataTypePtr current_type);
 
     bool matchesExactContinuousRange() const;
@@ -349,7 +349,7 @@ private:
         using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
+        MonotonicFunctionsChain monotonic_functions_chain;
     };
 
     using RPN = std::vector<RPNElement>;
