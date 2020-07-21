@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Xeon Silver 4114, 256 Gb RAM, SSD RAID1",
+        "system":       "Xeon Silver 4114",
+        "system_full":       "Xeon Silver 4114, 256 Gb RAM, SSD RAID1",
         "time":         "2020-04-23 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.010, 0.002, 0.002],

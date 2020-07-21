@@ -6,7 +6,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        extern const int BAD_CAST;
+        extern const int BAD_ARGUMENTS;
     }
 
     /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
@@ -20,8 +20,10 @@ namespace DB
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
+            // Should be a logical error, but this function is callable from SQL.
+            // Need to investigate this.
             if constexpr (!is_integral_v<A>)
-                throw DB::Exception("It's a bug! Only integer types are supported by __bitWrapperFunc.", ErrorCodes::BAD_CAST);
+                throw DB::Exception("It's a bug! Only integer types are supported by __bitWrapperFunc.", ErrorCodes::BAD_ARGUMENTS);
             return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
         }
 

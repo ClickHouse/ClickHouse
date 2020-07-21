@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AMD EPYC 7402P 2.8 GHz, 128 GB DDR4, SSD RAID1 2×1920 GB SSD (INTEL SSDSC2KB019T7)",
+        "system":       "AMD EPYC 7402P SSD",
+        "system_full":      "AMD EPYC 7402P 2.8 GHz, 128 GB DDR4, SSD RAID1 2×1920 GB SSD (INTEL SSDSC2KB019T7)",
         "time":         "2020-01-26 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.014, 0.002, 0.002],
@@ -50,8 +52,10 @@
         ]
     },
     {
-        "system":       "AMD EPYC 7402P 2.8 GHz, 128 GB DDR4, HDD RAID1 2×8000 GB HDD (TOSHIBA MG06ACA800E)",
+        "system":       "AMD EPYC 7402P HDD",
+        "system_full":       "AMD EPYC 7402P 2.8 GHz, 128 GB DDR4, HDD RAID1 2×8000 GB HDD (TOSHIBA MG06ACA800E)",
         "time":         "2020-01-26 00:00:00",
+        "kind": "server",
         "result":
         [
             [0.149, 0.002, 0.002],
@@ -100,8 +104,10 @@
         ]
     },
     {
-        "system":       "AMD EPYC 7502P / 128G DDR4 / 2NVME SAMSUNG MZQLB960HAJR",
+        "system":       "AMD EPYC 7502P nVME",
+        "system_full":       "AMD EPYC 7502P / 128G DDR4 / 2NVME SAMSUNG MZQLB960HAJR",
         "time":         "2020-03-05 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.012, 0.019, 0.009],

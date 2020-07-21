@@ -1048,17 +1048,6 @@ Valores posibles:
 
 Valor predeterminado: 0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-Restablecer [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) para anidados `Distributed` tabla
-
-Valores posibles:
-
--   1 — Enabled.
--   0 — Disabled.
-
-Valor predeterminado: 0.
-
 ## Optize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 Habilita o deshabilita el lanzamiento de una excepción [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) la consulta no realizó una fusión.

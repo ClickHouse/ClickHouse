@@ -13,6 +13,7 @@ void registerDictionaries()
         registerDictionarySourceClickHouse(source_factory);
         registerDictionarySourceMongoDB(source_factory);
         registerDictionarySourceRedis(source_factory);
+        registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);
         registerDictionarySourceJDBC(source_factory);
         registerDictionarySourceExecutable(source_factory);
@@ -32,6 +33,10 @@ void registerDictionaries()
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
+#if defined(OS_LINUX) || defined(__FreeBSD__)
+        registerDictionarySSDCache(factory);
+        registerDictionarySSDComplexKeyCache(factory);
+#endif
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
     }

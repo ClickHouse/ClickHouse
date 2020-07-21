@@ -5,6 +5,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/AsynchronousMetricLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
@@ -75,6 +76,9 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
+    asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
+        global_context, "system", "asynchronous_metric_log", config,
+        "asynchronous_metric_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -88,6 +92,8 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         logs.emplace_back(text_log.get());
     if (metric_log)
         logs.emplace_back(metric_log.get());
+    if (asynchronous_metric_log)
+        logs.emplace_back(asynchronous_metric_log.get());
 
     try
     {

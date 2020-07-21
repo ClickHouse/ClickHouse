@@ -49,7 +49,7 @@ namespace DB
 ///
 /// If a query returns data, the server sends an empty header block containing
 /// the description of resulting columns before executing the query.
-/// Using this block the client can initialise the output formatter and display the prefix of resulting table
+/// Using this block the client can initialize the output formatter and display the prefix of resulting table
 /// beforehand.
 
 namespace Protocol

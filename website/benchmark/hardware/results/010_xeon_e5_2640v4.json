@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Dell PowerEdge R730xd, 2 socket 10 cores E5-2640 v4, HW RAID5 3TBx12 SATA",
+        "system":       "Dell PowerEdge R730xd",
+        "system_full":       "Dell PowerEdge R730xd, 2 socket 10 cores E5-2640 v4, HW RAID5 3TBx12 SATA",
         "time":         "2020-01-14 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.225, 0.001, 0.002],

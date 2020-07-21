@@ -78,13 +78,13 @@ def test_ttl_many_columns(started_cluster):
 
     time.sleep(1) # sleep to allow use ttl merge selector for second time
     node1.query("OPTIMIZE TABLE test_ttl_2 FINAL", timeout=5)
-    
+
     node2.query("SYSTEM SYNC REPLICA test_ttl_2", timeout=5)
 
     expected = "1\t0\t0\t0\t0\n6\t7\t8\t9\t10\n"
     assert TSV(node1.query("SELECT id, a, _idx, _offset, _partition FROM test_ttl_2 ORDER BY id")) == TSV(expected)
     assert TSV(node2.query("SELECT id, a, _idx, _offset, _partition FROM test_ttl_2 ORDER BY id")) == TSV(expected)
- 
+
 
 @pytest.mark.parametrize("delete_suffix", [
     "",
@@ -167,3 +167,67 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
         pass
     except:
         assert False
+
+@pytest.mark.parametrize("name,engine", [
+    ("test_ttl_alter_delete", "MergeTree()"),
+    ("test_replicated_ttl_alter_delete", "ReplicatedMergeTree('/clickhouse/test_replicated_ttl_alter_delete', '1')"),
+])
+def test_ttl_alter_delete(started_cluster, name, engine):
+    """Copyright 2019, Altinity LTD
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License."""
+    """Check compatibility with old TTL delete expressions to make sure
+    that:
+    * alter modify of column's TTL delete expression works
+    * alter to add new columns works
+    * alter modify to add TTL delete expression to a a new column works
+    for a table that has TTL delete expression defined but
+    no explicit storage policy assigned.
+    """
+    drop_table([node1], name)
+
+    def optimize_with_retry(retry=20):
+        for i in range(retry):
+            try:
+                node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name), settings={"optimize_throw_if_noop": "1"})
+                break
+            except:
+                time.sleep(0.5)
+    node1.query(
+    """
+        CREATE TABLE {name} (
+            s1 String,
+            d1 DateTime
+        ) ENGINE = {engine}
+        ORDER BY tuple()
+        TTL d1 + INTERVAL 1 DAY DELETE
+    """.format(name=name, engine=engine))
+
+    node1.query("""ALTER TABLE {name} MODIFY COLUMN s1 String TTL d1 + INTERVAL 1 SECOND""".format(name=name))
+    node1.query("""ALTER TABLE {name} ADD COLUMN b1 Int32""".format(name=name))
+
+    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello1', 1, toDateTime({time}))""".format(name=name, time=time.time()))
+    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello2', 2, toDateTime({time}))""".format(name=name, time=time.time() + 360))
+
+    time.sleep(1)
+
+    optimize_with_retry()
+    r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
+    assert r == ["\t1", "hello2\t2"]
+
+    node1.query("""ALTER TABLE {name} MODIFY COLUMN b1 Int32 TTL d1""".format(name=name))
+    node1.query("""INSERT INTO {name} (s1, b1, d1) VALUES ('hello3', 3, toDateTime({time}))""".format(name=name, time=time.time()))
+
+    time.sleep(1)
+
+    optimize_with_retry()
+
+    r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
+    assert r == ["\t0", "\t0", "hello2\t2"]

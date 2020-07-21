@@ -37,6 +37,8 @@ struct IntervalKind
     /// Returns an uppercased version of what `toString()` returns.
     const char * toKeyword() const;
 
+    const char * toLowercasedKeyword() const;
+
     /// Returns the string which can be passed to the `unit` parameter of the dateDiff() function.
     /// For example, `IntervalKind{IntervalKind::Day}.getDateDiffParameter()` returns "day".
     const char * toDateDiffUnit() const;

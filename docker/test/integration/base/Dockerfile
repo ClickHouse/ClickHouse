@@ -17,8 +17,7 @@ RUN apt-get update \
         odbc-postgresql \
         sqlite3 \
         curl \
-        tar \
-        tzdata
+        tar
 RUN rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

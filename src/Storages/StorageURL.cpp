@@ -43,8 +43,11 @@ IStorageURLBase::IStorageURLBase(
     , format_name(format_name_)
 {
     context_global.getRemoteHostFilter().checkURL(uri);
-    setColumns(columns_);
-    setConstraints(constraints_);
+
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    setInMemoryMetadata(storage_metadata);
 }
 
 namespace
@@ -128,12 +131,33 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
     writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
 }
 
+
+void StorageURLBlockOutputStream::write(const Block & block)
+{
+    writer->write(block);
+}
+
+void StorageURLBlockOutputStream::writePrefix()
+{
+    writer->writePrefix();
+}
+
+void StorageURLBlockOutputStream::writeSuffix()
+{
+    writer->writeSuffix();
+    writer->flush();
+    write_buf->finalize();
+}
+
+
 std::string IStorageURLBase::getReadMethod() const
 {
     return Poco::Net::HTTPRequest::HTTP_GET;
 }
 
-std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(const Names & /*column_names*/,
+std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -142,7 +166,9 @@ std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIPara
     return {};
 }
 
-std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(const Names & /*column_names*/,
+std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -152,7 +178,9 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(con
 }
 
 
-Pipes IStorageURLBase::read(const Names & column_names,
+Pipes IStorageURLBase::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -160,19 +188,22 @@ Pipes IStorageURLBase::read(const Names & column_names,
     unsigned /*num_streams*/)
 {
     auto request_uri = uri;
-    auto params = getReadURIParams(column_names, query_info, context, processed_stage, max_block_size);
+    auto params = getReadURIParams(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size);
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<StorageURLSource>(request_uri,
+    pipes.emplace_back(std::make_shared<StorageURLSource>(
+        request_uri,
         getReadMethod(),
-        getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
+        getReadPOSTDataCallback(
+            column_names, metadata_snapshot, query_info,
+            context, processed_stage, max_block_size),
         format_name,
         getName(),
-        getHeaderBlock(column_names),
+        getHeaderBlock(column_names, metadata_snapshot),
         context,
-        getColumns().getDefaults(),
+        metadata_snapshot->getColumns().getDefaults(),
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
@@ -180,10 +211,10 @@ Pipes IStorageURLBase::read(const Names & column_names,
     return pipes;
 }
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global,
+        uri, format_name, metadata_snapshot->getSampleBlock(), context_global,
         ConnectionTimeouts::getHTTPTimeouts(context_global),
         chooseCompressionMethod(uri.toString(), compression_method));
 }

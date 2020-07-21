@@ -1,12 +1,15 @@
 ---
-toc_priority: 33
+title: SELECT Query
 toc_folder_title: SELECT
-toc_title: Queries Syntax
+toc_priority: 33
+toc_title: Overview
 ---
 
-# SELECT Queries Syntax {#select-queries-syntax}
+# SELECT Query {#select-queries-syntax}
 
-`SELECT` performs data retrieval.
+`SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
+
+## Syntax {#syntax}
 
 ``` sql
 [WITH expr_list|(subquery)]
@@ -14,14 +17,14 @@ SELECT [DISTINCT] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
-[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
-[LIMIT [n, ]m]
+[LIMIT [n, ]m] [WITH TIES]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
@@ -31,25 +34,25 @@ All clauses are optional, except for the required list of expressions immediatel
 
 Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
 
--   [WITH clause](with.md)
--   [FROM clause](from.md)
--   [SAMPLE clause](sample.md)
--   [JOIN clause](join.md)
--   [PREWHERE clause](prewhere.md)
--   [WHERE clause](where.md)
--   [GROUP BY clause](group-by.md)
--   [LIMIT BY clause](limit-by.md)
--   [HAVING clause](having.md)
+-   [WITH clause](../../../sql-reference/statements/select/with.md)
+-   [FROM clause](../../../sql-reference/statements/select/from.md)
+-   [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
+-   [JOIN clause](../../../sql-reference/statements/select/join.md)
+-   [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
+-   [WHERE clause](../../../sql-reference/statements/select/where.md)
+-   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
+-   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
+-   [HAVING clause](../../../sql-reference/statements/select/having.md)
 -   [SELECT clause](#select-clause)
--   [DISTINCT clause](distinct.md)
--   [LIMIT clause](limit.md)
--   [UNION ALL clause](union-all.md)
--   [INTO OUTFILE clause](into-outfile.md)
--   [FORMAT clause](format.md)
+-   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
+-   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
+-   [UNION ALL clause](../../../sql-reference/statements/select/union-all.md)
+-   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
+-   [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
 ## SELECT Clause {#select-clause}
 
-[Expressions](../../syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](group-by.md) aggregation.
+[Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
@@ -110,7 +113,7 @@ In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c'
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn’t match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
-### Asterisk
+### Asterisk {#asterisk}
 
 You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:
 
@@ -138,8 +141,7 @@ You can use synonyms (`AS` aliases) in any part of a query.
 
 The `GROUP BY` and `ORDER BY` clauses do not support positional arguments. This contradicts MySQL, but conforms to standard SQL. For example, `GROUP BY 1, 2` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).
 
-
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM. Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified:
 
@@ -147,7 +149,7 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 -   `max_rows_to_group_by`
 -   `max_rows_to_sort`
 -   `max_rows_in_distinct`
--   `max_bytes_in_distinct` 
+-   `max_bytes_in_distinct`
 -   `max_rows_in_set`
 -   `max_bytes_in_set`
 -   `max_rows_in_join`
@@ -156,6 +158,5 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 -   `max_bytes_before_external_group_by`
 
 For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
-
 
 {## [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}

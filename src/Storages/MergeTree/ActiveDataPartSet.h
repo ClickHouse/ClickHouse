@@ -67,6 +67,18 @@ public:
         return result;
     }
 
+    /// Remove only covered parts from active set
+    bool removePartsCoveredBy(const String & part_name)
+    {
+        Strings parts_covered_by = getPartsCoveredBy(MergeTreePartInfo::fromPartName(part_name, format_version));
+        bool result = true;
+        for (const auto & part : parts_covered_by)
+            if (part != part_name)
+                result &= remove(part);
+
+        return result;
+    }
+
     /// If not found, return an empty string.
     String getContainingPart(const MergeTreePartInfo & part_info) const;
     String getContainingPart(const String & name) const;

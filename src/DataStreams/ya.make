@@ -2,6 +2,7 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
+    contrib/libs/poco/MongoDB
 )
 
 NO_COMPILER_WARNINGS()
@@ -38,11 +39,13 @@ SRCS(
     PushingToViewsBlockOutputStream.cpp
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp
+    RemoteQueryExecutor.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
+    MongoDBBlockInputStream.cpp
 )
 
 END()

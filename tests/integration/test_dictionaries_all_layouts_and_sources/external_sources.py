@@ -2,11 +2,13 @@
 import warnings
 import pymysql.cursors
 import pymongo
+import cassandra.cluster
 import redis
 import aerospike
 from tzlocal import get_localzone
 import datetime
 import os
+import uuid
 
 
 class ExternalSource(object):
@@ -405,6 +407,73 @@ class SourceHTTPS(SourceHTTPBase):
     def _get_schema(self):
         return "https"
 
+class SourceCassandra(ExternalSource):
+    TYPE_MAPPING = {
+        'UInt8': 'tinyint',
+        'UInt16': 'smallint',
+        'UInt32': 'int',
+        'UInt64': 'bigint',
+        'Int8': 'tinyint',
+        'Int16': 'smallint',
+        'Int32': 'int',
+        'Int64': 'bigint',
+        'UUID': 'uuid',
+        'Date': 'date',
+        'DateTime': 'timestamp',
+        'String': 'text',
+        'Float32': 'float',
+        'Float64': 'double'
+    }
+
+    def __init__(self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password):
+        ExternalSource.__init__(self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password)
+        self.structure = dict()
+
+    def get_source_str(self, table_name):
+        return '''
+            <cassandra>
+                <host>{host}</host>
+                <port>{port}</port>
+                <keyspace>test</keyspace>
+                <column_family>{table}</column_family>
+                <allow_filtering>1</allow_filtering>
+                <where>"Int64_" &lt; 1000000000000000000</where>
+            </cassandra>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            table=table_name,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.client = cassandra.cluster.Cluster([self.internal_hostname], port=self.internal_port)
+        self.session = self.client.connect()
+        self.session.execute("create keyspace if not exists test with replication = {'class': 'SimpleStrategy', 'replication_factor' : 1};")
+        self.session.execute('drop table if exists test."{}"'.format(table_name))
+        self.structure[table_name] = structure
+        columns = ['"' + col.name + '" ' + self.TYPE_MAPPING[col.field_type] for col in structure.get_all_fields()]
+        keys = ['"' + col.name + '"' for col in structure.keys]
+        query = 'create table test."{name}" ({columns}, primary key ({pk}));'.format(
+                name=table_name, columns=', '.join(columns),  pk=', '.join(keys))
+        self.session.execute(query)
+        self.prepared = True
+
+    def get_value_to_insert(self, value, type):
+        if type == 'UUID':
+            return uuid.UUID(value)
+        elif type == 'DateTime':
+            local_datetime = datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+            return get_localzone().localize(local_datetime)
+        return value
+
+    def load_data(self, data, table_name):
+        names_and_types = [(field.name, field.field_type) for field in self.structure[table_name].get_all_fields()]
+        columns = ['"' + col[0] + '"' for col in names_and_types]
+        insert = 'insert into test."{table}" ({columns}) values ({args})'.format(
+                table=table_name, columns=','.join(columns), args=','.join(['%s']*len(columns)))
+        for row in data:
+            values = [self.get_value_to_insert(row.get_value_by_name(col[0]), col[1]) for col in names_and_types]
+            self.session.execute(insert, values)
 
 class SourceRedis(ExternalSource):
     def __init__(

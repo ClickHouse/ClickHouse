@@ -72,6 +72,7 @@ private:
 
     /// Also initializes 'used_output'.
     void processQuery(
+        Context & context,
         Poco::Net::HTTPServerRequest & request,
         HTMLForm & params,
         Poco::Net::HTTPServerResponse & response,

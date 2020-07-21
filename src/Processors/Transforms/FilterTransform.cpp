@@ -27,7 +27,7 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
     }
 }
 
-static Block transformHeader(
+Block FilterTransform::transformHeader(
     Block header,
     const ExpressionActionsPtr & expression,
     const String & filter_column_name,
