@@ -104,9 +104,8 @@ function fuzz
     if [ "$fuzzer_exit_code" == "143" ]
     then
         # Killed by watchdog, meaning, no errors.
-        return 0
+        fuzzer_exit_code=0
     fi
-    return $fuzzer_exit_code
 }
 
 case "$stage" in
