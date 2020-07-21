@@ -520,6 +520,31 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
+## network_compression_method {#network_compression_method}
+
+Задает метод сжатия данных, используемый при обмене данными между серверами и при обмене между сервером и [clickhouse-client](../../interfaces/cli.md).
+
+Возможные значения:
+
+-   `LZ4` — устанавливает метод сжатия LZ4.
+-   `ZSTD` — устанавливает метод сжатия ZSTD.
+
+Значение по умолчанию: `LZ4`.
+
+См. также:
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) имеет значение `ZSTD`.
+
+Возможные значения:
+
+-   Положительное целое число от 1 до 15.
+
+Значение по умолчанию: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
@@ -1252,6 +1277,17 @@ Default value: 0.
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## validate\_polygons {#validate_polygons}
+
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+
+Допустимые значения:
+
+- 0 — генерирование исключения отключено. `pointInPolygon` принимает недопустимые многоугольники и возвращает для них, возможно, неверные результаты.
+- 1 — генерирование исключения включено.
+
+Значение по умолчанию: 1.
 
 ## always_fetch_merged_part {#always_fetch_merged_part}
 

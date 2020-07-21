@@ -1068,20 +1068,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    /// TODO: it makes sense to check DROP_RANGE also
-    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::REPLACE_RANGE)
-    {
-        String conflicts_description;
-        String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
-        auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
-
-        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
-        {
-            LOG_DEBUG(log, conflicts_description);
-            return false;
-        }
-    }
-
     /// Alters must be executed one by one. First metadata change, and after that data alter (MUTATE_PART entries with).
     /// corresponding alter_version.
     if (entry.type == LogEntry::ALTER_METADATA)

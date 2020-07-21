@@ -126,7 +126,7 @@ def adjust_markdown_html(content):
 def minify_html(content):
     return htmlmin.minify(content,
                           remove_comments=False,
-                          remove_empty_space=True,
+                          remove_empty_space=False,
                           remove_all_empty_space=False,
                           reduce_empty_attributes=True,
                           reduce_boolean_attributes=False,

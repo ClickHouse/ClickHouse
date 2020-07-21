@@ -471,7 +471,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
 
 ## temporary\_files\_codec {#temporary_files_codec}
 
@@ -584,6 +584,31 @@ Possible values:
 -   Positive integer.
 
 Default value: 0.
+
+## network_compression_method {#network_compression_method}
+
+Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+
+Possible values:
+
+-   `LZ4` — sets LZ4 compression method.
+-   `ZSTD` — sets ZSTD compression method.
+
+Default value: `LZ4`.
+
+**See Also**
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
+
+Possible values:
+
+-   Positive integer from 1 to 15.
+
+Default value: `1`.
 
 ## log\_queries {#settings-log-queries}
 
@@ -1491,6 +1516,17 @@ Possible values:
 
 Default value: 16.
 
+## validate\_polygons {#validate_polygons}
+
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+
+Possible values:
+
+- 0 — Throwing an exception is disabled. `pointInPolygon` accepts invalid polygons and returns possibly incorrect results for them.
+- 1 — Throwing an exception is enabled.
+
+Default value: 1.
+
 ## transform\_null\_in {#transform_null_in}
 
 Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
@@ -1636,13 +1672,13 @@ Default value: 268435456.
 
 -   [min\_insert\_block\_size\_bytes](#min-insert-block-size-bytes)
 
-## output_format_pretty_grid_charset {#output-format-pretty-grid-charset}
+## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
 
 Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
 
-**Example** 
+**Example**
 
-```text
+``` text
 SET output_format_pretty_grid_charset = 'UTF-8';
 SELECT * FROM a;
 ┌─a─┐
@@ -1655,6 +1691,5 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
