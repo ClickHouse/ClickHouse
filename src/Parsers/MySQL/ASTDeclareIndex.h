@@ -31,11 +31,6 @@ protected:
     const char * getName() const override { return "index declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    bool parseDeclareOrdinaryIndex(Pos & pos, String & index_name, String & index_type, Expected & expected);
-
-    bool parseDeclareConstraintIndex(Pos & pos, String & index_name, String & index_type, Expected & expected);
-
 };
 
 }

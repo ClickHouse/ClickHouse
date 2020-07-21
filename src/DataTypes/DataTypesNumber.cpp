@@ -35,10 +35,10 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
 
 void registerDataTypeNumbers(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("UInt8", [] { return DataTypePtr(std::make_shared<DataTypeUInt8>()); });
-    factory.registerSimpleDataType("UInt16", [] { return DataTypePtr(std::make_shared<DataTypeUInt16>()); });
-    factory.registerSimpleDataType("UInt32", [] { return DataTypePtr(std::make_shared<DataTypeUInt32>()); });
-    factory.registerSimpleDataType("UInt64", [] { return DataTypePtr(std::make_shared<DataTypeUInt64>()); });
+    factory.registerDataType("UInt8", createNumericDataType<UInt8>);
+    factory.registerDataType("UInt16", createNumericDataType<UInt16>);
+    factory.registerDataType("UInt32", createNumericDataType<UInt32>);
+    factory.registerDataType("UInt64", createNumericDataType<UInt64>);
 
     factory.registerDataType("Int8", createNumericDataType<Int8>);
     factory.registerDataType("Int16", createNumericDataType<Int16>);

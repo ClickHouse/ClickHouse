@@ -44,6 +44,68 @@ ASTPtr ASTDeclarePartitionOptions::clone() const
     return res;
 }
 
+static inline bool parsePartitionExpression(IParser::Pos & pos, std::string & type, ASTPtr & node, Expected & expected, bool subpartition = false)
+{
+    ASTPtr expression;
+    ParserExpression p_expression;
+    if (!subpartition && ParserKeyword("LIST").ignore(pos, expected))
+    {
+        type = "list";
+        ParserKeyword("COLUMNS").ignore(pos, expected);
+        if (!p_expression.parse(pos, expression, expected))
+            return false;
+    }
+    else if (!subpartition && ParserKeyword("RANGE").ignore(pos, expected))
+    {
+        type = "range";
+        ParserKeyword("COLUMNS").ignore(pos, expected);
+        if (!p_expression.parse(pos, expression, expected))
+            return false;
+    }
+    else
+    {
+        if (ParserKeyword("LINEAR").ignore(pos, expected))
+            type = "linear_";
+
+        if (ParserKeyword("KEY").ignore(pos, expected))
+        {
+            type += "key";
+
+            if (ParserKeyword("ALGORITHM").ignore(pos, expected))
+            {
+                if (!ParserToken(TokenType::Equals).ignore(pos, expected))
+                    return false;
+
+                ASTPtr algorithm;
+                ParserLiteral p_literal;
+                if (!p_literal.parse(pos, algorithm, expected) || !algorithm->as<ASTLiteral>())
+                    return false;
+
+                UInt64 algorithm_type = algorithm->as<ASTLiteral>()->value.safeGet<UInt64>();
+
+                if (algorithm_type != 1 && algorithm_type != 2)
+                    return false;
+
+                type += "_" + toString(algorithm_type);
+            }
+
+            if (!p_expression.parse(pos, expression, expected))
+                return false;
+        }
+        else if (ParserKeyword("HASH").ignore(pos, expected))
+        {
+            type += "hash";
+            if (!p_expression.parse(pos, expression, expected))
+                return false;
+        }
+        else
+            return false;
+    }
+
+    node = expression;
+    return true;
+}
+
 bool ParserDeclarePartitionOptions::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String partition_type;
@@ -115,68 +177,6 @@ bool ParserDeclarePartitionOptions::parseImpl(Pos & pos, ASTPtr & node, Expected
         declare_partition_options->children.emplace_back(declare_partition_options->declare_partitions);
 
     node = declare_partition_options;
-    return true;
-}
-
-bool ParserDeclarePartitionOptions::parsePartitionExpression(Pos & pos, std::string & type, ASTPtr & node, Expected & expected, bool subpartition)
-{
-    ASTPtr expression;
-    ParserExpression p_expression;
-    if (!subpartition && ParserKeyword("LIST").ignore(pos, expected))
-    {
-        type = "list";
-        ParserKeyword("COLUMNS").ignore(pos, expected);
-        if (!p_expression.parse(pos, expression, expected))
-            return false;
-    }
-    else if (!subpartition && ParserKeyword("RANGE").ignore(pos, expected))
-    {
-        type = "range";
-        ParserKeyword("COLUMNS").ignore(pos, expected);
-        if (!p_expression.parse(pos, expression, expected))
-            return false;
-    }
-    else
-    {
-        if (ParserKeyword("LINEAR").ignore(pos, expected))
-            type = "linear_";
-
-        if (ParserKeyword("KEY").ignore(pos, expected))
-        {
-            type += "key";
-
-            if (ParserKeyword("ALGORITHM").ignore(pos, expected))
-            {
-                if (!ParserToken(TokenType::Equals).ignore(pos, expected))
-                    return false;
-
-                ASTPtr algorithm;
-                ParserLiteral p_literal;
-                if (!p_literal.parse(pos, algorithm, expected) || !algorithm->as<ASTLiteral>())
-                    return false;
-
-                UInt64 algorithm_type = algorithm->as<ASTLiteral>()->value.safeGet<UInt64>();
-
-                if (algorithm_type != 1 && algorithm_type != 2)
-                    return false;
-
-                type += "_" + toString(algorithm_type);
-            }
-
-            if (!p_expression.parse(pos, expression, expected))
-                return false;
-        }
-        else if (ParserKeyword("HASH").ignore(pos, expected))
-        {
-            type += "hash";
-            if (!p_expression.parse(pos, expression, expected))
-                return false;
-        }
-        else
-            return false;
-    }
-
-    node = expression;
     return true;
 }
 }

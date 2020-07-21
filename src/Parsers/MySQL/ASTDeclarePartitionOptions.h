@@ -31,8 +31,6 @@ protected:
     const char * getName() const override { return "partition options declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    bool parsePartitionExpression(Pos & pos, std::string & type, ASTPtr & node, Expected & expected, bool subpartition = false);
 };
 
 }
