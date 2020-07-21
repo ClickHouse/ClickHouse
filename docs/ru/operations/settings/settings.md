@@ -1278,6 +1278,23 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).  
+
+Возможные значения:
+
+-   0 — Данные добавляются в асинхронном режиме.
+-   1 — Данные добавляются в синхронном режиме.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## validate\_polygons {#validate_polygons}
 
 Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
