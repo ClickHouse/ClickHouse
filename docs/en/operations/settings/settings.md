@@ -808,6 +808,17 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 50.
 
+## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
+
+The wait time in milliseconds for a connection when the connection pool is full.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 0.
+
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 The maximum number of connection attempts with each replica for the Distributed table engine.
@@ -818,6 +829,21 @@ Default value: 3.
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section “Extreme values”.
+
+## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
+
+The wait time in milliseconds for reading messages from [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) before retry.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 5000.
+
+See also:
+
+-   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -836,6 +862,17 @@ If a query from the same user with the same ‘query\_id’ already exists at th
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+
+## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
+
+The wait time for running query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+
+Possible values:
+
+- Positive integer.
+- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the  same `query_id`.
+
+Default value: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
