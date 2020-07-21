@@ -100,9 +100,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
         ++cur_block_size;
     }
-    size_t mid = 0;
-    size_t high = 0;
-    size_t low = -1;
+    ssize_t mid = 0;
+    ssize_t high = 0;
+    ssize_t low = -1;
     /// Will split block into segments with the same key
     while (key_end != rows)
     {

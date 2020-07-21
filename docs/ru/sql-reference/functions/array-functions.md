@@ -692,7 +692,7 @@ arrayDifference(array)
 
 **Параметры**
 
--   `array` – [Массив](https://clickhouse.yandex/docs/ru/data_types/array/).
+-   `array` – [Массив](https://clickhouse.tech/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -742,7 +742,7 @@ arrayDistinct(array)
 
 **Параметры**
 
--   `array` – [Массив](https://clickhouse.yandex/docs/ru/data_types/array/).
+-   `array` – [Массив](https://clickhouse.tech/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -798,17 +798,34 @@ SELECT
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg\_func, arr1, …) {#array-functions-arrayreduce}
+## arrayReduce (#arrayreduce}
 
 Применяет агрегатную функцию к элементам массива и возвращает ее результат. Имя агрегирующей функции передается как строка в одинарных кавычках `'max'`, `'sum'`. При использовании параметрических агрегатных функций, параметр указывается после имени функции в круглых скобках `'uniqUpTo(6)'`.
 
-Пример:
+**Синтаксис**
 
-``` sql
+```sql
+arrayReduce(agg_func, arr1, arr2, ..., arrN)
+```
+
+**Параметры**
+
+-   `agg_func` — Имя агрегатной функции, которая должна быть константой [string](../../sql-reference/data-types/string.md).
+-   `arr` — Любое количество столбцов типа [array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
+
+**Возвращаемое значение**
+
+**Пример**
+
+Запрос:
+
+```sql
 SELECT arrayReduce('max', [1, 2, 3])
 ```
 
-``` text
+Ответ:
+
+```text
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
@@ -816,13 +833,17 @@ SELECT arrayReduce('max', [1, 2, 3])
 
 Если агрегатная функция имеет несколько аргументов, то эту функцию можно применять к нескольким массивам одинакового размера.
 
-Пример:
+**Пример**
 
-``` sql
+Запрос:
+
+```sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 ```
 
-``` text
+Ответ:
+
+```text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
 │                                    3 │
 └──────────────────────────────────────┘
@@ -830,14 +851,60 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 
 Пример с параметрической агрегатной функцией:
 
-``` sql
+Запрос: 
+
+```sql
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
 
-``` text
+Ответ:
+
+```text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
 │                                                           4 │
 └─────────────────────────────────────────────────────────────┘
+```
+
+## arrayReduceInRanges {#arrayreduceinranges}
+
+Применяет агрегатную функцию к элементам массива в заданных диапазонах и возвращает массив, содержащий результат, соответствующий каждому диапазону. Функция вернет тот же результат, что и несколько `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+
+**Синтаксис**
+
+```sql
+arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
+```
+
+**Параметры**
+
+-   `agg_func` — Имя агрегатной функции, которая должна быть [строковой](../../sql-reference/data-types/string.md) константой.
+-   `ranges` — Диапазоны для агрегирования, которые должны быть [массивом](../../sql-reference/data-types/array.md) of [кортежей](../../sql-reference/data-types/tuple.md) который содержит индекс и длину каждого диапазона.
+-   `arr` — Любое количество столбцов типа [Array](../../sql-reference/data-types/array.md) в качестве параметров агрегатной функции.
+
+**Возвращаемое значение**
+
+- Массив, содержащий результаты агрегатной функции для указанных диапазонов.
+
+Тип: [Array](../../sql-reference/data-types/array.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT arrayReduceInRanges(
+    'sum',
+    [(1, 5), (2, 3), (3, 4), (4, 4)],
+    [1000000, 200000, 30000, 4000, 500, 60, 7]
+) AS res
+```
+
+Ответ:
+
+```text
+┌─res─────────────────────────┐
+│ [1234500,234000,34560,4567] │
+└─────────────────────────────┘
 ```
 
 ## arrayReverse(arr) {#arrayreverse}
@@ -881,7 +948,7 @@ flatten(array_of_arrays)
 
 **Параметры**
 
--   `array_of_arrays` — [Массивов](../../sql-reference/functions/array-functions.md) массивов. Например, `[[1,2,3], [4,5]]`.
+-   `array_of_arrays` — [Массив](../../sql-reference/functions/array-functions.md) массивов. Например, `[[1,2,3], [4,5]]`.
 
 **Примеры**
 

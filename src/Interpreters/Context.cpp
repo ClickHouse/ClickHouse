@@ -166,6 +166,8 @@ public:
         if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
+        session->context.client_info = context.client_info;
+
         return session;
     }
 
@@ -619,6 +621,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
+    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -638,6 +641,11 @@ const AccessControlManager & Context::getAccessControlManager() const
     return shared->access_control_manager;
 }
 
+void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
+}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
@@ -658,8 +666,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
     auto lock = getLock();
 
     client_info.current_user = name;
-    client_info.current_password = password;
     client_info.current_address = address;
+
+#if defined(ARCADIA_BUILD)
+    /// This is harmful field that is used only in foreign "Arcadia" build.
+    client_info.current_password = password;
+#endif
 
     auto new_user_id = getAccessControlManager().find<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
@@ -980,7 +992,16 @@ void Context::setSetting(const StringRef & name, const Field & value)
 
 void Context::applySettingChange(const SettingChange & change)
 {
-    setSetting(change.name, change.value);
+    try
+    {
+        setSetting(change.name, change.value);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}",
+                                 change.name, applyVisitor(FieldVisitorToString(), change.value)));
+        throw;
+    }
 }
 
 
@@ -1047,8 +1068,8 @@ void Context::setCurrentDatabase(const String & name)
 {
     DatabaseCatalog::instance().assertDatabaseExists(name);
     auto lock = getLock();
-    calculateAccessRights();
     current_database = name;
+    calculateAccessRights();
 }
 
 
@@ -1676,6 +1697,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
 }
 
 
+std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->asynchronous_metric_log;
+}
+
+
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
@@ -1909,7 +1941,7 @@ void Context::reloadConfig() const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->config_reload_callback)
-        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't reload config because config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
 
     shared->config_reload_callback();
 }

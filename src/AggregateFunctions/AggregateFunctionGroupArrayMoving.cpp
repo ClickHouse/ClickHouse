@@ -95,8 +95,10 @@ AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, con
 
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupArrayMovingSum", createAggregateFunctionMoving<MovingSumTemplate>);
-    factory.registerFunction("groupArrayMovingAvg", createAggregateFunctionMoving<MovingAvgTemplate>);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("groupArrayMovingSum", { createAggregateFunctionMoving<MovingSumTemplate>, properties });
+    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, properties });
 }
 
 }

@@ -14,8 +14,30 @@ import macros.plugin
 
 import slugify as slugify_impl
 
-import amp
-import website
+
+def slugify(value, separator):
+    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
+
+
+MARKDOWN_EXTENSIONS = [
+    'mdx_clickhouse',
+    'admonition',
+    'attr_list',
+    'def_list',
+    'codehilite',
+    'nl2br',
+    'sane_lists',
+    'pymdownx.details',
+    'pymdownx.magiclink',
+    'pymdownx.superfences',
+    'extra',
+    {
+        'toc': {
+            'permalink': True,
+            'slugify': slugify
+        }
+    }
+]
 
 
 class ClickHouseLinkMixin(object):
@@ -72,10 +94,6 @@ def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
 
 
-def slugify(value, separator):
-    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
-
-
 def get_translations(dirname, lang):
     import babel.support
     return babel.support.Translations.load(
@@ -98,6 +116,7 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         ])
 
     def on_env(self, env, config, files):
+        import util
         env.add_extension('jinja2.ext.i18n')
         dirname = os.path.join(config.data['theme'].dirs[0], 'locale')
         lang = config.data['theme']['language']
@@ -105,10 +124,7 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
             get_translations(dirname, lang),
             newstyle=True
         )
-        chunk_size = 10240
-        env.filters['chunks'] = lambda line: [line[i:i+chunk_size] for i in range(0, len(line), chunk_size)]
-        env.filters['html_to_amp'] = amp.html_to_amp
-        env.filters['adjust_markdown_html'] = website.adjust_markdown_html
+        util.init_jinja2_filters(env)
         return env
 
     def render(self, markdown):

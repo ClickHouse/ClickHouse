@@ -20,6 +20,7 @@ void registerTableFunctions()
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
+    registerTableFunctionCOS(factory);
 #endif
 
 #if USE_HDFS

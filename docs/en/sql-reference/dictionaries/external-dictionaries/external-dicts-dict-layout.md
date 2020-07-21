@@ -39,7 +39,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-Corresponding [DDL-query](../../statements/create.md#create-dictionary-query):
+Corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -54,10 +54,12 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [ssd\_cache](#ssd-cache)
 -   [direct](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
+-   [ssd\_complex\_key\_cache](#ssd-cache)
 -   [complex\_key\_direct](#complex-key-direct)
 -   [ip\_trie](#ip-trie)
 
@@ -123,7 +125,7 @@ LAYOUT(SPARSE_HASHED())
 
 ### complex\_key\_hashed {#complex-key-hashed}
 
-This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `hashed`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `hashed`.
 
 Configuration example:
 
@@ -157,7 +159,7 @@ Example: The table contains discounts for each advertiser in the format:
 +---------|-------------|-------------|------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external-dicts-dict-structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
 Example:
 
@@ -258,12 +260,12 @@ The dictionary is stored in a cache that has a fixed number of cells. These cell
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-For cache dictionaries, the expiration [lifetime](external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
+For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+Supported [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
 
 Example of settings:
 
@@ -294,7 +296,41 @@ Set a large enough cache size. You need to experiment to select the number of ce
 
 ### complex\_key\_cache {#complex-key-cache}
 
-This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `cache`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `cache`.
+
+### ssd\_cache {#ssd-cache}
+
+Similar to `cache`, but stores data on SSD and index in RAM.
+
+``` xml
+<layout>
+    <ssd_cache>
+        <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
+        <block_size>4096</block_size>
+        <!-- Max cache file size in bytes. -->
+        <file_size>16777216</file_size>
+        <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
+        <read_buffer_size>131072</read_buffer_size>
+        <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
+        <write_buffer_size>1048576</write_buffer_size>
+        <!-- Path where cache file will be stored. -->
+        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
+    </ssd_cache>
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+```
+
+### complex\_key\_ssd\_cache {#complex-key-ssd-cache}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd\_cache`.
 
 ### direct {#direct}
 
@@ -302,7 +338,7 @@ The dictionary is not stored in memory and directly goes to the source during th
 
 The dictionary key has the `UInt64` type.
 
-All types of [sources](external-dicts-dict-sources.md), except local files, are supported.
+All types of [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), except local files, are supported.
 
 Configuration example:
 
@@ -320,7 +356,7 @@ LAYOUT(DIRECT())
 
 ### complex\_key\_direct {#complex-key-direct}
 
-This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `direct`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `direct`.
 
 ### ip\_trie {#ip-trie}
 

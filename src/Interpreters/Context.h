@@ -80,6 +80,7 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
+class AsynchronousMetricLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -243,6 +244,9 @@ public:
 
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
+
+    /// Sets external authenticators config (LDAP).
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -526,6 +530,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog();
     std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<MetricLog> getMetricLog();
+    std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.

@@ -12,6 +12,7 @@
 #include <Common/CurrentMetrics.h>
 
 #include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTPHandlerRequestFilter.h>
 
 
 namespace DB
@@ -38,6 +39,12 @@ void PrometheusRequestHandler::handleRequest(
     {
         tryLogCurrentException("PrometheusRequestHandler");
     }
+}
+
+Poco::Net::HTTPRequestHandlerFactory * createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix)
+{
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>(
+        server, PrometheusMetricsWriter(server.config(), config_prefix + ".handler", async_metrics)), server.config(), config_prefix);
 }
 
 }

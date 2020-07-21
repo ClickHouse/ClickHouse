@@ -126,6 +126,44 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 └──────────────────┘
 ```
 
+## system.licenses {#system-tables_system.licenses}
+
+Содержит информацию о лицензиях сторонних библиотек, которые находятся в директории [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) исходных кодов ClickHouse.
+
+Столбцы:
+
+- `library_name` ([String](../sql-reference/data-types/string.md)) — Название библиотеки, к которой относится лицензия.
+- `license_type` ([String](../sql-reference/data-types/string.md)) — Тип лицензии, например, Apache, MIT. 
+- `license_path` ([String](../sql-reference/data-types/string.md)) — Путь к файлу с текстом лицензии.
+- `license_text` ([String](../sql-reference/data-types/string.md)) — Текст лицензии.
+
+**Пример**
+
+``` sql
+SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
+```
+
+``` text
+┌─library_name───────┬─license_type─┬─license_path────────────────────────┐
+│ FastMemcpy         │ MIT          │ /contrib/FastMemcpy/LICENSE         │
+│ arrow              │ Apache       │ /contrib/arrow/LICENSE.txt          │
+│ avro               │ Apache       │ /contrib/avro/LICENSE.txt           │
+│ aws-c-common       │ Apache       │ /contrib/aws-c-common/LICENSE       │
+│ aws-c-event-stream │ Apache       │ /contrib/aws-c-event-stream/LICENSE │
+│ aws-checksums      │ Apache       │ /contrib/aws-checksums/LICENSE      │
+│ aws                │ Apache       │ /contrib/aws/LICENSE.txt            │
+│ base64             │ BSD 2-clause │ /contrib/base64/LICENSE             │
+│ boost              │ Boost        │ /contrib/boost/LICENSE_1_0.txt      │
+│ brotli             │ MIT          │ /contrib/brotli/LICENSE             │
+│ capnproto          │ MIT          │ /contrib/capnproto/LICENSE          │
+│ cassandra          │ Apache       │ /contrib/cassandra/LICENSE.txt      │
+│ cctz               │ Apache       │ /contrib/cctz/LICENSE.txt           │
+│ cityhash102        │ MIT          │ /contrib/cityhash102/COPYING        │
+│ cppkafka           │ BSD 2-clause │ /contrib/cppkafka/LICENSE           │
+└────────────────────┴──────────────┴─────────────────────────────────────┘
+
+```
+
 ## system.databases {#system-databases}
 
 Таблица содержит один столбец name типа String - имя базы данных.
@@ -433,78 +471,154 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Столбцы:
 
--   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql-reference/statements/alter.md#query_language_queries_alter).
+-   `partition` ([String](../sql-reference/data-types/string.md)) – имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql-reference/statements/alter.md#query_language_queries_alter).
 
     Форматы:
 
     -   `YYYYMM` для автоматической схемы партиционирования по месяцам.
     -   `any_string` при партиционировании вручную.
 
--   `name` (`String`) – имя куска.
+-   `name` ([String](../sql-reference/data-types/string.md)) – имя куска.
 
--   `active` (`UInt8`) – признак активности. Если кусок активен, то он используется таблицей, в противном случает он будет удален. Неактивные куски остаются после слияний.
+-   `part_type` ([String](../sql-reference/data-types/string.md)) — формат хранения данных.
 
--   `marks` (`UInt64`) – количество засечек. Чтобы получить примерное количество строк в куске, умножьте `marks` на гранулированность индекса (обычно 8192).
+    Возможные значения:
 
--   `rows` (`UInt64`) – количество строк.
+    -   `Wide` — каждая колонка хранится в отдельном файле. 
+    -   `Compact` — все колонки хранятся в одном файле. 
 
--   `bytes_on_disk` (`UInt64`) – общий размер всех файлов кусков данных в байтах.
+    Формат хранения данных определяется настройками `min_bytes_for_wide_part` и `min_rows_for_wide_part` таблицы [MergeTree](../engines/table-engines/mergetree-family/mergetree.md). 
 
--   `data_compressed_bytes` (`UInt64`) – общий размер сжатой информации в куске данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
+-   `active` ([UInt8](../sql-reference/data-types/int-uint.md)) – признак активности. Если кусок активен, то он используется таблицей, в противном случает он будет удален. Неактивные куски остаются после слияний.
 
--   `data_uncompressed_bytes` (`UInt64`) – общий размер распакованной информации куска данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
+-   `marks` ([UInt64](../sql-reference/data-types/int-uint.md)) – количество засечек. Чтобы получить примерное количество строк в куске, умножьте `marks` на гранулированность индекса (обычно 8192).
 
--   `marks_bytes` (`UInt64`) – размер файла с засечками.
+-   `rows` ([UInt64](../sql-reference/data-types/int-uint.md)) – количество строк.
 
--   `modification_time` (`DateTime`) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
+-   `bytes_on_disk` ([UInt64](../sql-reference/data-types/int-uint.md)) – общий размер всех файлов кусков данных в байтах.
 
--   `remove_time` (`DateTime`) – время, когда кусок стал неактивным.
+-   `data_compressed_bytes` ([UInt64](../sql-reference/data-types/int-uint.md)) – общий размер сжатой информации в куске данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
 
--   `refcount` (`UInt32`) – количество мест, в котором кусок используется. Значение больше 2 говорит о том, что кусок участвует в запросах или в слияниях.
+-   `data_uncompressed_bytes` ([UInt64](../sql-reference/data-types/int-uint.md)) – общий размер распакованной информации куска данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
 
--   `min_date` (`Date`) – минимальное значение ключа даты в куске данных.
+-   `marks_bytes` ([UInt64](../sql-reference/data-types/int-uint.md)) – размер файла с засечками.
 
--   `max_date` (`Date`) – максимальное значение ключа даты в куске данных.
+-   `modification_time` ([DateTime](../sql-reference/data-types/datetime.md)) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
 
--   `min_time` (`DateTime`) – минимальное значение даты и времени в куске данных.
+-   `remove_time` ([DateTime](../sql-reference/data-types/datetime.md)) – время, когда кусок стал неактивным.
 
--   `max_time`(`DateTime`) – максимальное значение даты и времени в куске данных.
+-   `refcount` ([UInt32](../sql-reference/data-types/int-uint.md)) – количество мест, в котором кусок используется. Значение больше 2 говорит о том, что кусок участвует в запросах или в слияниях.
 
--   `partition_id` (`String`) – ID партиции.
+-   `min_date` ([Date](../sql-reference/data-types/date.md)) – минимальное значение ключа даты в куске данных.
 
--   `min_block_number` (`UInt64`) – минимальное число кусков, из которых состоит текущий после слияния.
+-   `max_date` ([Date](../sql-reference/data-types/date.md)) – максимальное значение ключа даты в куске данных.
 
--   `max_block_number` (`UInt64`) – максимальное число кусков, из которых состоит текущий после слияния.
+-   `min_time` ([DateTime](../sql-reference/data-types/datetime.md)) – минимальное значение даты и времени в куске данных.
 
--   `level` (`UInt32`) - глубина дерева слияний. Если слияний не было, то `level=0`.
+-   `max_time`([DateTime](../sql-reference/data-types/datetime.md)) – максимальное значение даты и времени в куске данных.
 
--   `data_version` (`UInt64`) – число, которое используется для определения того, какие мутации необходимо применить к куску данных (мутации с версией большей, чем `data_version`).
+-   `partition_id` ([String](../sql-reference/data-types/string.md)) – ID партиции.
 
--   `primary_key_bytes_in_memory` (`UInt64`) – объём памяти (в байтах), занимаемой значениями первичных ключей.
+-   `min_block_number` ([UInt64](../sql-reference/data-types/int-uint.md)) – минимальное число кусков, из которых состоит текущий после слияния.
 
--   `primary_key_bytes_in_memory_allocated` (`UInt64`) – объём памяти (в байтах) выделенный для размещения первичных ключей.
+-   `max_block_number` ([UInt64](../sql-reference/data-types/int-uint.md)) – максимальное число кусков, из которых состоит текущий после слияния.
 
--   `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition).
+-   `level` ([UInt32](../sql-reference/data-types/int-uint.md)) - глубина дерева слияний. Если слияний не было, то `level=0`.
 
--   `database` (`String`) – имя базы данных.
+-   `data_version` ([UInt64](../sql-reference/data-types/int-uint.md)) – число, которое используется для определения того, какие мутации необходимо применить к куску данных (мутации с версией большей, чем `data_version`).
 
--   `table` (`String`) – имя таблицы.
+-   `primary_key_bytes_in_memory` ([UInt64](../sql-reference/data-types/int-uint.md)) – объём памяти (в байтах), занимаемой значениями первичных ключей.
 
--   `engine` (`String`) – имя движка таблицы, без параметров.
+-   `primary_key_bytes_in_memory_allocated` ([UInt64](../sql-reference/data-types/int-uint.md)) – объём памяти (в байтах) выделенный для размещения первичных ключей.
 
--   `path` (`String`) – абсолютный путь к папке с файлами кусков данных.
+-   `is_frozen` ([UInt8](../sql-reference/data-types/int-uint.md)) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition).
 
--   `disk` (`String`) – имя диска, на котором находится кусок данных.
+-   `database` ([String](../sql-reference/data-types/string.md)) – имя базы данных.
 
--   `hash_of_all_files` (`String`) – значение [sipHash128](../sql-reference/functions/hash-functions.md#hash_functions-siphash128) для сжатых файлов.
+-   `table` ([String](../sql-reference/data-types/string.md)) – имя таблицы.
 
--   `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../sql-reference/functions/hash-functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
+-   `engine` ([String](../sql-reference/data-types/string.md)) – имя движка таблицы, без параметров.
 
--   `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../sql-reference/functions/hash-functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
+-   `path` ([String](../sql-reference/data-types/string.md)) – абсолютный путь к папке с файлами кусков данных.
 
--   `bytes` (`UInt64`) – алиас для `bytes_on_disk`.
+-   `disk` ([String](../sql-reference/data-types/string.md)) – имя диска, на котором находится кусок данных.
 
--   `marks_size` (`UInt64`) – алиас для `marks_bytes`.
+-   `hash_of_all_files` ([String](../sql-reference/data-types/string.md)) – значение [sipHash128](../sql-reference/functions/hash-functions.md#hash_functions-siphash128) для сжатых файлов.
+
+-   `hash_of_uncompressed_files` ([String](../sql-reference/data-types/string.md)) – значение [sipHash128](../sql-reference/functions/hash-functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
+
+-   `uncompressed_hash_of_compressed_files` ([String](../sql-reference/data-types/string.md)) – значение [sipHash128](../sql-reference/functions/hash-functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
+
+-   `delete_ttl_info_min` ([DateTime](../sql-reference/data-types/datetime.md)) — Минимальное значение ключа даты и времени для правила [TTL DELETE](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+
+-   `delete_ttl_info_max` ([DateTime](../sql-reference/data-types/datetime.md)) — Максимальное значение ключа даты и времени для правила [TTL DELETE](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+
+-   `move_ttl_info.expression` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — Массив выражений. Каждое выражение задаёт правило [TTL MOVE](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl). 
+
+    !!! note "Предупреждение"
+        Массив выражений `move_ttl_info.expression` используется, в основном, для обратной совместимости. Для работы с правилами `TTL MOVE` лучше использовать поля `move_ttl_info.min` и `move_ttl_info.max`.
+
+-   `move_ttl_info.min` ([Array](../sql-reference/data-types/array.md)([DateTime](../sql-reference/data-types/datetime.md))) — Массив значений. Каждый элемент массива задаёт минимальное значение ключа даты и времени для правила [TTL MOVE](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+
+-   `move_ttl_info.max` ([Array](../sql-reference/data-types/array.md)([DateTime](../sql-reference/data-types/datetime.md))) — Массив значений. Каждый элемент массива задаёт максимальное значение ключа даты и времени для правила [TTL MOVE](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+
+-   `bytes` ([UInt64](../sql-reference/data-types/int-uint.md)) – алиас для `bytes_on_disk`.
+
+-   `marks_size` ([UInt64](../sql-reference/data-types/int-uint.md)) – алиас для `marks_bytes`.
+
+**Пример**
+
+``` sql
+SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
+```
+
+``` text
+Row 1:
+──────
+partition:                             tuple()
+name:                                  all_1_4_1_6
+part_type:                             Wide
+active:                                1
+marks:                                 2
+rows:                                  6
+bytes_on_disk:                         310
+data_compressed_bytes:                 157
+data_uncompressed_bytes:               91
+marks_bytes:                           144
+modification_time:                     2020-06-18 13:01:49
+remove_time:                           0000-00-00 00:00:00
+refcount:                              1
+min_date:                              0000-00-00
+max_date:                              0000-00-00
+min_time:                              0000-00-00 00:00:00
+max_time:                              0000-00-00 00:00:00
+partition_id:                          all
+min_block_number:                      1
+max_block_number:                      4
+level:                                 1
+data_version:                          6
+primary_key_bytes_in_memory:           8
+primary_key_bytes_in_memory_allocated: 64
+is_frozen:                             0
+database:                              default
+table:                                 months
+engine:                                MergeTree
+disk_name:                             default
+path:                                  /var/lib/clickhouse/data/default/months/all_1_4_1_6/
+hash_of_all_files:                     2d0657a16d9430824d35e327fcbd87bf
+hash_of_uncompressed_files:            84950cc30ba867c77a408ae21332ba29
+uncompressed_hash_of_compressed_files: 1ad78f1c6843bbfb99a2c931abe7df7d
+delete_ttl_info_min:                   0000-00-00 00:00:00
+delete_ttl_info_max:                   0000-00-00 00:00:00
+move_ttl_info.expression:              []
+move_ttl_info.min:                     []
+move_ttl_info.max:                     []
+```
+
+**См. также**
+
+-   [Движок MergeTree](../engines/table-engines/mergetree-family/mergetree.md)
+-   [TTL для столбцов и таблиц](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
 
 ## system.part\_log {#system_tables-part-log}
 
@@ -1122,6 +1236,18 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 -   `sorting_key` (String) — ключ сортировки таблицы.
 -   `primary_key` (String) - первичный ключ таблицы.
 -   `sampling_key` (String) — ключ сэмплирования таблицы.
+-   `storage_policy` (String) - политика хранения данных:
+
+    -   [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    -   [Distributed](../engines/table-engines/special/distributed.md#distributed)
+
+-   `total_rows` (Nullable(UInt64)) - Общее количество строк, если есть возможность быстро определить точное количество строк в таблице, в противном случае `Null` (включая базовую таблицу `Buffer`).
+
+-   `total_bytes` (Nullable(UInt64)) - Общее количество байт, если можно быстро определить точное количество байт для таблицы на накопителе, в противном случае `Null` (**не включает** в себя никакого базового хранилища).
+
+    -   Если таблица хранит данные на диске, возвращает используемое пространство на диске (т. е. сжатое).
+    -   Если таблица хранит данные в памяти, возвращает приблизительное количество используемых байт в памяти.
+
 
 Таблица `system.tables` используется при выполнении запроса `SHOW TABLES`.
 
@@ -1248,5 +1374,92 @@ Cодержит информацию о дисках, заданных в [ко�
 -   `move_factor` ([Float64](../sql-reference/data-types/float.md))\` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
+
+## system.quotas {#system_tables-quotas}
+Содержит информацию о [квотах](quotas.md).
+
+Столбцы:
+-  `name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `id` ([UUID](../sql-reference/data-types/uuid.md)) — ID квоты.
+-   `storage`([String](../sql-reference/data-types/string.md)) — Хранилище квот. Возможные значения: "users.xml", если квота задана в файле users.xml, "disk" — если квота задана в SQL-запросе.
+-   `keys` ([Array](../sql-reference/data-types/array.md)([Enum8](../sql-reference/data-types/enum.md))) — Ключ определяет совместное использование квоты. Если два соединения используют одну и ту же квоту, они совместно используют один и тот же объем ресурсов. Значения: 
+    -   `[]` — Все пользователи используют одну и ту же квоту.
+    -   `['user_name']` — Соединения с одинаковым именем пользователя используют одну и ту же квоту. 
+    -   `['ip_address']` — Соединения с одинаковым IP-адресом используют одну и ту же квоту. 
+    -   `['client_key']` — Соединения с одинаковым ключом используют одну и ту же квоту. Ключ может быть явно задан клиентом. При использовании [clickhouse-client](../interfaces/cli.md), передайте ключевое значение в параметре `--quota-key`, или используйте параметр `quota_key` файле настроек клиента. В случае использования HTTP интерфейса, используйте заголовок `X-ClickHouse-Quota`.
+    -   `['user_name', 'client_key']` — Соединения с одинаковым ключом используют одну и ту же квоту. Если ключ не предоставлен клиентом, то квота отслеживается для `user_name`.
+    -   `['client_key', 'ip_address']` — Соединения с одинаковым ключом используют одну и ту же квоту. Если ключ не предоставлен клиентом, то квота отслеживается для `ip_address`.
+-   `durations` ([Array](../sql-reference/data-types/array.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Длины временных интервалов для расчета потребления ресурсов, в секундах. 
+-   `apply_to_all` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Логическое значение. Он показывает, к каким пользователям применяется квота. Значения:
+    -   `0` — Квота применяется к пользователям, перечисленным в списке `apply_to_list`.
+    -   `1` — Квота применяется к пользователям, за исключением тех, что перечислены в списке `apply_to_except`.
+-   `apply_to_list` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — Список имен пользователей/[ролей](../operations/access-rights.md#role-management) к которым применяется квота.
+-   `apply_to_except` ([Array](../sql-reference/data-types/array.md)([String](../sql-reference/data-types/string.md))) — Список имен пользователей/ролей к которым квота применяться не должна.
+
+## system.quota_limits {#system_tables-quota_limits}
+Содержит информацию о максимумах для всех интервалов всех квот. Одной квоте могут соответствовать любое количество строк или ноль.
+
+Столбцы:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `duration` ([UInt32](../sql-reference/data-types/int-uint.md)) — Длина временного интервала для расчета потребления ресурсов, в секундах. 
+-   `is_randomized_interval` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Логическое значение. Оно показывает, является ли интервал рандомизированным. Интервал всегда начинается в одно и то же время, если он не рандомизирован. Например, интервал в 1 минуту всегда начинается с целого числа минут (то есть он может начинаться в 11:20:00, но никогда не начинается в 11:20:01), интервал в один день всегда начинается в полночь UTC. Если интервал рандомизирован, то самый первый интервал начинается в произвольное время, а последующие интервалы начинаются один за другим. Значения:
+    -   `0` — Интервал рандомизирован.
+    -   `1` — Интервал не рандомизирован.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число запросов.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество ошибок.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк результата.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальный объем оперативной памяти в байтах, используемый для хранения результата запроса.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк, считываемых из всех таблиц и табличных функций, участвующих в запросе.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество байтов, считываемых из всех таблиц и табличных функций, участвующих в запросе.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса, в секундах.
+
+## system.quota_usage {#system_tables-quota_usage}
+Использование квоты текущим пользователем: сколько используется и сколько осталось.
+
+Столбцы:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `quota_key`([String](../sql-reference/data-types/string.md)) — Значение ключа. Например, если keys = `ip_address`, `quota_key` может иметь значение '192.168.1.1'.
+-   `start_time`([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md))) — Время начала расчета потребления ресурсов.
+-   `end_time`([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md))) — Время окончания расчета потребления ресурс
+-   `duration` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Длина временного интервала для расчета потребления ресурсов, в секундах.
+-   `queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество запросов на этом интервале.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество запросов.
+-   `errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Число запросов, вызвавших ошибки.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число ошибок.
+-   `result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество строк результата.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк результата.
+-   `result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Объем оперативной памяти в байтах, используемый для хранения результата запроса.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальный объем оперативной памяти, используемый для хранения результата запроса, в байтах.
+-   `read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее число исходных строк, считываемых из таблиц для выполнения запроса на всех удаленных серверах.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк, считываемых из всех таблиц и табличных функций, участвующих в запросах.
+-   `read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество байт, считанных из всех таблиц и табличных функций, участвующих в запросах.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество байт, считываемых из всех таблиц и табличных функций.
+-   `execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Общее время выполнения запроса, в секундах.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса.
+
+## system.quotas_usage {#system_tables-quotas_usage}
+Использование квот всеми пользователями.
+
+Столбцы:
+-   `quota_name` ([String](../sql-reference/data-types/string.md)) — Имя квоты.
+-   `quota_key` ([String](../sql-reference/data-types/string.md)) — Ключ квоты.
+-   `is_current` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Квота используется для текущего пользователя.
+-   `start_time` ([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md)))) — Время начала расчета потребления ресурсов.
+-   `end_time` ([Nullable](../sql-reference/data-types/nullable.md)([DateTime](../sql-reference/data-types/datetime.md)))) — Время окончания расчета потребления ресурсов.
+-   `duration` ([Nullable](../sql-reference/data-types/nullable.md)([UInt32](../sql-reference/data-types/int-uint.md))) — Длина временного интервала для расчета потребления ресурсов, в секундах.
+-   `queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество запросов на этом интервале.
+-   `max_queries` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число запросов.
+-   `errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Число запросов, вызвавших ошибки.
+-   `max_errors` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное число ошибок.
+-   `result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — The total number of rows given as a result.
+-   `max_result_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Maximum of source rows read from tables.
+-   `result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Объем оперативной памяти в байтах, используемый для хранения результата запроса.
+-   `max_result_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальный объем оперативной памяти, используемый для хранения результата запроса, в байтах.
+-   `read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее число исходных строк, считываемых из таблиц для выполнения запроса на всех удаленных серверах.
+-   `max_read_rows` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество строк, считываемых из всех таблиц и табличных функций, участвующих в запросах.
+-   `read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Общее количество байт, считанных из всех таблиц и табличных функций, участвующих в запросах.
+-   `max_read_bytes` ([Nullable](../sql-reference/data-types/nullable.md)([UInt64](../sql-reference/data-types/int-uint.md))) — Максимальное количество байт, считываемых из всех таблиц и табличных функций.
+-   `execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Общее время выполнения запроса, в секундах.
+-   `max_execution_time` ([Nullable](../sql-reference/data-types/nullable.md)([Float64](../sql-reference/data-types/float.md))) — Максимальное время выполнения запроса.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/) <!--hide-->

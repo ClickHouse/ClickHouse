@@ -1,0 +1,40 @@
+<test>
+    <!--
+        This is a short screening test for DateTime and Date. Some
+        other basic functions are tested by date_time_64, and a more
+        exhaustive list of functions is in date_time_long.xml (it's
+        about an hour so we can't afford to test it on each commit).
+     -->
+    <substitutions>
+       <substitution>
+           <name>date_transform</name>
+           <values>
+               <value>toDayOfWeek</value>
+               <value>toMonday</value>
+               <value>toRelativeDayNum</value>
+               <value>toYYYYMMDDhhmmss</value>
+               <value>toUnixTimestamp</value>
+           </values>
+        </substitution>
+        <substitution>
+            <name>time_zone</name>
+            <values>
+               <value>Europe/Moscow</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>binary_function</name>
+            <values>
+                <value>lessOrEquals</value>
+                <value>greater</value>
+                <value>plus</value>
+                <value>addWeeks</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {date_transform}(t, '{time_zone}'))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, {date_transform}(t))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {binary_function}(t, 1))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toStartOfInterval(t, INTERVAL 1 month))</query>
+</test>

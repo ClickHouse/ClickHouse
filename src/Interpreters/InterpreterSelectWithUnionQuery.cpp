@@ -6,10 +6,9 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
-
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Pipe.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 
 namespace DB
@@ -173,47 +172,35 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
     return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
+void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
+{
+    size_t num_plans = nested_interpreters.size();
+    std::vector<QueryPlan> plans(num_plans);
+    DataStreams data_streams(num_plans);
+
+    for (size_t i = 0; i < num_plans; ++i)
+    {
+        nested_interpreters[i]->buildQueryPlan(plans[i]);
+        data_streams[i] = plans[i].getCurrentDataStream();
+    }
+
+    auto max_threads = context->getSettingsRef().max_threads;
+    auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
+}
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
     BlockIO res;
-    QueryPipeline & main_pipeline = res.pipeline;
-    std::vector<QueryPipeline> pipelines;
-    bool has_main_pipeline = false;
 
-    Blocks headers;
-    headers.reserve(nested_interpreters.size());
+    QueryPlan query_plan;
+    buildQueryPlan(query_plan);
 
-    for (auto & interpreter : nested_interpreters)
-    {
-        if (!has_main_pipeline)
-        {
-            has_main_pipeline = true;
-            main_pipeline = interpreter->execute().pipeline;
-            headers.emplace_back(main_pipeline.getHeader());
-        }
-        else
-        {
-            pipelines.emplace_back(interpreter->execute().pipeline);
-            headers.emplace_back(pipelines.back().getHeader());
-        }
-    }
+    auto pipeline = query_plan.buildQueryPipeline();
 
-    if (!has_main_pipeline)
-        main_pipeline.init(Pipe(std::make_shared<NullSource>(getSampleBlock())));
-
-    if (!pipelines.empty())
-    {
-        auto common_header = getCommonHeaderForUnion(headers);
-        main_pipeline.unitePipelines(std::move(pipelines), common_header);
-
-        // nested queries can force 1 thread (due to simplicity)
-        // but in case of union this cannot be done.
-        UInt64 max_threads = context->getSettingsRef().max_threads;
-        main_pipeline.setMaxThreads(std::min<UInt64>(nested_interpreters.size(), max_threads));
-    }
-
-    main_pipeline.addInterpreterContext(context);
+    res.pipeline = std::move(*pipeline);
+    res.pipeline.addInterpreterContext(context);
 
     return res;
 }

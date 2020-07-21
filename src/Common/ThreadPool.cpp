@@ -1,8 +1,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 
+#include <cassert>
 #include <type_traits>
 
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB
 {
@@ -261,9 +264,25 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
+std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
+
+void GlobalThreadPool::initialize(size_t max_threads)
+{
+    assert(!the_instance);
+
+    the_instance.reset(new GlobalThreadPool(max_threads,
+        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
+        false /*shutdown_on_exception*/));
+}
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
-    static GlobalThreadPool ret;
-    return ret;
+    if (!the_instance)
+    {
+        // Allow implicit initialization. This is needed for old code that is
+        // impractical to redo now, especially Arcadia users and unit tests.
+        initialize();
+    }
+
+    return *the_instance;
 }

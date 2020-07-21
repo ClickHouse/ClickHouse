@@ -31,15 +31,16 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
+    const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
     Poco::Logger * log_)
-        : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
-            [] (const NameAndTypePair & col) { return col.name; })},
-        queried_columns{queried_columns_},
-        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-        log{log_}
+    : table_columns{ext::map<std::unordered_set>(
+        metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
+    , queried_columns{queried_columns_}
+    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
+    , log{log_}
 {
-    const auto & primary_key = data.getPrimaryKey();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 

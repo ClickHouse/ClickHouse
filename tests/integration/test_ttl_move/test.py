@@ -160,6 +160,53 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
             pass
 
 
+@pytest.mark.parametrize("name,engine", [
+    ("mt_test_moves_work_after_storage_policy_change","MergeTree()"),
+    ("replicated_mt_test_moves_work_after_storage_policy_change","ReplicatedMergeTree('/clickhouse/test_moves_work_after_storage_policy_change', '1')"),
+])
+def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+        """.format(name=name, engine=engine))
+ 
+        node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='default_with_small_jbod_with_external'""".format(name=name))
+
+        # Second expression is preferred because d1 > now()-3600.
+        node1.query("""ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(name=name))
+
+        wait_expire_1 = 12
+        wait_expire_2 = 4
+        time_1 = time.time() + wait_expire_1
+        time_2 = time.time() + wait_expire_1 + wait_expire_2
+
+        wait_expire_1_thread = threading.Thread(target=time.sleep, args=(wait_expire_1,))
+        wait_expire_1_thread.start()
+
+        data = [] # 10MB in total
+        for i in range(10):
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1))) # 1MB row
+
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1"}
+
+        wait_expire_1_thread.join()
+        time.sleep(wait_expire_2/2)
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"external"}
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_moves_to_disk_do_not_work","MergeTree()",0),
     ("replicated_mt_test_moves_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_to_disk_do_not_work', '1')",0),
