@@ -16,6 +16,7 @@ struct ModuloOrZeroImpl
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {
+            /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
         }
         else
