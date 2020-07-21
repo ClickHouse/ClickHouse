@@ -499,8 +499,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
 {
     size_t tuple_size = indexes_mapping.size();
 
-    ColumnsWithInfinity left_point(tuple_size);
-    ColumnsWithInfinity right_point(tuple_size);
+    ColumnsWithInfinity left_point;
+    ColumnsWithInfinity right_point;
+    left_point.reserve(tuple_size);
+    right_point.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
