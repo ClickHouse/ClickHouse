@@ -5,7 +5,6 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-//#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/Context.h>
@@ -13,7 +12,6 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
-//#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/TableJoin.h>
@@ -32,8 +30,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
-
-//#include <functional>
 
 
 namespace DB

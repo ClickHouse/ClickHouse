@@ -1,6 +1,4 @@
 #include <Core/Settings.h>
-//#include <Core/Defines.h>
-//#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/OptimizeIfChains.h>
@@ -25,12 +23,8 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-//#include <Parsers/queryToString.h>
 
 #include <Functions/FunctionFactory.h>
-
-//#include <DataTypes/NestedUtils.h>
-//#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
