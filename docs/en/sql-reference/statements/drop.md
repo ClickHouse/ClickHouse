@@ -84,4 +84,4 @@ Deleted settings profile is revoked from all the entities where it was assigned.
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-Deletes the view. Views can be deleted by `DROP TABLE` command as well but `DROP VIEW` checks that `[db.]name` is a view.
+Deletes the view. Views can be deleted by a command `DROP TABLE` as well but `DROP VIEW` checks that `[db.]name` is a view.
