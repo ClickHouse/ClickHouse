@@ -8,6 +8,14 @@
 namespace DB
 {
 
+/** Materialize database engine metadata
+ *
+ * Record data version and current snapshot of MySQL, including:
+ * binlog_file  - currently executing binlog_file
+ * binlog_position  - position of the currently executing binlog file
+ * executed_gtid_set - currently executing gtid
+ * need_dumping_tables - Table structure snapshot at the current moment(Only when database first created or executed binlog file is deleted)
+ */
 struct MaterializeMetadata
 {
     const String persistent_path;

@@ -17,6 +17,13 @@
 namespace DB
 {
 
+#ifdef USE_MYSQL
+namespace ErrorCodes
+{
+    extern const int MYSQL_SYNTAX_ERROR;
+}
+#endif
+
 bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserFunction p_function;
@@ -49,6 +56,23 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
 
         if (external_ddl_query->external_ddl)
             external_ddl_query->children.push_back(external_ddl_query->external_ddl);
+
+        if (!res)
+        {
+            /// Syntax error is ignored, so we need to convert the error code for parsing failure
+
+            if (ParserKeyword("ALTER TABLE").ignore(pos))
+                throw Exception("Cannot parse MySQL alter query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+
+            if (ParserKeyword("RENAME TABLE").ignore(pos))
+                throw Exception("Cannot parse MySQL rename query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+
+            if (ParserKeyword("DROP TABLE").ignore(pos) || ParserKeyword("TRUNCATE").ignore(pos))
+                throw Exception("Cannot parse MySQL drop query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+
+            if (ParserKeyword("CREATE TABLE").ignore(pos) || ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos))
+                throw Exception("Cannot parse MySQL create query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+        }
 #endif
     }
 

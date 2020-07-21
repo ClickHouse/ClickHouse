@@ -21,6 +21,19 @@
 namespace DB
 {
 
+/** MySQL table structure and data synchronization thread
+ *
+ *  When catch exception, it always exits immediately.
+ *  In this case, you need to execute DETACH DATABASE and ATTACH DATABASE after manual processing
+ *
+ *  The whole work of the thread includes synchronous full data and real-time pull incremental data
+ *
+ *  synchronous full data:
+ *      We will synchronize the full data when the database is first create or not found binlog file in MySQL after restart.
+ *
+ *  real-time pull incremental data:
+ *      We will pull the binlog event of MySQL to parse and execute when the full data synchronization is completed.
+ */
 class MaterializeMySQLSyncThread
 {
 public:
@@ -32,7 +45,7 @@ public:
 
     void stopSynchronization();
 
-    void startSynchronization(const String & mysql_version);
+    void startSynchronization();
 
     static bool isMySQLSyncThread();
 

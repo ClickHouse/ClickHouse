@@ -6,6 +6,12 @@
 namespace DB
 {
 
+/** MaterializeMySQL database table iterator
+ *
+ * The iterator returns different storage engine types depending on the visitor.
+ * When MySQLSync thread accesses, it always returns MergeTree
+ * Other cases always convert MergeTree to StorageMaterializeMySQL
+ */
 class DatabaseMaterializeTablesIterator final : public IDatabaseTablesIterator
 {
 public:
