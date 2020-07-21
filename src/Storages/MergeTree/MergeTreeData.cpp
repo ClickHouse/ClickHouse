@@ -1272,7 +1272,9 @@ void MergeTreeData::dropIfEmpty()
     }
 }
 
-namespace {
+namespace
+{
+
 /// Conversion that is allowed for partition key.
 /// Partition key should be serialized in the same way after conversion.
 /// NOTE: The list is not complete.
