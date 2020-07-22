@@ -370,7 +370,6 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
-include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)

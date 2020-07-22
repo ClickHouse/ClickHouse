@@ -53,7 +53,7 @@ const char * auto_config_build[]
     "USE_BROTLI", "@USE_BROTLI@",
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@ENABLE_HYPERSCAN@",
-    "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_SIMDJSON", "@ENABLE_SIMDJSON@",
     "USE_GRPC", "@USE_GRPC@",
     "USE_LDAP", "@USE_LDAP@",
 

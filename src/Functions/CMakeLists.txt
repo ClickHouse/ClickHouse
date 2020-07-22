@@ -39,6 +39,7 @@ target_link_libraries(clickhouse_functions
         dbms
         metrohash
         murmurhash
+        simdjson
 
     PRIVATE
         ${ZLIB_LIBRARIES}
@@ -87,10 +88,6 @@ if (USE_H3)
 endif()
 
 target_link_libraries(clickhouse_functions PRIVATE hyperscan)
-
-if(USE_SIMDJSON)
-    target_link_libraries(clickhouse_functions PRIVATE simdjson)
-endif()
 
 if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})

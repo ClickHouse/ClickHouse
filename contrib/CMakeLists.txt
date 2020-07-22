@@ -31,6 +31,7 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
+add_subdirectory (simdjson-cmake)
 add_subdirectory (unixodbc-cmake)
 
 add_subdirectory (poco-cmake)
@@ -283,10 +284,6 @@ if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
 
-if (USE_SIMDJSON)
-    add_subdirectory (simdjson-cmake)
-endif()
-
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
@@ -306,4 +303,3 @@ if (USE_SENTRY)
 endif()
 
 add_subdirectory (fmtlib-cmake)
-
