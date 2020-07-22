@@ -410,7 +410,7 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
         {
             if (shutdown_called)
                 return true;
-            auto mutation_status = getIncompleteMutationStatus(version);
+            auto mutation_status = getIncompleteMutationsStatus(version);
             return !mutation_status || mutation_status->is_done || !mutation_status->latest_fail_reason.empty();
         };
 
@@ -418,8 +418,9 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
         mutation_wait_event.wait(lock, check);
     }
 
-    auto mutation_status = getIncompleteMutationStatus(version);
-    checkMutationStatus(mutation_status, file_name);
+    Strings mutation_ids;
+    auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids);
+    checkMutationStatus(mutation_status, mutation_ids);
 
     LOG_INFO(log, "Mutation {} done", file_name);
 }
@@ -449,29 +450,42 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
-std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationStatus(Int64 mutation_version) const
+std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, Strings * mutation_ids) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    auto it = current_mutations_by_version.find(mutation_version);
+    auto current_mutation_it = current_mutations_by_version.find(mutation_version);
     /// Killed
-    if (it == current_mutations_by_version.end())
+    if (current_mutation_it == current_mutations_by_version.end())
         return {};
 
     MergeTreeMutationStatus result{.is_done = false};
 
-    const auto & mutation_entry = it->second;
+    const auto & mutation_entry = current_mutation_it->second;
 
     auto data_parts = getDataPartsVector();
     for (const auto & data_part : data_parts)
     {
         if (data_part->info.getDataVersion() < mutation_version)
         {
+
             if (!mutation_entry.latest_fail_reason.empty())
             {
                 result.latest_failed_part = mutation_entry.latest_failed_part;
                 result.latest_fail_reason = mutation_entry.latest_fail_reason;
                 result.latest_fail_time = mutation_entry.latest_fail_time;
+
+                /// Fill all mutations which failed with the same error
+                /// (we can execute several mutations together)
+                if (mutation_ids)
+                {
+                    auto mutations_begin_it = current_mutations_by_version.upper_bound(data_part->info.getDataVersion());
+
+                    for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
+                        /// All mutations with the same failure
+                        if (it->second.latest_fail_reason == result.latest_fail_reason)
+                            mutation_ids->push_back(it->second.file_name);
+                }
             }
 
             return result;

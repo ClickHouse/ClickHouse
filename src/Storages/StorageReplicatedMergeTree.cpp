@@ -386,7 +386,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             if (wait_event->tryWait(1000))
                 break;
 
-            auto mutation_status = queue.getIncompleteMutationStatus(mutation_id);
+            auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
             if (!mutation_status || !mutation_status->latest_fail_reason.empty())
                 break;
         }
@@ -398,8 +398,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }
 
-        auto mutation_status = queue.getIncompleteMutationStatus(mutation_id);
-        checkMutationStatus(mutation_status, mutation_id);
+        Strings mutation_ids;
+        auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
+        checkMutationStatus(mutation_status, mutation_ids);
 
         if (partial_shutdown_called)
             throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
