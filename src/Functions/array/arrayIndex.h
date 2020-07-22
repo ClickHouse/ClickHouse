@@ -844,6 +844,9 @@ private:
             return false;
 
         auto col_res = ResultColumnType::create();
+
+        /// Pre-filling is needed as the ArrayIndexNumImpl and ArrayIndexNumNullImpl won't fill the not-found values
+        /// with 0.
         col_res->getData().resize_fill(col_array->getOffsets().size());
 
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
@@ -885,7 +888,7 @@ private:
                     >::vector(
                     col_array_nested_lc->getIndexes(), /* data -- indices column */
                     col_array->getOffsets(),
-                    *value_index /* target value to search */ ,
+                    *value_index, /* target value to search */
                     col_res->getData(),
                     null_map_data,
                     null_map_item);
