@@ -9,8 +9,8 @@ from os import path as p, unlink
 
 def test_chroot_with_same_root():
 
-    cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/config.d/zookeeper_config_root_a.xml')
-    cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/config.d/zookeeper_config_root_a.xml')
+    cluster_1 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
+    cluster_2 = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_root_a.xml')
 
     node1 = cluster_1.add_instance('node1', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
     node2 = cluster_2.add_instance('node2', main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"], with_zookeeper=True, zookeeper_use_tmpfs=False)
