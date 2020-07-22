@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
+    extern const int UNFINISHED;
 }
 
 namespace ActionLocks
@@ -134,7 +135,7 @@ void StorageMergeTree::shutdown()
 
     /// Unlock all waiting mutations
     {
-        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
 
@@ -370,6 +371,10 @@ public:
                 entry.latest_failed_part_info = future_part.parts.at(0)->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
+                {
+                    std::lock_guard lock_mutation_wait(storage.mutation_wait_mutex);
+                    storage.mutation_wait_event.notify_all();
+                }
             }
         }
 
@@ -401,9 +406,22 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
 void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
 {
     LOG_INFO(log, "Waiting mutation: {}", file_name);
-    auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
-    std::unique_lock lock(mutation_wait_mutex);
-    mutation_wait_event.wait(lock, check);
+    {
+        auto check = [version, this]()
+        {
+            if (shutdown_called)
+                return true;
+            auto mutation_status = getIncompleteMutationStatus(version);
+            return !mutation_status || mutation_status->is_done || !mutation_status->latest_fail_reason.empty();
+        };
+
+        std::unique_lock lock(mutation_wait_mutex);
+        mutation_wait_event.wait(lock, check);
+    }
+
+    auto mutation_status = getIncompleteMutationStatus(version);
+    checkMutationStatus(mutation_status, file_name);
+
     LOG_INFO(log, "Mutation {} done", file_name);
 }
 
@@ -432,20 +450,37 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
-
-bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
+std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationStatus(Int64 mutation_version) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
+    auto it = current_mutations_by_version.find(mutation_version);
     /// Killed
-    if (!current_mutations_by_version.count(mutation_version))
-        return true;
+    if (it == current_mutations_by_version.end())
+        return {};
+
+    MergeTreeMutationStatus result{.is_done = false};
+
+    const auto & mutation_entry = it->second;
 
     auto data_parts = getDataPartsVector();
     for (const auto & data_part : data_parts)
+    {
         if (data_part->info.getDataVersion() < mutation_version)
-            return false;
-    return true;
+        {
+            if (!mutation_entry.latest_fail_reason.empty())
+            {
+                result.latest_failed_part = mutation_entry.latest_failed_part;
+                result.latest_fail_reason = mutation_entry.latest_fail_reason;
+                result.latest_fail_time = mutation_entry.latest_fail_time;
+            }
+
+            return result;
+        }
+    }
+
+    result.is_done = true;
+    return result;
 }
 
 
@@ -474,7 +509,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
-
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
         const PartVersionWithName needle{mutation_version, ""};
@@ -500,7 +534,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
-                parts_to_do_names.empty(),
+                /* is_done = */parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
@@ -833,7 +867,7 @@ bool StorageMergeTree::tryMutatePart()
 
         /// Notify all, who wait for this or previous mutations
         {
-            std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+            std::lock_guard lock(mutation_wait_mutex);
             mutation_wait_event.notify_all();
         }
     }
