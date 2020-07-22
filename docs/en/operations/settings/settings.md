@@ -808,6 +808,17 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 50.
 
+## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
+
+The wait time in milliseconds for a connection when the connection pool is full.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 0.
+
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 The maximum number of connection attempts with each replica for the Distributed table engine.
@@ -818,6 +829,21 @@ Default value: 3.
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section “Extreme values”.
+
+## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
+
+The wait time in milliseconds for reading messages from [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) before retry.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 5000.
+
+See also:
+
+-   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -836,6 +862,17 @@ If a query from the same user with the same ‘query\_id’ already exists at th
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+
+## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
+
+The wait time for running query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+
+Possible values:
+
+- Positive integer.
+- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the  same `query_id`.
+
+Default value: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -1422,6 +1459,23 @@ Possible values:
 
 Default value: 16.
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true). 
+
+Possible values:
+
+-   0 — Data is inserted in asynchronous mode.
+-   1 — Data is inserted in synchronous mode.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
+-   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.

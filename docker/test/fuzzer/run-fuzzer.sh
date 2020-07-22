@@ -104,9 +104,8 @@ function fuzz
     if [ "$fuzzer_exit_code" == "143" ]
     then
         # Killed by watchdog, meaning, no errors.
-        return 0
+        fuzzer_exit_code=0
     fi
-    return $fuzzer_exit_code
 }
 
 case "$stage" in
@@ -161,7 +160,7 @@ case "$stage" in
         echo "success" > status.txt
     else
         echo "failure" > status.txt
-        if ! grep "received signal \|Logical error" server.log > description.txt
+        if ! grep -a "received signal \|Logical error" server.log > description.txt
         then
             echo "Fuzzer exit code $fuzzer_exit_code. See the logs" > description.txt
         fi
