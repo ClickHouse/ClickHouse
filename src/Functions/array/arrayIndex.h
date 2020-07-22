@@ -59,7 +59,17 @@ struct IndexCount
  * ConstColumn s), and @e vectorVector for processing vectors of vectors.
  */
 
-template <class Initial, class Result, class ConcreteAction, bool ResizeRes = true>
+/**
+ * @tparam Initial Initial integral data type (array's).
+ * @tparam Result Resulting integral data type (col_res's).
+ * @tparam InvokedNotFromLCSpec For invokation from the low cardinality specialisation, we do not re-resize the
+ *      result column and do not override the result[i] if the value was not found (as it is invoked multiple times).
+ */
+template <
+    class Initial,
+    class Result,
+    class ConcreteAction,
+    bool InvokedNotFromLCSpec = true>
 struct ArrayIndexNumImpl
 {
 private:
@@ -93,35 +103,45 @@ private:
         return null_map[i];
     }
 
+    using ResultType = typename ConcreteAction::ResultType;
+
     /// Both function arguments are ordinary.
     template <class Data, class ScalarOrVector>
     static void vectorCase1(
         const Data & data,
         const ColumnArray::Offsets & offsets,
-        const ScalarOrVector & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result)
+        const ScalarOrVector & target_value,
+        PaddedPODArray<ResultType> & result)
     {
-        size_t size = offsets.size();
+        const size_t size = offsets.size();
 
-        if constexpr (ResizeRes)
+        if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
+            const size_t array_size = offsets[i] - current_offset;
+            ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (compare(extract(data, current_offset + j), value, i))
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
+                Initial data_value = extract(data, current_offset + j);
+
+                if (!compare(data_value, target_value, i))
+                    continue;
+
+                if (!ConcreteAction::apply(j, current))
+                    break;
             }
 
-            result[i] = current;
+            if constexpr (InvokedNotFromLCSpec)
+                result[i] = current;
+            else
+                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
+                    result[i] = current; /// multiple times.
+
             current_offset = offsets[i];
         }
     }
@@ -132,19 +152,20 @@ private:
         const Data & data,
         const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
+        PaddedPODArray<ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_item)
     {
         size_t size = offsets.size();
 
-        if constexpr (ResizeRes)
+        if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
+            ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
@@ -155,7 +176,12 @@ private:
                 }
             }
 
-            result[i] = current;
+            if constexpr (InvokedNotFromLCSpec)
+                result[i] = current;
+            else
+                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
+                    result[i] = current; /// multiple times.
+
             current_offset = offsets[i];
         }
     }
@@ -166,19 +192,20 @@ private:
         const Data & data,
         const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
+        PaddedPODArray<ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_data)
     {
         size_t size = offsets.size();
 
-        if constexpr (ResizeRes)
+        if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
+            ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
@@ -192,7 +219,12 @@ private:
                 }
             }
 
-            result[i] = current;
+            if constexpr (InvokedNotFromLCSpec)
+                result[i] = current;
+            else
+                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
+                    result[i] = current; /// multiple times.
+
             current_offset = offsets[i];
         }
     }
@@ -204,13 +236,13 @@ private:
         const Data & data,
         const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
+        PaddedPODArray<ResultType> & result,
         const PaddedPODArray<UInt8> & null_map_data,
         const PaddedPODArray<UInt8> & null_map_item)
     {
         size_t size = offsets.size();
 
-        if constexpr (ResizeRes)
+        if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
@@ -237,7 +269,12 @@ private:
                 }
             }
 
-            result[i] = current;
+            if constexpr (InvokedNotFromLCSpec)
+                result[i] = current;
+            else
+                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
+                    result[i] = current; /// multiple times.
+
             current_offset = offsets[i];
         }
     }
@@ -248,7 +285,7 @@ public:
         const Data & data,
         const ColumnArray::Offsets & offsets,
         const ScalarOrVector & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
+        PaddedPODArray<ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data,
         const PaddedPODArray<UInt8> * null_map_item)
     {
@@ -267,7 +304,9 @@ public:
 
 /// Implementation for arrays of numbers when the 2nd function argument
 /// is a NULL value.
-template <class ConcreteAction, bool ResizeRes = true>
+template <
+    class ConcreteAction,
+    bool InvokedNotFromLCSpec = true>
 struct ArrayIndexNumNullImpl
 {
     static void vector(
@@ -277,7 +316,7 @@ struct ArrayIndexNumNullImpl
     {
         size_t size = offsets.size();
 
-        if constexpr (ResizeRes)
+        if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
@@ -290,7 +329,12 @@ struct ArrayIndexNumNullImpl
                 if (null_map_data && (*null_map_data)[current_offset + j] & !ConcreteAction::apply(j, current))
                     break;
 
-            result[i] = current;
+            if constexpr (InvokedNotFromLCSpec)
+                result[i] = current;
+            else
+                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
+                    result[i] = current; /// multiple times.
+
             current_offset = offsets[i];
         }
     }
@@ -634,16 +678,17 @@ inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypeP
      * 1. T
      * 2. LC(T)
      * 3. N(T)
-     * 4. N(LC(T)) -- quite strange, rarely found but possible.
-     * 5. LC(N(T))
+     * 4. LC(N(T))
      *
-     * All other variants are considered wrong (Like N(N(N(T)))) or LC(N(LC(T))).
+     * The variant N(LC(T)) is considered wrong as the DataTypeLowCardinality::canBeInsideNullable() returns false.
+     *
+     * All other variants are considered wrong (Like N(N(N(T)))).
      * recursiveRemoveLowCardinality works only if the given type is LC(V).
      */
     DataTypePtr array_extracted =
-        removeNullable(                    /// remove outer Nullable, cases 3 and 4
+        removeNullable(                    /// remove outer Nullable, case 3
             recursiveRemoveLowCardinality( /// remove LC, cases 2 and 4
-                removeNullable(            /// remove inner Nullable, cases 3 and 5
+                removeNullable(            /// remove inner Nullable, case 4
                     array_inner_type)));
 
     DataTypePtr arg_extracted =
@@ -668,20 +713,18 @@ private:
     using ResultColumnType = ColumnVector<ResultType>;
 
     /**
-     * The Array's internal data type may be quite tricky (containing a Nullable type somewhere). To process the 
-     * Nullable types correctly, for each data type specialisation we provide two null maps (one for the data and one 
-     * for the items). By convention they are passed as the third and the fourth argument, respectively 
+     * The Array's internal data type may be quite tricky (containing a Nullable type somewhere). To process the
+     * Nullable types correctly, for each data type specialisation we provide two null maps (one for the data and one
+     * for the items). By convention they are passed as the third and the fourth argument, respectively
      * (counting from 1).
      *
-     * @return {nullptr, nullptr} if there are less then 3 arguments.
+     * @return {nullptr, nullptr} if there are less than 3 arguments.
      * @return {null_map_data, nullptr} if there are three arguments
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    std::pair<
-        const PaddedPODArray<UInt8> *,
-        const PaddedPODArray<UInt8> *>
-        nullMapsBuilder(const Block& block, const ColumnNumbers & arguments) const noexcept
+    std::pair<const PaddedPODArray<UInt8> *, const PaddedPODArray<UInt8> *>
+    getNullMaps(const Block & block, const ColumnNumbers & arguments) const noexcept
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
@@ -737,7 +780,7 @@ private:
 
         auto col_res = ResultColumnType::create();
 
-        const auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
+        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
         const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
@@ -775,7 +818,7 @@ private:
      * 3. Invoke the ArrayIndexNum*Impl to find the desired value
      * 4. Fill the desired values in the resulting column
      *
-     * Catches arguments of type T, LC(T), Nullable(LC(T)) and so on.
+     * Catches arguments of type LC(T), LC(Nullable(T)) and so on.
      */
     bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
     {
@@ -786,42 +829,28 @@ private:
             return false;
 
         /**
-         * Here we have four general cases:
-         * 1. LC(T), just search for T in the index.
-         * 2. Nullable(LC(T)), which is handled in nullMapsBuilder below. We can process this type as simple as the
-         * first one as all the *Impls take the null maps argument.
-         * 3. LC(Nullable(T)) and Nullable(LC(Nullable(T))). These cases are somewhat special as Nullable's getDataAt
-         * is slightly slower (due to nested column invocation).
+         * Here we have two general cases:
+         * 1. LC(T).
+         * 2. LC(Nullable(T)) -- somewhat special as Nullable's getDataAt is slightly slower
+         * (due to nested column invocation).
          *
-         * The array most outer nested type must be either LC(U) or Nullable(LC(U)).
+         * The array most outer nested type must be LC(U).
          * We do not care for LC(Nullable(U)) as it may be processed as V = Nullable(U) for LC(V).
          */
         const ColumnLowCardinality * col_array_nested_lc =
             checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
 
         if (!col_array_nested_lc)
-        {
-            const ColumnNullable * const col_array_nested_nullable =
-                checkAndGetColumn<ColumnNullable>(&col_array->getData());
-
-            if (!col_array_nested_nullable)
-                return false;
-
-            col_array_nested_lc = checkAndGetColumn<ColumnLowCardinality>(
-                    &col_array_nested_nullable->getNestedColumn());
-
-            if (!col_array_nested_lc)
-                return false;
-        }
+            return false;
 
         auto col_res = ResultColumnType::create();
-        col_res->getData().resize_fill(col_array->getOffsets().size()); /// fill with default values
+        col_res->getData().resize_fill(col_array->getOffsets().size());
 
-        const auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments); //null maps for outer Nullable.
+        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
         const IColumn * col_arg = block.getByPosition(arguments[1]).column.get();
 
         const size_t size = isColumnConst(*col_arg)
-            ? 1 /// We have a column with just one value. Arbitrary n is allowed (as the column is const, so take 0).
+            ? 1 /// We have a column with just one value. Arbitrary n is allowed (as the column is const), so take 0.
             : col_arg->size();
 
         for (size_t i = 0; i < size; ++i)
@@ -830,7 +859,7 @@ private:
             {
                 ArrayIndexNumNullImpl<
                     ConcreteAction,
-                    /* already resized*/ false>::vector(
+                    false>::vector(
                     col_array->getOffsets(),
                     col_res->getData(),
                     null_map_data);
@@ -839,19 +868,24 @@ private:
             }
 
             const StringRef elem = col_arg->getDataAt(i);
+
+            if (elem == EMPTY_STRING_REF) /// Possible if the column is Nullable and the data was not present.
+                continue;
+
             const std::optional<UInt64> value_index = col_array_nested_lc->getDictionary().getOrFindIndex(elem);
 
             if (!value_index)
-                continue; /// position already zeroed out
+                continue;
 
             ArrayIndexNumImpl<
-                /* Initial data type -- DB::ReverseIndex index */ UInt64,
-                /* Resulting data type -- same */ UInt64,
+                UInt64, /* Initial data type -- DB::ReverseIndex index */
+                UInt64, /* Resulting data type -- same */
                 ConcreteAction,
-                /* Resize col_res -- already resized */ false>::vector(
-                    /* data -- indices column */ col_array_nested_lc->getIndexes(),
+                false /* Invoking from LC spec */
+                    >::vector(
+                    col_array_nested_lc->getIndexes(), /* data -- indices column */
                     col_array->getOffsets(),
-                    /* target value */ *value_index,
+                    *value_index /* target value to search */ ,
                     col_res->getData(),
                     null_map_data,
                     null_map_item);
@@ -876,7 +910,7 @@ private:
 
         auto col_res = ResultColumnType::create();
 
-        const auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
+        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
         const IColumn * item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
@@ -1027,7 +1061,7 @@ private:
 
         auto col_res = ResultColumnType::create();
 
-        auto [null_map_data, null_map_item] = nullMapsBuilder(block, arguments);
+        auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         if (item_arg.onlyNull())
             ArrayIndexGenericNullImpl<ConcreteAction>::vector(

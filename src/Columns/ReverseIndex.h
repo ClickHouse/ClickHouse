@@ -329,7 +329,7 @@ public:
     /// If index is not built, builds it.
     UInt64 getInsertionPoint(const StringRef & data);
 
-    /// Returns the found index if the #index is built, otherwise, searches for it linearly.
+    /// Returns the found data's index in the dictionary if the #index is built, otherwise, returns a std::nullopt.
     std::optional<UInt64> getIndex(const StringRef & data) const;
 
     UInt64 lastInsertionPoint() const { return size() + base_index; }
