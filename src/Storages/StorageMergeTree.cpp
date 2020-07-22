@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
-    extern const int UNFINISHED;
 }
 
 namespace ActionLocks
