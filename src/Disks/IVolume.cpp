@@ -81,9 +81,9 @@ Disks MultiDiskReservation::getDisks() const
 {
     Disks res;
     res.reserve(reservations.size());
-    for (const auto &r: reservations)
+    for (const auto & reservation : reservations)
     {
-        res.push_back(r->getDisk());
+        res.push_back(reservation->getDisk());
     }
     return res;
 }

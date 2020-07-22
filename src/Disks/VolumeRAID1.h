@@ -8,7 +8,6 @@ namespace DB
 
 class VolumeRAID1 : public VolumeJBOD
 {
-    friend VolumePtr createVolumeFromReservation(const ReservationPtr & reservation, VolumePtr other_volume);
 public:
     VolumeRAID1(String name_, Disks disks_, UInt64 max_data_part_size_)
         : VolumeJBOD(name_, disks_, max_data_part_size_)
