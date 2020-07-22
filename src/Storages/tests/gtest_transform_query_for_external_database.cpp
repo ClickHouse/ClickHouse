@@ -56,7 +56,7 @@ static void check(const std::string & query, const std::string & expected, const
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000);
     SelectQueryInfo query_info;
-    query_info.syntax_analyzer_result = SyntaxAnalyzer(context).analyzeSelect(ast, columns);
+    query_info.syntax_analyzer_result = TreeRewriter(context).analyzeSelect(ast, columns);
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(query_info, columns, IdentifierQuotingStyle::DoubleQuotes, "test", "table", context);
 
