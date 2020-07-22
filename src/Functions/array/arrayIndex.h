@@ -747,14 +747,14 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <class ...Integral>
-    bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         return (executeIntegralExpanded<Integral, Integral...>(block, arguments, result) || ...);
     }
 
     /// Invoke executeIntegralImpl with such parameters: (A, other1), (A, other2), ...
     template <class A, class ...Other>
-    bool executeIntegralExpanded(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeIntegralExpanded(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         return (executeIntegralImpl<A, Other>(block, arguments, result) || ...);
     }
@@ -765,7 +765,7 @@ private:
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
     template <typename Initial, typename Resulting>
-    bool executeIntegralImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeIntegralImpl(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
@@ -820,7 +820,7 @@ private:
      *
      * Catches arguments of type LC(T), LC(Nullable(T)) and so on.
      */
-    bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
@@ -898,7 +898,7 @@ private:
         return true;
     }
 
-    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
