@@ -9,8 +9,7 @@
 namespace DB
 {
 struct Settings;
-struct SettingChange;
-using SettingsChanges = std::vector<SettingChange>;
+class SettingsChanges;
 class SettingsConstraints;
 class ASTSettingsProfileElement;
 class ASTSettingsProfileElements;

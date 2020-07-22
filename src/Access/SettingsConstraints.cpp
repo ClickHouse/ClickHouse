@@ -1,6 +1,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Core/Settings.h>
 #include <Common/FieldVisitors.h>
+#include <Common/SettingsChanges.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
