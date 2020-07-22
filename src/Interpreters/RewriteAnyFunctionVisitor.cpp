@@ -50,7 +50,7 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
     if (func.arguments->children.empty() || !func.arguments->children[0])
         return;
 
-    if (func.name != "any" || func.name != "anyLast")
+    if (func.name != "any" && func.name != "anyLast")
         return;
 
     auto & func_arguments = func.arguments->children;
