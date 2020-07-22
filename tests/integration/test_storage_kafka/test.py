@@ -2076,15 +2076,17 @@ def test_premature_flush_on_eof(kafka_cluster):
     ''')
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_kafka_unavailable(kafka_cluster):
     messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(20000)]
     kafka_produce('test_bad_reschedule', messages)
 
+    kafka_cluster.pause_container('kafka1')
+
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:11111',
+            SETTINGS kafka_broker_list = 'kafka1:19092',
                     kafka_topic_list = 'test_bad_reschedule',
                     kafka_group_name = 'test_bad_reschedule',
                     kafka_format = 'JSONEachRow',
@@ -2104,6 +2106,11 @@ def test_kafka_unavailable(kafka_cluster):
     ''')
 
     instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT count() FROM test.destination")
+
+    # enough to trigger issue
+    time.sleep(30)
+    kafka_cluster.unpause_container('kafka1')
 
     while int(instance.query("SELECT count() FROM test.destination")) < 20000:
         print("Waiting for consume")
