@@ -55,7 +55,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool
         else if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!is_view && !is_dictionary && (!optional_table_keyword && !s_table.ignore(pos, expected)))
+        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && !optional_table_keyword))
         {
             return false;
         }
