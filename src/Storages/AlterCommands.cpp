@@ -884,7 +884,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
-    NameSet modified_columns, renamed_columns;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -1041,26 +1040,24 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
-           for (size_t j = i + 1; j < size(); ++j)
-           {
-               auto next_command = (*this)[j];
-               if (next_command.type == AlterCommand::RENAME_COLUMN)
-               {
-                   if (next_command.column_name == command.rename_to)
-                       throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sense)",
-                                                            ErrorCodes::NOT_IMPLEMENTED};
-                   else if (next_command.column_name == command.column_name)
-                       throw Exception{"Cannot rename column '" + backQuote(command.column_name)
-                                           + "' to two different names in a single ALTER query",
-                                       ErrorCodes::BAD_ARGUMENTS};
-               }
-           }
+            for (size_t j = i + 1; j < size(); ++j)
+            {
+                auto next_command = (*this)[j];
+                if (next_command.type == AlterCommand::RENAME_COLUMN)
+                {
+                    if (next_command.column_name == command.rename_to)
+                        throw Exception{
+                            "Transitive renames in a single ALTER query are not allowed (don't make sense)", ErrorCodes::NOT_IMPLEMENTED};
+                    else if (next_command.column_name == command.column_name)
+                        throw Exception{
+                            "Cannot rename column '" + backQuote(command.column_name) + "' to two different names in a single ALTER query",
+                            ErrorCodes::BAD_ARGUMENTS};
+                }
+            }
 
             /// TODO Implement nested rename
             if (all_columns.hasNested(command.column_name))
-            {
                 throw Exception{"Cannot rename whole Nested struct", ErrorCodes::NOT_IMPLEMENTED};
-            }
 
             if (!all_columns.has(command.column_name))
             {
@@ -1075,10 +1072,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
 
-            if (modified_columns.count(column_name))
-                throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
-                                ErrorCodes::NOT_IMPLEMENTED};
-
             String from_nested_table_name = Nested::extractTableName(command.column_name);
             String to_nested_table_name = Nested::extractTableName(command.rename_to);
             bool from_nested = from_nested_table_name != command.column_name;
@@ -1092,8 +1085,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             else if (!from_nested && !to_nested)
             {
                 all_columns.rename(command.column_name, command.rename_to);
-                renamed_columns.emplace(command.column_name);
-                renamed_columns.emplace(command.rename_to);
             }
             else
             {

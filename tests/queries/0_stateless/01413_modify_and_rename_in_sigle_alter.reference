@@ -1,0 +1,6 @@
+modify_and_rename_column	Nullable(String)					
+rename_and_modify_column	Nullable(String)					
+modify_and_rename_column_new	String					
+rename_and_modify_column	Nullable(String)					
+modify_and_rename_column_new	String					
+rename_and_modify_column_new	String					
