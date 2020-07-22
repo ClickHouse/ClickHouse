@@ -46,7 +46,8 @@ struct StringRef
 };
 
 /// Holds {nullptr, 0};
-constexpr const StringRef EMPTY_STRING_REF{};
+/// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
+constexpr const inline StringRef EMPTY_STRING_REF{};
 
 using StringRefs = std::vector<StringRef>;
 
