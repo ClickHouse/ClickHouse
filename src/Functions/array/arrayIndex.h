@@ -1221,7 +1221,7 @@ public:
     }
 
 private:
-    void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (!(
             executeIntegral<
