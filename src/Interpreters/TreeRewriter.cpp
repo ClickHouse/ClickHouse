@@ -2,7 +2,7 @@
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
@@ -230,7 +230,7 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
 }
 
 
-void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
+void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
     if (ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList())
@@ -368,7 +368,7 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
 /// Special columns are non physical columns, for example ALIAS
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
+void TreeRewriterResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
@@ -388,7 +388,7 @@ void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_select)
+void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
@@ -553,9 +553,9 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, bool is_sele
 }
 
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
+TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
-    SyntaxAnalyzerResult && result,
+    TreeRewriterResult && result,
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
     const Names & required_result_columns,
@@ -625,10 +625,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
-    return std::make_shared<const SyntaxAnalyzerResult>(result);
+    return std::make_shared<const TreeRewriterResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
+TreeRewriterResultPtr TreeRewriter::analyze(
     ASTPtr & query,
     const NamesAndTypesList & source_columns,
     ConstStoragePtr storage,
@@ -640,7 +640,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     const auto & settings = context.getSettingsRef();
 
-    SyntaxAnalyzerResult result(source_columns, storage, metadata_snapshot, false);
+    TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
 
     normalize(query, result.aliases, settings);
 
@@ -664,10 +664,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         assertNoAggregates(query, "in wrong place");
 
     result.collectUsedColumns(query, false);
-    return std::make_shared<const SyntaxAnalyzerResult>(result);
+    return std::make_shared<const TreeRewriterResult>(result);
 }
 
-void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)
+void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)
 {
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);

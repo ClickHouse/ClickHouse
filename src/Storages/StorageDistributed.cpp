@@ -39,7 +39,7 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -185,7 +185,7 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
+    auto syntax_result = TreeRewriter(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
@@ -235,7 +235,7 @@ void replaceConstantExpressions(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot)
 {
-    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage, metadata_snapshot);
+    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, metadata_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
