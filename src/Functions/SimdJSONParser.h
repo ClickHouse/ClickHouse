@@ -25,6 +25,8 @@ struct SimdJSONParser
     class Array;
     class Object;
 
+    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
+    /// array or object.
     class Element
     {
     public:
@@ -52,6 +54,7 @@ struct SimdJSONParser
         simdjson::dom::element element;
     };
 
+    /// References an array in a JSON document.
     class Array
     {
     public:
@@ -59,11 +62,11 @@ struct SimdJSONParser
         {
         public:
             ALWAYS_INLINE Iterator(const simdjson::dom::array::iterator & it_) : it(it_) {}
-            ALWAYS_INLINE Element operator *() const { return *it; }
-            ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; }
-            ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
-            ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return !(left != right); }
+            ALWAYS_INLINE Element operator*() const { return *it; }
+            ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
+            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
+            ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
         private:
             simdjson::dom::array::iterator it;
         };
@@ -72,26 +75,27 @@ struct SimdJSONParser
         ALWAYS_INLINE Iterator begin() const { return array.begin(); }
         ALWAYS_INLINE Iterator end() const { return array.end(); }
         ALWAYS_INLINE size_t size() const { return array.size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { return array.at(index).first; }
+        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).first; }
 
     private:
         simdjson::dom::array array;
     };
 
+    using KeyValuePair = std::pair<std::string_view, Element>;
+
+    /// References an object in a JSON document.
     class Object
     {
     public:
-        using KeyValuePair = std::pair<std::string_view, Element>;
-
         class Iterator
         {
         public:
             ALWAYS_INLINE Iterator(const simdjson::dom::object::iterator & it_) : it(it_) {}
-            ALWAYS_INLINE KeyValuePair operator *() const { const auto & res = *it; return {res.key, res.value}; }
-            ALWAYS_INLINE Iterator & operator ++() { ++it; return *this; }
-            ALWAYS_INLINE Iterator operator ++(int) { auto res = *this; ++it; return res; }
-            ALWAYS_INLINE friend bool operator !=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
-            ALWAYS_INLINE friend bool operator ==(const Iterator & left, const Iterator & right) { return !(left != right); }
+            ALWAYS_INLINE KeyValuePair operator*() const { const auto & res = *it; return {res.key, res.value}; }
+            ALWAYS_INLINE Iterator & operator++() { ++it; return *this; }
+            ALWAYS_INLINE Iterator operator++(int) { auto res = *this; ++it; return res; }
+            ALWAYS_INLINE friend bool operator!=(const Iterator & left, const Iterator & right) { return left.it != right.it; }
+            ALWAYS_INLINE friend bool operator==(const Iterator & left, const Iterator & right) { return !(left != right); }
         private:
             simdjson::dom::object::iterator it;
         };
@@ -101,15 +105,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Iterator end() const { return object.end(); }
         ALWAYS_INLINE size_t size() const { return object.size(); }
 
-        KeyValuePair operator [](size_t index) const
-        {
-            Iterator it = begin();
-            while (index--)
-                ++it;
-            return *it;
-        }
-
-        ALWAYS_INLINE bool find(const std::string_view & key, Element & result) const
+        bool find(const std::string_view & key, Element & result) const
         {
             auto x = object.at_key(key);
             if (x.error())
@@ -119,17 +115,22 @@ struct SimdJSONParser
             return true;
         }
 
+        /// Optional: Provides access to an object's element by index.
+        KeyValuePair operator[](size_t index) const
+        {
+            assert(index < size());
+            auto it = object.begin();
+            while (index--)
+                ++it;
+            const auto & res = *it;
+            return {res.key, res.value};
+        }
+
     private:
         simdjson::dom::object object;
     };
 
-    void reserve(size_t max_size)
-    {
-        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
-            throw Exception{"Couldn't allocate " + std::to_string(max_size) + " bytes when parsing JSON",
-                            ErrorCodes::CANNOT_ALLOCATE_MEMORY};
-    }
-
+    /// Parses a JSON document, returns the reference to its root element if succeeded.
     bool parse(const std::string_view & json, Element & result)
     {
         auto document = parser.parse(json.data(), json.size());
@@ -138,6 +139,14 @@ struct SimdJSONParser
 
         result = document.first;
         return true;
+    }
+
+    /// Optional: Allocates memory to parse JSON documents faster.
+    void reserve(size_t max_size)
+    {
+        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
+            throw Exception{"Couldn't allocate " + std::to_string(max_size) + " bytes when parsing JSON",
+                            ErrorCodes::CANNOT_ALLOCATE_MEMORY};
     }
 
 private:
