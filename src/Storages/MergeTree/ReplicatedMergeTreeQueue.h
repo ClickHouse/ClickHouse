@@ -399,6 +399,12 @@ public:
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 
+
+    /// Return empty optional if mutation was killed. Otherwise return partially
+    /// filled mutation status with information about error (latest_fail*) and
+    /// is_done.
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationStatus(const String & znode_name) const;
+
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
     void removeCurrentPartsFromMutations();

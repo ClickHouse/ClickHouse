@@ -154,8 +154,10 @@ private:
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
-    /// Just checks versions of each active data part
-    bool isMutationDone(Int64 mutation_version) const;
+    /// Return empty optional if mutation was killed. Otherwise return partially
+    /// filled mutation status with information about error (latest_fail*) and
+    /// is_done.
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationStatus(Int64 mutation_version) const;
 
     void startBackgroundMovesIfNeeded() override;
 
