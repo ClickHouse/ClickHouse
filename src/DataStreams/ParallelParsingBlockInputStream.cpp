@@ -63,8 +63,10 @@ void ParallelParsingBlockInputStream::cancel(bool kill)
 
 void ParallelParsingBlockInputStream::scheduleParserThreadForUnitWithNumber(size_t ticket_number)
 {
-    pool.scheduleOrThrowOnError(std::bind(
-        &ParallelParsingBlockInputStream::parserThreadFunction, this, CurrentThread::getGroup(), ticket_number));
+    pool.scheduleOrThrowOnError([this, ticket_number]()
+    {
+        parserThreadFunction(CurrentThread::getGroup(), ticket_number);
+    });
 }
 
 void ParallelParsingBlockInputStream::finishAndWait()
