@@ -64,7 +64,8 @@ DiskPtr VolumeJBOD::getNextDisk()
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 {
-    /// This volume can not store files which size greater than max_data_part_size
+    /// This volume can not store data which size is greater than `max_data_part_size`
+    /// to ensure that parts of size greater than that go to another volume(s).
 
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};

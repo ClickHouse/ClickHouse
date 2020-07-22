@@ -67,7 +67,7 @@ protected:
 class MultiDiskReservation : public IReservation
 {
 public:
-    MultiDiskReservation(Reservations &reservations, UInt64 size);
+    MultiDiskReservation(Reservations & reservations, UInt64 size);
 
     UInt64 getSize() const override { return size; }
 
