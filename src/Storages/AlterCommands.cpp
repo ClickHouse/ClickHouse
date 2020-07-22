@@ -11,7 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -853,7 +853,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                         if (default_expression)
                         {
                             ASTPtr query = default_expression->clone();
-                            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns.getAll());
+                            auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
                             const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                             const auto required_columns = actions->getRequiredColumns();
 
