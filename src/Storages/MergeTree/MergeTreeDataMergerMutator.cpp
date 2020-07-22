@@ -30,12 +30,14 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <cmath>
-#include <numeric>
-#include <iomanip>
 
+#include <cmath>
+#include <ctime>
+#include <iomanip>
+#include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
+
 
 namespace ProfileEvents
 {
@@ -219,7 +221,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         return false;
     }
 
-    time_t current_time = time(nullptr);
+    time_t current_time = std::time(nullptr);
+    time_t next_ttl_merge_time = last_merge_with_ttl != 0 ? last_merge_with_ttl + data_settings->merge_with_ttl_timeout : current_time;
 
     IMergeSelector::Partitions partitions;
 
@@ -262,7 +265,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
         time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
 
-        if (ttl && ttl <= current_time)
+        if (ttl && ttl < next_ttl_merge_time)
         {
             if (has_part_with_expired_ttl)
             {
@@ -294,15 +297,14 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (aggressive)
         merge_settings.base = 1;
 
-    bool can_merge_with_ttl =
-        (current_time - last_merge_with_ttl > data_settings->merge_with_ttl_timeout);
+    bool can_merge_with_ttl = next_ttl_merge_time >= current_time;
 
     /// NOTE Could allow selection of different merge strategy.
     if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
     {
-        merge_selector = std::make_unique<TTLMergeSelector>(current_time, data_settings->ttl_only_drop_parts);
+        merge_selector = std::make_unique<TTLMergeSelector>(next_ttl_merge_time, data_settings->ttl_only_drop_parts);
         if (!has_more_parts_with_expired_ttl)
-            last_merge_with_ttl = current_time;
+            last_merge_with_ttl = next_ttl_merge_time;
     }
     else
         merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
