@@ -1,6 +1,8 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <IO/ReadBuffer.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -27,7 +29,7 @@ ParallelParsingBlockInputStream::ParallelParsingBlockInputStream(const Params & 
     processing_units.resize(params.max_threads + 2);
 
     segmentator_thread = ThreadFromGlobalPool(
-        &ParallelParsingBlockInputStream::segmentatorThreadFunction, this);
+        &ParallelParsingBlockInputStream::segmentatorThreadFunction, this, CurrentThread::getGroup());
 }
 
 ParallelParsingBlockInputStream::~ParallelParsingBlockInputStream()
@@ -62,7 +64,7 @@ void ParallelParsingBlockInputStream::cancel(bool kill)
 void ParallelParsingBlockInputStream::scheduleParserThreadForUnitWithNumber(size_t ticket_number)
 {
     pool.scheduleOrThrowOnError(std::bind(
-        &ParallelParsingBlockInputStream::parserThreadFunction, this, ticket_number));
+        &ParallelParsingBlockInputStream::parserThreadFunction, this, CurrentThread::getGroup(), ticket_number));
 }
 
 void ParallelParsingBlockInputStream::finishAndWait()
@@ -88,8 +90,15 @@ void ParallelParsingBlockInputStream::finishAndWait()
     }
 }
 
-void ParallelParsingBlockInputStream::segmentatorThreadFunction()
+void ParallelParsingBlockInputStream::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
+    SCOPE_EXIT(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
+    if (thread_group)
+        CurrentThread::attachTo(thread_group);
+
     setThreadName("Segmentator");
 
     try
@@ -135,8 +144,15 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
     }
 }
 
-void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_ticket_number)
+void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
+    SCOPE_EXIT(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
+    if (thread_group)
+        CurrentThread::attachTo(thread_group);
+
     setThreadName("ChunkParser");
 
     try
