@@ -72,6 +72,7 @@ struct StorageID
 
     void assertNotEmpty() const
     {
+        // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
         if (empty())
             throw Exception("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
         if (table_name.empty() && !database_name.empty())
