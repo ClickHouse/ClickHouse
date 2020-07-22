@@ -367,15 +367,28 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         affected_materialized.emplace(mat_column);
                 }
 
-                /// Just to be sure, that we don't change type
-                /// after update expression execution.
+                /// When doing UPDATE column = expression WHERE condition
+                /// we will replace column to the result of the following expression:
+                ///
+                /// CAST(if(condition, CAST(expression, type), column), type)
+                ///
+                /// Inner CAST is needed to make 'if' work when branches have no common type,
+                /// example: type is UInt64, UPDATE x = -1 or UPDATE x = x - 1.
+                ///
+                /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
+
+                auto type_literal = std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName());
+
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
                         command.predicate->clone(),
-                        update_expr->clone(),
+                        makeASTFunction("CAST",
+                            update_expr->clone(),
+                            type_literal),
                         std::make_shared<ASTIdentifier>(column)),
-                    std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName()));
+                    type_literal);
+
                 stages.back().column_to_updated.emplace(column, updated_column);
             }
 
@@ -465,7 +478,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
-    /// We cares about affected indices because we also need to rewrite them
+    /// We care about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about colums, that are needed for calculation of TTL expressions.
     if (!dependencies.empty())
