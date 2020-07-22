@@ -83,18 +83,10 @@ private:
     /// compares `lhs against `rhs`, third argument unused
     static bool compare(const Initial & lhs, const Result & rhs, size_t) { return lhs == rhs; }
 
-    static Initial extract(const PaddedPODArray<Initial> & a, size_t i) { return a[i]; }
+    template <class U> static bool compare(size_t lhs, const U & rhs, size_t) { return lhs == rhs; }
 
-    static Initial extract(const IColumn & a, size_t i)
-    {
-        if constexpr (std::is_same_v<Initial, Float32>)
-            return a.getFloat32(i);
-        if constexpr (std::is_same_v<Initial, Float64>)
-            return a.getFloat64(i);
-        if constexpr (is_signed_v<Initial>)
-            return a.getInt(i);
-        return a.getUInt(i);
-    }
+    static Initial extract(const PaddedPODArray<Initial> & a, size_t i) { return a[i]; }
+    static size_t extract(const ColumnLowCardinality & a, size_t i) { return a.getIndexAt(i); }
 
 #pragma GCC diagnostic pop
 
@@ -127,9 +119,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                Initial data_value = extract(data, current_offset + j);
-
-                if (!compare(data_value, target_value, i))
+                if (!compare(extract(data, current_offset + j), target_value, i))
                     continue;
 
                 if (!ConcreteAction::apply(j, current))
@@ -833,9 +823,6 @@ private:
          * 1. LC(T).
          * 2. LC(Nullable(T)) -- somewhat special as Nullable's getDataAt is slightly slower
          * (due to nested column invocation).
-         *
-         * The array most outer nested type must be LC(U).
-         * We do not care for LC(Nullable(U)) as it may be processed as V = Nullable(U) for LC(V).
          */
         const ColumnLowCardinality * col_array_nested_lc =
             checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
@@ -881,12 +868,12 @@ private:
                 continue;
 
             ArrayIndexNumImpl<
-                UInt64, /* Initial data type -- DB::ReverseIndex index */
-                UInt64, /* Resulting data type -- same */
+                UInt64, /* Ignored */
+                UInt64, /*Ignored */
                 ConcreteAction,
                 false /* Invoking from LC spec */
                     >::vector(
-                    col_array_nested_lc->getIndexes(), /* data -- indices column */
+                    *col_array_nested_lc, /* pass the column itself, the index will be extracted in the impl */
                     col_array->getOffsets(),
                     *value_index, /* target value to search */
                     col_res->getData(),
