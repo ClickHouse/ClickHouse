@@ -1472,24 +1472,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {
-            if (MergeTreeSettings::findIndex(changed_setting.name) == MergeTreeSettings::npos)
-                throw Exception{"Storage '" + getName() + "' doesn't have setting '" + changed_setting.name + "'",
+            const auto & setting_name = changed_setting.name;
+            const auto & new_value = changed_setting.value;
+            if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
+                throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'",
                                 ErrorCodes::UNKNOWN_SETTING};
 
-            auto comparator = [&changed_setting](const auto & change) { return change.name == changed_setting.name; };
+            const Field * current_value = current_changes.tryGet(setting_name);
 
-            auto current_setting_it
-                = std::find_if(current_changes.begin(), current_changes.end(), comparator);
-
-            if ((current_setting_it == current_changes.end() || *current_setting_it != changed_setting)
-                && MergeTreeSettings::isReadonlySetting(changed_setting.name))
+            if ((!current_value || *current_value != new_value)
+                && MergeTreeSettings::isReadonlySetting(setting_name))
             {
-                throw Exception{"Setting '" + changed_setting.name + "' is readonly for storage '" + getName() + "'",
+                throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'",
                                  ErrorCodes::READONLY_SETTING};
             }
 
-            if (current_setting_it == current_changes.end()
-                && MergeTreeSettings::isPartFormatSetting(changed_setting.name))
+            if (!current_value && MergeTreeSettings::isPartFormatSetting(setting_name))
             {
                 MergeTreeSettings copy = *getSettings();
                 copy.applyChange(changed_setting);
@@ -1498,8 +1496,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     throw Exception("Can't change settings. Reason: " + reason, ErrorCodes::NOT_IMPLEMENTED);
             }
 
-            if (changed_setting.name == "storage_policy")
-                checkStoragePolicy(global_context.getStoragePolicy(changed_setting.value.safeGet<String>()));
+            if (setting_name == "storage_policy")
+                checkStoragePolicy(global_context.getStoragePolicy(new_value.safeGet<String>()));
         }
     }
 

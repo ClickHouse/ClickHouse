@@ -14,7 +14,7 @@ namespace DB
 
 class Field;
 struct SettingChange;
-using SettingsChanges = std::vector<SettingChange>;
+class SettingsChanges;
 class ReadBuffer;
 class WriteBuffer;
 enum class SettingsBinaryFormat;

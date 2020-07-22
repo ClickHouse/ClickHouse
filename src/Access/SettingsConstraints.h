@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Common/SettingsChanges.h>
 #include <common/StringRef.h>
 #include <unordered_map>
 
@@ -18,6 +17,8 @@ namespace Util
 namespace DB
 {
 struct Settings;
+struct SettingChange;
+class SettingsChanges;
 
 /** Checks if specified changes of settings are allowed or not.
   * If the changes are not allowed (i.e. violates some constraints) this class throws an exception.

@@ -37,8 +37,6 @@ using StorageActionBlockType = size_t;
 class ASTCreateQuery;
 
 struct Settings;
-struct SettingChange;
-using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;

@@ -2,7 +2,6 @@
 
 #include <Core/Defines.h>
 #include <Core/SettingsCollection.h>
-#include <Common/SettingsChanges.h>
 
 
 namespace Poco
