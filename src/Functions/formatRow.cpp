@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FORMAT;
 }
 
@@ -38,31 +37,6 @@ public:
     {
         if (!FormatFactory::instance().getAllFormats().count(format_name))
             throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
-
-        static constexpr auto supported_formats = {"CSV", "TSV", "JSONEachRow", "TabSeparated", "TabSeparatedRaw", "TSKV"};
-        bool valid_format = false;
-        for (const auto & format : supported_formats)
-        {
-            if (format_name == format)
-            {
-                valid_format = true;
-                break;
-            }
-        }
-        if constexpr (!no_newline)
-        {
-            static constexpr auto supported_formats_no_newline = {"Values", "RowBinray"};
-            for (const auto & format : supported_formats_no_newline)
-            {
-                if (format_name == format)
-                {
-                    valid_format = true;
-                    break;
-                }
-            }
-        }
-        if (!valid_format)
-            throw Exception("Function " + name + " doesn't support format " + format_name, ErrorCodes::NOT_IMPLEMENTED);
     }
 
     String getName() const override { return name; }
@@ -71,7 +45,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & vec = col_str->getChars();
@@ -85,14 +59,16 @@ public:
         auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_block, context, [&](const Columns &, size_t row)
         {
             if constexpr (no_newline)
-                *buffer.position() = '\0'; // replace '\n' with '\0'
+            {
+                // replace '\n' with '\0'
+                if (buffer.available() && *buffer.position() == '\n')
+                    *buffer.position() = '\0';
+            }
             else
                 writeChar('\0', buffer);
             offsets[row] = buffer.count();
         });
-        out->setAutoFlush();
         out->write(arg_block);
-        out->flush();
         block.getByPosition(result).column = std::move(col_str);
     }
 

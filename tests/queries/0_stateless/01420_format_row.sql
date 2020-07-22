@@ -5,6 +5,3 @@ select formatRowNoNewline('JSONEachRow', *) from numbers(3);
 
 -- unknown format
 select formatRow('aaa', *) from numbers(3); -- { serverError 73 }
-
--- unsupported format
-select formatRowNoNewline('Values', *) from numbers(3); -- { serverError 48 }
