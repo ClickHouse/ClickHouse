@@ -71,10 +71,13 @@ void AnyInputMatcher::visit(ASTPtr & current_ast, Data data)
         && function_argument && function_argument->as<ASTFunction>())
     {
         auto name = function_node->name;
+        auto alias = function_node->alias;
+
         ///cut any or anyLast
         if (!function_argument->as<ASTFunction>()->arguments->children.empty())
         {
             current_ast = function_argument->clone();
+            current_ast->setAlias(alias);
             for (size_t i = 0; i < current_ast->as<ASTFunction>()->arguments->children.size(); ++i)
                 changeAllIdentifiers(current_ast, i, name);
         }
