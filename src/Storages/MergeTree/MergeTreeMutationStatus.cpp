@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+
 #include <Common/Exception.h>
 #include <boost/algorithm/string/join.hpp>
 
