@@ -56,12 +56,12 @@ public:
 
     /**
      * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
-     * StringRef{nullptr, 0} indicating that data is not present.
+     * EMPTY_STRING_REF indicating that data is not present.
      */
     StringRef getDataAt(size_t n) const override
     {
         if (isNullAt(n))
-            return StringRef{static_cast<char *>(nullptr), 0};
+            return EMPTY_STRING_REF;
 
         return getNestedColumn().getDataAt(n);
     }

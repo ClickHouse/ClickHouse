@@ -20,17 +20,22 @@
 #endif
 
 
-/// The thing to avoid creating strings to find substrings in the hash table.
+/**
+ * The std::string_view-like container to avoid creating strings to find substrings in the hash table.
+ */
 struct StringRef
 {
     const char * data = nullptr;
     size_t size = 0;
 
+    /// Non-constexpr due to reinterpret_cast.
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    constexpr StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
+    StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
+
+    constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 
     StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const std::string_view & s) : data(s.data()), size(s.size()) {}
+    constexpr StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
     constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
     constexpr StringRef() = default;
 
@@ -39,6 +44,9 @@ struct StringRef
     explicit operator std::string() const { return toString(); }
     constexpr explicit operator std::string_view() const { return {data, size}; }
 };
+
+/// Holds {nullptr, 0};
+constexpr const StringRef EMPTY_STRING_REF{};
 
 using StringRefs = std::vector<StringRef>;
 
