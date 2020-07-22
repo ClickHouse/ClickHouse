@@ -361,8 +361,7 @@ void StorageDistributed::createStorage()
         auto policy = global_context->getStoragePolicy(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
-        auto tmp_vol = policy->getVolume(0);
-        volume = std::make_shared<SingleDiskVolume>(tmp_vol->getName(), tmp_vol->getDisk());
+        volume = policy->getVolume(0);
     }
 }
 
