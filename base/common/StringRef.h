@@ -35,8 +35,8 @@ struct StringRef
     constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 
     StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
+    constexpr explicit StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
+    constexpr explicit StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
     constexpr StringRef() = default;
 
     std::string toString() const { return std::string(data, size); }
