@@ -302,7 +302,7 @@ public:
             const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
+        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,

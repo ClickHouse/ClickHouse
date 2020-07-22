@@ -292,7 +292,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (!executeType<DataTypeDate>(block, arguments, result)
             && !executeType<DataTypeDateTime>(block, arguments, result)
@@ -303,7 +303,7 @@ public:
     }
 
     template <typename DataType>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(block.getByPosition(arguments[0]).column.get());
         if (!times)

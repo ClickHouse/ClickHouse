@@ -499,7 +499,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 
 template <typename Impl, typename Name>
 void FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count)
+    Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) const
 {
     ColumnRawPtrs args_in;
     for (const auto arg_index : arguments)
@@ -559,7 +559,7 @@ bool functionUnaryExecuteType(Block & block, const ColumnNumbers & arguments, si
 }
 
 template <template <typename> class Impl, typename Name>
-void FunctionUnaryLogical<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionUnaryLogical<Impl, Name>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     if (!(functionUnaryExecuteType<Impl, UInt8>(block, arguments, result)
         || functionUnaryExecuteType<Impl, UInt16>(block, arguments, result)
