@@ -354,8 +354,12 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
     auto check = [&](const auto & value)
     {
         auto it = name_to_value_map.find(value.first);
+        /// If we don't have this name, than we have to be sure,
+        /// that this value exists in enum
         if (it == name_to_value_map.end())
-            return false;
+            return value_to_name_map.count(value.second) > 0;
+
+        /// If we have this name, than it should have the same value
         return it->value.second == value.second;
     };
 

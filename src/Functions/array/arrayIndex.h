@@ -975,7 +975,7 @@ private:
         return true;
     }
 
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
@@ -1052,7 +1052,7 @@ private:
         return true;
     }
 
-    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
@@ -1136,7 +1136,7 @@ public:
       * (they are vectors of Fields, which may represent the NULL value),
       * they do not require any preprocessing.
       */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         ColumnPtr& ptr = block.getByPosition(arguments[0]).column;
 

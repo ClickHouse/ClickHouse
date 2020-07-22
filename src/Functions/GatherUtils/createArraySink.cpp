@@ -41,7 +41,7 @@ struct ArraySinkCreator<>
 
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size)
 {
-    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbers>::Type;
+    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbersAndUInt128>::Type;
     if (auto * column_nullable = typeid_cast<ColumnNullable *>(&col.getData()))
     {
         auto column = ColumnArray::create(column_nullable->getNestedColumnPtr()->assumeMutable(), col.getOffsetsPtr()->assumeMutable());
