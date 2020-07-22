@@ -1,8 +1,6 @@
 set(KRB5_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/krb5/src)
 
-add_library(krb5)
-
-target_sources(krb5 PRIVATE
+set(ALL_SRCS
     ${KRB5_SOURCE_DIR}/util/et/et_name.c
     ${KRB5_SOURCE_DIR}/util/et/com_err.c
     ${KRB5_SOURCE_DIR}/util/et/error_message.c
@@ -68,6 +66,7 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue/g_saslname.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue/g_process_context.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue/g_encapsulate_token.c
+    ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue/g_negoex.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/delete_sec_context.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/lucid_context.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/duplicate_name.c
@@ -132,14 +131,20 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_seqstate.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_errmap.c
     ${KRB5_SOURCE_DIR}/lib/gssapi/generic/rel_buffer.c
+
     ${KRB5_SOURCE_DIR}/lib/gssapi/spnego/spnego_mech.c
+    ${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_util.c
+    ${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_ctx.c
+
+    # ${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_trace.c
+
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/prng.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_dk_cmac.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/krb/crc32.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_cbc.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/krb/crc32.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_cbc.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/enctype_util.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_etm.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/krb/combine_keys.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/krb/combine_keys.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/default_state.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/decrypt_iov.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_dk_cmac.c
@@ -147,10 +152,10 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/old_api_glue.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/cksumtypes.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_cmac.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_old.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_old.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/decrypt.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_dk.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_des.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_des.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_unkeyed.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/crypto_length.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/block_size.c
@@ -160,7 +165,7 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/derive.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/random_to_key.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum_iov.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_confounder.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_confounder.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/checksum_length.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_dk_hmac.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/make_checksum.c
@@ -197,7 +202,7 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_rc4.c
     ${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_pbkdf2.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
@@ -206,7 +211,7 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/init.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/stubs.c
-    ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_crc32.c
+    # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_crc32.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_evp.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/des/des_keys.c
     ${KRB5_SOURCE_DIR}/util/support/fake-addrinfo.c
@@ -228,6 +233,7 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/util/support/gmt_mktime.c
     ${KRB5_SOURCE_DIR}/util/support/zap.c
     ${KRB5_SOURCE_DIR}/util/support/bcmp.c
+    ${KRB5_SOURCE_DIR}/util/support/secure_getenv.c
     ${KRB5_SOURCE_DIR}/util/profile/prof_tree.c
     ${KRB5_SOURCE_DIR}/util/profile/prof_file.c
     ${KRB5_SOURCE_DIR}/util/profile/prof_parse.c
@@ -347,6 +353,9 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/krb5/krb/pac.c
     ${KRB5_SOURCE_DIR}/lib/krb5/krb/valid_times.c
     ${KRB5_SOURCE_DIR}/lib/krb5/krb/copy_data.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/krb/padata.c
+
+
     ${KRB5_SOURCE_DIR}/lib/krb5/os/hostrealm.c
     ${KRB5_SOURCE_DIR}/lib/krb5/os/thread_safe.c
     ${KRB5_SOURCE_DIR}/lib/krb5/os/krbfileio.c
@@ -394,7 +403,14 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/krb5/os/lock_file.c
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccselect.c
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccselect_realm.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ser_cc.c
+    # ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ser_cc.c
+
+    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cc.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cccol.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cccol.py
+    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cccursor.c
+
+
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccdefops.c
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/cc_retr.c
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccselect_k5identity.c
@@ -418,37 +434,165 @@ target_sources(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/krb5/keytab/ktremove.c
     ${KRB5_SOURCE_DIR}/lib/krb5/keytab/read_servi.c
     ${KRB5_SOURCE_DIR}/lib/krb5/keytab/kt_file.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/keytab/kt_srvtab.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/keytab/read_servi.c
     ${KRB5_SOURCE_DIR}/lib/krb5/keytab/ktfr_entry.c
+
+
+
     ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/k5e1_err.c
     ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kdb5_err.c
     ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/asn1_err.c
     ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb5_err.c
     ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb524_err.c
     ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kv5m_err.c
+
+
+
     ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_base.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_conv.c
     ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_dfl.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rcdef.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/ser_rc.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_file2.c
     ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_none.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rcfns.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_io.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/rcache/memrcache.c
+    ${KRB5_SOURCE_DIR}/lib/krb5/unicode/ucdata/ucdata.c
     ${KRB5_SOURCE_DIR}/lib/krb5/unicode/ucstr.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/unicode/ucdata.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/unicode/urestubs.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/unicode/ure.c
     ${KRB5_SOURCE_DIR}/lib/krb5/asn.1/asn1_encode.c
     ${KRB5_SOURCE_DIR}/lib/krb5/asn.1/asn1_k_encode.c
     ${KRB5_SOURCE_DIR}/lib/krb5/asn.1/ldap_key_seq.c
     ${KRB5_SOURCE_DIR}/lib/krb5/krb5_libinit.c
 )
 
+add_custom_command(
+    OUTPUT ${KRB5_SOURCE_DIR}/util/et/compile_et
+    COMMAND /bin/sh
+    ./config_script
+    ./compile_et.sh
+    "/usr/local/share/et"
+    gawk
+    sed
+    >
+    compile_et
+    DEPENDS ${KRB5_SOURCE_DIR}/util/et/compile_et.sh ${KRB5_SOURCE_DIR}/util/et/config_script
+    WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/util/et"
+)
+
+add_custom_target(
+    CREATE_COMPILE_ET ALL
+    DEPENDS ${KRB5_SOURCE_DIR}/util/et/compile_et
+    COMMENT "creating compile_et"
+    VERBATIM
+)
+
+file(GLOB_RECURSE ET_FILES
+    # LIST_DIRECTORIES false
+    # RELATIVE ${KRB5_SOURCE_DIR}
+    # CONFIGURE_DEPENDS
+    "${KRB5_SOURCE_DIR}/*.et"
+)
+
+function(preprocess_et out_var)
+  set(result)
+  foreach(in_f ${ARGN})
+    string(REPLACE
+        .et
+        .c
+        F_C
+        ${in_f}
+    )
+
+    get_filename_component(ET_PATH ${in_f} DIRECTORY)
+    # add_dependencies(
+    #     ${F_C}
+    #     ${KRB5_SOURCE_DIR}/util/et/compile_et
+    # )
+
+    add_custom_command(OUTPUT ${F_C}
+      COMMAND perl ${KRB5_SOURCE_DIR}/util/et/compile_et -d "${KRB5_SOURCE_DIR}/util/et" ${in_f}
+      DEPENDS ${in_f} ${KRB5_SOURCE_DIR}/util/et/compile_et
+      WORKING_DIRECTORY ${ET_PATH}
+      COMMENT "Creating preprocessed file ${F_C}"
+      VERBATIM
+      )
+    list(APPEND result ${F_C})
+  endforeach()
+  set(${out_var} "${result}" PARENT_SCOPE)
+endfunction()
+
+# add_dependencies(
+#     ${ET_FILES}
+#     compile_et
+#     )
+
+
+add_custom_command(
+    OUTPUT ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h
+    COMMAND perl
+    -I../../../util
+    ../../../util/gen-map.pl
+    -oerror_map.h
+    NAME=gsserrmap
+    KEY=OM_uint32
+    VALUE=char*
+    COMPARE=compare_OM_uint32
+    FREEVALUE=free_string
+    WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/krb5"
+)
+
+
+add_custom_target(
+    ERROR_MAP_H ALL
+    DEPENDS ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h
+    COMMENT "generating error_map.h"
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT ${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h
+    COMMAND perl -w -I../../../util  ../../../util/gen.pl bimap errmap.h NAME=mecherrmap LEFT=OM_uint32 RIGHT=struct\ mecherror LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp
+    WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/generic"
+)
+
+
+add_custom_target(
+    ERRMAP_H ALL
+    DEPENDS ${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h
+    COMMENT "generating errmap.h"
+    VERBATIM
+)
+
+
+
+
+
+add_library(krb5)
+
+add_dependencies(
+    krb5
+    ERRMAP_H
+    ERROR_MAP_H
+    )
+
+preprocess_et(processed_et_files ${ET_FILES})
+
+target_sources(krb5 PRIVATE
+    ${ALL_SRCS}
+    )
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi)
+
+file(GLOB GSSAPI_GENERIC_HEADERS
+  ${KRB5_SOURCE_DIR}/lib/gssapi/generic/*.h
+)
+file(COPY ${GSSAPI_GENERIC_HEADERS}
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/
+    )
+
 target_include_directories(krb5 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  #for autoconf.h
+    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${KRB5_SOURCE_DIR}
     ${KRB5_SOURCE_DIR}/include
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue
+    ${KRB5_SOURCE_DIR}/lib/
     ${KRB5_SOURCE_DIR}/lib/gssapi
     ${KRB5_SOURCE_DIR}/lib/gssapi/generic
     ${KRB5_SOURCE_DIR}/lib/gssapi/krb5

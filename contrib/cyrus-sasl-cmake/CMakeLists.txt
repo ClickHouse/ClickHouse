@@ -4,7 +4,7 @@ add_library(${CYRUS_SASL_LIBRARY})
 
 target_sources(${CYRUS_SASL_LIBRARY} PRIVATE
     ${CYRUS_SASL_SOURCE_DIR}/plugins/gssapi.c
-    ${CYRUS_SASL_SOURCE_DIR}/plugins/gssapiv2_init.c
+    # ${CYRUS_SASL_SOURCE_DIR}/plugins/gssapiv2_init.c
     ${CYRUS_SASL_SOURCE_DIR}/common/plugin_common.c
     ${CYRUS_SASL_SOURCE_DIR}/lib/common.c
     ${CYRUS_SASL_SOURCE_DIR}/lib/canonusr.c
