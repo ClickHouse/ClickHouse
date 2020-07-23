@@ -47,7 +47,7 @@ public:
     }
 
     template <typename ColumnTypeEncoded>
-    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column)
+    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column) const
     {
         const auto * encoded = checkAndGetColumn<ColumnTypeEncoded>(encoded_column);
         if (!encoded)
@@ -75,7 +75,7 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
         ColumnPtr & res_column = block.getByPosition(result).column;

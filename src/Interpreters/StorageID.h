@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -63,10 +64,15 @@ struct StorageID
 
     void assertNotEmpty() const
     {
+        // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
         if (empty())
-            throw Exception("Both table name and UUID are empty", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Table name cannot be empty. Please specify a valid table name or UUID", ErrorCodes::BAD_ARGUMENTS);
+
+        // This can also be triggered by user input, but we haven't decided what
+        // to do about it: create table "_"(a int) engine Log;
         if (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID())
             throw Exception("Table name was replaced with placeholder, but UUID is Nil", ErrorCodes::LOGICAL_ERROR);
+
         if (table_name.empty() && !database_name.empty())
             throw Exception("Table name is empty, but database name is not", ErrorCodes::LOGICAL_ERROR);
     }

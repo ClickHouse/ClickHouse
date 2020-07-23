@@ -542,7 +542,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -603,7 +603,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -644,7 +644,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
         WhichDataType which(from_type);
@@ -684,7 +684,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
@@ -710,7 +710,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType, bool first>
-    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
@@ -765,7 +765,7 @@ private:
     }
 
     template <bool first>
-    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
@@ -779,7 +779,7 @@ private:
     }
 
     template <bool first>
-    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
@@ -842,7 +842,7 @@ private:
     }
 
     template <bool first>
-    void executeArray(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeArray(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
@@ -892,7 +892,7 @@ private:
     }
 
     template <bool first>
-    void executeAny(const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to)
+    void executeAny(const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
 
@@ -917,7 +917,7 @@ private:
             executeGeneric<first>(icolumn, vec_to);
     }
 
-    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
+    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -965,7 +965,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -1010,7 +1010,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
@@ -1133,7 +1133,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 

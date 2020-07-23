@@ -287,7 +287,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)

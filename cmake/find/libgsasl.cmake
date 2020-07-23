@@ -1,3 +1,7 @@
+option(ENABLE_GSASL_LIBRARY "Enable gsasl library" ${ENABLE_LIBRARIES})
+
+if (ENABLE_GSASL_LIBRARY)
+
 option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src/gsasl.h")
@@ -22,6 +26,8 @@ endif ()
 
 if(LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
     set (USE_LIBGSASL 1)
+endif()
+
 endif()
 
 message (STATUS "Using libgsasl=${USE_LIBGSASL}: ${LIBGSASL_INCLUDE_DIR} : ${LIBGSASL_LIBRARY}")
