@@ -1,7 +1,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -118,7 +118,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return;
 
     /// Let's analyze and calculate the expression.
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_ast, block.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false);
 

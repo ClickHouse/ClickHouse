@@ -52,7 +52,7 @@ void sliceFromRightConstantOffsetBounded(IArraySource & src, IArraySink & sink, 
 void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column);
 void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const IColumn & offset_column, const IColumn & length_column);
 
-void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType & search_type, ColumnUInt8 & result);
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result);
 
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 
