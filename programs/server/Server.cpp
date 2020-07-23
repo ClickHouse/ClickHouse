@@ -551,6 +551,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
+    global_context->setAllowInsecurePrewhere(config().getBool("allow_insecure_prewhere", false));
+
+
     LOG_INFO(log, "Loading metadata from " + path);
 
     try
