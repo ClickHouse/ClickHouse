@@ -167,6 +167,16 @@ class Cluster(object):
         self.docker_compose += f" --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
 
+    def shell(self, node):
+        """Returns unique shell terminal to be used.
+        """
+        if node is None:
+            return Shell()
+
+        return Shell(command=[
+                "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} bash --noediting"
+            ], name=node)
+
     def bash(self, node, timeout=60):
         """Returns thread-local bash terminal
         to a specific node.

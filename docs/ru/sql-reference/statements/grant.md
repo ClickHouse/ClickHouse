@@ -293,7 +293,7 @@ Examples of how this hierarchy is treated:
 -   The `MODIFY SETTING` privilege allows modifying table engine settings. It doesn’t affect settings or server configuration parameters.
 -   The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 -   The `DETACH` operation needs the [DROP](#grant-drop) privilege.
--   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
+-   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation-statement) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
 ### CREATE {#grant-create}
 
@@ -312,7 +312,7 @@ Allows executing [CREATE](../../sql-reference/statements/create.md) and [ATTACH]
 
 ### DROP {#grant-drop}
 
-Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
+Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach-statement) queries according to the following hierarchy of privileges:
 
 -   `DROP`. Level:
     -   `DROP DATABASE`. Level: `DATABASE`
