@@ -45,7 +45,7 @@ void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
         visit(*func, ast, data);
 }
 
-void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
+void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     if (func.arguments->children.empty() || !func.arguments->children[0])
         return;
@@ -59,6 +59,14 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
     if (!first_arg_func || first_arg_func->arguments->children.empty())
         return;
 
+    /// We have rewritten this function. Just unwrap its argument.
+    if (data.rewritten.count(ast.get()))
+    {
+        func_arguments[0]->setAlias(func.alias);
+        ast = func_arguments[0];
+        return;
+    }
+
     std::vector<ASTPtr *> identifiers;
     if (!extractIdentifiers(func, identifiers))
         return;
@@ -71,10 +79,11 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
         (*ast_to_change)->as<ASTFunction>()->arguments->children.emplace_back(identifier_ast);
     }
 
+    data.rewritten.insert(ast.get());
+
     /// Unwrap function: any(f(any(x), any(y), g(any(z)))) -> f(any(x), any(y), g(any(z)))
-    String alias = func.alias;
+    func_arguments[0]->setAlias(func.alias);
     ast = func_arguments[0];
-    ast->setAlias(alias);
 }
 
 bool RewriteAnyFunctionMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
