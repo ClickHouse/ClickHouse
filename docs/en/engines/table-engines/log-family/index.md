@@ -26,7 +26,7 @@ Engines:
 
     During `INSERT` queries, the table is locked, and other queries for reading and writing data both wait for the table to unlock. If there are no data writing queries, any number of data reading queries can be performed concurrently.
 
--   Do not support [mutation](../../../sql-reference/statements/alter.md#alter-mutations) operations.
+-   Do not support [mutations](../../../sql-reference/statements/alter/index.md#alter-mutations).
 
 -   Do not support indexes.
 

@@ -88,12 +88,20 @@
         "name": "yandex/clickhouse-testflows-runner",
         "dependent": []
     },
+    "docker/test/fasttest": {
+        "name": "yandex/clickhouse-fasttest",
+        "dependent": []
+    },
     "docker/test/integration/s3_proxy": {
         "name": "yandex/clickhouse-s3-proxy",
         "dependent": []
     },
     "docker/test/integration/resolver": {
         "name": "yandex/clickhouse-python-bottle",
+        "dependent": []
+    },
+    "docker/test/integration/helper_container": {
+        "name": "yandex/clickhouse-integration-helper",
         "dependent": []
     }
 }
