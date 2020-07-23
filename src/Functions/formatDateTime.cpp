@@ -294,51 +294,51 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-            if constexpr (support_integer)
-            {
-                if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                    throw Exception(
-                        "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                            + ", should be 1, 2 or 3",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-                if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                    throw Exception(
-                        "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                            + " when arguments size is 1. Should be integer",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
-                    throw Exception(
-                        "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                            + " when arguments size is 2 or 3. Should be a integer or a date with time",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-            else
-            {
-                if (arguments.size() != 2 && arguments.size() != 3)
-                    throw Exception(
-                        "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                            + ", should be 2 or 3",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-                if (!WhichDataType(arguments[0].type).isDateOrDateTime())
-                    throw Exception(
-                        "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                            + ". Should be a date or a date with time",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-
-            if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
+        if constexpr (support_integer)
+        {
+            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
                 throw Exception(
-                    "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                        + ", should be 1, 2 or 3",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            if (arguments.size() == 1 && !isInteger(arguments[0].type))
                 throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
+                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
+                        + " when arguments size is 1. Should be integer",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
+                        + " when arguments size is 2 or 3. Should be a integer or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+        else
+        {
+            if (arguments.size() != 2 && arguments.size() != 3)
+                throw Exception(
+                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                        + ", should be 2 or 3",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            if (!WhichDataType(arguments[0].type).isDateOrDateTime())
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
-            if (arguments.size() == 1)
-                return std::make_shared<DataTypeDateTime>();
-            return std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
+            throw Exception(
+                "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+            throw Exception(
+                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 1)
+            return std::make_shared<DataTypeDateTime>();
+        return std::make_shared<DataTypeString>();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, [[maybe_unused]] size_t input_rows_count) const override
