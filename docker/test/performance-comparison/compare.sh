@@ -55,7 +55,7 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    numactl --cpunodebind=0 --localalloc \
+    numactl --cpunodebind=0 --membind=0 \
         left/clickhouse-server --config-file=left/config/config.xml \
             -- --path left/db --user_files_path left/db/user_files \
             &>> left-server-log.log &
@@ -63,7 +63,7 @@ function restart
     kill -0 $left_pid
     disown $left_pid
 
-    numactl --cpunodebind=0 --localalloc \
+    numactl --cpunodebind=0 --membind=0 \
         right/clickhouse-server --config-file=right/config/config.xml \
             -- --path right/db --user_files_path right/db/user_files \
             &>> right-server-log.log &
