@@ -233,7 +233,8 @@ public:
             }
         }
 
-        auto toFloat64 = [&](const ColumnConst * col_const_arr) {
+        auto toFloat64 = [&](const ColumnConst * col_const_arr)
+        {
             PODArray<Float64> float64_arr;
 
             Array src_arr = col_const_arr->getValue<Array>();
