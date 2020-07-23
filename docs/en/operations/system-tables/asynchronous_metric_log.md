@@ -5,7 +5,7 @@ Contains the historical values for `system.asynchronous_metrics`, which are save
 Columns:
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Day of the event.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Exact time of the event.
--   `name` ([String](../../sql-reference/data-types/string.md)) — Name of the metric envolved.
+-   `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
 -   `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
 **Example**
