@@ -597,7 +597,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Set LDAP user directory config.
     const bool has_ldap_directory_config = config().has("user_directories.ldap");
-    if (has_ldap_directory_config) {
+    if (has_ldap_directory_config)
+    {
         auto ldap_directory_config = config().createView("user_directories.ldap");
         if (ldap_directory_config)
             global_context->getAccessControlManager().setLDAPConfig(*ldap_directory_config);

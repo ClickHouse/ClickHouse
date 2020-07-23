@@ -10,8 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
