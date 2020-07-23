@@ -30,6 +30,7 @@ public:
             const AMQP::ExchangeType & exchange_type_,
             const Names & routing_keys_,
             size_t channel_id_,
+            const String & queue_base_,
             Poco::Logger * log_,
             char row_delimiter_,
             bool hash_exchange_,
@@ -62,6 +63,7 @@ private:
     const AMQP::ExchangeType exchange_type;
     const Names routing_keys;
     const size_t channel_id;
+    const String queue_base;
     const bool hash_exchange;
     const size_t num_queues;
 
@@ -82,7 +84,6 @@ private:
 
     bool nextImpl() override;
 
-    void connectAlternateExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
     void iterateEventLoop();

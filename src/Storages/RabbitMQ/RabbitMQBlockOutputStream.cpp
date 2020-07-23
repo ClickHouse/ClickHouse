@@ -35,6 +35,7 @@ void RabbitMQBlockOutputStream::writePrefix()
 {
     if (storage.checkBridge())
         storage.unbindExchange();
+
     buffer = storage.createWriteBuffer();
     if (!buffer)
         throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);

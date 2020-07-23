@@ -71,7 +71,8 @@ protected:
             const String & exchange_type_,
             size_t num_consumers_,
             size_t num_queues_,
-            const bool use_transactional_channel_);
+            const bool use_transactional_channel_,
+            const String & queue_base_);
 
 private:
     Context global_context;
@@ -88,6 +89,7 @@ private:
     bool hash_exchange;
     size_t num_queues;
     const bool use_transactional_channel;
+    const String queue_base;
 
     Poco::Logger * log;
     std::pair<String, UInt16> parsed_address;

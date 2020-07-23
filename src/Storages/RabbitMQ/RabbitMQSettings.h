@@ -19,6 +19,7 @@ namespace DB
     M(SettingUInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
     M(SettingUInt64, rabbitmq_num_queues, 1, "The number of queues per consumer.", 0) \
     M(SettingBool, rabbitmq_transactional_channel, false, "Use transactional channel for publishing.", 0) \
+    M(SettingString, rabbitmq_queue_base, "", "Base for queue names to be able to reopen non-empty queues in case of failure.", 0) \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_RABBITMQ_SETTINGS)
 
