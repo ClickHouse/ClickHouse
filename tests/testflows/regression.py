@@ -12,8 +12,10 @@ from helpers.argparser import argparser
 def regression(self, local, clickhouse_binary_path):
     """ClickHouse regression.
     """
-    Feature(test=load("example.regression", "regression"))(
-        local=local, clickhouse_binary_path=clickhouse_binary_path)
+    args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path}
+
+    Feature(test=load("example.regression", "regression"))(**args)
+    Feature(test=load("ldap.regression", "regression"))(**args)
 
 if main():
     regression()

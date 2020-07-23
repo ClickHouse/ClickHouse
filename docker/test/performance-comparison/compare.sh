@@ -317,9 +317,11 @@ create view right_query_log as select *
         '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
-    select *, 0 version from left_query_log
+    select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+        query_duration_ms from left_query_log
     union all
-    select *, 1 version from right_query_log
+    select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+        query_duration_ms from right_query_log
     ;
 
 -- This is a single source of truth on all metrics we have for query runs. The
@@ -498,7 +500,8 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
-        test, query_index, query_display_name
+        query_metric_stats.test test, query_metric_stats.query_index query_index,
+        query_display_name
     from query_metric_stats
     left join file('analyze/report-thresholds.tsv', TSV,
             'test text, report_threshold float') thresholds
@@ -666,7 +669,8 @@ create view query_display_names as select * from
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes,
         'unstable-query-runs.$version.rep') as
-    select test, query_index, query_display_name, query_id
+    select query_runs.test test, query_runs.query_index query_index,
+        query_display_name, query_id
     from query_runs
     join queries_for_flamegraph on
         query_runs.test = queries_for_flamegraph.test

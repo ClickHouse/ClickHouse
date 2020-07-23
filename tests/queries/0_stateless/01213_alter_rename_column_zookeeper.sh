@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_rename_replicated SELECT toDat
 
 $CLICKHOUSE_CLIENT --query "SELECT value1 FROM table_for_rename_replicated WHERE key = 1;"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES;"
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES table_for_rename_replicated;"
 
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE table_for_rename_replicated;"
 
@@ -49,7 +49,7 @@ $CLICKHOUSE_CLIENT --query "SELECT renamed_value1 FROM table_for_rename_replicat
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM table_for_rename_replicated WHERE key = 1 FORMAT TSVWithNames;"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM START MERGES;"
+$CLICKHOUSE_CLIENT --query "SYSTEM START MERGES table_for_rename_replicated;"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA table_for_rename_replicated;"
 

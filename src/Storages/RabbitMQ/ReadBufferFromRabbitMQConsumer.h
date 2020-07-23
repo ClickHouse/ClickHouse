@@ -60,7 +60,6 @@ private:
 
     Poco::Logger * log;
     char row_delimiter;
-    bool stalled = false;
     bool allowed = true;
     const std::atomic<bool> & stopped;
 

@@ -12,6 +12,10 @@
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/AccessFlags.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <sstream>
 
 
 namespace DB
@@ -35,7 +39,7 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
         {"id", std::make_shared<DataTypeUUID>()},
         {"storage", std::make_shared<DataTypeString>()},
         {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues())},
-        {"auth_params", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"auth_params", std::make_shared<DataTypeString>()},
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"host_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"host_names_regexp", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -59,8 +63,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
     auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_auth_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
-    auto & column_auth_params = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
-    auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_auth_params = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_names = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
@@ -86,7 +89,24 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         column_id.push_back(id);
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
-        column_auth_params_offsets.push_back(column_auth_params.size());
+
+        if (authentication.getType() == Authentication::Type::LDAP_SERVER)
+        {
+            Poco::JSON::Object auth_params_json;
+
+            auth_params_json.set("server", authentication.getServerName());
+
+            std::ostringstream oss;
+            Poco::JSON::Stringifier::stringify(auth_params_json, oss);
+            const auto str = oss.str();
+
+            column_auth_params.insertData(str.data(), str.size());
+        }
+        else
+        {
+            static constexpr std::string_view empty_json{"{}"};
+            column_auth_params.insertData(empty_json.data(), empty_json.length());
+        }
 
         if (allowed_hosts.containsAnyHost())
         {
