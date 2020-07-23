@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 #include "Columns/ColumnLowCardinality.h"
 #include "DataTypes/DataTypeLowCardinality.h"
+#include "Interpreters/castColumn.h"
 
 
 namespace DB
@@ -24,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -83,10 +85,10 @@ private:
     /// compares `lhs against `rhs`, third argument unused
     static bool compare(const Initial & lhs, const Result & rhs, size_t) { return lhs == rhs; }
 
-    template <class U> static bool compare(size_t lhs, const U & rhs, size_t) { return lhs == rhs; }
-
     static Initial extract(const PaddedPODArray<Initial> & a, size_t i) { return a[i]; }
-    static size_t extract(const ColumnLowCardinality & a, size_t i) { return a.getIndexAt(i); }
+
+    /// LowCardinality spec. We now the column holds one of the UInt* numbers
+    static UInt64 extract(const IColumn & a, size_t i) { return a.getUInt(i); }
 
 #pragma GCC diagnostic pop
 
@@ -658,10 +660,7 @@ struct ArrayIndexGenericNullImpl
     }
 };
 
-/**
- * Check types extracted from Nullable() and LowCardinality()
- */
-inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
+inline DataTypePtr extractType(const DataTypePtr& type)
 {
     /**
      * Possible cases for #arg and #array_inner_type:
@@ -675,17 +674,20 @@ inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypeP
      * All other variants are considered wrong (Like N(N(N(T)))).
      * recursiveRemoveLowCardinality works only if the given type is LC(V).
      */
-    DataTypePtr array_extracted =
+    return
         removeNullable(                    /// remove outer Nullable, case 3
             recursiveRemoveLowCardinality( /// remove LC, cases 2 and 4
                 removeNullable(            /// remove inner Nullable, case 4
-                    array_inner_type)));
+                    type)));
+}
 
-    DataTypePtr arg_extracted =
-        removeNullable(
-            recursiveRemoveLowCardinality(
-                removeNullable(
-                    arg)));
+/**
+ * Check types extracted from Nullable() and LowCardinality()
+ */
+inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
+{
+    const DataTypePtr array_extracted = extractType(array_inner_type);
+    const DataTypePtr arg_extracted = extractType(arg);
 
     return ((isNativeNumber(array_extracted) || isEnum(array_extracted)) && isNativeNumber(arg_extracted))
         || array_extracted->equals(*arg_extracted);
@@ -801,6 +803,55 @@ private:
         return true;
     }
 
+    static StringRef valueHelperCast(char * storage, StringRef arg, TypeIndex left, TypeIndex right)
+    {
+        switch (left)
+        {
+            case TypeIndex::UInt8: return valueHelperCastImpl<UInt8>(storage, arg, right);
+            case TypeIndex::UInt16: return valueHelperCastImpl<UInt16>(storage, arg, right);
+            case TypeIndex::UInt32: return valueHelperCastImpl<UInt32>(storage, arg, right);
+            case TypeIndex::UInt64: return valueHelperCastImpl<UInt32>(storage, arg, right);
+            case TypeIndex::Int8: return valueHelperCastImpl<Int8>(storage, arg, right);
+            case TypeIndex::Int16: return valueHelperCastImpl<Int16>(storage, arg, right);
+            case TypeIndex::Int32: return valueHelperCastImpl<Int32>(storage, arg, right);
+            case TypeIndex::Int64: return valueHelperCastImpl<Int64>(storage, arg, right);
+            case TypeIndex::Float32: return valueHelperCastImpl<Float32>(storage, arg, right);
+            case TypeIndex::Float64: return valueHelperCastImpl<Float64>(storage, arg, right);
+            default:
+                throw Exception("Invalid left argument type", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+
+    template <class T>
+    static StringRef valueHelperCastImpl(char * storage, StringRef arg, TypeIndex right)
+    {
+        const T interpreted = *reinterpret_cast<const T*>(arg.data);
+
+        switch (right)
+        {
+            case TypeIndex::UInt8:  return insertStorageElem<UInt8>(storage, interpreted);
+            case TypeIndex::UInt16: return insertStorageElem<UInt16>(storage, interpreted);
+            case TypeIndex::UInt32: return insertStorageElem<UInt32>(storage, interpreted);
+            case TypeIndex::UInt64: return insertStorageElem<UInt32>(storage, interpreted);
+            case TypeIndex::Int8:   return insertStorageElem<Int8>(storage, interpreted);
+            case TypeIndex::Int16:  return insertStorageElem<Int16>(storage, interpreted);
+            case TypeIndex::Int32:  return insertStorageElem<Int32>(storage, interpreted);
+            case TypeIndex::Int64:  return insertStorageElem<Int64>(storage, interpreted);
+            case TypeIndex::Float32: return insertStorageElem<Float32>(storage, interpreted);
+            case TypeIndex::Float64: return insertStorageElem<Float64>(storage, interpreted);
+            default:
+                throw Exception("Invalid right argument type", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+
+    template <class T, class U>
+    static StringRef insertStorageElem(char * storage, U elem)
+    {
+        const T target {static_cast<T>(elem)};
+        memcpy(storage, &target, sizeof(T));
+        return {storage, sizeof(T)};
+    }
+
     /**
      * 1. Obtain the right-side argument column @e C. If @e C is a non-const column (thus the argument is not constant),
      * loop through all @e C's values.
@@ -812,7 +863,7 @@ private:
      */
     bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
+        const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
 
         if (!col_array)
@@ -824,7 +875,7 @@ private:
          * 2. LC(Nullable(T)) -- somewhat special as Nullable's getDataAt is slightly slower
          * (due to nested column invocation).
          */
-        const ColumnLowCardinality * col_array_nested_lc =
+        const ColumnLowCardinality * const col_array_nested_lc =
             checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
 
         if (!col_array_nested_lc)
@@ -837,11 +888,46 @@ private:
         col_res->getData().resize_fill(col_array->getOffsets().size());
 
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
-        const IColumn * col_arg = block.getByPosition(arguments[1]).column.get();
+        const IColumn * const col_arg = block.getByPosition(arguments[1]).column.get();
+
+        /**
+         * If the types of #col_arg and #col_array_nested_lc (or its nested column if Nullable) are 
+         * non-integral, everything is ok as equal values would give equal StringRef representations.
+         * But this is not true for different integral types:
+         * consider #col_arg = UInt8 and #col_array_nested_lc = UInt16.
+         * The right argument StringRef's size would be 2 (and the left one's -- 1).
+         *
+         * So, for integral types, it's not enough to simply call getDataAt on both arguments.
+         * The left argument (the value whose index is being searched in the indices column) must be casted
+         * to the right argument's side to ensure the StringRefs' equality.
+         *
+         * At first glimpse, we have two issues: signed to unsigned cast (and vice versa) and overflow.
+         * TL;DR -- we don't.
+         *
+         * In fact, we have two sets of values, one for the #col_arg (let's call it Left), and one for the
+         * #col_array_nested_lc (the Right).
+         *
+         * So, if any of the Left values can't be represented by the Right (e.g. -1 for UInt32, which won't
+         * typically be in the dictionary, or max(UInt32) for UInt8), we simply don't care. The function would
+         * return 0 (as it should).
+         */
+        std::aligned_union_t<sizeof(UInt8), Int64, UInt64, Float64> storage;
 
         const size_t size = isColumnConst(*col_arg)
             ? 1 /// We have a column with just one value. Arbitrary n is allowed (as the column is const), so take 0.
             : col_arg->size();
+
+        const bool is_numeric =
+            col_arg->isNumeric()
+            || col_array_nested_lc->getDictionary().isNumeric()
+            || col_array_nested_lc->getDictionary().getNestedColumn()->isNumeric(); // Nullable
+
+        const TypeIndex arg_type = col_arg->getDataType();
+
+        const TypeIndex lc_dict_type = col_array_nested_lc->getDictionary().getDataType();
+        const TypeIndex lc_dict_nested_type = lc_dict_type == TypeIndex::Nullable
+            ? col_array_nested_lc->getDictionary().getNestedColumn()->getDataType()
+            : lc_dict_type;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -857,7 +943,13 @@ private:
                 continue;
             }
 
-            const StringRef elem = col_arg->getDataAt(i);
+            const StringRef elem = is_numeric && arg_type != lc_dict_nested_type
+                ? valueHelperCast(
+                        reinterpret_cast<char *>(&storage),
+                        col_arg->getDataAt(i),
+                        arg_type,
+                        lc_dict_nested_type)
+                : col_arg->getDataAt(i);
 
             if (elem == EMPTY_STRING_REF) /// Possible if the column is Nullable and the data was not present.
                 continue;
@@ -867,18 +959,12 @@ private:
             if (!value_index)
                 continue;
 
-            ArrayIndexNumImpl<
-                UInt64, /* Ignored */
-                UInt64, /*Ignored */
-                ConcreteAction,
-                false /* Invoking from LC spec */
-                    >::vector(
-                    *col_array_nested_lc, /* pass the column itself, the index will be extracted in the impl */
-                    col_array->getOffsets(),
-                    *value_index, /* target value to search */
-                    col_res->getData(),
-                    null_map_data,
-                    null_map_item);
+           ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false /* Invoking from LC spec */ >::vector(
+                col_array_nested_lc->getIndexes(),/* pass the indices column */
+                col_array->getOffsets(),
+                *value_index, /* target value to search */
+                col_res->getData(),
+                null_map_data, null_map_item);
         }
 
         block.getByPosition(result).column = std::move(col_res);
