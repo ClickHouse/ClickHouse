@@ -14,6 +14,8 @@ namespace DB
 
 typedef struct _Variant
 {
+    Float64 x;
+    Float64 y;
     Float64 beats_control;
     Float64 best;
 } Variant;
