@@ -265,7 +265,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
         time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
 
-        if (ttl && ttl < next_ttl_merge_time)
+        if (!has_more_parts_with_expired_ttl && ttl && ttl < next_ttl_merge_time)
         {
             if (has_part_with_expired_ttl)
             {
@@ -297,7 +297,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (aggressive)
         merge_settings.base = 1;
 
-    bool can_merge_with_ttl = next_ttl_merge_time >= current_time;
+    bool can_merge_with_ttl = next_ttl_merge_time <= current_time;
 
     /// NOTE Could allow selection of different merge strategy.
     if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
