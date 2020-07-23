@@ -1351,6 +1351,44 @@ len: 30
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
 
 
+## randomFixedString {#randomfixedstring}
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomFixedString(length);
+```
+
+**Parameters**
+
+-   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   String filled with random bytes.
+
+Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+```
+
+Result:
+
+```text
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+
+```
+
+
 ## randomStringUTF8 {#randomstringutf8}
 
 Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
@@ -1389,58 +1427,3 @@ Result:
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
-
-## randomFixedString {#randomfixedstring}
-
-Generates a random string of a specified length. Symbols in use — all the bytes, including the null.
-
-**Syntax**
-
-``` sql
-randomFixedString(length);
-```
-
-**Parameters**
-
--   `length` — Required number of symbols in the resulting string. [UInt64](../../sql-reference/data-types/int-uint.md).
-
-**Returned value(s)**
-
--   String of random symbols.
-
-Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
-
-**Example**
-
-*Result of the function*
-
-Query:
-
-```sql 
-SELECT randomFixedString(13)
-```
-
-Result:
-
-```text
-┌─randomFixedString(13)─┐
-│ ▒E▒\▒▒{ ki▒▒▒         │
-└───────────────────────┘
-
-```
-*The result`s type*
-
-Query:
-
-```sql
-SELECT randomFixedString(13) as rnd, toTypeName(rnd)
-```
-
-Result:
-
-```text
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
-
-```
