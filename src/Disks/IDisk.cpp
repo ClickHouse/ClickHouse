@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 bool IDisk::isDirectoryEmpty(const String & path)
 {
     return !iterateDirectory(path)->isValid();
@@ -45,11 +40,6 @@ void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_dis
             copy(it->path(), to_disk, dest);
         }
     }
-}
-
-void IDisk::truncateFile(const String &, size_t)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
 }
 
 }

@@ -471,7 +471,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
 
 ## temporary\_files\_codec {#temporary_files_codec}
 
@@ -1599,13 +1599,13 @@ Default value: 268435456.
 
 -   [min\_insert\_block\_size\_bytes](#min-insert-block-size-bytes)
 
-## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
+## output_format_pretty_grid_charset {#output-format-pretty-grid-charset}
 
 Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
 
-**Example**
+**Example** 
 
-``` text
+```text
 SET output_format_pretty_grid_charset = 'UTF-8';
 SELECT * FROM a;
 ┌─a─┐
@@ -1618,5 +1618,6 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

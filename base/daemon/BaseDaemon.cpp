@@ -9,6 +9,7 @@
 #include <string.h>
 #include <signal.h>
 #include <cxxabi.h>
+#include <execinfo.h>
 #include <unistd.h>
 
 #include <typeinfo>

@@ -309,8 +309,6 @@ public:
         MonotonicFunctionsChain & functions,
         DataTypePtr current_type);
 
-    bool matchesExactContinuousRange() const;
-
 private:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement

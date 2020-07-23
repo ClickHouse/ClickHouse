@@ -81,6 +81,8 @@ public:
 
     void checkTableCanBeDropped() const override;
 
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
+
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;

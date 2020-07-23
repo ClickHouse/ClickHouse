@@ -43,7 +43,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
-            if (res.empty())
+            if (res.size() == 0)
                 continue;
 
             return res;
