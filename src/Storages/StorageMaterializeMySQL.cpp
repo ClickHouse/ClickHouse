@@ -80,7 +80,7 @@ Pipes StorageMaterializeMySQL::read(
     if (!expressions->children.empty() && !pipes.empty())
     {
         Block pipe_header = pipes.front().getHeader();
-        SyntaxAnalyzerResultPtr syntax = SyntaxAnalyzer(context).analyze(expressions, pipe_header.getNamesAndTypesList());
+        auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
         ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
 
         for (auto & pipe : pipes)
