@@ -9,7 +9,7 @@ FROM
     SELECT 
         number,
         square_number
-    FROM default.numbers_indexed
+    FROM numbers_indexed
     WHERE number = 999
 ) AS squares
 WHERE number = 999
