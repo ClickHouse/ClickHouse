@@ -61,7 +61,7 @@ private:
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.
     static size_t getReadBufferSize(
-        const DataPartPtr & data_part,
+        const DataPartPtr & part,
         MergeTreeMarksLoader & marks_loader,
         const ColumnPositions & column_positions,
         const MarkRanges & mark_ranges);
