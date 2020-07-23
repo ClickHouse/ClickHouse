@@ -518,7 +518,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             }
 
             ASTPtr query = filter_function;
-            auto syntax_result = SyntaxAnalyzer(context).analyze(query, available_real_columns);
+            auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
             filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
             if (!select.final())
@@ -651,7 +651,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
-        auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
+        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
         auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
 
         res = spreadMarkRangesAmongStreamsWithOrder(

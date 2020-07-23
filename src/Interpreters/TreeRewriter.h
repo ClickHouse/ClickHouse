@@ -20,7 +20,7 @@ using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-struct SyntaxAnalyzerResult
+struct TreeRewriterResult
 {
     ConstStoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
@@ -56,7 +56,7 @@ struct SyntaxAnalyzerResult
     /// Results of scalar sub queries
     Scalars scalars;
 
-    SyntaxAnalyzerResult(
+    TreeRewriterResult(
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
         const StorageMetadataPtr & metadata_snapshot_ = {},
@@ -74,29 +74,26 @@ struct SyntaxAnalyzerResult
     const Scalars & getScalars() const { return scalars; }
 };
 
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
-/// AST syntax analysis.
-/// Optimises AST tree and collect information for further expression analysis.
+/// Tree Rewriter in terms of CMU slides @sa https://15721.courses.cs.cmu.edu/spring2020/slides/19-optimizer1.pdf
+///
+/// Optimises AST tree and collect information for further expression analysis in ExpressionAnalyzer.
 /// Result AST has the following invariants:
 ///  * all aliases are substituted
 ///  * qualified names are translated
 ///  * scalar subqueries are executed replaced with constants
 ///  * unneeded columns are removed from SELECT clause
 ///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
-/// Motivation:
-///  * group most of the AST-changing operations in single place
-///  * avoid AST rewriting in ExpressionAnalyzer
-///  * decompose ExpressionAnalyzer
-class SyntaxAnalyzer
+class TreeRewriter
 {
 public:
-    SyntaxAnalyzer(const Context & context_)
+    TreeRewriter(const Context & context_)
         : context(context_)
     {}
 
     /// Analyze and rewrite not select query
-    SyntaxAnalyzerResultPtr analyze(
+    TreeRewriterResultPtr analyze(
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage = {},
@@ -104,9 +101,9 @@ public:
         bool allow_aggregations = false) const;
 
     /// Analyze and rewrite select query
-    SyntaxAnalyzerResultPtr analyzeSelect(
+    TreeRewriterResultPtr analyzeSelect(
         ASTPtr & query,
-        SyntaxAnalyzerResult && result,
+        TreeRewriterResult && result,
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
         const Names & required_result_columns = {},

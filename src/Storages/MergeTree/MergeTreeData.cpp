@@ -16,7 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -339,7 +339,7 @@ void MergeTreeData::checkProperties(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
+            auto syntax = TreeRewriter(global_context).analyze(added_key_column_expr_list, all_columns);
             Names used_columns = syntax->requiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
@@ -404,7 +404,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(combined_expr_list, columns.getAllPhysical());
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
