@@ -24,6 +24,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         const AMQP::ExchangeType & exchange_type_,
         const Names & routing_keys_,
         size_t channel_id_,
+        const String & queue_base_,
         Poco::Logger * log_,
         char row_delimiter_,
         bool hash_exchange_,
@@ -38,6 +39,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , exchange_type(exchange_type_)
         , routing_keys(routing_keys_)
         , channel_id(channel_id_)
+        , queue_base(queue_base_)
         , hash_exchange(hash_exchange_)
         , num_queues(num_queues_)
         , log(log_)
@@ -54,7 +56,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
     consumer_channel->close();
-
     received.clear();
     BufferBase::set(nullptr, 0, 0);
 }
@@ -64,11 +65,13 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
     bool bindings_created = false, bindings_error = false;
 
-    setup_channel->declareQueue(AMQP::exclusive)
-    .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
+    auto success_callback = [&](const std::string &  queue_name_, int msgcount, int /* consumercount */)
     {
         queues.emplace_back(queue_name_);
         LOG_DEBUG(log, "Queue " + queue_name_ + " is declared");
+
+        if (msgcount)
+            LOG_TRACE(log, "Queue " + queue_name_ + " is non-empty. Non-consumed messaged will also be delivered.");
 
         subscribed_queue[queue_name_] = false;
         subscribe(queues.back());
@@ -86,7 +89,6 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
              */
             String current_hash_exchange = exchange_type == AMQP::ExchangeType::consistent_hash ? exchange_name : local_exchange;
 
-            /// If hash-exchange is used for messages distribution, then the binding key is ignored - can be arbitrary.
             setup_channel->bindQueue(current_hash_exchange, queue_name_, binding_key)
             .onSuccess([&]
             {
@@ -116,7 +118,6 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
             AMQP::Table binding_arguments;
             std::vector<String> matching;
 
-            /// It is not parsed for the second time - if it was parsed above, then it would never end up here.
             for (const auto & header : routing_keys)
             {
                 boost::split(matching, header, [](char c){ return c == '='; });
@@ -153,12 +154,23 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
                 });
             }
         }
-    })
-    .onError([&](const char * message)
+    };
+
+    auto error_callback([&](const char * message)
     {
         bindings_error = true;
         LOG_ERROR(log, "Failed to declare queue on the channel. Reason: {}", message);
     });
+
+    if (!queue_base.empty())
+    {
+        const String queue_name = !hash_exchange ? queue_base : queue_base + "_" + std::to_string(channel_id) + "_" + std::to_string(queue_id);
+        setup_channel->declareQueue(queue_name, AMQP::durable).onSuccess(success_callback).onError(error_callback);
+    }
+    else
+    {
+        setup_channel->declareQueue(AMQP::durable).onSuccess(success_callback).onError(error_callback);
+    }
 
     while (!bindings_created && !bindings_error)
     {

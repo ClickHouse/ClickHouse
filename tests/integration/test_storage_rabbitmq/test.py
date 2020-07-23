@@ -877,6 +877,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
 def test_rabbitmq_many_inserts(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.rabbitmq_many;
+        DROP TABLE IF EXISTS test.rabbitmq_consume;
         DROP TABLE IF EXISTS test.view_many;
         DROP TABLE IF EXISTS test.consumer_many;
         CREATE TABLE test.rabbitmq_many (key UInt64, value UInt64)
@@ -935,10 +936,10 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
             break
 
     instance.query('''
+        DROP TABLE IF EXISTS test.rabbitmq_consume;
         DROP TABLE IF EXISTS test.rabbitmq_many;
         DROP TABLE IF EXISTS test.consumer_many;
         DROP TABLE IF EXISTS test.view_many;
-        DROP TABLE IF EXISTS test.view_consume;
     ''')
 
     for thread in threads:
@@ -952,6 +953,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view_overload;
         DROP TABLE IF EXISTS test.consumer_overload;
+        DROP TABLE IF EXISTS test.rabbitmq_consume;
         CREATE TABLE test.rabbitmq_consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
@@ -1669,6 +1671,96 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
     ''')
 
     assert TSV(result) == TSV(expected)
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_queue_resume(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq_queue_resume (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'queue_resume',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'queue_resume',
+                     rabbitmq_queue_base = 'queue_resume',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64, consumer_tag String)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT *, _consumer_tag AS consumer_tag FROM test.rabbitmq_queue_resume;
+    ''')
+
+    i = [0]
+    messages_num = 5000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        for message in messages:
+            channel.basic_publish(exchange='queue_resume', routing_key='queue_resume', body=message,
+                    properties=pika.BasicProperties(delivery_mode = 2))
+        connection.close()
+
+    threads = []
+    threads_num = 10
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while int(instance.query('SELECT count() FROM test.view')) == 0:
+        time.sleep(1)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.rabbitmq_queue_resume;
+    ''')
+
+    for thread in threads:
+        thread.join()
+
+    collected = int(instance.query('SELECT count() FROM test.view'))
+
+    instance.query('''
+        CREATE TABLE test.rabbitmq_queue_resume (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'queue_resume',
+                     rabbitmq_exchange_type = 'direct',
+                     rabbitmq_routing_key_list = 'queue_resume',
+                     rabbitmq_queue_base = 'queue_resume',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+    ''')
+
+    while True:
+        result1 = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result1) > collected:
+            break
+
+    result2 = instance.query("SELECT count(DISTINCT consumer_tag) FROM test.view")
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.rabbitmq_queue_resume;
+        DROP TABLE IF EXISTS test.consumer;
+        DROP TABLE IF EXISTS test.view;
+    ''')
+
+    assert int(result1) > collected, 'ClickHouse lost some messages: {}'.format(result)
+    assert int(result2) == 2
+
 
 
 if __name__ == '__main__':

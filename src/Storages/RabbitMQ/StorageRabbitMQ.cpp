@@ -72,7 +72,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & exchange_type_,
         size_t num_consumers_,
         size_t num_queues_,
-        const bool use_transactional_channel_)
+        const bool use_transactional_channel_,
+        const String & queue_base_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -83,6 +84,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , num_consumers(num_consumers_)
         , num_queues(num_queues_)
         , use_transactional_channel(use_transactional_channel_)
+        , queue_base(queue_base_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , login_password(std::make_pair(
@@ -288,7 +290,7 @@ void StorageRabbitMQ::unbindExchange()
             throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
         });
 
-        while (!exchange_removed)
+        while (!exchange_removed.load())
         {
             event_handler->iterateLoop();
         }
@@ -431,7 +433,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         consumer_channel, setup_channel, event_handler, consumer_exchange, exchange_type, routing_keys,
-        next_channel_id, log, row_delimiter, hash_exchange, num_queues,
+        next_channel_id, queue_base, log, row_delimiter, hash_exchange, num_queues,
         local_exchange, stream_cancelled);
 }
 
@@ -725,10 +727,22 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
+        String queue_base = rabbitmq_settings.rabbitmq_queue_base.value;
+        if (args_count >= 10)
+        {
+            engine_args[9] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[9], args.local_context);
+
+            const auto * ast = engine_args[9]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
+                queue_base = safeGet<String>(ast->value);
+            }
+        }
+
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
                 host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers,
-                num_queues, use_transactional_channel);
+                num_queues, use_transactional_channel, queue_base);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
