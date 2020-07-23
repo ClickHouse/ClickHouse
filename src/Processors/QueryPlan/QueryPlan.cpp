@@ -4,6 +4,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 #include <stack>
+#include <Processors/QueryPlan/LimitStep.h>
 
 namespace DB
 {
@@ -300,6 +301,48 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         if (frame.next_child < frame.node->children.size())
         {
             stack.push(Frame{frame.node->children[frame.next_child], frame.offset});
+            ++frame.next_child;
+        }
+        else
+            stack.pop();
+    }
+}
+
+static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlanStepPtr & child)
+{
+    const auto * limit = typeid_cast<const LimitStep *>(parent.get());
+
+    if (!limit)
+        return;
+
+    /// Now we should decide if pushing down limit possible for this step.
+}
+
+void QueryPlan::optimize()
+{
+    struct Frame
+    {
+        Node * node;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (frame.next_child == 0)
+        {
+            /// First entrance, try push down.
+            if (frame.node->children.size() == 1)
+                tryPushDownLimit(frame.node->step, frame.node->children.front()->step);
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child]});
             ++frame.next_child;
         }
         else

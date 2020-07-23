@@ -33,6 +33,8 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
+    void optimize();
+
     QueryPipelinePtr buildQueryPipeline();
 
     struct ExplainPlanOptions
