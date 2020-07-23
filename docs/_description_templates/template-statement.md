@@ -8,7 +8,7 @@ Brief description of what the statement does.
 Syntax of the statement.
 ```
 
-## Other required sections of the description (Optional)
+## Other necessary sections of the description (Optional)
 
 Examples of descriptions with a complicated structure:
 
