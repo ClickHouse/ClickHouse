@@ -112,7 +112,7 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
-    inline std::optional<UInt64> getOrFindIndex(const StringRef& value) const override
+    inline std::optional<UInt64> getOrFindIndex(StringRef value) const override
     {
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
@@ -120,8 +120,12 @@ public:
         auto& nested = *getNestedColumn();
 
         for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
+        {
+            StringRef index = nested.getDataAt(i);
+
+            if (index == value)
                 return i;
+        }
 
         return {};
     }
