@@ -37,7 +37,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 使用指定的`name`, `type`, [`codec`](../../sql-reference/statements/create.md#codecs) 以及 `default_expr` (请参见 [Default expressions](../../sql-reference/statements/create.md#create-default-values))，往表中增加新的列。
 
 
-如果sql中包含 `IF NOT EXISTS` ，执行语句时如果列已经存在，CH不会报错。如果指定`AFTER name_after`（表中另一个列的名称），则新的列会加在指定列的后面。否则，新的列将被添加到表的末尾。注意，不能讲新的列添加到表的开始位置， `name_after` 可以是执行该动作时已经在表中存在的任意列。
+如果sql中包含 `IF NOT EXISTS` ，执行语句时如果列已经存在，CH不会报错。如果指定`AFTER name_after`（表中另一个列的名称），则新的列会加在指定列的后面。否则，新的列将被添加到表的末尾。注意，不能将新的列添加到表的开始位置， `name_after` 可以是执行该动作时已经在表中存在的任意列。
 
 添加列仅仅是改变原有表的结构不会对已有数据产生影响。执行完 `ALTER`后磁盘中也不会出现新的数据。如果查询表时列的数据为空，那么CH会使用列的默认值来进行填充（如果有默认表达式，则使用这个；或者用0或空字符串）。当数据块完成合并(参见[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md))后，磁盘中会出现该列的数据。
 
@@ -166,7 +166,7 @@ MODIFY ORDER BY new_expression
 
 该操作仅支持 [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) 系列表 (含 [replicated](../../engines/table-engines/mergetree-family/replication.md) 表)。它会将表的 [排序键](../../engines/table-engines/mergetree-family/mergetree.md)变成 `new_expression` (元组表达式)。主键仍保持不变。
 
-该操作时轻量级的，仅会改变元数据。
+该操作是轻量级的，仅会改变元数据。
 
 
 ### 跳过索引来更改数据 {#manipulations-with-data-skipping-indices}
