@@ -48,7 +48,7 @@ struct FunctionPort : public IFunction
     }
 
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)

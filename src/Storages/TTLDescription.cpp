@@ -2,7 +2,7 @@
 
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
@@ -143,7 +143,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         result.expression_ast = definition_ast->clone();
 
     auto ttl_ast = result.expression_ast->clone();
-    auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(ttl_ast, columns.getAllPhysical());
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ttl_ast, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(ttl_ast, syntax_analyzer_result, context).getActions(false);
     result.result_column = ttl_ast->getColumnName();
 
@@ -162,7 +162,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             if (ASTPtr where_expr_ast = ttl_element->where())
             {
-                auto where_syntax_result = SyntaxAnalyzer(context).analyze(where_expr_ast, columns.getAllPhysical());
+                auto where_syntax_result = TreeRewriter(context).analyze(where_expr_ast, columns.getAllPhysical());
                 result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, context).getActions(false);
                 result.where_result_column = where_expr_ast->getColumnName();
             }
@@ -220,7 +220,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 if (value->as<ASTFunction>())
                 {
-                    auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
+                    auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                     auto expr_actions = ExpressionAnalyzer(value, syntax_result, context).getActions(false);
                     for (const auto & column : expr_actions->getRequiredColumns())
                     {
@@ -249,7 +249,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 
             for (auto [name, value] : aggregations)
             {
-                auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
+                auto syntax_result = TreeRewriter(context).analyze(value, columns.getAllPhysical(), {}, {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
                 TTLAggregateDescription set_part;
