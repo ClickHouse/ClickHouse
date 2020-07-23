@@ -16,9 +16,8 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', config_dir=config_dir, env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
+node = cluster.add_instance('node', main_configs=["configs/log_conf.xml", "configs/ssl_conf.xml", "configs/mysql.xml"], user_configs=["configs/users.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
 server_port = 9001
 
@@ -213,15 +212,15 @@ def test_mysql_explain(mysql_client, server_address):
         -e "EXPLAIN PLAN SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    
+
     # EXPLAIN PIPELINE graph=1 SELECT 1
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
         -e "EXPLAIN PIPELINE graph=1 SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    
-    
+
+
 def test_mysql_federated(mysql_server, server_address):
     # For some reason it occasionally fails without retries.
     retries = 100

@@ -1,24 +1,25 @@
 import base64
+import cassandra.cluster
 import distutils.dir_util
+import docker
 import errno
+import httplib
+import logging
 import os
 import os.path as p
+import pprint
+import psycopg2
 import pwd
+import pymongo
+import pymysql
 import re
+import requests
 import shutil
 import socket
 import subprocess
 import time
 import urllib
-import httplib
-import requests
 import xml.dom.minidom
-import docker
-import pprint
-import psycopg2
-import pymongo
-import pymysql
-import cassandra.cluster
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
@@ -39,6 +40,7 @@ SANITIZER_SIGN = "=================="
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
     with open(full_path, 'w') as f:
+        f.write('TSAN_OPTIONS="external_symbolizer_path=/usr/bin/llvm-symbolizer"\n')
         for var, value in variables.items():
             f.write("=".join([var, value]) + "\n")
     return full_path
@@ -165,7 +167,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, base_config_dir=None, config_dir=None, main_configs=None, user_configs=None, macros=None,
+    def add_instance(self, name, base_config_dir=None, config_dir=None, main_configs=None, user_configs=None, dictionaries = None, macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -190,8 +192,8 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, base_config_dir if base_config_dir else self.base_config_dir,
-            config_dir if config_dir else self.config_dir, main_configs or [], user_configs or [], macros or {},
-            with_zookeeper,
+            config_dir if config_dir else self.config_dir, main_configs or [], user_configs or [], dictionaries or [],
+            macros or {}, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             self.server_bin_path, self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
@@ -644,7 +646,10 @@ class ClickHouseCluster:
     def shutdown(self, kill=True):
         sanitizer_assert_instance = None
         with open(self.docker_logs_path, "w+") as f:
-            subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
+            try:
+                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
+            except Exception as e:
+                print "Unable to get logs from docker."
             f.seek(0)
             for line in f:
                 if SANITIZER_SIGN in line:
@@ -652,8 +657,15 @@ class ClickHouseCluster:
                     break
 
         if kill:
-            subprocess_check_call(self.base_cmd + ['kill'])
-        subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+            try:
+                subprocess_check_call(self.base_cmd + ['kill'])
+            except Exception as e:
+                print "Kill command failed durung shutdown. {}".format(repr(e))
+
+        try:
+            subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+        except Exception as e:
+                print "Down + remove orphans failed durung shutdown. {}".format(repr(e))
 
         self.is_up = False
 
@@ -749,8 +761,8 @@ services:
 class ClickHouseInstance:
 
     def __init__(
-            self, cluster, base_path, name, base_config_dir, config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
+            self, cluster, base_path, name, base_config_dir, config_dir, custom_main_configs, custom_user_configs, custom_dictionaries,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test",
@@ -767,6 +779,7 @@ class ClickHouseInstance:
         self.config_dir = p.abspath(p.join(base_path, config_dir)) if config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
+        self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
         self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
@@ -1088,11 +1101,15 @@ class ClickHouseInstance:
         os.mkdir(self.config_d_dir)
         users_d_dir = p.abspath(p.join(instance_config_dir, 'users.d'))
         os.mkdir(users_d_dir)
+        dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
+        os.mkdir(dictionaries_dir)
 
         print "Copy common configuration from helpers"
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
         shutil.copy(p.join(HELPERS_DIR, '0_common_instance_users.xml'), users_d_dir)
+        if len(self.custom_dictionaries_paths):
+            shutil.copy(p.join(HELPERS_DIR, '0_common_enable_dictionaries.xml'), self.config_d_dir)
 
         print "Generate and write macros file"
         macros = self.macros.copy()
@@ -1116,6 +1133,12 @@ class ClickHouseInstance:
         # Copy users.d configs
         for path in self.custom_user_config_paths:
             shutil.copy(path, users_d_dir)
+
+
+        self.config_dir
+        # Copy dictionaries configs to configs/dictionaries
+        for path in self.custom_dictionaries_paths:
+            shutil.copy(path, dictionaries_dir)
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         print "Setup database dir {}".format(db_dir)

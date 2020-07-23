@@ -75,6 +75,13 @@ vgcore*
 *.changes
 build-stamp
 configure-stamp
+/debian/clickhouse-client.docs
+/debian/clickhouse-common-static-dbg/
+/debian/clickhouse-common-static.docs
+/debian/clickhouse-common-static/
+/debian/clickhouse-server/
+/debian/clickhouse-test/
+
 
 *.bin
 *.mrk

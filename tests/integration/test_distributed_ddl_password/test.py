@@ -6,12 +6,12 @@ from helpers.test_tools import assert_eq_with_retry
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', config_dir="configs", with_zookeeper=True)
-node2 = cluster.add_instance('node2', config_dir="configs", with_zookeeper=True)
-node3 = cluster.add_instance('node3', config_dir="configs", with_zookeeper=True)
-node4 = cluster.add_instance('node4', config_dir="configs", with_zookeeper=True)
-node5 = cluster.add_instance('node5', config_dir="configs", with_zookeeper=True)
-node6 = cluster.add_instance('node6', config_dir="configs", with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=["configs/config.d/clusters.xml"], user_configs=["configs/users.d/default_with_password.xml"], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=["configs/config.d/clusters.xml"], user_configs=["configs/users.d/default_with_password.xml"], with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=["configs/config.d/clusters.xml"], user_configs=["configs/users.d/default_with_password.xml"], with_zookeeper=True)
+node4 = cluster.add_instance('node4', main_configs=["configs/config.d/clusters.xml"], user_configs=["configs/users.d/default_with_password.xml"], with_zookeeper=True)
+node5 = cluster.add_instance('node5', main_configs=["configs/config.d/clusters.xml"], user_configs=["configs/users.d/default_with_password.xml"], with_zookeeper=True)
+node6 = cluster.add_instance('node6', main_configs=["configs/config.d/clusters.xml"], user_configs=["configs/users.d/default_with_password.xml"], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")

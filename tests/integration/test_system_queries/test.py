@@ -18,13 +18,14 @@ def started_cluster():
     global instance
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance('ch1', config_dir="configs")
+        cluster.add_instance('ch1', main_configs=["configs/config.d/clusters_config.xml", "configs/config.d/query_log.xml"],
+            dictionaries=["configs/dictionaries/dictionary_clickhouse_cache.xml", "configs/dictionaries/dictionary_clickhouse_flat.xml"])
         cluster.start()
 
         instance = cluster.instances['ch1']
         instance.query('CREATE DATABASE dictionaries ENGINE = Dictionary')
         instance.query('CREATE TABLE dictionary_source (id UInt64, value UInt8) ENGINE = Memory')
-        #print instance.query('SELECT * FROM system.dictionaries FORMAT Vertical')
+        print instance.query('SELECT * FROM system.dictionaries FORMAT Vertical')
         print "Started ", instance.ip_address
 
         yield cluster

@@ -9,9 +9,7 @@ dpkg -i package_folder/clickhouse-client_*.deb
 dpkg -i package_folder/clickhouse-test_*.deb
 
 mkdir -p /etc/clickhouse-server/dict_examples
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/
+ln -s /usr/share/clickhouse-test/config/dict_examples/ /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
@@ -19,9 +17,6 @@ ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/conf
 ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
-ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
-ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
 
 if [[ -n "$USE_DATABASE_ATOMIC" ]] && [[ "$USE_DATABASE_ATOMIC" -eq 1 ]]; then

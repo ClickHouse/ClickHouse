@@ -188,12 +188,11 @@ def setup_module(module):
 
     cluster.add_instance('clickhouse1', main_configs=main_configs)
 
+    dictionaries = []
     for fname in os.listdir(dict_configs_path):
-        main_configs.append(os.path.join(dict_configs_path, fname))
+        dictionaries.append(os.path.join(dict_configs_path, fname))
 
-    main_configs.append(os.path.join('configs', 'enable_dictionaries.xml'))
-
-    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
+    node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
 
 
 @pytest.fixture(scope="module")
@@ -245,8 +244,8 @@ def remove_mysql_dicts():
     TODO remove this when open ssl will be fixed or thread sanitizer will be suppressed
     """
 
-    global DICTIONARIES
-    DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
+    #global DICTIONARIES
+    #DICTIONARIES = [d for d in DICTIONARIES if not d.name.startswith("MySQL")]
 
 
 @pytest.mark.parametrize("fold", list(range(10)))

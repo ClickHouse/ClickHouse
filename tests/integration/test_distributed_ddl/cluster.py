@@ -20,7 +20,10 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             for i in xrange(4):
                 self.add_instance(
                     'ch{}'.format(i+1),
-                    config_dir=self.test_config_dir,
+                    main_configs=["configs/users.d/query_log.xml", "configs/users.d/restricted_user.xml",
+                                  "configs/config.d/clusters.xml", "configs/config.d/macro.xml",
+                                  "configs/config.d/ddl.xml", "configs/config.d/zookeeper_session_timeout.xml",
+                                  "configs/config.d/query_log.xml"],
                     macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
                     with_zookeeper=True)
 
