@@ -66,8 +66,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 3   4
 ```
 
-You don't have to use `stdin` or `--file` argument, and can open any number of
-files using the [`file` table function](../../../sql-reference/table-functions/file.md):
+You don't have to use `stdin` or `--file` argument, and can open any number of files using the [`file` table function](../../sql-reference/table-functions/file.md):
 
 ``` bash
 $ echo 1 | tee 1.tsv
