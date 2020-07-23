@@ -232,7 +232,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
   */
 static Block createBlockForSet(
     const DataTypePtr & left_arg_type,
-    const std::shared_ptr<ASTLiteral> & right_arg,
+    const ASTPtr & right_arg,
     const DataTypes & set_element_types,
     const Context & context)
 {
@@ -275,18 +275,17 @@ static Block createBlockForSet(
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
   * 
-  *  We need special implementation for common AST, because in case, when we interpret tuple or array 
-  *  as function, `evaluateConstantExpression` works extremely slow.
+  *  We need special implementation for ASTFunction, because in case, when we interpret
+  *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
   */
 static Block createBlockForSet(
     const DataTypePtr & left_arg_type,
-    const ASTPtr & right_arg,
+    const std::shared_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
     const Context & context)
 {
-    auto get_tuple_type_from_ast = [&context](const ASTPtr & tuple_ast) -> DataTypePtr
+    auto get_tuple_type_from_ast = [&context](const auto & func) -> DataTypePtr
     {
-        const auto * func = tuple_ast->as<ASTFunction>();
         if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
@@ -295,7 +294,7 @@ static Block createBlockForSet(
             return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
         }
 
-        return evaluateConstantExpression(tuple_ast, context).second;
+        return evaluateConstantExpression(func, context).second;
     };
 
     const DataTypePtr & right_arg_type = get_tuple_type_from_ast(right_arg);
@@ -358,8 +357,9 @@ SetPtr makeExplicitSet(
         return prepared_sets.at(set_key); /// Already prepared.
 
     Block block;
-    if (const auto & right_arg_literal = std::dynamic_pointer_cast<ASTLiteral>(right_arg))
-        block = createBlockForSet(left_arg_type, right_arg_literal, set_element_types, context);
+    const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
+    if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
+        block = createBlockForSet(left_arg_type, right_arg_func, set_element_types, context);
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
