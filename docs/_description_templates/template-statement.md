@@ -2,7 +2,7 @@
 
 Brief description of what the statement does.
 
-## Syntax
+Syntax:
 
 ```sql
 Syntax of the statement.
@@ -13,6 +13,7 @@ Syntax of the statement.
 Examples of descriptions with a complicated structure:
 
 - https://clickhouse.tech/docs/en/sql-reference/statements/grant/
+- https://clickhouse.tech/docs/en/sql-reference/statements/revoke/
 - https://clickhouse.tech/docs/en/sql-reference/statements/select/join/
 
 
