@@ -520,6 +520,31 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
+## network_compression_method {#network_compression_method}
+
+Задает метод сжатия данных, используемый при обмене данными между серверами и при обмене между сервером и [clickhouse-client](../../interfaces/cli.md).
+
+Возможные значения:
+
+-   `LZ4` — устанавливает метод сжатия LZ4.
+-   `ZSTD` — устанавливает метод сжатия ZSTD.
+
+Значение по умолчанию: `LZ4`.
+
+См. также:
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) имеет значение `ZSTD`.
+
+Возможные значения:
+
+-   Положительное целое число от 1 до 15.
+
+Значение по умолчанию: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
@@ -700,6 +725,17 @@ log_query_threads=1
 
 Значение по умолчанию: 50.
 
+## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
+
+Время ожидания соединения в миллисекундах, когда пул соединений заполнен.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Бесконечный таймаут.
+
+Значение по умолчанию: 0.
+
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 Максимальное количество попыток соединения с каждой репликой, для движка таблиц Distributed.
@@ -710,6 +746,21 @@ log_query_threads=1
 
 Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
 Подробнее смотрите раздел «Экстремальные значения».
+
+## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
+
+Время ожидания в миллисекундах для чтения сообщений из [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) перед повторной попыткой.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Бесконечный таймаут.
+
+Значение по умолчанию: 5000.
+
+См. также:
+
+-   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -729,6 +780,17 @@ log_query_threads=1
 `1` - отменить старый запрос и начать выполнять новый.
 
 Эта настройка, выставленная в 1, используется в Яндекс.Метрике для реализации suggest-а значений для условий сегментации. После ввода очередного символа, если старый запрос ещё не выполнился, его следует отменить.
+
+## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
+
+Время ожидания завершения выполнения запроса с тем же `query_id`, когда активирована настройка [replace_running_query](#replace-running-query).
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Создание исключения, которое не позволяет выполнить новый запрос, если сервер уже выполняет запрос с тем же `query_id`.
+
+Значение по умолчанию: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -1215,6 +1277,34 @@ Default value: 0.
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## insert_distributed_sync {#insert_distributed_sync}
+
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).  
+
+Возможные значения:
+
+-   0 — Данные добавляются в асинхронном режиме.
+-   1 — Данные добавляются в синхронном режиме.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+## validate\_polygons {#validate_polygons}
+
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+
+Допустимые значения:
+
+- 0 — генерирование исключения отключено. `pointInPolygon` принимает недопустимые многоугольники и возвращает для них, возможно, неверные результаты.
+- 1 — генерирование исключения включено.
+
+Значение по умолчанию: 1.
 
 ## always_fetch_merged_part {#always_fetch_merged_part}
 

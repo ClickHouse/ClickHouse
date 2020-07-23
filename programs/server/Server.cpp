@@ -295,7 +295,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     /** Context contains all that query execution is dependent:
-      *  settings, available functions, data types, aggregate functions, databases...
+      *  settings, available functions, data types, aggregate functions, databases, ...
       */
     auto shared_context = Context::createShared();
     auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
@@ -543,6 +543,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+            global_context->setExternalAuthenticatorsConfig(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
