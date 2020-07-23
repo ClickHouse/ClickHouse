@@ -174,7 +174,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
     const auto data_settings = data.getSettings();
 
     UInt64 max_size = 0;
-    if (free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+    if (pool_used == 0 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
         max_size = interpolateExponential(
@@ -195,7 +195,8 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
-    if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
+    if (0 == busy_threads_in_pool
+        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
