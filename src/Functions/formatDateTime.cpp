@@ -36,20 +36,20 @@ namespace ErrorCodes
 namespace
 {
 // in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
-template <typename DataType> struct ActionaValueTypeMap {};
-template <> struct ActionaValueTypeMap<DataTypeInt8>       { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeUInt8>      { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeInt16>      { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeUInt16>     { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeInt32>      { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeUInt32>     { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeInt64>      { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
-template <> struct ActionaValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
-template <> struct ActionaValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
+template <typename DataType> struct ActionValueTypeMap {};
+template <> struct ActionValueTypeMap<DataTypeInt8>       { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt8>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeInt16>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt16>     { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeInt32>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt32>     { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
 // TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
 }
 
 /** formatDateTime(time, 'pattern')
@@ -409,7 +409,7 @@ public:
 
         String pattern = pattern_column->getValue<String>();
 
-        using T = typename ActionaValueTypeMap<DataType>::ActionValueType;
+        using T = typename ActionValueTypeMap<DataType>::ActionValueType;
         std::vector<Action<T>> instructions;
         String pattern_to_fill = parsePattern(pattern, instructions);
         size_t result_size = pattern_to_fill.size();
