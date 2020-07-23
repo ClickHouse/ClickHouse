@@ -3,8 +3,9 @@
 Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. This function is available on default.
 
 Columns:
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Day of the event.
--   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Exact time of the event.
+
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 -   `name` ([String](../../sql-reference/data-types/string.md)) — Metric name.
 -   `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
