@@ -3,10 +3,10 @@
 Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. This function is available on default.
 
 Columns:
--   `event_date` ([Date](../sql-reference/data-types/date.md)) — Day of the event.
--   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Exact time of the event.
--   `name` ([String](../sql-reference/data-types/string.md)) — Name of the metric envolved.
--   `value` ([Float64](../sql-reference/data-types/float.md)) — Metric value.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Day of the event.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Exact time of the event.
+-   `name` ([String](../../sql-reference/data-types/string.md)) — Name of the metric envolved.
+-   `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
 **Example**
 
@@ -30,5 +30,5 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 ```
 
 **See Also**
-- [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
-- [system.metric_log](../../operations/system-tables/metric_log) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
+- [system.asynchronous\_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
+- [system.metric_log](../operations/system-tables/metric_log) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
