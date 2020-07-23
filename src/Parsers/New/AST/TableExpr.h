@@ -14,7 +14,13 @@ class TableExpr : public INode
         static PtrTo<TableExpr> createSubquery();
         static PtrTo<TableExpr> createAlias();
 
+        ASTPtr convertToOld() const override;
+
     private:
+        enum ChildIndex : UInt8
+        {
+            IDENTIFIER = 0,
+        };
         enum class ExprType
         {
             IDENTIFIER,
@@ -22,9 +28,10 @@ class TableExpr : public INode
             SUBQUERY,
             ALIAS,
         };
+
         ExprType expr_type;
 
-        TableExpr(ExprType type, std::list<Ptr> exprs);
+        TableExpr(ExprType type, std::vector<Ptr> exprs);
 };
 
 }

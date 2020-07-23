@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/TypePromotion.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <memory>
@@ -15,7 +16,8 @@ using PtrTo = std::shared_ptr<T>;
 
 using Ptr = PtrTo<>;
 
-class INode {
+class INode : public TypePromotion<INode>
+{
     public:
         virtual ~INode() = default;
         virtual ASTPtr convertToOld() const { return ASTPtr(); }

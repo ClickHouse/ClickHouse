@@ -13,6 +13,8 @@ class Identifier : public INode
     public:
         explicit Identifier(const std::string & name_);
 
+        const auto & getName() const { return name; }
+
     private:
         const std::string name;
 };
@@ -26,6 +28,8 @@ class TableIdentifier : public Identifier
 {
     public:
         TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Identifier> name);
+
+        ASTPtr convertToOld() const override;
 
     private:
         PtrTo<DatabaseIdentifier> db;

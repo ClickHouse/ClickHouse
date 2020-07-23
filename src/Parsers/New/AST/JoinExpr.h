@@ -18,6 +18,8 @@ class JoinConstraintClause : public INode
 
         JoinConstraintClause(ConstraintType type, PtrTo<ColumnExprList> list);
 
+        ASTPtr convertToOld() const override;
+
     private:
         ConstraintType type;
 };
@@ -59,14 +61,25 @@ class JoinExpr : public INode
         ASTPtr convertToOld() const override;  // returns topologically sorted elements as ASTExpressionList
 
     private:
+        enum ChildIndex : UInt8
+        {
+            TABLE = 0,
+            LEFT_EXPR = 0,
+            RIGHT_EXPR = 1,
+            CONSTRAINT = 2,
+        };
         enum class ExprType
         {
             TABLE,
             JOIN_OP,
         };
-        ExprType expr_type;
 
-        JoinExpr(ExprType type, std::list<Ptr> exprs);
+        ExprType expr_type;
+        JoinOpType op_type = JoinOpType::INNER;
+        JoinOpMode op_mode = JoinOpMode::DEFAULT;
+
+        JoinExpr(ExprType type, std::vector<Ptr> exprs);
+        JoinExpr(ExprType type, JoinOpType op, JoinOpMode mode, std::vector<Ptr> exprs);
 };
 
 }

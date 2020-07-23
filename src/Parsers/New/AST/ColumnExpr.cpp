@@ -13,7 +13,7 @@ PtrTo<ColumnExpr> ColumnExpr::createLiteral(PtrTo<Literal> literal)
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::LITERAL, {literal}));
 }
 
-ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, std::list<Ptr> exprs) : expr_type(type)
+ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, std::vector<Ptr> exprs) : expr_type(type)
 {
     children = exprs;
 }

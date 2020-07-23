@@ -2,6 +2,8 @@
 
 #include <Parsers/New/AST/INode.h>
 
+#include <list>
+
 
 namespace DB::AST
 {
@@ -79,6 +81,10 @@ class ColumnExpr : public INode
         static PtrTo<ColumnExpr> createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias);
 
     private:
+        enum ChildIndex : UInt8
+        {
+            LITERAL = 0,
+        };
         enum class ExprType
         {
             LITERAL,
@@ -97,9 +103,10 @@ class ColumnExpr : public INode
             FUNCTION,
             ALIAS,
         };
+
         ExprType expr_type;
 
-        ColumnExpr(ExprType type, std::list<Ptr> exprs);
+        ColumnExpr(ExprType type, std::vector<Ptr> exprs);
 };
 
 }

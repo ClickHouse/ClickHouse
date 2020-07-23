@@ -1,7 +1,8 @@
 #include <Parsers/New/AST/Identifier.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>
-#include "Parsers/New/ClickHouseParser.h"
+
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB::AST
@@ -13,6 +14,11 @@ Identifier::Identifier(const std::string & name_) : name(name_)
 
 TableIdentifier::TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Identifier> name_) : Identifier(*name_), db(database)
 {
+}
+
+ASTPtr TableIdentifier::convertToOld() const
+{
+    return std::make_shared<ASTIdentifier>((db ? db->getName() + "." : String()) + getName());
 }
 
 }
