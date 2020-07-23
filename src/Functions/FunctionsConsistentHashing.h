@@ -65,7 +65,7 @@ public:
         return {1};
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (isColumnConst(*block.getByPosition(arguments[1]).column))
             executeConstBuckets(block, arguments, result);
@@ -80,7 +80,7 @@ private:
     using BucketsType = typename Impl::BucketsType;
 
     template <typename T>
-    inline BucketsType checkBucketsRange(T buckets)
+    inline BucketsType checkBucketsRange(T buckets) const
     {
         if (unlikely(buckets <= 0))
             throw Exception(
@@ -93,7 +93,7 @@ private:
         return static_cast<BucketsType>(buckets);
     }
 
-    void executeConstBuckets(Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeConstBuckets(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         Field buckets_field = (*block.getByPosition(arguments[1]).column)[0];
         BucketsType num_buckets;
@@ -136,7 +136,7 @@ private:
     }
 
     template <typename CurrentHashType>
-    void executeType(const ColumnPtr & col_hash_ptr, BucketsType num_buckets, ColumnVector<ResultType> * col_result)
+    void executeType(const ColumnPtr & col_hash_ptr, BucketsType num_buckets, ColumnVector<ResultType> * col_result) const
     {
         auto col_hash = checkAndGetColumn<ColumnVector<CurrentHashType>>(col_hash_ptr.get());
         if (!col_hash)

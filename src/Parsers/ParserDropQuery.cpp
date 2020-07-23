@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool optional_table_keyword = false)
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
@@ -55,7 +55,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
         else if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!is_view && !is_dictionary && !s_table.ignore(pos, expected))
+        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && !optional_table_keyword))
         {
             return false;
         }
@@ -114,7 +114,7 @@ bool parseDetachQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 
 bool parseTruncateQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (parseDropQuery(pos, node, expected))
+    if (parseDropQuery(pos, node, expected, true))
     {
         auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Truncate;
