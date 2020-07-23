@@ -1,6 +1,6 @@
 # Statement name (for example, SHOW USER)
 
-What does the query initiated by the statement do.
+Brief description of what the statement does.
 
 ## Syntax
 
