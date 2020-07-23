@@ -1,5 +1,6 @@
 ---
 toc_priority: 44
+toc_title: DESCRIBE
 ---
 
 # DESCRIBE TABLE Statement {#misc-describe-table}
