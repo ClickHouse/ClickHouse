@@ -31,5 +31,6 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 ```
 
 **See Also**
-- [system.asynchronous\_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
+
+- [system.asynchronous\_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics that are calculated periodically in the background. 
 - [system.metric_log](../operations/system-tables/metric_log) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
