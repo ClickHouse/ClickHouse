@@ -92,7 +92,7 @@ static NamesAndTypesList getNames(const ASTFunction & expr, const Context & cont
         return NamesAndTypesList{};
 
     ASTPtr temp_ast = expr.clone();
-    auto syntax = SyntaxAnalyzer(context).analyze(temp_ast, columns);
+    auto syntax = TreeRewriter(context).analyze(temp_ast, columns);
     auto expression = ExpressionAnalyzer(temp_ast, syntax, context).getActions(false);
     return expression->getRequiredColumnsWithTypes();
 }
