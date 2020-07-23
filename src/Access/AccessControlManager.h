@@ -49,8 +49,10 @@ public:
     ~AccessControlManager();
 
     void setLocalDirectory(const String & directory);
-    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
+    void setLDAPConfig(const Poco::Util::AbstractConfiguration & users_config);
+
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
     void setDefaultProfileName(const String & default_profile_name);
 
     std::shared_ptr<const ContextAccess> getContextAccess(
