@@ -347,22 +347,10 @@ StorageDistributed::StorageDistributed(
 void StorageDistributed::createStorage()
 {
     /// Create default policy with the relative_data_path_
-    if (storage_policy.empty())
-    {
-        std::string path(global_context->getPath());
-        /// Disk must ends with '/'
-        if (!path.ends_with('/'))
-            path += '/';
-        auto disk = std::make_shared<DiskLocal>("default", path, 0);
-        volume = std::make_shared<SingleDiskVolume>("default", disk);
-    }
-    else
-    {
-        auto policy = global_context->getStoragePolicy(storage_policy);
-        if (policy->getVolumes().size() != 1)
-             throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
-        volume = policy->getVolume(0);
-    }
+    auto policy = global_context->getStoragePolicy(storage_policy);
+    if (policy->getVolumes().size() != 1)
+        throw Exception("Storage policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
+    volume = policy->getVolume(0);
 }
 
 StoragePtr StorageDistributed::createWithOwnCluster(
@@ -925,7 +913,7 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
-        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "";
+        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "default";
 
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
