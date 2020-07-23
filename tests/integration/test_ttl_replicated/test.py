@@ -74,7 +74,12 @@ def test_merge_with_ttl_timeout(started_cluster):
     node1.query("SYSTEM START TTL MERGES {table}".format(table=table))
     node2.query("SYSTEM START TTL MERGES {table}".format(table=table))
 
-    time.sleep(30)
+    time.sleep(15) # TTL merges shall happen.
+
+    for i in range(1, 4):
+        node1.query("INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
+
+    time.sleep(15) # TTL merges shall not happen.
 
     assert node1.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
     assert node2.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
