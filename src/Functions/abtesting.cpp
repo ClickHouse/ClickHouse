@@ -190,6 +190,31 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool toFloat64(const ColumnConst * col_const_arr, PODArray<Float64> & output) const
+    {
+        Array src_arr = col_const_arr->getValue<Array>();
+
+        for (size_t i = 0, size = src_arr.size(); i < size; ++i)
+        {
+            switch (src_arr[i].getType())
+            {
+                case Field::Types::Int64:
+                    output.push_back(static_cast<Float64>(src_arr[i].get<const Int64 &>()));
+                    break;
+                case Field::Types::UInt64:
+                    output.push_back(static_cast<Float64>(src_arr[i].get<const UInt64 &>()));
+                    break;
+                case Field::Types::Float64:
+                    output.push_back(src_arr[i].get<const Float64 &>());
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        return true;
+    };
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         if (input_rows_count == 0)
@@ -233,45 +258,20 @@ public:
             }
         }
 
-        auto toFloat64 = [&](const ColumnConst * col_const_arr)
-        {
-            PODArray<Float64> float64_arr;
-
-            Array src_arr = col_const_arr->getValue<Array>();
-
-            for (size_t i = 0, size = src_arr.size(); i < size; ++i)
-            {
-                switch (src_arr[i].getType())
-                {
-                    case Field::Types::Int64:
-                        float64_arr.push_back(static_cast<Float64>(src_arr[i].get<const Int64 &>()));
-                        break;
-                    case Field::Types::UInt64:
-                        float64_arr.push_back(static_cast<Float64>(src_arr[i].get<const UInt64 &>()));
-                        break;
-                    case Field::Types::Float64:
-                        float64_arr.push_back(src_arr[i].get<const Float64 &>());
-                        break;
-                    default:
-                        throw Exception("Forth and fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                }
-            }
-
-            return float64_arr;
-        };
-
         if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[3]).column.get()))
         {
             if (!col_const_arr)
                 throw Exception("Forth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            xs = toFloat64(col_const_arr);
+            if (!toFloat64(col_const_arr, xs))
+                throw Exception("Forth and fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[4]).column.get()))
         {
             if (!col_const_arr)
                 throw Exception("Fifth argument for function " + getName() + " must be Array of constant numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            ys = toFloat64(col_const_arr);
+            if (!toFloat64(col_const_arr, ys))
+                throw Exception("Fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
