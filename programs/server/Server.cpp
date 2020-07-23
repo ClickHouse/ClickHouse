@@ -672,6 +672,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+    global_context->setAllowInsecurePrewhere(config().getBool("allow_insecure_prewhere", false));
+
+
     LOG_INFO(log, "Loading metadata from {}", path);
 
     try

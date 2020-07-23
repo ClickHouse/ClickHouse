@@ -365,6 +365,7 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
+    bool allow_insecure_prewhere = false;
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
@@ -794,6 +795,16 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
     auto lock = getLock();
     auto initial_condition = initial_row_policy ? initial_row_policy->getCondition(database, table_name, type) : nullptr;
     return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
+}
+void Context::setAllowInsecurePrewhere(bool allow)
+{
+    auto lock = getLock();
+    shared->allow_insecure_prewhere = allow;
+}
+bool Context::getAllowInsecurePrewhere() const
+{
+    auto lock = getLock();
+    return shared->allow_insecure_prewhere;
 }
 
 void Context::setInitialRowPolicy()

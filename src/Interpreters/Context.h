@@ -288,6 +288,8 @@ public:
     std::shared_ptr<const ContextAccess> getAccess() const;
 
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
+    void setAllowInsecurePrewhere(bool allow);
+    bool getAllowInsecurePrewhere() const;
 
     /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
     /// TODO: we need a better solution here. It seems we should pass the initial row policy
