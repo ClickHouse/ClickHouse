@@ -324,6 +324,13 @@ void TCPHandler::runImpl()
             sendException(*exception, send_exception_with_stack_trace);
             std::abort();
         }
+        catch (const std::out_of_range & e)
+        {
+            state.io.onException();
+            exception.emplace(Exception::CreateFromSTDTag{}, e);
+            sendException(*exception, send_exception_with_stack_trace);
+            std::abort();
+        }
 #endif
         catch (const std::exception & e)
         {
