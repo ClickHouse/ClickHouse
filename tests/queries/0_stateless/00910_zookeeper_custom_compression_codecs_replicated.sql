@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 SET allow_suspicious_codecs = 1;
 
 DROP TABLE IF EXISTS test.compression_codec_replicated1;
@@ -104,7 +104,7 @@ DROP TABLE IF EXISTS test.compression_codec_multiple_more_types_replicated;
 
 CREATE TABLE test.compression_codec_multiple_more_types_replicated (
     id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
-    data FixedString(12) CODEC(ZSTD, ZSTD, Delta, Delta, Delta, NONE, NONE, NONE, LZ4HC),
+    data FixedString(12) CODEC(ZSTD, ZSTD, Delta(1), Delta(1), Delta(1), NONE, NONE, NONE, LZ4HC),
     ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_multiple_more_types_replicated', '1') ORDER BY tuple();
 
@@ -123,7 +123,7 @@ SET network_zstd_compression_level = 5;
 CREATE TABLE test.compression_codec_multiple_with_key_replicated (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12), Delta, Delta),
     id UInt64 CODEC(LZ4, ZSTD, Delta, NONE, LZ4HC, Delta),
-    data String CODEC(ZSTD(2), Delta, LZ4HC, NONE, LZ4, LZ4)
+    data String CODEC(ZSTD(2), Delta(1), LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/compression_codec_multiple_with_key_replicated', '1') PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
 
 

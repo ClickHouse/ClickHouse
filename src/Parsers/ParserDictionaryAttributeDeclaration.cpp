@@ -2,6 +2,7 @@
 
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserDataType.h>
 
 namespace DB
 {
@@ -9,7 +10,7 @@ namespace DB
 bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserDataType type_parser;
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_expression{"EXPRESSION"};
     ParserKeyword s_hierarchical{"HIERARCHICAL"};

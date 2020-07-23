@@ -315,7 +315,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     if (has_empty_bound)
         return;
 
-    cells.assign(grid_size * grid_size, {});
+    cells.assign(size_t(grid_size) * grid_size, {});
 
     const Point & min_corner = box.min_corner();
 
@@ -356,6 +356,9 @@ template <typename CoordinateType>
 bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, CoordinateType y) const
 {
     if (has_empty_bound)
+        return false;
+
+    if (std::isnan(x) || std::isnan(y))
         return false;
 
     CoordinateType float_row = (y + y_shift) * y_scale;

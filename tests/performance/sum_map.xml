@@ -7,13 +7,14 @@
         <substitution>
            <name>scale</name>
            <values>
-               <value>100000</value>
                <value>1000000</value>
            </values>
        </substitution>
         <substitution>
            <name>func</name>
            <values>
+               <value>minMap</value>
+               <value>maxMap</value>
                <value>sumMap</value>
                <value>sumMapWithOverflow</value>
            </values>
@@ -21,7 +22,7 @@
     </substitutions>
 
     <create_query>
-        CREATE TEMPORARY TABLE sum_map_{scale} AS 
+        CREATE TABLE sum_map_{scale} ENGINE Memory AS
         SELECT
             arrayMap(x -> (x % 23), range(50)) AS key,
             arrayMap(x -> intDiv(number, x + 1), range(50)) AS val

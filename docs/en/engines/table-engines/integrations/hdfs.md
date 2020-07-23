@@ -1,12 +1,12 @@
 ---
-toc_priority: 36
+toc_priority: 4
 toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
 This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
-to the [File](../special/file.md#table_engines-file) and [URL](../special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
+to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
 ## Usage {#usage}
 
@@ -116,6 +116,6 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 **See Also**
 
--   [Virtual columns](../index.md#table_engines-virtual_columns)
+-   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->

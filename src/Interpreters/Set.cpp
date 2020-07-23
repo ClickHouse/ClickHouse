@@ -441,9 +441,14 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
     }
 }
 
+bool Set::areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
+{
+    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
+}
+
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
-    if (!removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type))))
+    if (!this->areTypesEqual(set_type_idx, other_type))
         throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
                         + other_type->getName() + " on the left, "
                         + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);

@@ -40,12 +40,12 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts);
+    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot);
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot);
 
 private:
     MergeTreeData & data;

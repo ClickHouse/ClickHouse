@@ -17,6 +17,7 @@ using ElfEhdr = ElfW(Ehdr);
 using ElfOff = ElfW(Off);
 using ElfPhdr = ElfW(Phdr);
 using ElfShdr = ElfW(Shdr);
+using ElfNhdr = ElfW(Nhdr);
 using ElfSym = ElfW(Sym);
 
 
@@ -53,12 +54,18 @@ public:
     const char * end() const { return mapped + elf_size; }
     size_t size() const { return elf_size; }
 
+    /// Obtain build id from PT_NOTES section of program headers. Return empty string if does not exist.
+    /// The string is returned in binary. Note that "readelf -n ./clickhouse-server" prints it in hex.
+    String getBuildID() const;
+    static String getBuildID(const char * nhdr_pos, size_t size);
+
 private:
     MMapReadBufferFromFile in;
     size_t elf_size;
     const char * mapped;
     const ElfEhdr * header;
     const ElfShdr * section_headers;
+    const ElfPhdr * program_headers;
     const char * section_names = nullptr;
 };
 

@@ -9,6 +9,7 @@
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
 #include <Poco/ExpireCache.h>
 #include <mutex>
@@ -40,27 +41,8 @@ class AccessControlManager::ContextAccessCache
 public:
     explicit ContextAccessCache(const AccessControlManager & manager_) : manager(manager_) {}
 
-    std::shared_ptr<const ContextAccess> getContextAccess(
-        const UUID & user_id,
-        const boost::container::flat_set<UUID> & current_roles,
-        bool use_default_roles,
-        const Settings & settings,
-        const String & current_database,
-        const ClientInfo & client_info)
+    std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params)
     {
-        ContextAccess::Params params;
-        params.user_id = user_id;
-        params.current_roles = current_roles;
-        params.use_default_roles = use_default_roles;
-        params.current_database = current_database;
-        params.readonly = settings.readonly;
-        params.allow_ddl = settings.allow_ddl;
-        params.allow_introspection = settings.allow_introspection_functions;
-        params.interface = client_info.interface;
-        params.http_method = client_info.http_method;
-        params.address = client_info.current_address.host();
-        params.quota_key = client_info.quota_key;
-
         std::lock_guard lock{mutex};
         auto x = cache.get(params);
         if (x)
@@ -83,7 +65,8 @@ AccessControlManager::AccessControlManager()
       role_cache(std::make_unique<RoleCache>(*this)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
-      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this))
+      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
+      external_authenticators(std::make_unique<ExternalAuthenticators>())
 {
 }
 
@@ -95,6 +78,12 @@ void AccessControlManager::setLocalDirectory(const String & directory_path)
 {
     auto & disk_access_storage = dynamic_cast<DiskAccessStorage &>(getStorageByIndex(DISK_ACCESS_STORAGE_INDEX));
     disk_access_storage.setDirectory(directory_path);
+}
+
+
+void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    external_authenticators->setConfig(config, getLogger());
 }
 
 
@@ -119,7 +108,25 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     const String & current_database,
     const ClientInfo & client_info) const
 {
-    return context_access_cache->getContextAccess(user_id, current_roles, use_default_roles, settings, current_database, client_info);
+    ContextAccessParams params;
+    params.user_id = user_id;
+    params.current_roles = current_roles;
+    params.use_default_roles = use_default_roles;
+    params.current_database = current_database;
+    params.readonly = settings.readonly;
+    params.allow_ddl = settings.allow_ddl;
+    params.allow_introspection = settings.allow_introspection_functions;
+    params.interface = client_info.interface;
+    params.http_method = client_info.http_method;
+    params.address = client_info.current_address.host();
+    params.quota_key = client_info.quota_key;
+    return getContextAccess(params);
+}
+
+
+std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(const ContextAccessParams & params) const
+{
+    return context_access_cache->getContextAccess(params);
 }
 
 
@@ -162,6 +169,11 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
 std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
 {
     return settings_profiles_cache->getProfileSettings(profile_name);
+}
+
+const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
+{
+    return *external_authenticators;
 }
 
 }
