@@ -1334,4 +1334,42 @@ len: 30
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
 
 
+## randomStringUTF8 {#randomstringutf8}
+
+Генерирует строку определенной длины со случайной строкой в кодировке UTF-8.
+
+**Синтаксис**
+
+``` sql
+randomStringUTF8(length);
+```
+
+**Параметры**
+
+-   `length` — Длина итоговой строки в кодовых точках. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Случайная строка в кодировке UTF-8.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+```sql 
+SELECT randomStringUTF8(13)
+```
+
+Результат:
+
+```text 
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
+└──────────────────────┘
+
+```
+
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

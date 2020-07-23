@@ -215,6 +215,9 @@ try
 
     /// Skip networking
 
+    /// Sets external authenticators config (LDAP).
+    context->setExternalAuthenticatorsConfig(config());
+
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.

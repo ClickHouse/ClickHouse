@@ -82,7 +82,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_in_untyped = block.getByPosition(arguments[0]).column;
         const double inverse_probability = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[1]).column).getValue<double>();

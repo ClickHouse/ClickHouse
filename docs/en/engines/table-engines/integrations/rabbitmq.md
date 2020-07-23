@@ -2,11 +2,13 @@
 toc_priority: 6
 toc_title: RabbitMQ
 ---
-# RabbitMQ Engine
+
+# RabbitMQ Engine {#rabbitmq-engine}
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
 RabbitMQ lets you:
+
 -   Publish or subscribe to data flows.
 -   Process streams as they become available.
 
@@ -43,7 +45,7 @@ Optional parameters:
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 -   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient. Single queue can contain up to 50K messages at the same time.
--   `rabbitmq_transactional_channel` –  Wrap insert queries in transactions. Default: `0`.
+-   `rabbitmq_transactional_channel` – Wrap insert queries in transactions. Default: `0`.
 
 Required configuration:
 
@@ -83,6 +85,7 @@ Data can be channeled based on `rabbitmq_exchange_type` and the specified `rabbi
 There can be no more than one exchange per table. One exchange can be shared between multiple tables - it enables routing into multiple tables at the same time.
 
 Exchange type options:
+
 -   `direct` - Routing is based on exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can eqaul any of them.
 -   `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
 -   `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
@@ -92,6 +95,7 @@ Exchange type options:
 If exchange type is not specified, then default is `fanout` and routing keys for data publishing must be randomized in range `[1, num_consumers]` for every message/batch (or in range `[1, num_consumers * num_queues]` if `rabbitmq_num_queues` is set). This table configuration works quicker then any other, especially when `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are set.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are specified along with `rabbitmq_exchange_type`, then:
+
 -   `rabbitmq-consistent-hash-exchange` plugin must be enabled.
 -   `message_id` property of the published messages must be specified (unique for each message/batch).
 
@@ -116,4 +120,3 @@ Example:
 
   SELECT key, value FROM daily ORDER BY key;
 ```
-

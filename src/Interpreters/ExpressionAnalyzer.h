@@ -4,7 +4,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -82,7 +82,7 @@ public:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(
         const ASTPtr & query_,
-        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+        const TreeRewriterResultPtr & syntax_analyzer_result_,
         const Context & context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false)
     {}
@@ -112,7 +112,7 @@ public:
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
-        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+        const TreeRewriterResultPtr & syntax_analyzer_result_,
         const Context & context_,
         size_t subquery_depth_,
         bool do_global_);
@@ -122,7 +122,7 @@ protected:
     const ExtractedSettings settings;
     size_t subquery_depth;
 
-    SyntaxAnalyzerResultPtr syntax;
+    TreeRewriterResultPtr syntax;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
@@ -231,7 +231,7 @@ public:
 
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
-        const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+        const TreeRewriterResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
