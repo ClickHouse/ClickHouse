@@ -21,6 +21,7 @@ SRCS(
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
+    LDAPAccessStorage.cpp
     LDAPClient.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp

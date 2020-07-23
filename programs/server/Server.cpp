@@ -595,6 +595,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!access_control_local_path.empty())
         global_context->getAccessControlManager().setLocalDirectory(access_control_local_path);
 
+    /// Set LDAP user directory config.
+    const bool has_ldap_directory_config = config().has("user_directories.ldap");
+    if (has_ldap_directory_config) {
+        auto ldap_directory_config = config().createView("user_directories.ldap");
+        if (ldap_directory_config)
+            global_context->getAccessControlManager().setLDAPConfig(*ldap_directory_config);
+    }
+
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 

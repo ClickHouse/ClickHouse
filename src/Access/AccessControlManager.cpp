@@ -3,6 +3,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/DiskAccessStorage.h>
+#include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -28,11 +29,14 @@ namespace
 #if 0  /// Memory access storage is disabled.
         list.emplace_back(std::make_unique<MemoryAccessStorage>());
 #endif
+
+        list.emplace_back(std::make_unique<LDAPAccessStorage>());
         return list;
     }
 
     constexpr size_t DISK_ACCESS_STORAGE_INDEX = 0;
     constexpr size_t USERS_CONFIG_ACCESS_STORAGE_INDEX = 1;
+    constexpr size_t LDAP_ACCESS_STORAGE_INDEX = 2;
 }
 
 
@@ -81,16 +85,23 @@ void AccessControlManager::setLocalDirectory(const String & directory_path)
 }
 
 
-void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    external_authenticators->setConfig(config, getLogger());
-}
-
-
 void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config)
 {
     auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
     users_config_access_storage.setConfiguration(users_config);
+}
+
+
+void AccessControlManager::setLDAPConfig(const Poco::Util::AbstractConfiguration & users_config)
+{
+    auto & ldap_access_storage = dynamic_cast<LDAPAccessStorage &>(getStorageByIndex(LDAP_ACCESS_STORAGE_INDEX));
+    ldap_access_storage.setConfiguration(users_config, this);
+}
+
+
+void AccessControlManager::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    external_authenticators->setConfiguration(config, getLogger());
 }
 
 
