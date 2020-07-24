@@ -1516,6 +1516,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         part->index_granularity_info.index_granularity_bytes);
 
     size_t granules_dropped = 0;
+    size_t total_granules = 0;
 
     size_t marks_count = part->getMarksCount();
     size_t final_mark = part->index_granularity.hasFinalMark();
@@ -1542,6 +1543,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
 
+        total_granules += index_range.end - index_range.begin;
+
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
@@ -1566,7 +1569,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index_helper->index.name), granules_dropped);
+    LOG_DEBUG(log, "Index {} has dropped {} / {} granules.", backQuote(index_helper->index.name), granules_dropped, total_granules);
 
     return res;
 }
