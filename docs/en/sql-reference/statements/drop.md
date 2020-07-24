@@ -1,5 +1,6 @@
 ---
 toc_priority: 46
+toc_title: DROP
 ---
 
 # DROP Statements {#drop}

@@ -8,7 +8,7 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
-#include <Interpreters/AnyInputOptimize.h>
+#include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
@@ -458,11 +458,10 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeAnyInput(ASTPtr & query)
+void optimizeAnyFunctions(ASTPtr & query)
 {
-    /// Removing arithmetic operations from functions
-    AnyInputVisitor::Data data = {};
-    AnyInputVisitor(data).visit(query);
+    RewriteAnyFunctionVisitor::Data data = {};
+    RewriteAnyFunctionVisitor(data).visit(query);
 }
 
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
@@ -520,9 +519,9 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     if (settings.optimize_group_by_function_keys)
         optimizeGroupByFunctionKeys(select_query);
 
-    ///Move all operations out of any function
+    /// Move all operations out of any function
     if (settings.optimize_move_functions_out_of_any)
-        optimizeAnyInput(query);
+        optimizeAnyFunctions(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
