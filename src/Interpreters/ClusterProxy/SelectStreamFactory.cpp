@@ -84,7 +84,7 @@ Pipe createLocalStream(
         /// This flag means that pipeline must be tree-shaped,
         /// so we can't enable processors for InterpreterSelectQuery here.
         auto stream = interpreter.execute().in;
-        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+        auto source = std::make_shared<SourceFromInputStream>(std::move(stream), processed_stage == QueryProcessingStage::WithMergeableState);
 
         if (add_totals_port)
             source->addTotalsPort();
