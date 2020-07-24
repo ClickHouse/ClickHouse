@@ -28,11 +28,13 @@ private:
     {
         const bool enable_optimize_predicate_expression;
         const bool enable_optimize_predicate_expression_to_final_subquery;
+        const bool allow_push_predicate_when_subquery_contains_with;
 
         template<typename T>
         ExtractedSettings(const T & settings_)
             :   enable_optimize_predicate_expression(settings_.enable_optimize_predicate_expression),
-                enable_optimize_predicate_expression_to_final_subquery(settings_.enable_optimize_predicate_expression_to_final_subquery)
+                enable_optimize_predicate_expression_to_final_subquery(settings_.enable_optimize_predicate_expression_to_final_subquery),
+                allow_push_predicate_when_subquery_contains_with(settings_.allow_push_predicate_when_subquery_contains_with)
         {}
     };
 
