@@ -153,18 +153,6 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
 }
 
 
-static std::string normalizeZooKeeperPath(std::string zookeeper_path)
-{
-    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
-        zookeeper_path = "/" + zookeeper_path;
-
-    return zookeeper_path;
-}
-
-
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & zookeeper_path_,
     const String & replica_name_,
@@ -187,9 +175,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     true,                   /// require_part_metadata
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
-    , zookeeper_path(normalizeZooKeeperPath(global_context.getMacros()->expand(zookeeper_path_, table_id_.database_name, table_id_.table_name)))
+    , zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, table_id_.database_name, table_id_.table_name))
     , replica_name(global_context.getMacros()->expand(replica_name_, table_id_.database_name, table_id_.table_name))
-    , replica_path(zookeeper_path + "/replicas/" + replica_name)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
@@ -199,6 +186,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_check_thread(*this)
     , restarting_thread(*this)
 {
+    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
+        zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+        zookeeper_path = "/" + zookeeper_path;
+    replica_path = zookeeper_path + "/replicas/" + replica_name;
+
     queue_updating_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
@@ -207,7 +201,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     merge_selecting_task = global_context.getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
-
     /// Will be activated if we win leader election.
     merge_selecting_task->deactivate();
 
@@ -1422,6 +1415,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
             return false;
         }
     }
+
 
     MergeTreePartInfo new_part_info = MergeTreePartInfo::fromPartName(
         entry.new_part_name, format_version);
@@ -3225,7 +3219,10 @@ void StorageReplicatedMergeTree::startup()
 
     try
     {
-        queue.initialize(getDataParts());
+        queue.initialize(
+            zookeeper_path, replica_path,
+            getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)",
+            getDataParts());
 
         data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
         global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
@@ -3245,7 +3242,12 @@ void StorageReplicatedMergeTree::startup()
             pool.startTask(queue_task_handle);
         }
 
-        startBackgroundMovesIfNeeded();
+        if (areBackgroundMovesNeeded())
+        {
+            auto & pool = global_context.getBackgroundMovePool();
+            move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
+            pool.startTask(move_parts_task_handle);
+        }
     }
     catch (...)
     {
@@ -5673,16 +5675,4 @@ MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPar
 {
     return queue.getFirstAlterMutationCommandsForPart(part);
 }
-
-
-void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
-{
-    if (areBackgroundMovesNeeded() && !move_parts_task_handle)
-    {
-        auto & pool = global_context.getBackgroundMovePool();
-        move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
-        pool.startTask(move_parts_task_handle);
-    }
-}
-
 }

@@ -148,8 +148,6 @@ private:
     /// Just checks versions of each active data part
     bool isMutationDone(Int64 mutation_version) const;
 
-    void startBackgroundMovesIfNeeded() override;
-
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;
