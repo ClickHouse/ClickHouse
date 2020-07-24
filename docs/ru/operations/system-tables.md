@@ -78,8 +78,8 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 ```
 
 **Смотрите также**
-- [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md) — Содержит метрики, которые периодически вычисляются в фоновом режиме. 
-- [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+- [system.asynchronous_metrics](../../operations/system-tables/asynchronous-metrics.md) — Содержит метрики, которые периодически вычисляются в фоновом режиме. 
+- [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 
 ## system.clusters {#system-clusters}
 
