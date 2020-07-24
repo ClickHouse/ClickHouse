@@ -68,16 +68,15 @@ std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & 
             return id;
 
         if (!isConfiguredNoLock())
-        {
-            LOG_WARNING(getLogger(), "Access storage instance is not configured.");
             return {};
-        }
 
         // Stop if entity exists anywhere else, to avoid duplicates.
         if (top_enclosing_storage->find(type, name))
             return {};
 
-        // Entity doesn't exist. We are going to create it. Here we retrieve the template first.
+        // Entity doesn't exist. We are going to create one.
+
+        // Retrieve the template first.
         const auto user_tmp = top_enclosing_storage->read<User>(user_template);
         if (!user_tmp)
         {
