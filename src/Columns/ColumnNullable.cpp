@@ -562,7 +562,6 @@ void ColumnNullable::applyNullMap(const ColumnNullable & other)
     applyNullMap(other.getNullMapColumn());
 }
 
-
 void ColumnNullable::checkConsistency() const
 {
     if (null_map->size() != getNestedColumn().size())

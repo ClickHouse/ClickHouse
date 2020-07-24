@@ -35,7 +35,7 @@ void MarkTableIdentifiersMatcher::visit(ASTTableExpression & table, ASTPtr &, Da
 void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr &, Data & data)
 {
     /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
-    if (functionIsInOrGlobalInOperator(func.name))
+    if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
         auto opt_name = tryGetIdentifierName(ast);
