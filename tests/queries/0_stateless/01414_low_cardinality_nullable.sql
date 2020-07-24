@@ -40,22 +40,22 @@ INSERT INTO lc_nullable SELECT
     FROM (SELECT number FROM system.numbers LIMIT 15);
 
 INSERT INTO lc_nullable SELECT
-    groupArray(number) AS order_key,
-    groupArray(toInt8(number)) AS i8,
-    groupArray(toInt16(number)) AS i16,
-    groupArray(toInt32(number)) AS i32,
-    groupArray(toInt64(number)) AS i64,
-    groupArray(toUInt8(number)) AS u8,
-    groupArray(toUInt16(number)) AS u16,
-    groupArray(toUInt32(number)) AS u32,
-    groupArray(toUInt64(number)) AS u64,
-    groupArray(toFloat32(number)) AS f32,
-    groupArray(toFloat64(number)) AS f64,
-    groupArray(toDate(number, 'Europe/Moscow')) AS date,
-    groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time,
-    groupArray(toString(number)) AS str,
-    groupArray(toFixedString(toString(number), 5)) AS fixed_string
-    FROM (SELECT -number FROM system.numbers LIMIT 15);
+    groupArray(num) AS order_key,
+    groupArray(toInt8(num)) AS i8,
+    groupArray(toInt16(num)) AS i16,
+    groupArray(toInt32(num)) AS i32,
+    groupArray(toInt64(num)) AS i64,
+    groupArray(toUInt8(num)) AS u8,
+    groupArray(toUInt16(num)) AS u16,
+    groupArray(toUInt32(num)) AS u32,
+    groupArray(toUInt64(num)) AS u64,
+    groupArray(toFloat32(num)) AS f32,
+    groupArray(toFloat64(num)) AS f64,
+    groupArray(toDate(num, 'Europe/Moscow')) AS date,
+    groupArray(toDateTime(num, 'Europe/Moscow')) AS date_time,
+    groupArray(toString(num)) AS str,
+    groupArray(toFixedString(toString(num), 5)) AS fixed_string
+    FROM (SELECT negate(number) as num FROM system.numbers LIMIT 15);
 
 INSERT INTO lc_nullable SELECT
     groupArray(number) AS order_key,
