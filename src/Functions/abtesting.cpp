@@ -190,7 +190,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool toFloat64(const ColumnConst * col_const_arr, PODArray<Float64> & output) const
+    static bool toFloat64(const ColumnConst * col_const_arr, PODArray<Float64> & output) const
     {
         Array src_arr = col_const_arr->getValue<Array>();
 
