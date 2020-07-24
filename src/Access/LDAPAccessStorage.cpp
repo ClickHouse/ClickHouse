@@ -28,17 +28,17 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     if (!has_server)
         throw Exception("Missing 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
-    const auto ldap_server_ = config.getString("server");
-    const auto user_template_ = (has_user_template ? config.getString("user_template") : "default");
+    const auto ldap_server_cfg = config.getString("server");
+    const auto user_template_cfg = (has_user_template ? config.getString("user_template") : "default");
 
-    if (ldap_server_.empty())
+    if (ldap_server_cfg.empty())
         throw Exception("Empty 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
-    if (user_template_.empty())
+    if (user_template_cfg.empty())
         throw Exception("Empty 'user_template' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
-    ldap_server = ldap_server_;
-    user_template = user_template_;
+    ldap_server = ldap_server_cfg;
+    user_template = user_template_cfg;
     top_enclosing_storage = top_enclosing_storage_;
 }
 
