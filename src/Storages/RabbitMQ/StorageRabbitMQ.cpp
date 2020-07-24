@@ -73,7 +73,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         size_t num_consumers_,
         size_t num_queues_,
         const bool use_transactional_channel_,
-        const String & queue_base_)
+        const String & queue_base_,
+        const String & deadletter_exchange_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -85,6 +86,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , num_queues(num_queues_)
         , use_transactional_channel(use_transactional_channel_)
         , queue_base(queue_base_)
+        , deadletter_exchange(deadletter_exchange_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , login_password(std::make_pair(
@@ -224,6 +226,7 @@ void StorageRabbitMQ::initExchange()
 void StorageRabbitMQ::bindExchange()
 {
     std::atomic<bool> binding_created = false;
+    size_t bound_keys = 0;
 
     /// Bridge exchange connects client's exchange with consumers' queues.
     if (exchange_type == AMQP::ExchangeType::headers)
@@ -257,7 +260,9 @@ void StorageRabbitMQ::bindExchange()
             setup_channel->bindExchange(exchange_name, bridge_exchange, routing_key)
             .onSuccess([&]()
             {
-                binding_created = true;
+                ++bound_keys;
+                if (bound_keys == routing_keys.size())
+                    binding_created = true;
             })
             .onError([&](const char * message)
             {
@@ -434,7 +439,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         consumer_channel, setup_channel, event_handler, consumer_exchange, exchange_type, routing_keys,
         next_channel_id, queue_base, log, row_delimiter, hash_exchange, num_queues,
-        local_exchange, stream_cancelled);
+        local_exchange, deadletter_exchange, stream_cancelled);
 }
 
 
@@ -739,10 +744,22 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
+        String deadletter_exchange = rabbitmq_settings.rabbitmq_deadletter_exchange.value;
+        if (args_count >= 11)
+        {
+            engine_args[10] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[10], args.local_context);
+
+            const auto * ast = engine_args[9]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
+                deadletter_exchange = safeGet<String>(ast->value);
+            }
+        }
+
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
                 host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers,
-                num_queues, use_transactional_channel, queue_base);
+                num_queues, use_transactional_channel, queue_base, deadletter_exchange);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

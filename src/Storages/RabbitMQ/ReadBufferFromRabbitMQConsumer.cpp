@@ -30,6 +30,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         bool hash_exchange_,
         size_t num_queues_,
         const String & local_exchange_,
+        const String & deadletter_exchange_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
@@ -46,6 +47,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , row_delimiter(row_delimiter_)
         , stopped(stopped_)
         , local_exchange(local_exchange_)
+        , deadletter_exchange(deadletter_exchange_)
         , received(QUEUE_SIZE * num_queues)
 {
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
@@ -55,6 +57,12 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
+    if (ack.load() && consumer_channel)
+    {
+        consumer_channel->ack(prev_tag, AMQP::multiple); /// Will ack all up to last tag staring from last acked.
+        LOG_TRACE(log, "Acknowledged messages with deliveryTags up to {}", prev_tag);
+    }
+
     consumer_channel->close();
     received.clear();
     BufferBase::set(nullptr, 0, 0);
@@ -162,14 +170,20 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         LOG_ERROR(log, "Failed to declare queue on the channel. Reason: {}", message);
     });
 
+    AMQP::Table queue_settings;
+    if (!deadletter_exchange.empty())
+    {
+        queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
+    }
+
     if (!queue_base.empty())
     {
         const String queue_name = !hash_exchange ? queue_base : queue_base + "_" + std::to_string(channel_id) + "_" + std::to_string(queue_id);
-        setup_channel->declareQueue(queue_name, AMQP::durable).onSuccess(success_callback).onError(error_callback);
+        setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
     }
     else
     {
-        setup_channel->declareQueue(AMQP::durable).onSuccess(success_callback).onError(error_callback);
+        setup_channel->declareQueue(AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
     }
 
     while (!bindings_created && !bindings_error)
@@ -184,15 +198,20 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
     if (subscribed_queue[queue_name])
         return;
 
-    consumer_channel->consume(queue_name, AMQP::noack)
+    consumer_channel->consume(queue_name)
     .onSuccess([&](const std::string & consumer)
     {
         subscribed_queue[queue_name] = true;
-        consumer_error = false;
         ++count_subscribed;
+        LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
+
+        consumer_error = false;
         consumer_tag = consumer;
 
-        LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
+        consumer_channel->onError([&](const char * message)
+        {
+            LOG_ERROR(log, "Consumer {} error: {}", consumer_tag, message);
+        });
     })
     .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
     {
@@ -201,11 +220,16 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
         {
             String message_received = std::string(message.body(), message.body() + message_size);
             if (row_delimiter != '\0')
-            {
                 message_received += row_delimiter;
-            }
 
             received.push({deliveryTag, message_received, redelivered});
+
+            std::lock_guard lock(wait_ack);
+            if (ack.exchange(false) && prev_tag < max_tag && consumer_channel)
+            {
+                consumer_channel->ack(prev_tag, AMQP::multiple); /// Will ack all up to last tag staring from last acked.
+                LOG_TRACE(log, "Consumer {} acknowledged messages with deliveryTags up to {}", consumer_tag, prev_tag);
+            }
         }
     })
     .onError([&](const char * message)
@@ -243,6 +267,17 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 }
 
 
+void ReadBufferFromRabbitMQConsumer::ackMessages(UInt64 last_inserted_delivery_tag)
+{
+    if (last_inserted_delivery_tag > prev_tag)
+    {
+        std::lock_guard lock(wait_ack);
+        prev_tag = last_inserted_delivery_tag;
+        ack.store(true);
+    }
+}
+
+
 void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
 {
     event_handler->iterateLoop();
@@ -259,6 +294,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         auto * new_position = const_cast<char *>(current.message.data());
         BufferBase::set(new_position, current.message.size(), 0);
         allowed = false;
+        max_tag = current.delivery_tag;
 
         return true;
     }

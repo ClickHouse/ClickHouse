@@ -72,7 +72,8 @@ protected:
             size_t num_consumers_,
             size_t num_queues_,
             const bool use_transactional_channel_,
-            const String & queue_base_);
+            const String & queue_base_,
+            const String & deadletter_exchange);
 
 private:
     Context global_context;
@@ -90,6 +91,7 @@ private:
     size_t num_queues;
     const bool use_transactional_channel;
     const String queue_base;
+    const String deadletter_exchange;
 
     Poco::Logger * log;
     std::pair<String, UInt16> parsed_address;

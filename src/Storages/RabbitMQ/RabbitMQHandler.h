@@ -21,13 +21,12 @@ public:
     void stop() { stop_loop.store(true); }
     void startLoop();
     void iterateLoop();
-    bool checkLoop() const { return loop_started.load(); }
 
 private:
     uv_loop_t * loop;
     Poco::Logger * log;
 
-    std::atomic<bool> stop_loop = false, loop_started = false;
+    std::atomic<bool> stop_loop = false;
     std::mutex startup_mutex;
 };
 

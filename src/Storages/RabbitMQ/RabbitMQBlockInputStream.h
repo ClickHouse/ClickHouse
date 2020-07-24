@@ -26,6 +26,7 @@ public:
 
     void readPrefixImpl() override;
     Block readImpl() override;
+    void readSuffixImpl() override;
 
 private:
     StorageRabbitMQ & storage;
@@ -38,6 +39,7 @@ private:
     const Block virtual_header;
 
     ConsumerBufferPtr buffer;
+    UInt64 last_inserted_delivery_tag;
 };
 
 }
