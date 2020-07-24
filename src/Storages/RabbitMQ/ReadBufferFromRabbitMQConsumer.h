@@ -36,6 +36,7 @@ public:
             bool hash_exchange_,
             size_t num_queues_,
             const String & local_exchange_,
+            const String & deadletter_exchange_,
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
@@ -49,6 +50,7 @@ public:
 
     void allowNext() { allowed = true; } // Allow to read next message.
     void checkSubscription();
+    void ackMessages(UInt64 last_inserted_delivery_tag);
 
     auto getConsumerTag() const { return consumer_tag; }
     auto getDeliveryTag() const { return current.delivery_tag; }
@@ -72,15 +74,19 @@ private:
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    const String local_exchange;
+    const String local_exchange, deadletter_exchange;
     std::atomic<bool> consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 
     String consumer_tag;
     ConcurrentBoundedQueue<MessageData> received;
+    UInt64 prev_tag = 0;
     MessageData current;
     std::vector<String> queues;
     std::unordered_map<String, bool> subscribed_queue;
+    std::atomic<bool> ack = false;
+    std::mutex wait_ack;
+    UInt64 max_tag = 0;
 
     bool nextImpl() override;
 
