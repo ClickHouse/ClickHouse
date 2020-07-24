@@ -318,8 +318,9 @@ struct ArrayIndexNumNullImpl
             typename ConcreteAction::ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
-                if (null_map_data && (*null_map_data)[current_offset + j] & !ConcreteAction::apply(j, current))
-                    break;
+                if (null_map_data && (*null_map_data)[current_offset + j])
+                    if (!ConcreteAction::apply(j, current))
+                        break;
 
             if constexpr (InvokedNotFromLCSpec)
                 result[i] = current;
@@ -869,35 +870,21 @@ private:
          * The left argument (the value whose index is being searched in the indices column) must be casted
          * to the right argument's side to ensure the StringRefs' equality.
          */
-        const DataTypePtr arg_ptr = block.getByPosition(arguments[1]).type;
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(
                 block.getByPosition(arguments[0]).type.get());
         const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
 
         const ColumnPtr col_arg_cloned = use_cloned_arg
-            ? castColumn({col_arg->getPtr(), arg_ptr, ""}, target_type_ptr)
+            ? castColumn(block.getByPosition(arguments[1]), target_type_ptr)
             : col_arg->getPtr();
 
         for (size_t i = 0; i < arg_size; ++i)
         {
-            if (col_arg->onlyNull())
-            {
-                ArrayIndexNumNullImpl<
-                    ConcreteAction,
-                    false>::vector(
-                    col_array->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
-
-                continue;
-            }
-
             const StringRef elem = col_arg_cloned->getDataAt(i);
 
-            if (elem == EMPTY_STRING_REF) // Possible if the column is Nullable and the data was not present.
-                continue;
-
-            const std::optional<UInt64> value_index = col_lc_dict.getOrFindIndex(elem);
+            const std::optional<UInt64> value_index = (elem == EMPTY_STRING_REF)
+                ? 0 // NULL, which always has index 0
+                : col_lc_dict.getOrFindIndex(elem);
 
             if (!value_index)
                 continue;
@@ -941,7 +928,7 @@ private:
                 col_res->getData(),
                 null_map_data);
         }
-        else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
+        else if (const auto *const item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {
             const ColumnString * item_const_string =
                 checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
@@ -972,7 +959,7 @@ private:
                     "Logical error: ColumnConst contains not String nor FixedString column",
                         ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (const auto item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
+        else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
         {
             ArrayIndexStringImpl<ConcreteAction>::vectorVector(
                 col_nested->getChars(),
