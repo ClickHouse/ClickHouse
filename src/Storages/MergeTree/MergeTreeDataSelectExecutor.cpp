@@ -570,6 +570,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
 
     /// Let's find what range to read from each part.
+    size_t sum_marks_pk = 0;
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
     for (auto & part : parts)
@@ -589,6 +590,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             }
         }
 
+        if (!ranges.ranges.empty())
+            sum_marks_pk += ranges.getMarksCount();
+
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
                 index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings);
@@ -602,7 +606,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
+    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks_pk, sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
