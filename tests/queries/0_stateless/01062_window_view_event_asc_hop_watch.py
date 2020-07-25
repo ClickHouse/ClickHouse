@@ -47,8 +47,8 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(r'Progress')
     client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:10');")
     client2.expect(prompt)
-    client1.expect('1*' + end_of_block)
-    client1.expect('2*' + end_of_block)
+    client1.expect(r'1*' + end_of_block)
+    client1.expect(r'2*' + end_of_block)
     client1.expect(r'Progress')
 
     # send Ctrl-C
