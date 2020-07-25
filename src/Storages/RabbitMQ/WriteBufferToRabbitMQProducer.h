@@ -28,7 +28,8 @@ public:
             const AMQP::ExchangeType exchange_type_,
             Poco::Logger * log_,
             size_t num_queues_,
-            bool use_transactional_channel_,
+            const bool use_transactional_channel_,
+            const bool persistent_,
             std::optional<char> delimiter,
             size_t rows_per_message,
             size_t chunk_size_
@@ -39,10 +40,10 @@ public:
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }
     void finilizeProducer();
+    void updateMaxWait() { wait_num.store(delivery_tag); }
 
 private:
     void nextImpl() override;
-    void initExchange();
     void iterateEventLoop();
     void writingFunc();
 
@@ -52,10 +53,10 @@ private:
     AMQP::ExchangeType exchange_type;
     const size_t num_queues;
     const bool use_transactional_channel;
+    const bool persistent;
 
     AMQP::Table key_arguments;
     BackgroundSchedulePool::TaskHolder writing_task;
-    std::atomic<bool> stop_loop = false;
 
     std::unique_ptr<uv_loop_t> loop;
     std::unique_ptr<RabbitMQHandler> event_handler;
@@ -63,7 +64,9 @@ private:
     ChannelPtr producer_channel;
 
     ConcurrentBoundedQueue<String> payloads;
-    size_t next_queue = 0;
+    UInt64 delivery_tag = 0, current = 0;
+    std::atomic<bool> wait_all = true;
+    std::atomic<UInt64> wait_num = 0, last_processed = 0;
 
     Poco::Logger * log;
     const std::optional<char> delim;

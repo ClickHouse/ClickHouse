@@ -73,7 +73,8 @@ protected:
             size_t num_queues_,
             const bool use_transactional_channel_,
             const String & queue_base_,
-            const String & deadletter_exchange);
+            const String & deadletter_exchange,
+            const bool persistent_);
 
 private:
     Context global_context;
@@ -92,6 +93,7 @@ private:
     const bool use_transactional_channel;
     const String queue_base;
     const String deadletter_exchange;
+    const bool persistent;
 
     Poco::Logger * log;
     std::pair<String, UInt16> parsed_address;
@@ -106,7 +108,7 @@ private:
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String local_exchange, bridge_exchange, consumer_exchange;
-    std::mutex bridge;
+    std::once_flag flag;
     AMQP::Table bind_headers;
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;

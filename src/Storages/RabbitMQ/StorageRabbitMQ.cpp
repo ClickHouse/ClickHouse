@@ -74,7 +74,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         size_t num_queues_,
         const bool use_transactional_channel_,
         const String & queue_base_,
-        const String & deadletter_exchange_)
+        const String & deadletter_exchange_,
+        const bool persistent_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -87,6 +88,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , use_transactional_channel(use_transactional_channel_)
         , queue_base(queue_base_)
         , deadletter_exchange(deadletter_exchange_)
+        , persistent(persistent_)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , login_password(std::make_pair(
@@ -280,7 +282,7 @@ void StorageRabbitMQ::bindExchange()
 
 void StorageRabbitMQ::unbindExchange()
 {
-    if (bridge.try_lock())
+    std::call_once(flag, [&]()
     {
         if (exchange_removed.load())
             return;
@@ -302,9 +304,7 @@ void StorageRabbitMQ::unbindExchange()
 
         event_handler->stop();
         looping_task->deactivate();
-
-        bridge.unlock();
-    }
+    });
 }
 
 
@@ -447,7 +447,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
         parsed_address, global_context, login_password, routing_keys, exchange_name, exchange_type,
-        log, num_consumers * num_queues, use_transactional_channel,
+        log, num_consumers * num_queues, use_transactional_channel, persistent,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
@@ -749,17 +749,31 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         {
             engine_args[10] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[10], args.local_context);
 
-            const auto * ast = engine_args[9]->as<ASTLiteral>();
+            const auto * ast = engine_args[10]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 deadletter_exchange = safeGet<String>(ast->value);
             }
         }
 
+        bool persistent = static_cast<bool>(rabbitmq_settings.rabbitmq_persistent_mode);
+        if (args_count >= 12)
+        {
+            const auto * ast = engine_args[11]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                persistent = static_cast<bool>(safeGet<UInt64>(ast->value));
+            }
+            else
+            {
+                throw Exception("Transactional channel parameter is a bool", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
                 host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers,
-                num_queues, use_transactional_channel, queue_base, deadletter_exchange);
+                num_queues, use_transactional_channel, queue_base, deadletter_exchange, persistent);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

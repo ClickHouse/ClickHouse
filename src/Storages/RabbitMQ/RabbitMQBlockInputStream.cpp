@@ -137,7 +137,8 @@ Block RabbitMQBlockInputStream::readImpl()
             virtual_columns[3]->insert(redelivered);
         }
 
-        last_inserted_delivery_tag = delivery_tag;
+        if (delivery_tag > last_inserted_delivery_tag)
+            last_inserted_delivery_tag = delivery_tag;
 
         total_rows = total_rows + new_rows;
         buffer->allowNext();

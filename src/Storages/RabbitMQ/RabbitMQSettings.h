@@ -21,6 +21,7 @@ namespace DB
     M(SettingBool, rabbitmq_transactional_channel, false, "Use transactional channel for publishing.", 0) \
     M(SettingString, rabbitmq_queue_base, "", "Base for queue names to be able to reopen non-empty queues in case of failure.", 0) \
     M(SettingString, rabbitmq_deadletter_exchange, "", "Exchange name to be passed as a dead-letter-exchange name.", 0) \
+    M(SettingBool, rabbitmq_persistent_mode, false, "If set, delivery mode will be set to 2 (makes messages 'persistent', durable).", 0) \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_RABBITMQ_SETTINGS)
 

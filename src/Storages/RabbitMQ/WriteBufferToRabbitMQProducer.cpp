@@ -16,13 +16,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_RABBITMQ;
-    extern const int LOGICAL_ERROR;
 }
 
 static const auto QUEUE_SIZE = 50000;
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 1000;
 static const auto LOOP_WAIT = 10;
+static const auto BATCH = 10000;
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address,
@@ -33,7 +33,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         const AMQP::ExchangeType exchange_type_,
         Poco::Logger * log_,
         size_t num_queues_,
-        bool use_transactional_channel_,
+        const bool use_transactional_channel_,
+        const bool persistent_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_)
@@ -44,6 +45,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , exchange_type(exchange_type_)
         , num_queues(num_queues_)
         , use_transactional_channel(use_transactional_channel_)
+        , persistent(persistent_)
         , payloads(QUEUE_SIZE * num_queues)
         , log(log_)
         , delim(delimiter)
@@ -57,10 +59,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
-    /* The reason behind making a separate connection for each concurrent producer is explained here:
-     * https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086 - publishing from
-     * different threads (as outputStreams are asynchronous) with the same connection leads to internal library errors.
-     */
+    /// New coonection for each publisher because cannot publish from different threads.(https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086)
     size_t cnt_retries = 0;
     while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
     {
@@ -74,11 +73,26 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     }
 
     producer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    producer_channel->onError([&](const char * message)
+    {
+        LOG_ERROR(log, "Prodcuer error: {}", message);
+    });
 
-    /// If publishing should be wrapped in transactions
     if (use_transactional_channel)
     {
         producer_channel->startTransaction();
+    }
+    else
+    {
+        producer_channel->confirmSelect()
+        .onAck([&](uint64_t deliveryTag, bool /* multiple */)
+        {
+            if (deliveryTag > last_processed)
+                last_processed = deliveryTag;
+        })
+        .onNack([&](uint64_t /* deliveryTag */, bool /* multiple */, bool /* requeue */)
+        {
+        });
     }
 
     writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
@@ -99,10 +113,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
-    stop_loop.store(true);
     writing_task->deactivate();
-    initExchange();
-
     connection->close();
     assert(rows == 0 && chunks.empty());
 }
@@ -130,6 +141,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         chunks.clear();
         set(nullptr, 0);
 
+        ++delivery_tag;
         payloads.push(payload);
     }
 }
@@ -139,52 +151,51 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 {
     String payload;
 
-    while (!stop_loop || !payloads.empty())
+    auto returned_callback = [&](const AMQP::Message & message, int16_t /* code */, const std::string & /* description */)
     {
-        while (!payloads.empty())
+        payloads.push(std::string(message.body(), message.size()));
+        //LOG_DEBUG(log, "Message returned with code: {}, description: {}. Republishing", code, description);
+    };
+
+    while ((!payloads.empty() || wait_all) && connection->usable())
+    {
+        while (!payloads.empty() && producer_channel->usable())
         {
             payloads.pop(payload);
+            AMQP::Envelope envelope(payload.data(), payload.size());
+            current = wait_num ? ++current % wait_num : ++current;
+
+            /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse.
+            if (persistent)
+                envelope.setDeliveryMode(2);
 
             if (exchange_type == AMQP::ExchangeType::consistent_hash)
             {
-                next_queue = next_queue % num_queues + 1;
-                producer_channel->publish(exchange_name, std::to_string(next_queue), payload);
+                producer_channel->publish(exchange_name, std::to_string(current), envelope).onReturned(returned_callback);
             }
             else if (exchange_type == AMQP::ExchangeType::headers)
             {
-                AMQP::Envelope envelope(payload.data(), payload.size());
                 envelope.setHeaders(key_arguments);
-                producer_channel->publish(exchange_name, "", envelope, key_arguments);
+                producer_channel->publish(exchange_name, "", envelope, key_arguments).onReturned(returned_callback);
             }
             else
             {
-                producer_channel->publish(exchange_name, routing_keys[0], payload);
+                producer_channel->publish(exchange_name, routing_keys[0], envelope).onReturned(returned_callback);
             }
+
+            if (current % BATCH == 0)
+                iterateEventLoop();
         }
 
-        iterateEventLoop();
-    }
-}
-
-
-void WriteBufferToRabbitMQProducer::initExchange()
-{
-    std::atomic<bool> exchange_declared = false, exchange_error = false;
-
-    producer_channel->declareExchange(exchange_name, exchange_type, AMQP::durable + AMQP::passive)
-    .onSuccess([&]()
-    {
-        exchange_declared = true;
-    })
-    .onError([&](const char * /* message */)
-    {
-        exchange_error = true;
-    });
-
-    /// These variables are updated in a separate thread.
-    while (!exchange_declared && !exchange_error)
-    {
-        iterateEventLoop();
+        if (wait_num.load() && last_processed.load() >= wait_num.load())
+        {
+            wait_all.store(false);
+            LOG_DEBUG(log, "All messages are successfully published");
+        }
+        else
+        {
+            iterateEventLoop();
+        }
     }
 }
 
@@ -198,11 +209,13 @@ void WriteBufferToRabbitMQProducer::finilizeProducer()
         .onSuccess([&]()
         {
             answer_received = true;
+            wait_all.store(false);
             LOG_TRACE(log, "All messages were successfully published");
         })
         .onError([&](const char * message1)
         {
             answer_received = true;
+            wait_all.store(false);
             wait_rollback = true;
             LOG_TRACE(log, "Publishing not successful: {}", message1);
             producer_channel->rollbackTransaction()
