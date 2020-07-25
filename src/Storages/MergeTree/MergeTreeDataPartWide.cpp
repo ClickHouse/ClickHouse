@@ -237,7 +237,20 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
         each_columns_size[column.name] = size;
         total_size.add(size);
+
+#ifndef NDEBUG
+        if (rows_count != 0 && column.type->isValueRepresentedByNumber())
+        {
+            size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
+            if (rows_in_column != rows_count)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Column {} has rows count {} according to size in memory and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
+            }
+        }
     }
+#endif
 }
 
 }
