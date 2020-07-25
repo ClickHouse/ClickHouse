@@ -137,11 +137,9 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 
 ## Functions for Working with Geohash {#geohash}
 
-Geohash is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.  
+[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location. 
 
-The description of the Geohash system is available in the [Wikipedia](https://en.wikipedia.org/wiki/Geohash). 
-
-If you need to convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
+If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
 ### geohashEncode {#geohashencode}
 
@@ -216,17 +214,17 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 -   `precision` — Geohash precision. Range: `[1, 12]`. Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
 !!! info "Note"
-    All coordinate parameters should be of the same type: either `Float32` or `Float64`.
+    All coordinate parameters must be of the same type: either `Float32` or `Float64`.
 
 **Returned values**
 
 -   Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
--   \[\] - Empty array if *min* values of *latitude* and *longitude* aren’t less than corresponding *max* values.
+-   `[]` - Empty array if minimum latitude and longitude values aren’t less than corresponding maximum values.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 !!! info "Note"
-    Function will throw an exception if resulting array is over 10’000’000 items long.
+    Function throws an exception if resulting array is over 10’000’000 items long.
 
 **Example**
 
@@ -253,7 +251,7 @@ A latitude and longitude pair can be transformed to a 64-bit H3 index, identifyi
 
 The H3 index is used primarily for bucketing locations and other geospatial manipulations.
 
-The full description of the H3 systen is available at [the Uber Engeneering site](https://eng.uber.com/h3/). 
+The full description of the H3 system is available at [the Uber Engeneering site](https://eng.uber.com/h3/). 
 
 ### h3IsValid {#h3isvalid}
 
