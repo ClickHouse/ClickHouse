@@ -44,8 +44,11 @@ Optional parameters:
 -   `rabbitmq_routing_key_list` – A comma-separated list of routing keys.
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
--   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient. Single queue can contain up to 50K messages at the same time.
+-   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient.
 -   `rabbitmq_transactional_channel` – Wrap insert queries in transactions. Default: `0`.
+-   `rabbitmq_queue_base` - Specify a base name for queues that will be declared. This settings should be used to be able to restore reading from declared durable queues in case of some failure when not all messages were successfully consumed. Note: it makes sence only if messages are sent with delivery mode 2 (marked 'persistent', durable). To be able to resume consumption from one specific queue in case of failure - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To be able to resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`.
+-   `rabbitmq_deadletter_exchange` - Specify name for a [dead letter exchange](https://www.rabbitmq.com/dlx.html). You can create another table with this exchange name and collect messages in cases when they are republished to dead letter exchange. By default dead letter exchange is not specified.
+-   `persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
 
 Required configuration:
 
@@ -92,12 +95,12 @@ Exchange type options:
 -   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
 -   `consistent-hash` - Data is evenly distributed between all bound tables (where exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
-If exchange type is not specified, then default is `fanout` and routing keys for data publishing must be randomized in range `[1, num_consumers]` for every message/batch (or in range `[1, num_consumers * num_queues]` if `rabbitmq_num_queues` is set). This table configuration works quicker then any other, especially when `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are set.
-
-If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are specified along with `rabbitmq_exchange_type`, then:
+If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 
 -   `rabbitmq-consistent-hash-exchange` plugin must be enabled.
 -   `message_id` property of the published messages must be specified (unique for each message/batch).
+
+Do not use the same table for inserts and materialized views.
 
 Example:
 
@@ -120,3 +123,10 @@ Example:
 
   SELECT key, value FROM daily ORDER BY key;
 ```
+
+## Virtual Columns {#virtual-columns}
+
+-   `_exchange_name` - RabbitMQ exchange name.
+-   `_consumer_tag` - ConsumerTag of the consumer that received the message.
+-   `_delivery_tag` - DeliveryTag if the message. Scoped per consumer.
+-   `_redelivered` - Redelivered flag of the message.
