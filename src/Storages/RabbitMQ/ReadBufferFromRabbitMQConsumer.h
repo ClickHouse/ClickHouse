@@ -80,13 +80,12 @@ private:
 
     String consumer_tag;
     ConcurrentBoundedQueue<MessageData> received;
-    UInt64 prev_tag = 0;
+    UInt64 prev_tag = 0, max_tag = 0;
     MessageData current;
     std::vector<String> queues;
     std::unordered_map<String, bool> subscribed_queue;
     std::atomic<bool> ack = false;
     std::mutex wait_ack;
-    UInt64 max_tag = 0;
 
     bool nextImpl() override;
 

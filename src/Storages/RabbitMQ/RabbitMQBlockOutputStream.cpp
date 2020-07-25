@@ -61,7 +61,10 @@ void RabbitMQBlockOutputStream::writeSuffix()
     child->writeSuffix();
 
     if (buffer)
+    {
+        buffer->updateMaxWait();
         buffer->finilizeProducer();
+    }
 }
 
 }
