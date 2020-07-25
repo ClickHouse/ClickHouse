@@ -250,8 +250,8 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
                     "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
             }
         }
-    }
 #endif
+    }
 }
 
 }
