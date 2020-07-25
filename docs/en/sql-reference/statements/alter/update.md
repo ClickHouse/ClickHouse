@@ -18,7 +18,7 @@ The `filter_expr` must be of type `UInt8`. This query updates values of specifie
 
 One query can contain several commands separated by commas.
 
-The synchronicity of the query processing is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting.
+The synchronicity of the query processing is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting. By default, it is asynchronous.
 
 **See also**
 

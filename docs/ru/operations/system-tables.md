@@ -1324,7 +1324,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.mutations {#system_tables-mutations}
 
-Таблица содержит информацию о ходе выполнения [мутаций](../sql-reference/statements/alter.md#alter-mutations) MergeTree-таблиц. Каждой команде мутации соответствует одна строка. В таблице есть следующие столбцы:
+Таблица содержит информацию о ходе выполнения [мутаций](../sql-reference/statements/alter.md#mutations) MergeTree-таблиц. Каждой команде мутации соответствует одна строка. В таблице есть следующие столбцы:
 
 **database**, **table** - имя БД и таблицы, к которой была применена мутация.
 
