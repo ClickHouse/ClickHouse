@@ -76,14 +76,23 @@ private:
 
     MySQLClient slave_client;
     UInt32 slave_id;
-    std::string & replicate_db;
-    std::string & replicate_table;
-    std::string & gtid_sets;
+    std::string replicate_db;
+    std::string replicate_table;
+    std::string gtid_sets;
+    UInt64 binlog_pos;
 
-    void InitBinlogStream();
+    std::vector<Block> data;
+
+    void initBinlogStream();
 
     // listen for master events in the background
-    MySQLClickHouseEvent ReadOneBinlogEvent();
+    MySQLClickHouseEvent readOneBinlogEvent();
+
+    void threadFunc();
+
+    Block rowsToBlock(const StorageMetadataPtr & metadata, const std::vector<std::vector<Field>> & rows);
+
+    Poco::Logger * log;
 };
 
 }

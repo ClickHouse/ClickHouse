@@ -252,7 +252,9 @@ int main(int argc, char ** argv)
                 "user", boost::program_options::value<std::string>()->default_value("root"), "master user")(
                 "password", boost::program_options::value<std::string>()->required(), "master password")(
                 "gtid", boost::program_options::value<std::string>()->default_value(""), "master executed GTID sets")(
-                "db", boost::program_options::value<std::string>()->required(), "replicate do db")("file", boost::program_options::value<std::string>()->default_value(""), "binlog filename");
+                "db", boost::program_options::value<std::string>()->required(), "replicate do db")(
+                "file", boost::program_options::value<std::string>()->default_value(""), "binlog filename")(
+                "slave-id", boost::program_options::value<uint32_t>()->default_value(9004), "slave id");
 
             boost::program_options::variables_map options;
             boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -273,7 +275,7 @@ int main(int argc, char ** argv)
             std::cerr << "Master Host: " << host << ", Port: " << port << ", User: " << master_user << ", Password: " << master_password
                       << ", Replicate DB: " << replicate_db << ", GTID: " << gtid_sets << ", Binlog filename: " << binlog_filename << std::endl;
 
-            UInt32 slave_id = 9004;
+            auto slave_id = options.at("slave-id").as<UInt32>();
             MySQLClient slave(host, port, master_user, master_password);
 
             /// Connect to the master.

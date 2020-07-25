@@ -56,12 +56,13 @@ private:
     bool done = false;
 };
 
-Block RowsToBlock(const StorageMetadataPtr & metadata, const std::vector<std::vector<Field>> & rows) {
+Block StorageMySQLReplica::rowsToBlock(const StorageMetadataPtr & metadata, const std::vector<std::vector<Field>> & rows) {
     Block header(metadata->getSampleBlockNonMaterialized());
     MutableColumns result_columns = header.cloneEmptyColumns();
     for (const auto& row : rows) {
         size_t col_idx = 0;
         for (auto& column : result_columns) {
+            LOG_INFO(log, "Column: {}", column->getName());
             column->insert(row[col_idx++]);
         }
     }
@@ -78,28 +79,30 @@ Pipes StorageMySQLReplica::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    Block out_block = RowsToBlock(metadata_snapshot, ReadOneBinlogEvent().insert_rows);
+    LOG_INFO(log, "Reading");
+    Block out_block = rowsToBlock(metadata_snapshot, readOneBinlogEvent().insert_rows);
     Pipes pipes;
     pipes.emplace_back(std::make_shared<OneMySQLEventSource>(column_names, out_block, *this, metadata_snapshot));
     return pipes;
 }
 
-void StorageMySQLReplica::InitBinlogStream() {
+void StorageMySQLReplica::initBinlogStream() {
     slave_client.connect();
 
     if (gtid_sets.empty()) {
-        slave_client.startBinlogDump(slave_id, replicate_db, "", BIN_LOG_HEADER_SIZE);
+        slave_client.startBinlogDump(slave_id, replicate_db, "", binlog_pos);
     } else {
         slave_client.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
     }
 }
 
 void StorageMySQLReplica::startup() {
-    InitBinlogStream();
 }
 
-MySQLClickHouseEvent StorageMySQLReplica::ReadOneBinlogEvent() {
+MySQLClickHouseEvent StorageMySQLReplica::readOneBinlogEvent() {
     MySQLClickHouseEvent ch_event;
+    LOG_INFO(log, "Read one event");
+    initBinlogStream();
     auto event = slave_client.readOneBinlogEvent();
     ch_event.type = event->type();
     if (event->type() != MYSQL_WRITE_ROWS_EVENT &&
@@ -178,8 +181,16 @@ StorageMySQLReplica::StorageMySQLReplica(
     , slave_id(slave_id)
     , replicate_db(replicate_db)
     , replicate_table(replicate_table)
+    , binlog_pos(binlog_pos)
     , gtid_sets(gtid_sets)
+    , log(&Poco::Logger::get("MySQLReplica"))
 {
+    LOG_INFO(log, "Host: {}, Port: {}, User: {}, Password: {}", host, port, master_user, master_password);
+
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(std::move(columns_description_));
+    storage_metadata.setConstraints(std::move(constraints_));
+    setInMemoryMetadata(storage_metadata);
 }
 
 void registerStorageMySQLReplica(StorageFactory & factory)
@@ -192,8 +203,8 @@ void registerStorageMySQLReplica(StorageFactory & factory)
 
         const auto * ast = engine_args[1]->as<ASTLiteral>();
         Int32 master_port = 22;
-        if (ast && ast->value.getType() == Field::Types::Int64) {
-            master_port = safeGet<Int64>(ast->value);
+        if (ast && ast->value.getType() == Field::Types::UInt64) {
+            master_port = safeGet<UInt64>(ast->value);
         }
 
         std::string master_user = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
