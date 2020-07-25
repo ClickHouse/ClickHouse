@@ -18,7 +18,7 @@ The `filter_expr` must be of type `UInt8`. The query deletes rows in the table f
 
 One query can contain several commands separated by commas.
 
-The synchronicity of the query processing is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting.
+The synchronicity of the query processing is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting. By default, it is asynchronous.
 
 **See also**
 
