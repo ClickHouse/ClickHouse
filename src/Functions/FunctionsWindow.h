@@ -1,7 +1,9 @@
 #pragma once
 
+#include <numeric>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -10,7 +12,6 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
 #include <common/DateLUT.h>
-#include <numeric>
 
 #include "IFunctionImpl.h"
 
@@ -65,7 +66,7 @@ struct ToStartOfTransform;
     template <> \
     struct ToStartOfTransform<IntervalKind::INTERVAL_KIND> \
     { \
-        static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
+        static DayNum execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.toStartOf##INTERVAL_KIND##Interval(time_zone.toDayNum(t), delta); \
         } \
@@ -74,8 +75,16 @@ struct ToStartOfTransform;
     TRANSFORM_DATE(Quarter)
     TRANSFORM_DATE(Month)
     TRANSFORM_DATE(Week)
-    TRANSFORM_DATE(Day)
 #undef TRANSFORM_DATE
+
+    template <> 
+    struct ToStartOfTransform<IntervalKind::Day> 
+    { 
+        static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) 
+        { 
+            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), delta);
+        }
+    };
 
 #define TRANSFORM_TIME(INTERVAL_KIND) \
     template <> \
@@ -98,14 +107,21 @@ struct ToStartOfTransform;
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone) { return time_zone.add##INTERVAL_KIND##s(t, delta); } \
+        static DayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
+        { \
+            return time_zone.add##INTERVAL_KIND##s(DayNum(d), delta); \
+        } \
     };
     ADD_DATE(Year)
     ADD_DATE(Quarter)
     ADD_DATE(Month)
-    ADD_DATE(Week)
-    ADD_DATE(Day)
 #undef ADD_DATE
+
+    template <> 
+    struct AddTime<IntervalKind::Week> 
+    {
+        static DayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return DayNum(d + 7 * delta);}
+    };
 
 #define ADD_TIME(INTERVAL_KIND, INTERVAL) \
     template <> \
@@ -113,6 +129,7 @@ struct ToStartOfTransform;
     { \
         static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) { return t + INTERVAL * delta; } \
     };
+    ADD_TIME(Day, 86400)
     ADD_TIME(Hour, 3600)
     ADD_TIME(Minute, 60)
     ADD_TIME(Second, 1)
@@ -211,39 +228,40 @@ namespace
             switch (std::get<0>(interval))
             {
                 case IntervalKind::Second:
-                    return execute_tumble<IntervalKind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt32, IntervalKind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Minute:
-                    return execute_tumble<IntervalKind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt32, IntervalKind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Hour:
-                    return execute_tumble<IntervalKind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt32, IntervalKind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Day:
-                    return execute_tumble<IntervalKind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt32, IntervalKind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Week:
-                    return execute_tumble<IntervalKind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt16, IntervalKind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Month:
-                    return execute_tumble<IntervalKind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt16, IntervalKind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Quarter:
-                    return execute_tumble<IntervalKind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt16, IntervalKind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
                 case IntervalKind::Year:
-                    return execute_tumble<IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
+                    return execute_tumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
             }
             __builtin_unreachable();
         }
 
-        template <IntervalKind::Kind unit>
+        template <typename ToType, IntervalKind::Kind unit>
         static ColumnPtr execute_tumble(const ColumnUInt32 & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
         {
             const auto & time_data = time_column.getData();
             size_t size = time_column.size();
-            auto start = ColumnUInt32::create(size);
-            auto end = ColumnUInt32::create(size);
-            ColumnUInt32::Container & start_data = start->getData();
-            ColumnUInt32::Container & end_data = end->getData();
+            auto start = ColumnVector<ToType>::create();
+            auto end = ColumnVector<ToType>::create();
+            auto & start_data = start->getData();
+            auto & end_data = end->getData();
+            start_data.resize(size);
+            end_data.resize(size);
             for (size_t i = 0; i != size; ++i)
             {
-                UInt32 wid = static_cast<UInt32>(ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone));
-                start_data[i] = wid;
-                end_data[i] = AddTime<unit>::execute(wid, num_units, time_zone);
+                start_data[i] = ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone);
+                end_data[i] = AddTime<unit>::execute(start_data[i], num_units, time_zone);
             }
             MutableColumns result;
             result.emplace_back(std::move(start));
@@ -390,52 +408,54 @@ namespace
             switch (std::get<0>(window_interval))
             {
                 case IntervalKind::Second:
-                    return execute_hop<IntervalKind::Second>(
+                    return execute_hop<UInt32, IntervalKind::Second>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Minute:
-                    return execute_hop<IntervalKind::Minute>(
+                    return execute_hop<UInt32, IntervalKind::Minute>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Hour:
-                    return execute_hop<IntervalKind::Hour>(
+                    return execute_hop<UInt32, IntervalKind::Hour>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Day:
-                    return execute_hop<IntervalKind::Day>(
+                    return execute_hop<UInt32, IntervalKind::Day>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Week:
-                    return execute_hop<IntervalKind::Week>(
+                    return execute_hop<UInt16, IntervalKind::Week>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Month:
-                    return execute_hop<IntervalKind::Month>(
+                    return execute_hop<UInt16, IntervalKind::Month>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Quarter:
-                    return execute_hop<IntervalKind::Quarter>(
+                    return execute_hop<UInt16, IntervalKind::Quarter>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Year:
-                    return execute_hop<IntervalKind::Year>(
+                    return execute_hop<UInt16, IntervalKind::Year>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             }
             __builtin_unreachable();
         }
 
-        template <IntervalKind::Kind kind>
+        template <typename ToType, IntervalKind::Kind kind>
         static ColumnPtr
         execute_hop(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
         {
             const auto & time_data = time_column.getData();
             size_t size = time_column.size();
+            auto start = ColumnVector<ToType>::create();
+            auto end = ColumnVector<ToType>::create();
+            auto & start_data = start->getData();
+            auto & end_data = end->getData();
+            start_data.resize(size);
+            end_data.resize(size);
 
-            auto start = ColumnUInt32::create(size);
-            auto end = ColumnUInt32::create(size);
-            ColumnUInt32::Container & start_data = start->getData();
-            ColumnUInt32::Container & end_data = end->getData();
             for (size_t i = 0; i < size; ++i)
             {
-                UInt32 wstart = static_cast<UInt32>(ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone));
-                UInt32 wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
+                ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
+                ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
                 wstart = AddTime<kind>::execute(wend, -1 * window_num_units, time_zone);
 
-                UInt32 wend_ = wend;
-                UInt32 wend_latest;
+                ToType wend_ = wend;
+                ToType wend_latest;
 
                 do
                 {
@@ -507,45 +527,42 @@ namespace
             auto hop_interval = dispatchForIntervalColumns(hop_interval_column, function_name);
             auto window_interval = dispatchForIntervalColumns(window_interval_column, function_name);
 
-            if (std::get<0>(hop_interval) != std::get<0>(window_interval))
-                throw Exception(
-                    "Interval type of window and hop column of function " + function_name + ", must be same.", ErrorCodes::ILLEGAL_COLUMN);
             if (std::get<1>(hop_interval) > std::get<1>(window_interval))
                 throw Exception(
-                    "Value for hop interval of function " + function_name + " must not larger than window interval.",
+                    "Value for hop interval of function " + function_name + " must not larger than window interval",
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             switch (std::get<0>(window_interval))
             {
                 case IntervalKind::Second:
-                    return execute_hop_slice<IntervalKind::Second>(
+                    return execute_hop_slice<UInt32, IntervalKind::Second>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Minute:
-                    return execute_hop_slice<IntervalKind::Minute>(
+                    return execute_hop_slice<UInt32, IntervalKind::Minute>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Hour:
-                    return execute_hop_slice<IntervalKind::Hour>(
+                    return execute_hop_slice<UInt32, IntervalKind::Hour>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Day:
-                    return execute_hop_slice<IntervalKind::Day>(
+                    return execute_hop_slice<UInt32, IntervalKind::Day>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Week:
-                    return execute_hop_slice<IntervalKind::Week>(
+                    return execute_hop_slice<UInt16, IntervalKind::Week>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Month:
-                    return execute_hop_slice<IntervalKind::Month>(
+                    return execute_hop_slice<UInt16, IntervalKind::Month>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Quarter:
-                    return execute_hop_slice<IntervalKind::Quarter>(
+                    return execute_hop_slice<UInt16, IntervalKind::Quarter>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
                 case IntervalKind::Year:
-                    return execute_hop_slice<IntervalKind::Year>(
+                    return execute_hop_slice<UInt16, IntervalKind::Year>(
                         *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             }
             __builtin_unreachable();
         }
 
-        template <IntervalKind::Kind kind>
+        template <typename ToType, IntervalKind::Kind kind>
         static ColumnPtr
         execute_hop_slice(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
         {
@@ -554,15 +571,16 @@ namespace
             const auto & time_data = time_column.getData();
             size_t size = time_column.size();
 
-            auto end = ColumnUInt32::create(size);
-            ColumnUInt32::Container & end_data = end->getData();
+            auto end = ColumnVector<ToType>::create();
+            auto & end_data = end->getData();
+            end_data.resize(size);
             for (size_t i = 0; i < size; ++i)
             {
-                UInt32 wstart = static_cast<UInt32>(ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone));
-                UInt32 wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
+                ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
+                ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
 
-                UInt32 wend_ = wend;
-                UInt32 wend_latest;
+                ToType wend_ = wend;
+                ToType wend_latest;
 
                 do
                 {
