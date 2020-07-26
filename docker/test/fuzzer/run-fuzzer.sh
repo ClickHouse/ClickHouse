@@ -72,7 +72,7 @@ function watchdog
 
 function fuzz
 {
-    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
+    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -10000 > server.log &
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
@@ -83,7 +83,7 @@ function fuzz
     fuzzer_exit_code=0
     ./clickhouse-client --query-fuzzer-runs=1000 \
         < <(for f in $(ls ch/tests/queries/0_stateless/*.sql | sort -R); do cat "$f"; echo ';'; done) \
-        > >(tail -100000 > fuzzer.log) \
+        > >(tail -10000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
     
@@ -160,7 +160,7 @@ case "$stage" in
         echo "success" > status.txt
     else
         echo "failure" > status.txt
-        if ! grep -a "received signal \|Logical error" server.log > description.txt
+        if ! grep -a "Received signal \|Logical error" server.log > description.txt
         then
             echo "Fuzzer exit code $fuzzer_exit_code. See the logs" > description.txt
         fi

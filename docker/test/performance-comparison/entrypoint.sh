@@ -1,38 +1,23 @@
 #!/bin/bash
 set -ex
 
-chown nobody workspace output
-chgrp nogroup workspace output
-chmod 777 workspace output
-
-cd workspace
-
-# Fetch the repository to find and describe the compared revisions.
-rm -rf ch ||:
-time git clone --depth 50 --bare https://github.com/ClickHouse/ClickHouse ch
-git -C ch fetch origin "$SHA_TO_TEST"
-
+# Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
-    # If not master, try to fetch pull/.../{head,merge}
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        git -C ch fetch origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
-    fi
-
     # Go back from the revision to be tested, trying to find the closest published
-    # testing release.
-    start_ref="$SHA_TO_TEST"~
-    # If we are testing a PR, and it merges with master successfully, we are
-    # building and testing not the nominal last SHA specified by pull/.../head
-    # and SHA_TO_TEST, but a revision that is merged with recent master, given
-    # by pull/.../merge ref.
-    # Master is the first parent of the pull/.../merge.
-    if git -C ch rev-parse "pull/$PR_TO_TEST/merge"
+    # testing release. The PR branch may be either pull/*/head which is the
+    # author's branch, or pull/*/merge, which is head merged with some master
+    # automatically by Github. We will use a merge base with master as a reference
+    # for tesing (or some older commit). A caveat is that if we're testing the
+    # master, the merge base is the tested commit itself, so we have to step back
+    # once.
+    start_ref=$(git -C ch merge-base origin/master pr)
+    if [ "PR_TO_TEST" == "0" ]
     then
-        start_ref="pull/$PR_TO_TEST/merge~"
+        start_ref=$start_ref~
     fi
 
+    # Loop back to find a commit that actually has a published perf test package.
     while :
     do
         # FIXME the original idea was to compare to a closest testing tag, which
@@ -48,10 +33,10 @@ function find_reference_sha
         # dereference the tag to get the commit it points to, hence the '~0' thing.
         REF_SHA=$(git -C ch rev-parse "$ref_tag~0")
 
-        # FIXME sometimes we have testing tags on commits without published builds --
-        # normally these are documentation commits. Loop to skip them.
-        # Historically there were various path for the performance test package.
-        # Test all of them.
+        # FIXME sometimes we have testing tags on commits without published builds.
+        # Normally these are documentation commits. Loop to skip them.
+        # Historically there were various path for the performance test package,
+        # test all of them.
         unset found
         for path in "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/"{,clickhouse_build_check/}"performance/performance.tgz"
         do
@@ -68,6 +53,24 @@ function find_reference_sha
 
     REF_PR=0
 }
+
+chown nobody workspace output
+chgrp nogroup workspace output
+chmod 777 workspace output
+
+cd workspace
+
+# Download the package for the version we are going to test
+for path in "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/"{,clickhouse_build_check/}"performance/performance.tgz"
+do
+    if curl --fail --head "$path"
+    then
+        right_path="$path"
+    fi
+done
+
+mkdir right
+wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
