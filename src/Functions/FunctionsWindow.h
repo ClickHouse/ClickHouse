@@ -175,6 +175,57 @@ namespace
         }
     }
 
+    void checkFirstArgument(const ColumnWithTypeAndName & argument, const String & function_name)
+    {
+        if (!isDateTime(argument.type))
+            throw Exception(
+                "Illegal type " + argument.type->getName() + " of argument of function " + function_name
+                    + ". Should be a date with time",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    void checkIntervalArgument(const ColumnWithTypeAndName & argument, const String & function_name, IntervalKind & interval_kind, bool & result_type_is_date)
+    {
+        auto interval_type = checkAndGetDataType<DataTypeInterval>(argument.type.get());
+        if (!interval_type)
+            throw Exception(
+                "Illegal type " + argument.type->getName() + " of argument of function " + function_name
+                    + ". Should be an interval of time",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        interval_kind = interval_type->getKind();
+        result_type_is_date = (interval_type->getKind() == IntervalKind::Year) || (interval_type->getKind() == IntervalKind::Quarter)
+            || (interval_type->getKind() == IntervalKind::Month) || (interval_type->getKind() == IntervalKind::Week);
+    }
+
+    void checkIntervalArgument(const ColumnWithTypeAndName & argument, const String & function_name, bool & result_type_is_date)
+    {
+        IntervalKind interval_kind;
+        checkIntervalArgument(argument, function_name, interval_kind, result_type_is_date);
+    }
+
+    void checkTimeZoneArgument(
+        const ColumnWithTypeAndName & argument,
+        const String & function_name)
+    {
+        if (!WhichDataType(argument.type).isString())
+            throw Exception(
+                "Illegal type " + argument.type->getName() + " of argument of function " + function_name
+                    + ". This argument is optional and must be a constant string with timezone name",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool checkIntervalOrTimeZoneArgument(const ColumnWithTypeAndName & argument, const String & function_name, IntervalKind & interval_kind, bool & result_type_is_date)
+    {
+        if (WhichDataType(argument.type).isString())
+        {
+            checkTimeZoneArgument(argument, function_name);
+            return false;
+        }
+        checkIntervalArgument(argument, function_name, interval_kind, result_type_is_date);
+        return true;
+    }
+
+
     template <WindowFunctionName type>
     struct WindowImpl
     {
@@ -188,25 +239,34 @@ namespace
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            if (arguments.size() != 2 && arguments.size() != 3)
+            bool result_type_is_date;
+
+            if (arguments.size() == 2)
+            {
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, result_type_is_date);
+            }
+            else if (arguments.size() == 3)
+            {
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, result_type_is_date);
+                checkTimeZoneArgument(arguments.at(2), function_name);
+            }
+            else
             {
                 throw Exception(
                     "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 2.",
+                        + ", should be 2 or 3",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             }
-            if (!WhichDataType(arguments[0].type).isDateTime())
-                throw Exception(
-                    "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
-            if (!WhichDataType(arguments[1].type).isInterval())
-                throw Exception(
-                    "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-            if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-                throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of argument of function " + function_name
-                        + ". This argument is optional and must be a constant string with timezone name",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()});
+
+            DataTypePtr dataType = nullptr;
+            if (result_type_is_date)
+                dataType = std::make_shared<DataTypeDate>();
+            else
+                dataType = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+
+            return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
         }
 
         [[maybe_unused]] static ColumnPtr
@@ -282,31 +342,13 @@ namespace
                 auto type_ = WhichDataType(arguments[0].type);
                 if (!type_.isTuple() && !type_.isUInt32())
                     throw Exception(
-                        "Illegal type of first argument of function " + function_name + " should be tuple or UInt32", ErrorCodes::ILLEGAL_COLUMN);
-                return std::make_shared<DataTypeDateTime>();
-            }
-            else if (arguments.size() == 2 || arguments.size() == 3)
-            {
-                if (!WhichDataType(arguments[0].type).isDateTime())
-                    throw Exception(
-                        "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
-                if (!WhichDataType(arguments[1].type).isInterval())
-                    throw Exception(
-                        "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-                if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-                    throw Exception(
-                        "Illegal type " + arguments[2].type->getName() + " of argument of function " + function_name
-                            + ". This argument is optional and must be a constant string with timezone name",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                return std::make_shared<DataTypeDateTime>();
+                        "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32", ErrorCodes::ILLEGAL_COLUMN);
             }
             else
             {
-                throw Exception(
-                    "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should not larger than 2.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                WindowImpl<TUMBLE>::getReturnType(arguments, function_name);
             }
+            return std::make_shared<DataTypeDateTime>();
         }
 
         [[maybe_unused]] static ColumnPtr
@@ -355,28 +397,41 @@ namespace
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            if (arguments.size() != 3 && arguments.size() != 4)
+            bool result_type_is_date;
+            IntervalKind interval_kind_1;
+            IntervalKind interval_kind_2;
+
+            if (arguments.size() == 3)
+            {
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, interval_kind_1, result_type_is_date);
+                checkIntervalArgument(arguments.at(2), function_name, interval_kind_2, result_type_is_date);
+            }
+            else if (arguments.size() == 4)
+            {
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, interval_kind_1, result_type_is_date);
+                checkIntervalArgument(arguments.at(2), function_name, interval_kind_2, result_type_is_date);
+                checkTimeZoneArgument(arguments.at(3), function_name);
+            }
+            else
             {
                 throw Exception(
                     "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 3.",
+                        + ", should be 3 or 4",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             }
-            if (!WhichDataType(arguments[0].type).isDateTime())
+
+            if (interval_kind_1 != interval_kind_2)
                 throw Exception(
-                    "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
-            if (!WhichDataType(arguments[1].type).isInterval())
-                throw Exception(
-                    "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-            if (!WhichDataType(arguments[2].type).isInterval())
-                throw Exception(
-                    "Illegal type of third argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-            if (arguments.size() == 4 && !WhichDataType(arguments[3].type).isString())
-                throw Exception(
-                    "Illegal type " + arguments[3].type->getName() + " of argument of function " + function_name
-                        + ". This argument is optional and must be a constant string with timezone name",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()});
+                    "Illegal type of window and hop column of function " + function_name + ", must be same", ErrorCodes::ILLEGAL_COLUMN);
+
+            DataTypePtr dataType = nullptr;
+            if (result_type_is_date)
+                dataType = std::make_shared<DataTypeDate>();
+            else
+                dataType = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0));
+            return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
         }
 
         static ColumnPtr
@@ -397,12 +452,9 @@ namespace
             auto hop_interval = dispatchForIntervalColumns(hop_interval_column, function_name);
             auto window_interval = dispatchForIntervalColumns(window_interval_column, function_name);
 
-            if (std::get<0>(hop_interval) != std::get<0>(window_interval))
-                throw Exception(
-                    "Interval type of window and hop column of function " + function_name + ", must be same.", ErrorCodes::ILLEGAL_COLUMN);
             if (std::get<1>(hop_interval) > std::get<1>(window_interval))
                 throw Exception(
-                    "Value for hop interval of function " + function_name + " must not larger than window interval.",
+                    "Value for hop interval of function " + function_name + " must not larger than window interval",
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             switch (std::get<0>(window_interval))
@@ -480,33 +532,45 @@ namespace
 
         [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            if (arguments.size() < 2)
+            bool result_type_is_date;
+            IntervalKind interval_kind_1;
+            IntervalKind interval_kind_2;
+
+            if (arguments.size() == 2)
             {
-                throw Exception(
-                    "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should not smaller than 2.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, interval_kind_1, result_type_is_date);
             }
-            if (!WhichDataType(arguments[0].type).isDateTime())
-                throw Exception(
-                    "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
-            if (!WhichDataType(arguments[1].type).isInterval())
-                throw Exception(
-                    "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-            if (arguments.size() >= 3 && !WhichDataType(arguments[2].type).isInterval())
-                throw Exception(
-                    "Illegal type of third argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-            if (arguments.size() == 4 && !WhichDataType(arguments[3].type).isString())
-                throw Exception(
-                    "Illegal type " + arguments[3].type->getName() + " of argument of function " + function_name
-                        + ". This argument is optional and must be a constant string with timezone name",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 4)
+            else if (arguments.size() == 3)
+            {
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, interval_kind_1, result_type_is_date);
+                if (checkIntervalOrTimeZoneArgument(arguments.at(2), function_name, interval_kind_2, result_type_is_date))
+                {
+                    if (interval_kind_1 != interval_kind_2)
+                        throw Exception(
+                            "Illegal type of window and hop column of function " + function_name + ", must be same", ErrorCodes::ILLEGAL_COLUMN);
+                }
+            }
+            else if (arguments.size() == 4)
+            {
+                checkFirstArgument(arguments.at(0), function_name);
+                checkIntervalArgument(arguments.at(1), function_name, interval_kind_1, result_type_is_date);
+                checkIntervalArgument(arguments.at(2), function_name, interval_kind_2, result_type_is_date);
+                checkTimeZoneArgument(arguments.at(3), function_name);
+            }
+            else
+            {
                 throw Exception(
                     "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
                         + ", should be 2, 3 or 4",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            return std::make_shared<DataTypeUInt32>();
+            }
+
+            if (result_type_is_date)
+                return std::make_shared<DataTypeUInt16>();
+            else
+                return std::make_shared<DataTypeUInt32>();
         }
 
         [[maybe_unused]] static ColumnPtr
@@ -628,35 +692,14 @@ namespace
                 auto type_ = WhichDataType(arguments[0].type);
                 if (!type_.isTuple() && !type_.isUInt32())
                     throw Exception(
-                        "Illegal type of first argument of function " + function_name + " should be Tuple or UInt32",
+                        "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32",
                         ErrorCodes::ILLEGAL_COLUMN);
-                return std::make_shared<DataTypeDateTime>();
-            }
-            else if (arguments.size() == 3 || arguments.size() == 4)
-            {
-                if (!WhichDataType(arguments[0].type).isDateTime())
-                    throw Exception(
-                        "Illegal type of first argument of function " + function_name + " should be DateTime", ErrorCodes::ILLEGAL_COLUMN);
-                if (!WhichDataType(arguments[1].type).isInterval())
-                    throw Exception(
-                        "Illegal type of second argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-                if (!WhichDataType(arguments[2].type).isInterval())
-                    throw Exception(
-                        "Illegal type of third argument of function " + function_name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
-                if (arguments.size() == 4 && !WhichDataType(arguments[3].type).isString())
-                    throw Exception(
-                        "Illegal type " + arguments[3].type->getName() + " of argument of function " + function_name
-                            + ". This argument is optional and must be a constant string with timezone name",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                return std::make_shared<DataTypeDateTime>();
             }
             else
             {
-                throw Exception(
-                    "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 1, 3 or 4.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                WindowImpl<HOP>::getReturnType(arguments, function_name);
             }
+            return std::make_shared<DataTypeDateTime>();
         }
 
         [[maybe_unused]] static ColumnPtr
