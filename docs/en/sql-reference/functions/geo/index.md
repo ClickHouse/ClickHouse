@@ -1,5 +1,6 @@
 ---
 toc_priority: 62
+toc_folder_title: Geographical Coordinates
 toc_title: Geographical Coordinates
 ---
 
