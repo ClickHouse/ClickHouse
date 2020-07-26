@@ -1,5 +1,4 @@
 ---
-toc_priority: 3
 toc_title: Geohash
 ---
 
