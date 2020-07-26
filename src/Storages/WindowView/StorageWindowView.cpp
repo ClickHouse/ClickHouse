@@ -250,6 +250,27 @@ namespace
         if (num_units <= 0)
             throw Exception("Value for Interval argument must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
+
+    UInt32 addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        switch (kind)
+        {
+#define CASE_WINDOW_KIND(KIND) \
+    case IntervalKind::KIND: { \
+        return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
+    }
+            CASE_WINDOW_KIND(Second)
+            CASE_WINDOW_KIND(Minute)
+            CASE_WINDOW_KIND(Hour)
+            CASE_WINDOW_KIND(Day)
+            CASE_WINDOW_KIND(Week)
+            CASE_WINDOW_KIND(Month)
+            CASE_WINDOW_KIND(Quarter)
+            CASE_WINDOW_KIND(Year)
+#undef CASE_WINDOW_KIND
+        }
+        __builtin_unreachable();
+    }
 }
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
@@ -304,7 +325,7 @@ UInt32 StorageWindowView::getCleanupBound()
                 return 0;
             if (allowed_lateness)
             {
-                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units);
+                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units, time_zone);
                 lateness_bound = getWindowLowerBound(lateness_bound);
                 if (lateness_bound < w_bound)
                     w_bound = lateness_bound;
@@ -568,27 +589,6 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     return inner_create_query;
 }
 
-inline UInt32 StorageWindowView::addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units) const
-{
-    switch (kind)
-    {
-#define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::KIND: { \
-        return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
-    }
-        CASE_WINDOW_KIND(Second)
-        CASE_WINDOW_KIND(Minute)
-        CASE_WINDOW_KIND(Hour)
-        CASE_WINDOW_KIND(Day)
-        CASE_WINDOW_KIND(Week)
-        CASE_WINDOW_KIND(Month)
-        CASE_WINDOW_KIND(Quarter)
-        CASE_WINDOW_KIND(Year)
-#undef CASE_WINDOW_KIND
-    }
-    __builtin_unreachable();
-}
-
 inline UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 {
     IntervalKind window_interval_kind;
@@ -694,12 +694,12 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
             max_watermark
-                = is_tumble ? addTime(max_watermark, window_kind, window_num_units) : addTime(max_watermark, hop_kind, hop_num_units);
+                = is_tumble ? addTime(max_watermark, window_kind, window_num_units, time_zone) : addTime(max_watermark, hop_kind, hop_num_units, time_zone);
         }
     }
     else // strictly || bounded
     {
-        UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units);
+        UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units, time_zone);
         updated = max_watermark_bias <= watermark;
         while (max_watermark_bias <= max_timestamp)
         {
@@ -707,13 +707,13 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
             max_fired_watermark = max_watermark;
             if (is_tumble)
             {
-                max_watermark = addTime(max_watermark, window_kind, window_num_units);
-                max_watermark_bias = addTime(max_watermark, window_kind, window_num_units);
+                max_watermark = addTime(max_watermark, window_kind, window_num_units, time_zone);
+                max_watermark_bias = addTime(max_watermark, window_kind, window_num_units, time_zone);
             }
             else
             {
-                max_watermark = addTime(max_watermark, hop_kind, hop_num_units);
-                max_watermark_bias = addTime(max_watermark, hop_kind, hop_num_units);
+                max_watermark = addTime(max_watermark, hop_kind, hop_num_units, time_zone);
+                max_watermark_bias = addTime(max_watermark, hop_kind, hop_num_units, time_zone);
             }
         }
     }
@@ -757,7 +757,7 @@ void StorageWindowView::threadFuncFireProc()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
             max_fired_watermark = next_fire_signal;
-            next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units);
+            next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, time_zone);
         }
 
         next_fire_signal = getWindowUpperBound(timestamp_now);
@@ -1004,12 +1004,12 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     if (window_view.allowed_lateness && t_max_timestamp != 0)
     {
         lateness_bound
-            = window_view.addTime(t_max_timestamp, window_view.lateness_kind, -1 * window_view.lateness_num_units);
+            = addTime(t_max_timestamp, window_view.lateness_kind, -1 * window_view.lateness_num_units, *window_view.time_zone);
         if (window_view.is_watermark_bounded)
         {
             UInt32 watermark_lower_bound = window_view.is_tumble
-                ? window_view.addTime(t_max_watermark, window_view.window_kind, -1 * window_view.window_num_units)
-                : window_view.addTime(t_max_watermark, window_view.hop_kind, -1 * window_view.hop_num_units);
+                ? addTime(t_max_watermark, window_view.window_kind, -1 * window_view.window_num_units, *window_view.time_zone)
+                : addTime(t_max_watermark, window_view.hop_kind, -1 * window_view.hop_num_units, *window_view.time_zone);
             if (watermark_lower_bound < lateness_bound)
                 lateness_bound = watermark_lower_bound;
         }
@@ -1157,7 +1157,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
         while (w_end > w_start)
         {
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -1 * slice_num_units);
+            w_end = addTime(w_end, window_kind, -1 * slice_num_units, time_zone);
         }
         auto func_has = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
         res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_has);
@@ -1175,7 +1175,7 @@ StoragePtr & StorageWindowView::getTargetStorage() const
 
 BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 watermark)
 {
-    UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units);
+    UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units, time_zone);
 
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
