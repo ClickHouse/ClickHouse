@@ -42,6 +42,7 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
+    /// At least one mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
 private:
@@ -100,6 +101,7 @@ private:
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
 
+        /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
