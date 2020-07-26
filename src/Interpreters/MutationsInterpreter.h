@@ -42,6 +42,8 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
+    bool isAffectingAllColumns() const;
+
 private:
     ASTPtr prepare(bool dry_run);
 
@@ -86,8 +88,8 @@ private:
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
 
-        /// Contains columns that are changed by this stage,
-        /// columns changed by the previous stages and also columns needed by the next stages.
+        /// Contains columns that are changed by this stage, columns changed by
+        /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
         std::unique_ptr<ExpressionAnalyzer> analyzer;
@@ -97,6 +99,8 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
+
+        bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
     std::unique_ptr<Block> updated_header;
