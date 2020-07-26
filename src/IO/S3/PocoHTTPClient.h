@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/S3Common.h>
 #include <aws/core/http/HttpClient.h>
 
 namespace Aws::Http::Standard
@@ -14,7 +16,7 @@ namespace DB::S3
 class PocoHTTPClient : public Aws::Http::HttpClient
 {
 public:
-    explicit PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration);
+    explicit PocoHTTPClient(const ExtendedClientConfiguration & clientConfiguration);
     ~PocoHTTPClient() override = default;
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(
         Aws::Http::HttpRequest & request,
@@ -35,6 +37,7 @@ private:
 
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     ConnectionTimeouts timeouts;
+    const RemoteHostFilter & remote_host_filter;
 };
 
 }

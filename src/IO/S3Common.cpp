@@ -166,25 +166,27 @@ namespace S3
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key)
+        const String & secret_access_key,
+        const Context & context)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, context);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key)
+        const String & secret_access_key,
+        const Context & context)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        Aws::Client::ClientConfiguration client_configuration = cfg;
+        ExtendedClientConfiguration client_configuration(cfg, context);
 
         if (!client_configuration.endpointOverride.empty())
         {
@@ -214,9 +216,11 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        HeaderCollection headers)
+        HeaderCollection headers,
+        const Context & context)
     {
-        Aws::Client::ClientConfiguration cfg;
+        ExtendedClientConfiguration cfg({}, context);
+
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 

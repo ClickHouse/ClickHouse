@@ -7,6 +7,7 @@
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
 #include <aws/core/Aws.h>
+#include <aws/core/client/ClientConfiguration.h>
 
 namespace Aws::S3
 {
@@ -22,6 +23,17 @@ namespace DB
 namespace DB::S3
 {
 
+struct ExtendedClientConfiguration : public Aws::Client::ClientConfiguration
+{
+    const Context & context;
+
+    ExtendedClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const Context & context_):
+        Aws::Client::ClientConfiguration(cfg),
+        context(context_)
+    {
+    }
+};
+
 class ClientFactory
 {
 public:
@@ -33,20 +45,23 @@ public:
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key);
+        const String & secret_access_key,
+        const Context & context);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
-        const String & secret_access_key);
+        const String & secret_access_key,
+        const Context & context);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        HeaderCollection headers);
+        HeaderCollection headers,
+        const Context & context);
 
 private:
     ClientFactory();
