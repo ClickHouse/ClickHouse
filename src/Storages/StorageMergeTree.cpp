@@ -826,7 +826,8 @@ bool StorageMergeTree::tryMutatePart()
             future_part, metadata_snapshot, commands, *merge_entry,
             time(nullptr), global_context, tagger->reserved_space, table_lock_holder);
 
-        renameTempPartAndReplace(new_part);
+        if (new_part)
+            renameTempPartAndReplace(new_part);
 
         tagger->is_successful = true;
         write_part_log({});

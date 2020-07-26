@@ -1481,32 +1481,36 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         new_part = merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, *merge_entry,
             entry.create_time, global_context, reserved_space, table_lock);
-        renameTempPartAndReplace(new_part, nullptr, &transaction);
 
-        try
+        if (new_part)
         {
-            checkPartChecksumsAndCommit(transaction, new_part);
-        }
-        catch (const Exception & e)
-        {
-            if (MergeTreeDataPartChecksums::isBadChecksumsErrorCode(e.code()))
+            renameTempPartAndReplace(new_part, nullptr, &transaction);
+
+            try
             {
-                transaction.rollback();
-
-                ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
-
-                LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
-
-                write_part_log(ExecutionStatus::fromCurrentException());
-
-                tryRemovePartImmediately(std::move(new_part));
-                /// No need to delete the part from ZK because we can be sure that the commit transaction
-                /// didn't go through.
-
-                return false;
+                checkPartChecksumsAndCommit(transaction, new_part);
             }
+            catch (const Exception & e)
+            {
+                if (MergeTreeDataPartChecksums::isBadChecksumsErrorCode(e.code()))
+                {
+                    transaction.rollback();
 
-            throw;
+                    ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
+
+                    LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
+
+                    write_part_log(ExecutionStatus::fromCurrentException());
+
+                    tryRemovePartImmediately(std::move(new_part));
+                    /// No need to delete the part from ZK because we can be sure that the commit transaction
+                    /// didn't go through.
+
+                    return false;
+                }
+
+                throw;
+            }
         }
 
         /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
