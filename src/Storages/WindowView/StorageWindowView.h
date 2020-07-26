@@ -123,7 +123,6 @@ private:
     UInt32 getCleanupBound();
     ASTPtr generateCleanupQuery();
 
-    UInt32 addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units) const;
     UInt32 getWindowLowerBound(UInt32 time_sec);
     UInt32 getWindowUpperBound(UInt32 time_sec);
 
