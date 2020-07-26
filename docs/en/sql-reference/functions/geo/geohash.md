@@ -11,7 +11,7 @@ If you need to manually convert geographic coordinates to geohash strings, you c
 
 ## geohashEncode {#geohashencode}
 
-Encodes latitude and longitude as a [geohash](#geohash)-string.
+Encodes latitude and longitude as a geohash-string.
 
 ``` sql
 geohashEncode(longitude, latitude, [precision])
@@ -41,7 +41,7 @@ SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 
 ## geohashDecode {#geohashdecode}
 
-Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
+Decodes any geohash-encoded string into longitude and latitude.
 
 **Input values**
 
@@ -65,7 +65,7 @@ SELECT geohashDecode('ezs42') AS res
 
 ## geohashesInBox {#geohashesinbox}
 
-Returns an array of [geohash](#geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
+Returns an array of geohash-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
 
 **Syntax**
 
