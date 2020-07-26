@@ -134,7 +134,7 @@ namespace
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
             throw Exception(
-                "Value for column " + interval_column.name + " of function " + function_name + " must be positive.",
+                "Value for column " + interval_column.name + " of function " + function_name + " must be positive",
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         return {interval_type->getKind(), num_units};
@@ -484,7 +484,7 @@ namespace
             if (arguments.size() > 4)
                 throw Exception(
                     "Number of arguments for function " + function_name + " doesn't match: passed " + toString(arguments.size())
-                        + ", should not larger than 4.",
+                        + ", should be 2, 3 or 4",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             return std::make_shared<DataTypeUInt32>();
         }
