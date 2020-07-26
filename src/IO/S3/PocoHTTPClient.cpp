@@ -45,6 +45,8 @@ PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & clientCo
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000), /// send timeout.
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
+    , max_connections(clientConfiguration.maxConnections)
+    , follow_redirects(clientConfiguration.followRedirects)
 {
 }
 
@@ -128,7 +130,7 @@ void PocoHTTPClient::MakeRequestInternal(
 
             /// Reverse proxy can replace host header with resolved ip address instead of host name.
             /// This can lead to request signature difference on S3 side.
-            auto session = makeHTTPSession(poco_uri, timeouts, false);
+            auto session = makePooledHTTPSession(poco_uri, timeouts, max_connections, false);
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
@@ -196,7 +198,7 @@ void PocoHTTPClient::MakeRequestInternal(
             int status_code = static_cast<int>(poco_response.getStatus());
             LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
-            if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
+            if (follow_redirects && poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
                 auto location = poco_response.get("location");
                 uri = location;
@@ -235,8 +237,8 @@ void PocoHTTPClient::MakeRequestInternal(
                     ProfileEvents::increment(selectMetric(S3MetricType::Errors));
                 }
             }
-            else
-                response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
+//            else
+//                response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
 
             return;
         }
@@ -252,4 +254,5 @@ void PocoHTTPClient::MakeRequestInternal(
         ProfileEvents::increment(selectMetric(S3MetricType::Errors));
     }
 }
+
 }

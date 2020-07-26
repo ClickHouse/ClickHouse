@@ -105,15 +105,20 @@ namespace
         const std::string host;
         const UInt16 port;
         bool https;
+        bool resolve_host;
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
         ObjectPtr allocObject() override
         {
-            return makeHTTPSessionImpl(host, port, https, true);
+            return makeHTTPSessionImpl(host, port, https, resolve_host);
         }
 
     public:
-        SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_)
-            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool")), host(host_), port(port_), https(https_)
+        SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_, bool resolve_host_ = true)
+            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool"))
+            , host(host_)
+            , port(port_)
+            , https(https_)
+            , resolve_host(resolve_host_)
         {
         }
     };
@@ -153,7 +158,8 @@ namespace
         Entry getSession(
             const Poco::URI & uri,
             const ConnectionTimeouts & timeouts,
-            size_t max_connections_per_endpoint)
+            size_t max_connections_per_endpoint,
+            bool resolve_host = true)
         {
             std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
@@ -163,7 +169,7 @@ namespace
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
                 std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
-                    key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, max_connections_per_endpoint));
+                    key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, max_connections_per_endpoint, resolve_host));
 
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
@@ -177,13 +183,17 @@ namespace
                 if (!msg.empty())
                 {
                     LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
-                    /// Host can change IP
-                    const auto ip = DNSResolver::instance().resolveHost(host).toString();
-                    if (ip != session->getHost())
+
+                    if (resolve_host)
                     {
-                        session->reset();
-                        session->setHost(ip);
-                        session->attachSessionData({});
+                        /// Host can change IP
+                        const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                        if (ip != session->getHost())
+                        {
+                            session->reset();
+                            session->setHost(ip);
+                            session->attachSessionData({});
+                        }
                     }
                 }
             }
@@ -217,9 +227,9 @@ HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts &
 }
 
 
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size)
+PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host)
 {
-    return HTTPSessionPool::instance().getSession(uri, timeouts, per_endpoint_pool_size);
+    return HTTPSessionPool::instance().getSession(uri, timeouts, per_endpoint_pool_size, resolve_host);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }

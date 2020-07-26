@@ -48,7 +48,7 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
 HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host = true);
 
 /// As previous method creates session, but tooks it from pool
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size);
+PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host = true);
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status);
 

@@ -35,6 +35,8 @@ private:
 
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     ConnectionTimeouts timeouts;
+    unsigned max_connections;
+    bool follow_redirects;
 };
 
 }
