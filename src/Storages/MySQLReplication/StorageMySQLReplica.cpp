@@ -14,6 +14,53 @@ namespace DB
 
 using namespace MySQLReplication;
 
+class MemorySource : public SourceWithProgress
+{
+public:
+    MemorySource(
+        Names column_names_,
+        BlocksList::iterator begin_,
+        BlocksList::iterator end_,
+        const StorageMySQLReplica & storage,
+        const StorageMetadataPtr & metadata_snapshot)
+        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
+        , column_names(std::move(column_names_))
+        , begin(begin_)
+        , end(end_)
+        , it(begin)
+    {
+    }
+
+    String getName() const override { return "Memory"; }
+
+protected:
+    Chunk generate() override
+    {
+        if (it == end)
+        {
+            return {};
+        }
+        else
+        {
+            Block src = *it;
+            Columns columns;
+            columns.reserve(column_names.size());
+
+            /// Add only required columns to `res`.
+            for (const auto & name : column_names)
+                columns.emplace_back(src.getByName(name).column);
+
+            ++it;
+            return Chunk(std::move(columns), src.rows());
+        }
+    }
+private:
+    Names column_names;
+    BlocksList::iterator begin;
+    BlocksList::iterator end;
+    BlocksList::iterator it;
+};
+
 class OneMySQLEventSource : public ISource
 {
 public:
@@ -57,12 +104,14 @@ private:
 };
 
 Block StorageMySQLReplica::rowsToBlock(const StorageMetadataPtr & metadata, const std::vector<std::vector<Field>> & rows) {
+    LOG_INFO(log, "Transfering MysQL event to Block");
     Block header(metadata->getSampleBlockNonMaterialized());
     MutableColumns result_columns = header.cloneEmptyColumns();
     for (const auto& row : rows) {
         size_t col_idx = 0;
         for (auto& column : result_columns) {
             LOG_INFO(log, "Column: {}", column->getName());
+            LOG_INFO(log, "Column: {}", col_idx);
             column->insert(row[col_idx++]);
         }
     }
@@ -80,30 +129,62 @@ Pipes StorageMySQLReplica::read(
     unsigned num_streams)
 {
     LOG_INFO(log, "Reading");
-    Block out_block = rowsToBlock(metadata_snapshot, readOneBinlogEvent().insert_rows);
+
+    size_t size = data.size();
+
+    if (num_streams > size)
+        num_streams = size;
+
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<OneMySQLEventSource>(column_names, out_block, *this, metadata_snapshot));
+
+    for (size_t stream = 0; stream < num_streams; ++stream)
+    {
+        BlocksList::iterator begin = data.begin();
+        BlocksList::iterator end = data.begin();
+
+        std::advance(begin, stream * size / num_streams);
+        std::advance(end, (stream + 1) * size / num_streams);
+
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this, metadata_snapshot));
+    }
+
     return pipes;
 }
 
-void StorageMySQLReplica::initBinlogStream() {
-    slave_client.connect();
 
+void StorageMySQLReplica::threadFunc() {
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    for (int i = 0; i < 5; ++i) {
+        data.push_back(rowsToBlock(metadata_snapshot, readOneBinlogEvent().insert_rows));
+        LOG_INFO(log, "Read one event");
+    }
+    task->scheduleAfter(500);
+}
+
+void StorageMySQLReplica::initBinlogStream() {
     if (gtid_sets.empty()) {
-        slave_client.startBinlogDump(slave_id, replicate_db, "", binlog_pos);
+        slave_client.startBinlogDump(slave_id, replicate_db, binlog_filename, binlog_pos);
     } else {
         slave_client.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
     }
 }
 
 void StorageMySQLReplica::startup() {
+    slave_client.connect();
+    initBinlogStream();
+    task->activateAndSchedule();
+}
+
+void StorageMySQLReplica::shutdown()
+{
+    task->deactivate();
 }
 
 MySQLClickHouseEvent StorageMySQLReplica::readOneBinlogEvent() {
     MySQLClickHouseEvent ch_event;
-    LOG_INFO(log, "Read one event");
-    initBinlogStream();
+    LOG_INFO(log, "Reading one event");
     auto event = slave_client.readOneBinlogEvent();
+    LOG_INFO(log, "Got one mysql event of type {}", event->type());
     ch_event.type = event->type();
     if (event->type() != MYSQL_WRITE_ROWS_EVENT &&
         event->type() != MYSQL_DELETE_ROWS_EVENT &&
@@ -172,7 +253,7 @@ StorageMySQLReplica::StorageMySQLReplica(
     UInt32 slave_id, // non-zero unique value
     std::string & replicate_db,
     std::string & replicate_table,
-    std::string & binlog_file_name,
+    std::string & binlog_filename,
     UInt64 binlog_pos,
     std::string & gtid_sets)
     : IStorage(table_id_)
@@ -181,16 +262,20 @@ StorageMySQLReplica::StorageMySQLReplica(
     , slave_id(slave_id)
     , replicate_db(replicate_db)
     , replicate_table(replicate_table)
+    , binlog_filename(binlog_filename)
     , binlog_pos(binlog_pos)
     , gtid_sets(gtid_sets)
-    , log(&Poco::Logger::get("MySQLReplica"))
+    , log(&Poco::Logger::get("MySQLReplica (" + table_id_.table_name + ")"))
 {
-    LOG_INFO(log, "Host: {}, Port: {}, User: {}, Password: {}", host, port, master_user, master_password);
+    LOG_INFO(log, "Host: {}, Port: {}, User: {}, Password: {}, Slave ID: {}, DB: {}, File: {}, Position: {}, GTID sets: {}", host, port, master_user, master_password, slave_id, replicate_db, binlog_filename, binlog_pos, gtid_sets);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
     setInMemoryMetadata(storage_metadata);
+
+    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
+    task->deactivate();
 }
 
 void registerStorageMySQLReplica(StorageFactory & factory)

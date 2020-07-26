@@ -42,6 +42,7 @@ public:
     }
 
     void startup() override;
+    void shutdown() override;
 
     Pipes read(
         const Names & column_names,
@@ -67,7 +68,7 @@ protected:
         UInt32 slave_id, // non-zero unique value
         std::string & replicate_db,
         std::string & replicate_table,
-        std::string & binlog_file_name,
+        std::string & binlog_filename,
         UInt64 binlog_pos,
         std::string & gtid_sets);
 
@@ -78,10 +79,13 @@ private:
     UInt32 slave_id;
     std::string replicate_db;
     std::string replicate_table;
-    std::string gtid_sets;
+    std::string binlog_filename;
     UInt64 binlog_pos;
+    std::string gtid_sets;
 
-    std::vector<Block> data;
+    BlocksList data;
+
+    BackgroundSchedulePool::TaskHolder task;
 
     void initBinlogStream();
 
