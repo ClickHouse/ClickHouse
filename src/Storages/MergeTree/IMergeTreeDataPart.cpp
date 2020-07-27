@@ -557,7 +557,8 @@ void IMergeTreeDataPart::loadRowsCount()
         /// columns have to be loaded
         for (const auto & column : getColumns())
         {
-            if (column.type->isValueRepresentedByNumber())
+            /// Most trivial types
+            if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
             {
                 auto size = getColumnSize(column.name, *column.type);
 
