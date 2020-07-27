@@ -28,7 +28,7 @@ struct Estimator
         }
     }
 
-    LevelMergeSelector::PartsInPartition getBest() const
+    LevelMergeSelector::PartsInPartition getBest()
     {
         return LevelMergeSelector::PartsInPartition(best_begin, best_end);
     }

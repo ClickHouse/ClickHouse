@@ -1,15 +1,13 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
+#include "config_functions.h"
 #if USE_SIMDJSON
-#    include <Core/Types.h>
-#    include <Common/Exception.h>
-#    include <common/StringRef.h>
 
-#    include <simdjson/jsonparser.h>
+#include <common/StringRef.h>
+#include <Common/Exception.h>
+#include <Core/Types.h>
+
+#include <simdjson/jsonparser.h>
 
 
 namespace DB
@@ -139,5 +137,4 @@ private:
 };
 
 }
-
 #endif

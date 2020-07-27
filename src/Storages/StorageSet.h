@@ -19,9 +19,9 @@ class StorageSetOrJoinBase : public IStorage
     friend class SetOrJoinBlockOutputStream;
 
 public:
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     Strings getDataPaths() const override { return {path}; }
 
@@ -57,7 +57,7 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
 friend struct ext::shared_ptr_helper<StorageSet>;
 
@@ -67,7 +67,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
 private:
     SetPtr set;

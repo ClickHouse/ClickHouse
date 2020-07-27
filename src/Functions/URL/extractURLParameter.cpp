@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringSearchToString.h>
+#include <Functions/FunctionsStringSearch.h>
 #include <common/find_symbols.h>
 
 namespace DB

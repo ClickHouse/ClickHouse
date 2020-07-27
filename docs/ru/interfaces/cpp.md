@@ -1,4 +1,4 @@
-# C++ клиентская библиотека {#c-klientskaia-biblioteka}
+# C++ клиентская библиотека
 
 См. README в репозитории [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp).
 

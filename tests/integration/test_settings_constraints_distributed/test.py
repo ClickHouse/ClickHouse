@@ -8,12 +8,12 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', config_dir="configs")
-node2 = cluster.add_instance('node2', config_dir="configs")
-distributed = cluster.add_instance('distributed', config_dir="configs", stay_alive=True)
+node1 = cluster.add_instance('node1')
+node2 = cluster.add_instance('node2')
+distributed = cluster.add_instance('distributed', main_configs=['configs/remote_servers.xml'])
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
@@ -35,15 +35,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(autouse=True)
-def restart_distributed():
-    # Magic: Distributed table tries to keep connections to shards open, and after changing shards' default settings
-    # we need to reset connections to force the shards to reset sessions and therefore to reset current settings
-    # to their new defaults.
-    distributed.restart_clickhouse()
-
-
-def test_select_clamps_settings():
+@pytest.mark.skip(reason="CREATE USER statement doesn't support SETTINGS clause in 20.3")
+def test_select_clamps_settings(started_cluster):
     distributed.query("CREATE USER normal DEFAULT ROLE admin SETTINGS max_memory_usage = 80000000")
     distributed.query("CREATE USER wasteful DEFAULT ROLE admin SETTINGS max_memory_usage = 2000000000")
     distributed.query("CREATE USER readonly DEFAULT ROLE admin SETTINGS readonly = 1")
@@ -97,11 +90,11 @@ def test_select_clamps_settings():
                                                                                                  'node2\tmax_memory_usage\t10000000000\n'\
                                                                                                  'node2\treadonly\t1\n'
 
-def test_insert_clamps_settings():
+@pytest.mark.skip(reason="ALTER USER statement doesn't support SETTINGS clause in 20.3")
+def test_insert_clamps_settings(started_cluster):
     node1.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
     node2.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
 
     distributed.query("INSERT INTO proxy VALUES (toDate('2020-02-20'), 2, 2)")
     distributed.query("INSERT INTO proxy VALUES (toDate('2020-02-21'), 2, 2)", settings={"max_memory_usage": 5000000})
-    distributed.query("SYSTEM FLUSH DISTRIBUTED proxy")
-    assert_eq_with_retry(distributed, "SELECT COUNT() FROM proxy", "4")
+    assert distributed.query("SELECT COUNT() FROM proxy") == "4\n"

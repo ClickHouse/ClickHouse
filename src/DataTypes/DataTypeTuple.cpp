@@ -9,7 +9,6 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -394,7 +393,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         settings.path.back().tuple_element_name = names[i];
-        const auto & element_col = extractElementColumn(column, i);
+        auto & element_col = extractElementColumn(column, i);
         elems[i]->serializeBinaryBulkWithMultipleStreams(element_col, offset, limit, settings, tuple_state->states[i]);
     }
     settings.path.pop_back();

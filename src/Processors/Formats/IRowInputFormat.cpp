@@ -53,14 +53,13 @@ Chunk IRowInputFormat::generate()
 
     try
     {
-        RowReadExtension info;
         for (size_t rows = 0; rows < params.max_block_size; ++rows)
         {
             try
             {
                 ++total_rows;
 
-                info.read_columns.clear();
+                RowReadExtension info;
                 if (!readRow(columns, info))
                     break;
                 if (params.callback)
@@ -147,10 +146,10 @@ Chunk IRowInputFormat::generate()
 
     if (columns.empty() || columns[0]->empty())
     {
-        if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
+        if (params.allow_errors_num > 0 || params.allow_errors_ratio > 0)
         {
-            Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
-            LOG_TRACE(log, "Skipped {} rows with errors while reading the input stream", num_errors);
+            Logger * log = &Logger::get("IRowInputFormat");
+            LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
         }
 
         readSuffix();

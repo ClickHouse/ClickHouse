@@ -152,7 +152,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    // Since only unsigned int has granted 2-complement overflow handling,
+    // Since only unsinged int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
     // To simplify and booletproof code, we enforce ValueType to be unsigned too.
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
@@ -218,7 +218,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             const SignedDeltaType signed_dd = static_cast<SignedDeltaType>(double_delta);
             const auto sign = signed_dd < 0;
 
-            // -1 shrinks dd down to fit into number of bits, and there can't be 0, so it is OK.
+            // -1 shirnks dd down to fit into number of bits, and there can't be 0, so it is OK.
             const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
             const auto write_spec = getDeltaWriteSpec(signed_dd);
 
@@ -238,6 +238,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
+    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
 
     const char * source_end = source + source_size;
 
@@ -286,13 +287,12 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         if (write_spec.data_bits != 0)
         {
             const UInt8 sign = reader.readBit();
-            double_delta = reader.readBits(write_spec.data_bits - 1) + 1;
+            SignedDeltaType signed_dd = static_cast<SignedDeltaType>(reader.readBits(write_spec.data_bits - 1) + 1);
             if (sign)
             {
-                /// It's well defined for unsigned data types.
-                /// In constrast, it's undefined to do negation of the most negative signed number due to overflow.
-                double_delta = -double_delta;
+                signed_dd *= -1;
             }
+            double_delta = static_cast<UnsignedDeltaType>(signed_dd);
         }
 
         const UnsignedDeltaType delta = double_delta + prev_delta;

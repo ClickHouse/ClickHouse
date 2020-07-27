@@ -1,15 +1,13 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include "config_core.h"
 #if USE_EMBEDDED_COMPILER
-#    include <set>
-#    include <Functions/IFunctionImpl.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/ExpressionActions.h>
-#    include <Common/LRUCache.h>
+
+#include <Functions/IFunctionImpl.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/LRUCache.h>
+#include <set>
 
 
 namespace DB
@@ -53,7 +51,7 @@ public:
 
     bool isSuitableForConstantFolding() const override;
 
-    bool isInjective(const Block & sample_block) const override;
+    bool isInjective(const Block & sample_block) override;
 
     bool hasInformationAboutMonotonicity() const override;
 

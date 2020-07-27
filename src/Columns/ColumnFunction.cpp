@@ -124,8 +124,8 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
     for (IColumn::ColumnIndex part = 0; part < num_columns; ++part)
     {
         auto & capture = captures[part];
-        size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
-        columns.emplace_back(ColumnFunction::create(capture_size, function, std::move(capture)));
+        size_t size__ = capture.empty() ? counts[part] : capture.front().column->size();
+        columns.emplace_back(ColumnFunction::create(size__, function, std::move(capture)));
     }
 
     return columns;
@@ -134,7 +134,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
 size_t ColumnFunction::byteSize() const
 {
     size_t total_size = 0;
-    for (const auto & column : captured_columns)
+    for (auto & column : captured_columns)
         total_size += column.column->byteSize();
 
     return total_size;
@@ -143,7 +143,7 @@ size_t ColumnFunction::byteSize() const
 size_t ColumnFunction::allocatedBytes() const
 {
     size_t total_size = 0;
-    for (const auto & column : captured_columns)
+    for (auto & column : captured_columns)
         total_size += column.column->allocatedBytes();
 
     return total_size;

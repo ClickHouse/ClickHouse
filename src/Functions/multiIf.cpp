@@ -33,12 +33,15 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(context); }
+    FunctionMultiIf(const Context & context_) : context(context_) {}
 
+public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
@@ -69,7 +72,6 @@ public:
         if (!(args.size() >= 3 && args.size() % 2 == 1))
             throw Exception{"Invalid number of arguments for function " + getName(),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 
         for_conditions([&](const DataTypePtr & arg)
         {
@@ -174,7 +176,7 @@ public:
             else
             {
                 /// Cast all columns to result type.
-                converted_columns_holder.emplace_back(castColumn(source_col, return_type));
+                converted_columns_holder.emplace_back(castColumn(source_col, return_type, context));
                 instruction.source = converted_columns_holder.back().get();
             }
 
@@ -223,6 +225,9 @@ public:
 
         block.getByPosition(result).column = std::move(res);
     }
+
+private:
+    const Context & context;
 };
 
 void registerFunctionMultiIf(FunctionFactory & factory)

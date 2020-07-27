@@ -11,19 +11,20 @@ public:
     using ColumnToSize = std::map<std::string, UInt64>;
 
     MergeTreeDataPartWriterWide(
-        const MergeTreeData::DataPartPtr & data_part,
+        DiskPtr disk,
+        const String & part_path,
+        const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void write(const Block & block, const IColumn::Permutation * permutation,
-        const Block & primary_key_block, const Block & skip_indexes_block) override;
+    void write(const Block & block, const IColumn::Permutation * permutation = nullptr,
+        const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 

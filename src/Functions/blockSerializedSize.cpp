@@ -39,7 +39,7 @@ public:
             input_rows_count, size)->convertToFullColumnIfConst();
     }
 
-    static UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem)
+    UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem) const
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 

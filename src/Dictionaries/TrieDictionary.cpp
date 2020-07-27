@@ -34,18 +34,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static void validateKeyTypes(const DataTypes & key_types)
-{
-    if (key_types.size() != 1)
-        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
-
-    const auto & actual_type = key_types[0]->getName();
-
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
-}
-
-
 TrieDictionary::TrieDictionary(
     const std::string & database_,
     const std::string & name_,
@@ -64,18 +52,8 @@ TrieDictionary::TrieDictionary(
 {
     createAttributes();
     trie = btrie_create();
-
-    try
-    {
-        loadData();
-        calculateBytesAllocated();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
+    loadData();
+    calculateBytesAllocated();
 }
 
 TrieDictionary::~TrieDictionary()
@@ -428,6 +406,17 @@ void TrieDictionary::calculateBytesAllocated()
     bytes_allocated += btrie_allocated(trie);
 }
 
+void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
+{
+    if (key_types.size() != 1)
+        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
+
+    const auto & actual_type = key_types[0]->getName();
+
+    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
+        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+}
+
 
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
@@ -618,7 +607,7 @@ bool TrieDictionary::setAttributeValue(Attribute & attribute, const StringRef ke
         case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             setAttributeValueImpl<StringRef>(attribute, key, StringRef{string_in_arena, string.size()});
             return true;
         }
@@ -688,7 +677,7 @@ static void trieTraverse(const btrie_t * trie, Getter && getter)
         node = node->left;
     }
 
-    auto get_bit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
+    auto getBit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
 
     while (!stack.empty())
     {
@@ -703,13 +692,13 @@ static void trieTraverse(const btrie_t * trie, Getter && getter)
         if (node && node->right)
         {
             stack.push(nullptr);
-            key |= get_bit(stack.size());
+            key |= getBit(stack.size());
             stack.push(node->right);
             while (stack.top()->left)
                 stack.push(stack.top()->left);
         }
         else
-            key &= ~get_bit(stack.size());
+            key &= ~getBit(stack.size());
     }
 }
 
@@ -740,13 +729,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto get_keys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         const auto & attr = dict_attributes.front();
         return ColumnsWithTypeAndName(
             {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto get_view = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & ip_column = assert_cast<const ColumnFixedString &>(*columns.front());
@@ -765,7 +754,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(
-        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
+        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(getKeys), std::move(getView));
 }
 
 

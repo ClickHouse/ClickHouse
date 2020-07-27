@@ -36,7 +36,7 @@ private:
     String upload_id;
     std::vector<String> part_tags;
 
-    Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+    Logger * log = &Logger::get("WriteBufferFromS3");
 
 public:
     explicit WriteBufferFromS3(

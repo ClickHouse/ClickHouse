@@ -20,10 +20,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#endif
-
 
 struct CompactStringRef
 {
@@ -281,7 +277,7 @@ struct Grower : public HashTableGrower<>
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
-    [[noreturn]] static void set(size_t /*num_elems*/)
+    [[noreturn]] void set(size_t /*num_elems*/)
     {
         throw Poco::Exception(__PRETTY_FUNCTION__);
     }
@@ -296,8 +292,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = std::stol(argv[1]);
-    size_t m = std::stol(argv[2]);
+    size_t n = atoi(argv[1]);
+    size_t m = atoi(argv[2]);
 
     DB::Arena pool;
     std::vector<Key> data(n);

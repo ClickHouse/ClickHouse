@@ -181,25 +181,25 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
+ColumnWithTypeAndName & Block::getByName(const std::string & name)
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-    {
-        return nullptr;
-    }
-    return &data[it->second];
+        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
+            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
+    return data[it->second];
 }
 
 
 const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
-    const auto * result = findByName(name);
-    if (!result)
+    auto it = index_by_name.find(name);
+    if (index_by_name.end() == it)
         throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
             , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    return *result;
+    return data[it->second];
 }
 
 
@@ -335,7 +335,7 @@ MutableColumns Block::mutateColumns()
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column ? IColumn::mutate(std::move(data[i].column)) : data[i].type->createColumn();
+        columns[i] = data[i].column ? (*std::move(data[i].column)).mutate() : data[i].type->createColumn();
     return columns;
 }
 

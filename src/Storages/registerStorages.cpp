@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#include "config_core.h"
+
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
@@ -43,14 +46,8 @@ void registerStorages()
     registerStorageMySQL(factory);
     #endif
 
-    registerStorageMongoDB(factory);
-
     #if USE_RDKAFKA
     registerStorageKafka(factory);
-    #endif
-
-    #if USE_AMQPCPP
-    registerStorageRabbitMQ(factory);
     #endif
 }
 

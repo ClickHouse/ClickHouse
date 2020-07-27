@@ -26,7 +26,7 @@ namespace ErrorCodes
 class CheckASTDepth
 {
 public:
-    explicit CheckASTDepth(QueryNormalizer::Data & data_)
+    CheckASTDepth(QueryNormalizer::Data & data_)
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
@@ -47,7 +47,7 @@ private:
 class RestoreAliasOnExitScope
 {
 public:
-    explicit RestoreAliasOnExitScope(String & alias_)
+    RestoreAliasOnExitScope(String & alias_)
         : alias(alias_)
         , copy(alias_)
     {}
@@ -80,7 +80,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
         /// We are alias for other column (node.name), but we are alias by
         /// ourselves to some other column
-        const auto & alias_node = it_alias->second;
+        auto & alias_node = it_alias->second;
 
         String our_alias_or_name = alias_node->getAliasOrColumnName();
         std::optional<String> our_name = IdentifierSemantic::getColumnName(alias_node);

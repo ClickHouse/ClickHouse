@@ -37,7 +37,7 @@ private:
     Map map;
     bool initialized = false;
 
-    Poco::Logger * log = &Poco::Logger::get("FileChecker");
+    Logger * log = &Logger::get("FileChecker");
 };
 
 }
