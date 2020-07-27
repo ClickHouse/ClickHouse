@@ -29,6 +29,5 @@ public:
 };
 
 using VolumeRAID1Ptr = std::shared_ptr<VolumeRAID1>;
-using VolumesRAID1Ptr = std::vector<VolumeRAID1Ptr>;
 
 }

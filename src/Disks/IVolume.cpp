@@ -15,9 +15,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_VOLUME_TYPE;
 }
 
-String volumeTypeToString(VolumeType t)
+String volumeTypeToString(VolumeType type)
 {
-    switch (t)
+    switch (type)
     {
         case VolumeType::JBOD:
             return "JBOD";
@@ -59,7 +59,7 @@ UInt64 IVolume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-MultiDiskReservation::MultiDiskReservation(Reservations &reservations_, UInt64 size_)
+MultiDiskReservation::MultiDiskReservation(Reservations & reservations_, UInt64 size_)
     : reservations(std::move(reservations_))
     , size(size_)
 {
@@ -68,9 +68,9 @@ MultiDiskReservation::MultiDiskReservation(Reservations &reservations_, UInt64 s
         throw Exception("At least one reservation must be provided to MultiDiskReservation", ErrorCodes::NO_RESERVATIONS_PROVIDED);
     }
 
-    for (auto &r: reservations)
+    for (auto & reservation : reservations)
     {
-        if (r->getSize() != size_)
+        if (reservation->getSize() != size_)
         {
             throw Exception("Reservations must have same size", ErrorCodes::INCONSISTENT_RESERVATIONS);
         }
@@ -90,9 +90,9 @@ Disks MultiDiskReservation::getDisks() const
 
 void MultiDiskReservation::update(UInt64 new_size)
 {
-    for (auto &r: reservations)
+    for (auto & reservation : reservations)
     {
-        r->update(new_size);
+        reservation->update(new_size);
     }
     size = new_size;
 }
