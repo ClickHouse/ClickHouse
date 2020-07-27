@@ -48,6 +48,7 @@ struct QueryLogElement
 
     UInt64 memory_usage{};
 
+    String current_database;
     String query;
 
     Int32 exception_code{}; // because ErrorCodes are int
