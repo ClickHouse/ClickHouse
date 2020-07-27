@@ -229,9 +229,9 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
-    bool has_part_with_expired_ttl = false;
-    size_t part_with_expired_ttl_index = 0;
-    bool has_more_parts_with_expired_ttl = false;
+    bool has_parts_with_expired_ttl = false;
+    size_t partition_with_expired_ttl_index = 0;
+    bool has_multiple_partitions_with_ttl_expired_parts = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         /// Check predicate only for first part in each partition.
@@ -265,17 +265,17 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
         time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
 
-        if (!has_more_parts_with_expired_ttl && ttl && ttl < next_ttl_merge_time)
+        if (!has_multiple_partitions_with_ttl_expired_parts && ttl && ttl < next_ttl_merge_time)
         {
-            if (has_part_with_expired_ttl)
+            if (has_parts_with_expired_ttl)
             {
-                if (part_with_expired_ttl_index != partitions.size() - 1)
-                    has_more_parts_with_expired_ttl = true;
+                if (partition_with_expired_ttl_index != partitions.size() - 1)
+                    has_multiple_partitions_with_ttl_expired_parts = true;
             }
             else
             {
-                has_part_with_expired_ttl = true;
-                part_with_expired_ttl_index = partitions.size() - 1;
+                has_parts_with_expired_ttl = true;
+                partition_with_expired_ttl_index = partitions.size() - 1;
             }
         }
 
@@ -293,21 +293,22 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     std::unique_ptr<IMergeSelector> merge_selector;
 
-    SimpleMergeSelector::Settings merge_settings;
-    if (aggressive)
-        merge_settings.base = 1;
-
     bool can_merge_with_ttl = next_ttl_merge_time <= current_time;
 
     /// NOTE Could allow selection of different merge strategy.
-    if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
+    if (can_merge_with_ttl && has_parts_with_expired_ttl && !ttl_merges_blocker.isCancelled())
     {
         merge_selector = std::make_unique<TTLMergeSelector>(next_ttl_merge_time, data_settings->ttl_only_drop_parts);
-        if (!has_more_parts_with_expired_ttl)
+        if (!has_multiple_partitions_with_ttl_expired_parts)
             last_merge_with_ttl = next_ttl_merge_time;
     }
     else
+    {
+        SimpleMergeSelector::Settings merge_settings;
+        if (aggressive)
+            merge_settings.base = 1;
         merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
+    }
 
     IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
         partitions,
@@ -321,7 +322,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     }
 
     /// Allow to "merge" part with itself if we need remove some values with expired ttl
-    if (parts_to_merge.size() == 1 && !has_part_with_expired_ttl)
+    if (parts_to_merge.size() == 1 && !has_parts_with_expired_ttl)
         throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
 
     MergeTreeData::DataPartsVector parts;
