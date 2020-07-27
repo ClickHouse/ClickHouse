@@ -1391,9 +1391,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: " << query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query,
-                                              task_cluster->settings_push,
-                                              PoolMode::GET_MANY);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
         LOG_DEBUG(log, "Destination tables " << getQuotedTable(task_table.table_push)
                         << " have been created on " << shards << " shards of " << task_table.cluster_push->getShardCount());
     }
@@ -1517,9 +1515,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: " << query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query,
-                                              task_cluster->settings_push,
-                                              PoolMode::GET_MANY);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
         LOG_DEBUG(log, "Destination tables " << getQuotedTable(task_table.table_push)
                                              << " have been created on " << shards << " shards of " << task_table.cluster_push->getShardCount());
     }
@@ -1935,7 +1931,6 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         LOG_INFO(log, "There was an error while executing ALTER on each node. Query was executed on "
                 << toString(successful_nodes) << " nodes. But had to be executed on " << toString(origin_replicas_number.load()));
     }
-
 
     return successful_nodes;
 }
