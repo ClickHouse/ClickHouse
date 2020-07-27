@@ -81,6 +81,12 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
     clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
 
     echo
+    # create default database, if defined
+    if [ -n "$CLICKHOUSE_DB" ]; then
+        echo "$0: create database '$CLICKHOUSE_DB'"
+        "${clickhouseclient[@]}" -q "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
+    fi
+
     for f in /docker-entrypoint-initdb.d/*; do
         case "$f" in
             *.sh)
