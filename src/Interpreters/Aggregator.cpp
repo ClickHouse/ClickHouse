@@ -861,9 +861,11 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
         ReadableSize(uncompressed_bytes / elapsed_seconds),
         ReadableSize(compressed_bytes / elapsed_seconds));
 }
+
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
-    return writeToTemporaryFile(data_variants, params.tmp_volume->getDisk()->getPath());
+    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
 }
 
 
