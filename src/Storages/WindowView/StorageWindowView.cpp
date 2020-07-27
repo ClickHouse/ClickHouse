@@ -50,6 +50,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
@@ -953,7 +954,7 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
         slice_num_units= std::gcd(hop_num_units, window_num_units);
     }
 
-    // parse time zone
+    // Parse time zone
     size_t time_zone_arg_num = is_tumble ? 2 : 3;
     if (arguments.size() > time_zone_arg_num)
     {

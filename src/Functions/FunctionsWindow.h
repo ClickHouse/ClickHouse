@@ -77,11 +77,11 @@ struct ToStartOfTransform;
     TRANSFORM_DATE(Week)
 #undef TRANSFORM_DATE
 
-    template <> 
-    struct ToStartOfTransform<IntervalKind::Day> 
-    { 
-        static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone) 
-        { 
+    template <>
+    struct ToStartOfTransform<IntervalKind::Day>
+    {
+        static UInt32 execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone)
+        {
             return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), delta);
         }
     };
@@ -117,8 +117,8 @@ struct ToStartOfTransform;
     ADD_DATE(Month)
 #undef ADD_DATE
 
-    template <> 
-    struct AddTime<IntervalKind::Week> 
+    template <>
+    struct AddTime<IntervalKind::Week>
     {
         static DayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return DayNum(d + 7 * delta);}
     };
