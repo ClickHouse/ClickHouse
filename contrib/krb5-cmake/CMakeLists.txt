@@ -488,9 +488,6 @@ add_custom_target(
 )
 
 file(GLOB_RECURSE ET_FILES
-    # LIST_DIRECTORIES false
-    # RELATIVE ${KRB5_SOURCE_DIR}
-    # CONFIGURE_DEPENDS
     "${KRB5_SOURCE_DIR}/*.et"
 )
 
@@ -503,14 +500,16 @@ function(preprocess_et out_var)
         F_C
         ${in_f}
     )
+    string(REPLACE
+        .et
+        .h
+        F_H
+        ${in_f}
+    )
 
     get_filename_component(ET_PATH ${in_f} DIRECTORY)
-    # add_dependencies(
-    #     ${F_C}
-    #     ${KRB5_SOURCE_DIR}/util/et/compile_et
-    # )
 
-    add_custom_command(OUTPUT ${F_C}
+    add_custom_command(OUTPUT ${F_C} ${F_H}
       COMMAND perl ${KRB5_SOURCE_DIR}/util/et/compile_et -d "${KRB5_SOURCE_DIR}/util/et" ${in_f}
       DEPENDS ${in_f} ${KRB5_SOURCE_DIR}/util/et/compile_et
       WORKING_DIRECTORY ${ET_PATH}
@@ -521,12 +520,6 @@ function(preprocess_et out_var)
   endforeach()
   set(${out_var} "${result}" PARENT_SCOPE)
 endfunction()
-
-# add_dependencies(
-#     ${ET_FILES}
-#     compile_et
-#     )
-
 
 add_custom_command(
     OUTPUT ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h
@@ -556,7 +549,6 @@ add_custom_command(
     WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/generic"
 )
 
-
 add_custom_target(
     ERRMAP_H ALL
     DEPENDS ${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h
@@ -564,9 +556,12 @@ add_custom_target(
     VERBATIM
 )
 
-
-
-
+add_custom_target(
+    KRB_5_H ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h
+    COMMENT "generating krb5.h"
+    VERBATIM
+)
 
 add_library(krb5)
 
@@ -574,30 +569,72 @@ add_dependencies(
     krb5
     ERRMAP_H
     ERROR_MAP_H
+    KRB_5_H
     )
 
 preprocess_et(processed_et_files ${ET_FILES})
 
+add_custom_command(
+    OUTPUT ${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h
+    COMMAND perl -w -I../../../util  ../../../util/gen.pl bimap errmap.h NAME=mecherrmap LEFT=OM_uint32 RIGHT=struct\ mecherror LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp
+    WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/generic"
+)
+
 target_sources(krb5 PRIVATE
     ${ALL_SRCS}
-    )
+)
 
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi)
+file(MAKE_DIRECTORY
+    ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi
+)
 
 file(GLOB GSSAPI_GENERIC_HEADERS
-  ${KRB5_SOURCE_DIR}/lib/gssapi/generic/*.h
+    ${KRB5_SOURCE_DIR}/lib/gssapi/generic/*.h
+    ${KRB5_SOURCE_DIR}/lib/gssapi/generic/gssapi.hin
 )
+
 file(COPY ${GSSAPI_GENERIC_HEADERS}
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/
 )
 
+file(RENAME
+    ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/gssapi.hin
+    ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/gssapi.h
+)
+
+file(COPY ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/gssapi_krb5.h
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/
+)
+
+file(MAKE_DIRECTORY
+    ${CMAKE_CURRENT_BINARY_DIR}/include/krb5
+)
+
+SET(KRBHDEP
+    ${KRB5_SOURCE_DIR}/include/krb5/krb5.hin
+    ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb5_err.h
+    ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/k5e1_err.h
+    ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kdb5_err.h
+    ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kv5m_err.h
+    ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb524_err.h
+    ${KRB5_SOURCE_DIR}/lib/krb5/error_tables/asn1_err.h
+)
+
+# cmake < 3.18 does not have 'cat' command
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h
+    COMMAND cat ${KRBHDEP} > ${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h
+    DEPENDS ${KRBHDEP}
+)
+
+
 target_include_directories(krb5 PUBLIC
     ${KRB5_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
 target_include_directories(krb5 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  #for autoconf.h
-    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${KRB5_SOURCE_DIR}
     ${KRB5_SOURCE_DIR}/include
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue
@@ -621,15 +658,10 @@ target_include_directories(krb5 PRIVATE
 
 target_compile_definitions(krb5 PRIVATE
     KRB5_PRIVATE
-    # HAVE_CONFIG_H
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
-    # SHARED
     LOCALEDIR="/usr/local/share/locale"
     BINDIR="/usr/local/bin"
     SBINDIR="/usr/local/sbin"
     LIBDIR="/usr/local/lib"
-    # DYNOBJEXT=".so"
 )
-
-# target_link_libraries(krb5 PRIVATE resolv)
