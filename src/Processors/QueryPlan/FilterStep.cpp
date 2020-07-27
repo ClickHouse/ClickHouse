@@ -15,6 +15,7 @@ static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr 
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_number_of_rows = false,
+            .preserves_sorting = true,
     };
 }
 

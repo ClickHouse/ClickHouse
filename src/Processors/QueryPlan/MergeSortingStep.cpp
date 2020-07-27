@@ -14,6 +14,7 @@ static ITransformingStep::DataStreamTraits getTraits(size_t limit)
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_number_of_rows = limit == 0,
+            .preserves_sorting = false,
     };
 }
 
@@ -34,6 +35,10 @@ MergeSortingStep::MergeSortingStep(
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
 {
+    /// TODO: check input_stream is partially sorted by the same description.
+    output_stream->sort_description = description;
+    output_stream->sort_mode = input_stream.has_single_port ? DataStream::SortMode::Stream
+                                                            : DataStream::SortMode::Port;
 }
 
 void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)

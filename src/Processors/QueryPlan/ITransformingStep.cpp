@@ -16,6 +16,12 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
     output_stream->has_single_port = traits.returns_single_stream
                                      || (input_stream.has_single_port && traits.preserves_number_of_streams);
 
+    if (traits.preserves_sorting)
+    {
+        output_stream->sort_description = input_stream.sort_description;
+        output_stream->sort_mode = input_stream.sort_mode;
+    }
+
     input_streams.emplace_back(std::move(input_stream));
 }
 

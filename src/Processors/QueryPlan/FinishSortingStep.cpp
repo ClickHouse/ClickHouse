@@ -17,6 +17,7 @@ static ITransformingStep::DataStreamTraits getTraits(size_t limit)
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_number_of_rows = limit == 0,
+            .preserves_sorting = false,
     };
 }
 
@@ -32,6 +33,9 @@ FinishSortingStep::FinishSortingStep(
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
+    /// TODO: check input_stream is sorted by prefix_description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
 void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)

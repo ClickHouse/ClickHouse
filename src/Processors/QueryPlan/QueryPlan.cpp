@@ -323,12 +323,17 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlanStepPtr & child
 
     /// Now we should decide if pushing down limit possible for this step.
 
+    const auto & traits = transforming->getTransformTraits();
+
     /// Cannot push down if child changes the number of rows.
-    if (!transforming->getTransformTraits().preserves_number_of_rows)
+    if (!traits.preserves_number_of_rows)
         return;
 
+    /// Cannot push down if data was sorted exactly by child stream.
+    if (!child->getOutputStream().sort_description.empty() && !traits.preserves_sorting)
+        return;
 
-    /// ExtremesStep ? , FinishSorting, MergeSorting, MergingSorted, PartialSorting
+    parent.swap(child);
 }
 
 void QueryPlan::optimize()
