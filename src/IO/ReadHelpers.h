@@ -638,7 +638,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(const String & str)
+inline T parseFromString(const std::string_view & str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -1096,7 +1096,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(const String & s)
+inline T parseWithSizeSuffix(const std::string_view & s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }

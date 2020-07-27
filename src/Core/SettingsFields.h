@@ -27,32 +27,26 @@ class WriteBuffer;
   *  and the remote server will use its default value.
   */
 
-template <typename Type>
+template <typename T>
 struct SettingFieldNumber
 {
+    using Type = T;
+
     Type value;
     bool changed = false;
 
-    SettingFieldNumber(Type x = 0) : value(x) {}
+    explicit SettingFieldNumber(Type x = 0) : value(x) {}
+    explicit SettingFieldNumber(const Field & f);
+
+    SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
+    SettingFieldNumber & operator=(const Field & f);
 
     operator Type() const { return value; }
-    SettingFieldNumber & operator=(Type x) { set(x); return *this; }
+    explicit operator Field() const { return value; }
 
-    /// Serialize to a test string.
     String toString() const;
+    void parseFromString(const String & str);
 
-    /// Converts to a field.
-    Field toField() const;
-
-    void set(Type x);
-
-    /// Read from SQL literal.
-    void set(const Field & x);
-
-    /// Read from text string.
-    void set(const String & x);
-
-    /// Serialize to binary stream.
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
@@ -69,72 +63,80 @@ using SettingFieldBool = SettingFieldNumber<bool>;
   */
 struct SettingFieldMaxThreads
 {
-    UInt64 value;
     bool is_auto;
+    UInt64 value;
     bool changed = false;
 
-    SettingFieldMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
+    explicit SettingFieldMaxThreads(UInt64 x = 0) : is_auto(!x), value(is_auto ? getAuto() : x)  {}
+    explicit SettingFieldMaxThreads(const Field & f);
+
+    SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
+    SettingFieldMaxThreads & operator=(const Field & f);
 
     operator UInt64() const { return value; }
-    SettingFieldMaxThreads & operator=(UInt64 x) { set(x); return *this; }
+    explicit operator Field() const { return value; }
 
+    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto==true`.
     String toString() const;
-    Field toField() const;
-
-    void set(UInt64 x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void setAuto();
-    static UInt64 getAutoValue();
+    void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
+
+private:
+    static UInt64 getAuto();
 };
 
 
-enum class SettingFieldTimespanUnit { MILLISECOND, SECOND };
+enum class SettingFieldTimespanUnit { Millisecond, Second };
 
-template <SettingFieldTimespanUnit unit>
+template <SettingFieldTimespanUnit unit_>
 struct SettingFieldTimespan
 {
-    static constexpr UInt64 microseconds_per_unit = (unit == SettingFieldTimespanUnit::MILLISECOND) ? 1000 : 1000000;
-
+    using Unit = SettingFieldTimespanUnit;
+    static constexpr Unit unit = unit_;
+    static constexpr UInt64 microseconds_per_unit = (unit == SettingFieldTimespanUnit::Millisecond) ? 1000 : 1000000;
     Poco::Timespan value;
     bool changed = false;
 
-    SettingFieldTimespan(UInt64 x = 0) : value(x * microseconds_per_unit) {}
+    explicit SettingFieldTimespan(const Poco::Timespan & x = {}) : value(x) {}
+
+    template <class Rep, class Period = std::ratio<1>>
+    explicit SettingFieldTimespan(const std::chrono::duration<Rep, Period> & x)
+        : SettingFieldTimespan(Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(std::chrono::duration_cast<std::chrono::microseconds>(x).count())}) {}
+
+    explicit SettingFieldTimespan(UInt64 x) : SettingFieldTimespan(Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}) {}
+    explicit SettingFieldTimespan(const Field & f);
+
+    SettingFieldTimespan & operator =(const Poco::Timespan & x) { value = x; changed = true; return *this; }
+
+    template <class Rep, class Period = std::ratio<1>>
+    SettingFieldTimespan & operator =(const std::chrono::duration<Rep, Period> & x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(std::chrono::duration_cast<std::chrono::microseconds>(x).count())}; return *this; }
+
+    SettingFieldTimespan & operator =(UInt64 x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}; return *this; }
+    SettingFieldTimespan & operator =(const Field & f);
 
     operator Poco::Timespan() const { return value; }
-    SettingFieldTimespan & operator=(const Poco::Timespan & x) { set(x); return *this; }
 
     template <class Rep, class Period = std::ratio<1>>
     operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); }
 
-    template <class Rep, class Period = std::ratio<1>>
-    SettingFieldTimespan & operator=(const std::chrono::duration<Rep, Period> & x) { set(x); return *this; }
+    explicit operator UInt64() const { return value.totalMicroseconds() / microseconds_per_unit; }
+    explicit operator Field() const { return operator UInt64(); }
 
-    Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
+    Poco::Timespan::TimeDiff totalMicroseconds() const { return value.totalMicroseconds(); }
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
+    Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
 
     String toString() const;
-    Field toField() const;
-
-    void set(const Poco::Timespan & x);
-
-    template <class Rep, class Period = std::ratio<1>>
-    void set(const std::chrono::duration<Rep, Period> & duration) { set(static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(duration).count())); }
-
-    void set(UInt64 x);
-    void set(const Field & x);
-    void set(const String & x);
+    void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
 
-using SettingFieldSeconds = SettingFieldTimespan<SettingFieldTimespanUnit::SECOND>;
-using SettingFieldMilliseconds = SettingFieldTimespan<SettingFieldTimespanUnit::MILLISECOND>;
+using SettingFieldSeconds = SettingFieldTimespan<SettingFieldTimespanUnit::Second>;
+using SettingFieldMilliseconds = SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond>;
 
 
 struct SettingFieldString
@@ -142,16 +144,23 @@ struct SettingFieldString
     String value;
     bool changed = false;
 
-    SettingFieldString(const String & x = String{}) : value(x) {}
+    explicit SettingFieldString(const std::string_view & str = {}) : value(str) {}
+    explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
+    explicit SettingFieldString(String && str) : value(std::move(str)) {}
+    explicit SettingFieldString(const char * str) : SettingFieldString(std::string_view{str}) {}
+    explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<const String &>()) {}
 
-    operator String() const { return value; }
-    SettingFieldString & operator=(const String & x) { set(x); return *this; }
+    SettingFieldString & operator =(const std::string_view & str) { value = str; changed = true; return *this; }
+    SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
+    SettingFieldString & operator =(String && str) { value = std::move(str); changed = true; return *this; }
+    SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
+    SettingFieldString & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
+
+    operator const String &() const { return value; }
+    explicit operator Field() const { return value; }
 
     const String & toString() const { return value; }
-    Field toField() const;
-
-    void set(const String & x);
-    void set(const Field & x);
+    void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
@@ -163,17 +172,18 @@ struct SettingFieldChar
 public:
     char value;
     bool changed = false;
-    SettingFieldChar(char x = '\0') : value(x) {}
+
+    explicit SettingFieldChar(char c = '\0') : value(c) {}
+    explicit SettingFieldChar(const Field & f);
+
+    SettingFieldChar & operator =(char c) { value = c; changed = true; return *this; }
+    SettingFieldChar & operator =(const Field & f);
 
     operator char() const { return value; }
-    SettingFieldChar & operator=(char x) { set(x); return *this; }
+    explicit operator Field() const { return toString(); }
 
-    String toString() const;
-    Field toField() const;
-
-    void set(char x);
-    void set(const String & x);
-    void set(const Field & x);
+    String toString() const { return String(&value, 1); }
+    void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
@@ -185,17 +195,22 @@ struct SettingFieldURI
     Poco::URI value;
     bool changed = false;
 
-    SettingFieldURI(const Poco::URI & x = Poco::URI{}) : value(x) {}
+    explicit SettingFieldURI(const Poco::URI & uri = {}) : value(uri) {}
+    explicit SettingFieldURI(const String & str) : SettingFieldURI(Poco::URI{str}) {}
+    explicit SettingFieldURI(const char * str) : SettingFieldURI(Poco::URI{str}) {}
+    explicit SettingFieldURI(const Field & f) : SettingFieldURI(f.safeGet<String>()) {}
 
-    operator Poco::URI() const { return value; }
-    SettingFieldURI & operator=(const Poco::URI & x) { set(x); return *this; }
+    SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
+    SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
+    SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
+    SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
 
-    String toString() const;
-    Field toField() const;
+    operator const Poco::URI &() const { return value; }
+    explicit operator String() const { return toString(); }
+    explicit operator Field() const { return toString(); }
 
-    void set(const Poco::URI & x);
-    void set(const Field & x);
-    void set(const String & x);
+    String toString() const { return value.toString(); }
+    void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
@@ -213,23 +228,25 @@ struct SettingFieldURI
   * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ErrorCodes::BAD_ARGUMENTS,
   *                        {{"Male", Gender::Male}, {"Female", Gender::Female}})
   */
-template <typename EnumType, typename NameValueConverter>
+template <typename EnumT, typename Traits>
 struct SettingFieldEnum
 {
+    using EnumType = EnumT;
+
     EnumType value;
     bool changed = false;
 
-    SettingFieldEnum(EnumType x) : value(x) {}
+    explicit SettingFieldEnum(EnumType x = EnumType{0}) : value(x) {}
+    explicit SettingFieldEnum(const Field & f) : SettingFieldEnum(Traits::fromString(f.safeGet<const String &>())) {}
+
+    SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
+    SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<const String &>()); return *this; }
 
     operator EnumType() const { return value; }
-    SettingFieldEnum & operator=(EnumType x) { set(x); return *this; }
+    explicit operator Field() const { return toString(); }
 
-    const String & toString() const { return NameValueConverter::toString(value); }
-    Field toField() const { return toString(); }
-
-    void set(EnumType x) { value = x; changed = true; }
-    void set(const Field & x) { set(safeGet<const String &>(x)); }
-    void set(const String & x) { set(NameValueConverter::fromString(x)); }
+    String toString() const { return Traits::toString(value); }
+    void parseFromString(const String & str) { *this = Traits::fromString(str); }
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
@@ -241,16 +258,16 @@ struct SettingFieldEnumHelpers
     static String readBinary(ReadBuffer & in);
 };
 
-template <typename EnumType, typename NameValueConverter>
-inline void SettingFieldEnum<EnumType, NameValueConverter>::writeBinary(WriteBuffer & out) const
+template <typename EnumT, typename Traits>
+void SettingFieldEnum<EnumT, Traits>::writeBinary(WriteBuffer & out) const
 {
     SettingFieldEnumHelpers::writeBinary(toString(), out);
 }
 
-template <typename EnumType, typename NameValueConverter>
-inline void SettingFieldEnum<EnumType, NameValueConverter>::readBinary(ReadBuffer & in)
+template <typename EnumT, typename Traits>
+void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
 {
-    set(SettingFieldEnumHelpers::readBinary(in));
+    *this = Traits::fromString(SettingFieldEnumHelpers::readBinary(in));
 }
 
 #define DECLARE_SETTING_ENUM(ENUM_TYPE) \
@@ -260,17 +277,17 @@ inline void SettingFieldEnum<EnumType, NameValueConverter>::readBinary(ReadBuffe
     IMPLEMENT_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
 
 #define DECLARE_SETTING_ENUM_WITH_RENAME(NEW_NAME, ENUM_TYPE) \
-    struct SettingField##NEW_NAME##NameValueConverter \
+    struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
         static const String & toString(EnumType value); \
         static EnumType fromString(const std::string_view & str); \
     }; \
     \
-    using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##NameValueConverter>;
+    using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
 #define IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    const String & SettingField##NEW_NAME##NameValueConverter::toString(typename SettingField##NEW_NAME##NameValueConverter::EnumType value) \
+    const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
         static const std::unordered_map<EnumType, String> map = [] { \
             std::unordered_map<EnumType, String> res; \
@@ -287,7 +304,7 @@ inline void SettingFieldEnum<EnumType, NameValueConverter>::readBinary(ReadBuffe
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
     \
-    typename SettingField##NEW_NAME##NameValueConverter::EnumType SettingField##NEW_NAME##NameValueConverter::fromString(const std::string_view & str) \
+    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(const std::string_view & str) \
     { \
         static const std::unordered_map<std::string_view, EnumType> map = [] { \
             std::unordered_map<std::string_view, EnumType> res; \

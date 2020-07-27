@@ -173,7 +173,7 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
     {
         if (it.isChanged() && it.getName().toString().rfind("kafka_",0) == std::string::npos)
         {
-            result.emplace_back(it.getName().toString(), it.getValueAsString());
+            result.emplace_back(it.getName().toString(), it.getValue());
         }
     }
     return result;
@@ -632,8 +632,8 @@ void registerStorageKafka(StorageFactory & factory)
                                 engine_args[(ARG_NUM)-1],                   \
                                 args.local_context);                        \
                     }                                                       \
-                    kafka_settings->PAR_NAME.set(                           \
-                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value);\
+                    kafka_settings->PAR_NAME =                              \
+                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
                 }                                                           \
             }
 

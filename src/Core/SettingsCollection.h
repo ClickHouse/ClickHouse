@@ -49,28 +49,30 @@ private:
     struct MemberInfo
     {
         using IsChangedFunction = bool (*)(const Derived &);
-        using GetStringFunction = String (*)(const Derived &);
-        using GetFieldFunction = Field (*)(const Derived &);
-        using SetStringFunction = void (*)(Derived &, const String &);
-        using SetFieldFunction = void (*)(Derived &, const Field &);
+        using GetValueFunction = Field (*)(const Derived &);
+        using SetValueFunction = void (*)(Derived &, const Field &);
+        using GetValueAsStringFunction = String (*)(const Derived &);
+        using ParseValueFromStringFunction = void (*)(Derived &, const String &);
         using WriteBinaryFunction = void (*)(const Derived &, WriteBuffer & buf);
         using ReadBinaryFunction = void (*)(Derived &, ReadBuffer & buf);
+        using CastValueFunction = Field (*)(const Field &);
+        using StringToValueFunction = Field (*)(const String &);
         using ValueToStringFunction = String (*)(const Field &);
-        using ValueToCorrespondingTypeFunction = Field (*)(const Field &);
 
         StringRef name;
         StringRef description;
         StringRef type;
         bool is_important;
         IsChangedFunction is_changed;
-        GetStringFunction get_string;
-        GetFieldFunction get_field;
-        SetStringFunction set_string;
-        SetFieldFunction set_field;
+        GetValueFunction get_value;
+        SetValueFunction set_value;
+        GetValueAsStringFunction get_value_as_string;
+        ParseValueFromStringFunction parse_value_from_string;
         WriteBinaryFunction write_binary;
         ReadBinaryFunction read_binary;
+        CastValueFunction cast_value;
+        StringToValueFunction string_to_value;
         ValueToStringFunction value_to_string;
-        ValueToCorrespondingTypeFunction value_to_corresponding_type;
     };
 
     class MemberInfos
@@ -110,7 +112,7 @@ public:
         const StringRef & getType() const { return member->type; }
         bool isChanged() const { return member->is_changed(*collection); }
         Field getValue() const;
-        String getValueAsString() const { return member->get_string(*collection); }
+        String getValueAsString() const { return member->get_value_as_string(*collection); }
 
     protected:
         friend class SettingsCollection<Derived>::const_iterator;
@@ -126,8 +128,8 @@ public:
     public:
         reference(Derived & collection_, const MemberInfo & member_) : const_reference(collection_, member_) {}
         reference(const const_reference & src) : const_reference(src) {}
-        void setValue(const Field & value) { this->member->set_field(*const_cast<Derived *>(this->collection), value); }
-        void setValue(const String & value) { this->member->set_string(*const_cast<Derived *>(this->collection), value); }
+        void setValue(const Field & value) { this->member->set_value(*const_cast<Derived *>(this->collection), value); }
+        void parseFromString(const String & value) { this->member->parse_value_from_string(*const_cast<Derived *>(this->collection), value); }
     };
 
     /// Iterator to iterating through all the settings.
@@ -178,14 +180,16 @@ public:
     /// Searches a setting by its name; throws an exception if not found.
     static size_t findIndexStrict(const StringRef & name) { return members().findIndexStrict(name); }
 
-    /// Casts a value to a string according to a specified setting without actual changing this settings.
-    static String valueToString(size_t index, const Field & value) { return members()[index].value_to_string(value); }
-    static String valueToString(const StringRef & name, const Field & value) { return members().findStrict(name).value_to_string(value); }
-
     /// Casts a value to a type according to a specified setting without actual changing this settings.
     /// E.g. for SettingInt64 it casts Field to Field::Types::Int64.
-    static Field valueToCorrespondingType(size_t index, const Field & value);
-    static Field valueToCorrespondingType(const StringRef & name, const Field & value);
+    static Field castValue(size_t index, const Field & value);
+    static Field castValue(const StringRef & name, const Field & value);
+
+    /// Casts a value to a string according to a specified setting without actual changing this settings.
+    static Field stringToValue(size_t index, const String & str) { return members()[index].string_to_value(str); }
+    static Field stringToValue(const StringRef & name, const String & str) { return members().findStrict(name).string_to_value(str); }
+    static String valueToString(size_t index, const Field & value) { return members()[index].value_to_string(value); }
+    static String valueToString(const StringRef & name, const Field & value) { return members().findStrict(name).value_to_string(value); }
 
     iterator begin() { return iterator(castToDerived(), members().data()); }
     const_iterator begin() const { return const_iterator(castToDerived(), members().data()); }
