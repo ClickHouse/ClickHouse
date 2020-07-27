@@ -498,7 +498,6 @@ void TemplateRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
-    buf.reset();
 }
 
 void registerInputFormatProcessorTemplate(FormatFactory & factory)

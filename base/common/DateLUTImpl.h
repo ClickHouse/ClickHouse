@@ -37,12 +37,7 @@ using YearWeek = std::pair<UInt16, UInt8>;
 class DateLUTImpl
 {
 public:
-    explicit DateLUTImpl(const std::string & time_zone);
-
-    DateLUTImpl(const DateLUTImpl &) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
-    DateLUTImpl(const DateLUTImpl &&) = delete;
-    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
+    DateLUTImpl(const std::string & time_zone);
 
 public:
     /// The order of fields matters for alignment and sizeof.
@@ -686,17 +681,12 @@ public:
     inline time_t makeDateTime(UInt16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeDayNum(year, month, day_of_month);
-        UInt32 time_offset = hour * 3600 + minute * 60 + second;
+        time_t time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change)
             time_offset -= lut[index].amount_of_offset_change;
 
-        UInt32 res = lut[index].date + time_offset;
-
-        if (unlikely(res > DATE_LUT_MAX))
-            return 0;
-
-        return res;
+        return lut[index].date + time_offset;
     }
 
     inline const Values & getValues(DayNum d) const { return lut[d]; }

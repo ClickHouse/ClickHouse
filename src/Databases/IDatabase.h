@@ -22,6 +22,7 @@ class Context;
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
+struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
 using Dictionaries = std::vector<String>;
 
@@ -133,7 +134,7 @@ public:
     virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(const String & name, const Context & context) const = 0;
+    virtual bool isTableExist(const String & name) const = 0;
 
     /// Check the existence of the dictionary
     virtual bool isDictionaryExist(const String & /*name*/) const
@@ -142,7 +143,7 @@ public:
     }
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(const String & name, const Context & context) const = 0;
+    virtual StoragePtr tryGetTable(const String & name) const = 0;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -150,7 +151,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
     virtual DatabaseDictionariesIteratorPtr getDictionariesIterator([[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
@@ -236,7 +237,7 @@ public:
     using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
-    /// You must call under the alter_lock of the corresponding table . If engine_modifier is empty, then engine does not change.
+    /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & /*context*/,
         const StorageID & /*table_id*/,
@@ -252,14 +253,14 @@ public:
     }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name, const Context & context) const noexcept
+    ASTPtr tryGetCreateTableQuery(const String & name) const noexcept
     {
-        return getCreateTableQueryImpl(name, context, false);
+        return getCreateTableQueryImpl(name, false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name, const Context & context) const
+    ASTPtr getCreateTableQuery(const String & name) const
     {
-        return getCreateTableQueryImpl(name, context, true);
+        return getCreateTableQueryImpl(name, true);
     }
 
     /// Get the CREATE DICTIONARY query for the dictionary. Returns nullptr if dictionary doesn't exists.
@@ -307,7 +308,7 @@ public:
     virtual ~IDatabase() {}
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, const Context & /*context*/, bool throw_on_error) const
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);

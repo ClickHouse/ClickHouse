@@ -1,4 +1,4 @@
-## setting_name {#setting_name}
+## setting-name {#setting-name-in-lower-case}
 
 Description.
 

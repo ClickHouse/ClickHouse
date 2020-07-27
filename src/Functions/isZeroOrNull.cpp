@@ -43,7 +43,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (!isNumber(removeNullable(types.at(0))))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+            throw Exception("The argument of function " + getName() + " must have simple numeric type, possibly Nullable", ErrorCodes::BAD_ARGUMENTS);
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -69,7 +69,7 @@ public:
                     return true;
                 }))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+                throw Exception("The argument of function " + getName() + " must have simple numeric type, possibly Nullable", ErrorCodes::ILLEGAL_COLUMN);
             }
         }
         else
@@ -86,7 +86,7 @@ public:
                     return true;
                 }))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+                throw Exception("The argument of function " + getName() + " must have simple numeric type, possibly Nullable", ErrorCodes::ILLEGAL_COLUMN);
             }
         }
     }
@@ -115,4 +115,3 @@ void registerFunctionIsZeroOrNull(FunctionFactory & factory)
 }
 
 }
-

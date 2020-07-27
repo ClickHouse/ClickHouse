@@ -16,7 +16,7 @@ struct NullableArraySource;
 template <typename Base>
 struct ConstSource;
 
-using NumericArraySources = typename TypeListMap<NumericArraySource, TypeListNumbersAndUInt128>::Type;
+using NumericArraySources = typename TypeListMap<NumericArraySource, TypeListNumbers>::Type;
 using BasicArraySources = typename AppendToTypeList<GenericArraySource, NumericArraySources>::Type;
 using NullableArraySources = typename TypeListMap<NullableArraySource, BasicArraySources>::Type;
 using BasicAndNullableArraySources = typename TypeListConcat<BasicArraySources, NullableArraySources>::Type;

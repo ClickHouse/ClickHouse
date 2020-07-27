@@ -23,7 +23,7 @@ void registerFunctionsLogical(FunctionFactory & factory)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>(FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>();
 }
 
 namespace ErrorCodes
@@ -222,7 +222,7 @@ struct ValueGetterBuilderImpl<>
     static TernaryValueGetter build(const IColumn * x)
     {
         throw Exception(
-                std::string("Unknown numeric column of type: ") + demangle(typeid(*x).name()),
+                std::string("Unknown numeric column of type: ") + demangle(typeid(x).name()),
                 ErrorCodes::LOGICAL_ERROR);
     }
 };

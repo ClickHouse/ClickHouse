@@ -7,7 +7,7 @@
 #include <cstring>
 #include <cassert>
 
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined (__ANDROID__)
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
 #   include <sys/endian.h>
 #elif defined(__APPLE__)
 #   include <libkern/OSByteOrder.h>

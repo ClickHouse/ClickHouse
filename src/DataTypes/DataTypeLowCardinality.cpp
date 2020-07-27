@@ -672,7 +672,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             ColumnLowCardinality::Index(indexes_column->getPtr()).check(
                     maps.dictionary_map->size() + maps.additional_keys_map->size());
 
-            auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
+            auto used_keys = (*std::move(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0))).mutate();
 
             if (!maps.additional_keys_map->empty())
             {

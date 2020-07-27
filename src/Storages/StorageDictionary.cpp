@@ -102,9 +102,7 @@ StorageDictionary::StorageDictionary(
     , dictionary_name(dictionary_name_)
     , location(location_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
 }
 
 
@@ -125,7 +123,6 @@ void StorageDictionary::checkTableCanBeDropped() const
 
 Pipes StorageDictionary::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,

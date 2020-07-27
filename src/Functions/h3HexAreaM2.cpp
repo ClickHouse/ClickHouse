@@ -1,13 +1,21 @@
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include "config_functions.h"
 
-#include <constants.h>
-#include <h3api.h>
+#if USE_H3
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <IO/WriteHelpers.h>
+#    include <Common/typeid_cast.h>
+#    include <ext/range.h>
+
+#    if __has_include(<h3/h3api.h>)
+#        include <h3/h3api.h>
+#        include <h3/constants.h>
+#    else
+#        include <h3api.h>
+#        include <constants.h>
+#    endif
 
 
 namespace DB
@@ -73,3 +81,4 @@ void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 }
 
 }
+#endif

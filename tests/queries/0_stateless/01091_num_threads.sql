@@ -4,11 +4,11 @@ set log_query_threads=1;
 WITH 01091 AS id SELECT 1;
 SYSTEM FLUSH LOGS;
 
-WITH
+WITH 
     (
         SELECT query_id
         FROM system.query_log
-        WHERE (query = 'WITH 01091 AS id SELECT 1;\n') AND (event_date >= (today() - 1))
+        WHERE (query LIKE 'WITH 1091%') AND (event_date >= (today() - 1))
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -19,11 +19,11 @@ WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master
 with 01091 as id select sum(number) from numbers(1000000);
 SYSTEM FLUSH LOGS;
 
-WITH
+WITH 
     (
         SELECT query_id
         FROM system.query_log
-        WHERE (query LIKE 'with 01091 as id select sum(number) from numbers(1000000);%') AND (event_date >= (today() - 1))
+        WHERE (query LIKE 'WITH 1091% AS id SELECT sum(number) FROM numbers(1000000)%') AND (event_date >= (today() - 1))
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -34,11 +34,11 @@ WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master
 with 01091 as id select sum(number) from numbers_mt(1000000);
 SYSTEM FLUSH LOGS;
 
-WITH
+WITH 
     (
         SELECT query_id
         FROM system.query_log
-        WHERE (query LIKE 'with 01091 as id select sum(number) from numbers_mt(1000000);%') AND (event_date >= (today() - 1))
+        WHERE (query LIKE 'WITH 1091% AS id SELECT sum(number) FROM numbers_mt(1000000)%') AND (event_date >= (today() - 1))
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
