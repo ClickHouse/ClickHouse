@@ -589,7 +589,11 @@ file(GLOB GSSAPI_GENERIC_HEADERS
 )
 file(COPY ${GSSAPI_GENERIC_HEADERS}
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/
-    )
+)
+
+target_include_directories(krb5 PUBLIC
+    ${KRB5_SOURCE_DIR}/include
+)
 
 target_include_directories(krb5 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  #for autoconf.h
@@ -613,8 +617,8 @@ target_include_directories(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/krb5/unicode
     ${KRB5_SOURCE_DIR}/lib/krb5/os
     ${OPENSSL_INCLUDE_DIR}
-
 )
+
 target_compile_definitions(krb5 PRIVATE
     KRB5_PRIVATE
     # HAVE_CONFIG_H
