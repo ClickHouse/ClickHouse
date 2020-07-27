@@ -47,3 +47,7 @@ target_compile_definitions(${CYRUS_SASL_LIBRARY} PUBLIC
     OBSOLETE_DIGEST_ATTR=1
     LIBSASL_EXPORTS=1
 )
+
+target_link_libraries(${CYRUS_SASL_LIBRARY}
+    PUBLIC ${KRB5_LIBRARY}
+)
