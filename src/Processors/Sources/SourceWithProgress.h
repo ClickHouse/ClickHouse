@@ -21,7 +21,7 @@ public:
 
     /// Set the quota. If you set a quota on the amount of raw data,
     /// then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
-    virtual void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) = 0;
+    virtual void setQuota(const QuotaContextPtr & quota_) = 0;
 
     /// Set the pointer to the process list item.
     /// General information about the resources spent on the request will be written into it.
@@ -44,14 +44,12 @@ class SourceWithProgress : public ISourceWithProgress
 {
 public:
     using ISourceWithProgress::ISourceWithProgress;
-    /// If enable_auto_progress flag is set, progress() will be automatically called on each generated chunk.
-    SourceWithProgress(Block header, bool enable_auto_progress);
 
     using LocalLimits = IBlockInputStream::LocalLimits;
     using LimitsMode = IBlockInputStream::LimitsMode;
 
     void setLimits(const LocalLimits & limits_) final { limits = limits_; }
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { quota = quota_; }
+    void setQuota(const QuotaContextPtr & quota_) final { quota = quota_; }
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
@@ -64,7 +62,7 @@ protected:
 
 private:
     LocalLimits limits;
-    std::shared_ptr<const EnabledQuota> quota;
+    QuotaContextPtr quota;
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;
 
@@ -78,9 +76,6 @@ private:
     /// This flag checks if progress() was manually called at generate() call.
     /// If not, it will be called for chunk after generate() was finished.
     bool was_progress_called = false;
-
-    /// If enabled, progress() will be automatically called on each generated chunk.
-    bool auto_progress = true;
 };
 
 }

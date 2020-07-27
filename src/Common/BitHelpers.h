@@ -53,10 +53,12 @@ inline size_t getLeadingZeroBits(T x)
     }
 }
 
-// Unsafe since __builtin_ctz()-family explicitly state that result is undefined on x == 0
 template <typename T>
-inline size_t getTrailingZeroBitsUnsafe(T x)
+inline size_t getTrailingZeroBits(T x)
 {
+    if (!x)
+        return sizeof(x) * 8;
+
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
         return __builtin_ctz(x);
@@ -69,15 +71,6 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     {
         return __builtin_ctzll(x);
     }
-}
-
-template <typename T>
-inline size_t getTrailingZeroBits(T x)
-{
-    if (!x)
-        return sizeof(x) * 8;
-
-    return getTrailingZeroBitsUnsafe(x);
 }
 
 /** Returns a mask that has '1' for `bits` LSB set:

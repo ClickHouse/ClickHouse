@@ -1,11 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
 #include <Functions/IFunctionImpl.h>
 #include <DataTypes/Native.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
 
 namespace DB
 {

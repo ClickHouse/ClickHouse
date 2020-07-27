@@ -84,12 +84,11 @@ DictionarySourcePtr DictionarySourceFactory::create(
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-
-    if (keys.empty() || keys.size() > 2)
-        throw Exception{name + ": element dictionary.source should have one or two child elements",
+    if (keys.size() != 1)
+        throw Exception{name + ": element dictionary.source should have exactly one child element",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
-    const std::string & source_type = keys.front() == "settings" ? keys.back() : keys.front();
+    const auto & source_type = keys.front();
 
     const auto found = registered_sources.find(source_type);
     if (found != registered_sources.end())

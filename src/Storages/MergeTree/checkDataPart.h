@@ -19,7 +19,4 @@ IMergeTreeDataPart::Checksums checkDataPart(
     const MergeTreeDataPartType & part_type,
     bool require_checksums,
     std::function<bool()> is_cancelled = []{ return false; });
-
-bool isNotEnoughMemoryErrorCode(int code);
-
 }

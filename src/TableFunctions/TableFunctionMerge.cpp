@@ -6,6 +6,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -30,19 +31,18 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
     StoragePtr any_table;
 
     {
-        auto database = DatabaseCatalog::instance().getDatabase(source_database);
+        auto database = context.getDatabase(source_database);
         auto iterator = database->getTablesIterator(context, table_name_match);
 
         if (iterator->isValid())
-            if (const auto & table = iterator->table())
-                any_table = table;
+            any_table = iterator->table();
     }
 
     if (!any_table)
         throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular expression: "
             + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
 
-    return any_table->getInMemoryMetadataPtr()->getColumns().getAllPhysical();
+    return any_table->getColumns().getAllPhysical();
 }
 
 
@@ -67,6 +67,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
 
     String source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
+    context.checkAccess(AccessType::merge, source_database);
 
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),

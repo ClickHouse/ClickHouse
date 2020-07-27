@@ -1,16 +1,13 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
+#include "config_functions.h"
 #if USE_BASE64
-#    include <Columns/ColumnConst.h>
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/FunctionHelpers.h>
-#    include <Functions/GatherUtils/Algorithms.h>
-#    include <IO/WriteHelpers.h>
-#    include <turbob64.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/GatherUtils/Algorithms.h>
+#include <IO/WriteHelpers.h>
+#include <turbob64.h>
 
 
 namespace DB

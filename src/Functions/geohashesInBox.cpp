@@ -1,7 +1,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/GeoHash.h>
+#include <Functions/GeoUtils.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -10,7 +10,6 @@
 
 #include <memory>
 #include <string>
-
 
 namespace DB
 {
@@ -103,7 +102,7 @@ public:
             const Float64 lon_max_value = lon_max->getElement(row);
             const Float64 lat_max_value = lat_max->getElement(row);
 
-            const auto prepared_args = geohashesInBoxPrepare(
+            const auto prepared_args = GeoUtils::geohashesInBoxPrepare(
                         lon_min_value, lat_min_value, lon_max_value, lat_max_value,
                         precision->getElement(row % precision->size()));
             if (prepared_args.items_count > max_array_size)
@@ -119,10 +118,12 @@ public:
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
             // Actually write geohashes into preallocated buffer.
-            geohashesInBox(prepared_args, out);
+            GeoUtils::geohashesInBox(prepared_args, out);
 
             for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
+            {
                 res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
+            }
             res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + prepared_args.items_count);
         }
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())

@@ -38,7 +38,6 @@ public:
 
 private:
     virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const = 0;
-    virtual const char * getStorageTypeName() const = 0;
 };
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;

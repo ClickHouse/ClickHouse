@@ -21,13 +21,13 @@ void finalizeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
-        if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
+        if (auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(column.get()))
+            column = agg_function->convertToValues();
 
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-Block TotalsHavingTransform::transformHeader(Block block, const ExpressionActionsPtr & expression, bool final)
+static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression, bool final)
 {
     if (final)
         finalizeBlock(block);
@@ -46,7 +46,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, transformHeader(header, expression_, final_), true)
+    : ISimpleTransform(header, createOutputHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
@@ -122,11 +122,11 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
     if (overflow_row)
     {
-        const auto & info = chunk.getChunkInfo();
+        auto & info = chunk.getChunkInfo();
         if (!info)
             throw Exception("Chunk info was not set for chunk in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
 
-        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
 
@@ -154,7 +154,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     else
     {
         /// Compute the expression in HAVING.
-        const auto & cur_header = final ? finalized_header : getInputPort().getHeader();
+        auto & cur_header = final ? finalized_header : getInputPort().getHeader();
         auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
         expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();

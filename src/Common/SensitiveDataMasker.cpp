@@ -102,7 +102,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    Poco::Logger * logger = &Poco::Logger::get("SensitiveDataMaskerConfigRead");
+    Logger * logger = &Logger::get("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
 
@@ -144,13 +144,15 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
         }
         else
         {
-            LOG_WARNING(logger, "Unused param {}.{}", config_prefix, rule);
+            LOG_WARNING(logger, "Unused param " << config_prefix << '.' << rule);
         }
     }
 
     auto rules_count = rulesCount();
     if (rules_count > 0)
-        LOG_INFO(logger, "{} query masking rules loaded.", rules_count);
+    {
+        LOG_INFO(logger, rules_count << " query masking rules loaded.");
+    }
 }
 
 void SensitiveDataMasker::addMaskingRule(
@@ -163,7 +165,7 @@ void SensitiveDataMasker::addMaskingRule(
 size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
 {
     size_t matches = 0;
-    for (const auto & rule : all_masking_rules)
+    for (auto & rule : all_masking_rules)
         matches += rule->apply(data);
     return matches;
 }

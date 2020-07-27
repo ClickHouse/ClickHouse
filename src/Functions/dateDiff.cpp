@@ -82,7 +82,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!unit_column)
             throw Exception("First argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
@@ -126,13 +126,13 @@ private:
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
     {
-        if (const auto * x_vec_16 = checkAndGetColumn<ColumnUInt16>(&x))
+        if (auto * x_vec_16 = checkAndGetColumn<ColumnUInt16>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
-        else if (const auto * x_vec_32 = checkAndGetColumn<ColumnUInt32>(&x))
+        else if (auto * x_vec_32 = checkAndGetColumn<ColumnUInt32>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
-        else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnUInt16>(&x))
+        else if (auto * x_const_16 = checkAndGetColumnConst<ColumnUInt16>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
-        else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnUInt32>(&x))
+        else if (auto * x_const_32 = checkAndGetColumnConst<ColumnUInt32>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for first argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
@@ -144,14 +144,14 @@ private:
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
     {
-        if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
-            vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
-        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
-            vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
-        else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
-            vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
-        else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
-            vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+        if (auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
+            vector_vector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+        else if (auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
+            vector_vector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
+            vector_constant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
+        else if (auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
+            vector_constant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -162,16 +162,16 @@ private:
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
     {
-        if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
-            constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
-        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
-            constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        if (auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
+            constant_vector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+        else if (auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
+            constant_vector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename Transform, typename T1, typename T2>
-    void vectorVector(
+    void vector_vector(
         const ColumnVector<T1> & x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
@@ -183,7 +183,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void vectorConstant(
+    void vector_constant(
         const ColumnVector<T1> & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
@@ -194,7 +194,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void constantVector(
+    void constant_vector(
         T1 x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)

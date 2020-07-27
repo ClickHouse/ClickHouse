@@ -1,12 +1,11 @@
 #pragma once
 
 #include <type_traits>
+#include <common/likely.h>
 #include <Common/Exception.h>
+#include <Common/config.h>
 #include <DataTypes/NumberTraits.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
 
 namespace DB
 {

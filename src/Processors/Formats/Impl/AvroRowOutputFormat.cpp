@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeUUID.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -53,7 +52,7 @@ namespace ErrorCodes
 class OutputStreamWriteBufferAdapter : public avro::OutputStream
 {
 public:
-    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
 
     virtual bool next(uint8_t ** data, size_t * len) override
     {
@@ -208,18 +207,6 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                 encoder.encodeEnum(enum_mapping.at(enum_value));
             }};
         }
-        case TypeIndex::UUID:
-        {
-            auto schema = avro::StringSchema();
-            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::UUID));
-            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-            {
-                const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
-                std::array<UInt8, 36> s;
-                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), s.data());
-                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
-            }};
-        }
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
@@ -299,7 +286,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
     avro::RecordSchema record_schema("row");
 
     size_t type_name_increment = 0;
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
         try
         {

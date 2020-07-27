@@ -22,8 +22,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
 {
     alias = identifier.tryGetAlias();
 
-    auto table_id = IdentifierSemantic::extractDatabaseAndTable(identifier);
-    std::tie(database, table, uuid) = std::tie(table_id.database_name, table_id.table_name, table_id.uuid);
+    std::tie(database, table) = IdentifierSemantic::extractDatabaseAndTable(identifier);
     if (database.empty())
         database = current_database;
 }
@@ -49,7 +48,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
         throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias) const
+bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias)
 {
     /// table.*, alias.* or database.table.*
 

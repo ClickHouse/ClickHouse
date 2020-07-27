@@ -46,8 +46,10 @@ Block TextLogElement::createBlock()
     };
 }
 
-void TextLogElement::appendToBlock(MutableColumns & columns) const
+void TextLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t i = 0;
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
