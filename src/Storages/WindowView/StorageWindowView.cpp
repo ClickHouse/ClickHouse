@@ -325,7 +325,7 @@ UInt32 StorageWindowView::getCleanupBound()
                 return 0;
             if (allowed_lateness)
             {
-                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units, time_zone);
+                UInt32 lateness_bound = addTime(max_timestamp, lateness_kind, -1 * lateness_num_units, *time_zone);
                 lateness_bound = getWindowLowerBound(lateness_bound);
                 if (lateness_bound < w_bound)
                     w_bound = lateness_bound;
@@ -603,12 +603,12 @@ inline UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     case IntervalKind::KIND: \
     { \
         if (is_tumble) \
-            return ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
+            return ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         else \
         {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, time_zone); \
-            UInt32 w_end = AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, time_zone);\
-            return AddTime<IntervalKind::KIND>::execute(w_end, -1 * window_num_units, time_zone);\
+            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+            UInt32 w_end = AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone);\
+            return AddTime<IntervalKind::KIND>::execute(w_end, -1 * window_num_units, *time_zone);\
         }\
     }
         CASE_WINDOW_KIND(Second)
@@ -639,13 +639,13 @@ inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     { \
         if (is_tumble) \
         {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
-            return AddTime<IntervalKind::KIND>::execute(w_start, window_num_units, time_zone); \
+            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, *time_zone); \
+            return AddTime<IntervalKind::KIND>::execute(w_start, window_num_units, *time_zone); \
         }\
         else \
         {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, time_zone); \
-            return AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, time_zone);\
+            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+            return AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone);\
         }\
     }
         CASE_WINDOW_KIND(Second)
@@ -694,12 +694,12 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
             fire_signal.push_back(max_watermark);
             max_fired_watermark = max_watermark;
             max_watermark
-                = is_tumble ? addTime(max_watermark, window_kind, window_num_units, time_zone) : addTime(max_watermark, hop_kind, hop_num_units, time_zone);
+                = is_tumble ? addTime(max_watermark, window_kind, window_num_units, *time_zone) : addTime(max_watermark, hop_kind, hop_num_units, *time_zone);
         }
     }
     else // strictly || bounded
     {
-        UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units, time_zone);
+        UInt32 max_watermark_bias = addTime(max_watermark, watermark_kind, watermark_num_units, *time_zone);
         updated = max_watermark_bias <= watermark;
         while (max_watermark_bias <= max_timestamp)
         {
@@ -707,13 +707,13 @@ inline void StorageWindowView::updateMaxWatermark(UInt32 watermark)
             max_fired_watermark = max_watermark;
             if (is_tumble)
             {
-                max_watermark = addTime(max_watermark, window_kind, window_num_units, time_zone);
-                max_watermark_bias = addTime(max_watermark, window_kind, window_num_units, time_zone);
+                max_watermark = addTime(max_watermark, window_kind, window_num_units, *time_zone);
+                max_watermark_bias = addTime(max_watermark, window_kind, window_num_units, *time_zone);
             }
             else
             {
-                max_watermark = addTime(max_watermark, hop_kind, hop_num_units, time_zone);
-                max_watermark_bias = addTime(max_watermark, hop_kind, hop_num_units, time_zone);
+                max_watermark = addTime(max_watermark, hop_kind, hop_num_units, *time_zone);
+                max_watermark_bias = addTime(max_watermark, hop_kind, hop_num_units, *time_zone);
             }
         }
     }
@@ -757,7 +757,7 @@ void StorageWindowView::threadFuncFireProc()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
             max_fired_watermark = next_fire_signal;
-            next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, time_zone);
+            next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, *time_zone);
         }
 
         next_fire_signal = getWindowUpperBound(timestamp_now);
@@ -826,7 +826,6 @@ StorageWindowView::StorageWindowView(
     bool attach_)
     : IStorage(table_id_)
     , global_context(local_context.getGlobalContext())
-    , time_zone(DateLUT::instance())
 {
     wv_context = std::make_unique<Context>(global_context);
     wv_context->makeQueryContext();
@@ -854,10 +853,10 @@ StorageWindowView::StorageWindowView(
     select_table_id = StorageID(select_database_name, select_table_name);
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
-    // Parser inner query
+    // Parse inner query
     auto inner_query = innerQueryParser(select_query);
 
-    // Parser mergeable query
+    // Parse mergeable query
     mergeable_query = inner_query->clone();
     ReplaceFunctionNowData func_now_data;
     ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
@@ -865,7 +864,7 @@ StorageWindowView::StorageWindowView(
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    // Parser final query
+    // Parse final query
     final_query = mergeable_query->clone();
     ReplaceWindowIdMatcher::Data final_query_data;
     if (is_tumble)
@@ -921,7 +920,7 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     if (!query.groupBy())
         throw Exception("GROUP BY query is required for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    // parse stage mergeable
+    // Parse stage mergeable
     ASTPtr result = query.clone();
     ASTPtr expr_list = result;
     MergeableQueryMatcher::Data stage_mergeable_data;
@@ -933,7 +932,7 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     timestamp_column_name = stage_mergeable_data.timestamp_column_name;
     is_tumble = stage_mergeable_data.is_tumble;
 
-    // parser window function
+    // Parse window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*stage_mergeable_data.window_function);
     const auto & arguments = window_function.arguments->children;
     extractWindowArgument(
@@ -953,6 +952,22 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
             "Illegal type of third argument of function " + window_function.name + " should be Interval");
         slice_num_units= std::gcd(hop_num_units, window_num_units);
     }
+
+    // parse time zone
+    size_t time_zone_arg_num = is_tumble ? 2 : 3;
+    if (arguments.size() > time_zone_arg_num)
+    {
+        const auto & ast = arguments.at(time_zone_arg_num);
+        const auto * time_zone_ast = ast->as<ASTLiteral>();
+        if (!time_zone_ast || time_zone_ast->value.getType() != Field::Types::String)
+            throw Exception(
+                "Illegal column #" + std::to_string(time_zone_arg_num) + " of time zone argument of function, must be constant string",
+                ErrorCodes::ILLEGAL_COLUMN);
+        time_zone = &DateLUT::instance(time_zone_ast->value.safeGet<String>());
+    }
+    else
+        time_zone = &DateLUT::instance();
+
     return result;
 }
 
@@ -1157,7 +1172,7 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
         while (w_end > w_start)
         {
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -1 * slice_num_units, time_zone);
+            w_end = addTime(w_end, window_kind, -1 * slice_num_units, *time_zone);
         }
         auto func_has = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
         res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_has);
@@ -1175,7 +1190,7 @@ StoragePtr & StorageWindowView::getTargetStorage() const
 
 BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 watermark)
 {
-    UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units, time_zone);
+    UInt32 w_start = addTime(watermark, window_kind, -1 * window_num_units, *time_zone);
 
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
