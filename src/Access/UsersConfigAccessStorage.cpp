@@ -375,9 +375,9 @@ namespace
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.min_value = Settings::stringToValue(setting_index, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.max_value = Settings::stringToValue(setting_index, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
                 else
@@ -419,7 +419,7 @@ namespace
             SettingsProfileElement profile_element;
             size_t setting_index = Settings::findIndexStrict(key);
             profile_element.setting_index = setting_index;
-            profile_element.value = Settings::valueToCorrespondingType(setting_index, config.getString(profile_config + "." + key));
+            profile_element.value = Settings::stringToValue(setting_index, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 

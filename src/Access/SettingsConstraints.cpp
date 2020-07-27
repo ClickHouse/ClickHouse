@@ -38,7 +38,7 @@ void SettingsConstraints::setMinValue(const StringRef & setting_name, const Fiel
 
 void SettingsConstraints::setMinValue(size_t setting_index, const Field & min_value)
 {
-    getConstraintRef(setting_index).min_value = Settings::valueToCorrespondingType(setting_index, min_value);
+    getConstraintRef(setting_index).min_value = Settings::castValue(setting_index, min_value);
 }
 
 Field SettingsConstraints::getMinValue(const StringRef & setting_name) const
@@ -63,7 +63,7 @@ void SettingsConstraints::setMaxValue(const StringRef & name, const Field & max_
 
 void SettingsConstraints::setMaxValue(size_t setting_index, const Field & max_value)
 {
-    getConstraintRef(setting_index).max_value = Settings::valueToCorrespondingType(setting_index, max_value);
+    getConstraintRef(setting_index).max_value = Settings::castValue(setting_index, max_value);
 }
 
 Field SettingsConstraints::getMaxValue(const StringRef & setting_name) const
@@ -179,7 +179,7 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     if (setting_index == Settings::npos)
         return;
 
-    Field new_value = Settings::valueToCorrespondingType(setting_index, change.value);
+    Field new_value = Settings::castValue(setting_index, change.value);
     Field current_value = current_settings.get(setting_index);
 
     /// Setting isn't checked if value wasn't changed.
@@ -233,7 +233,7 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingChange
     if (setting_index == Settings::npos)
         return;
 
-    Field new_value = Settings::valueToCorrespondingType(setting_index, change.value);
+    Field new_value = Settings::castValue(setting_index, change.value);
     Field current_value = current_settings.get(setting_index);
 
     /// Setting isn't checked if value wasn't changed.

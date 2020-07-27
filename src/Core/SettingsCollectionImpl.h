@@ -6,8 +6,10 @@
   * instantiation of SettingsCollection<>.
   */
 
+#include <Core/SettingsCollection.h>
 #include <Common/SettingsChanges.h>
 #include <Common/FieldVisitors.h>
+#include <common/StringRef.h>
 
 
 namespace DB
@@ -86,16 +88,16 @@ SettingsCollection<Derived>::members()
 template <class Derived>
 Field SettingsCollection<Derived>::const_reference::getValue() const
 {
-    return member->get_field(*collection);
+    return member->get_value(*collection);
 }
 
 
 template <class Derived>
-Field SettingsCollection<Derived>::valueToCorrespondingType(size_t index, const Field & value)
+Field SettingsCollection<Derived>::castValue(size_t index, const Field & value)
 {
     try
     {
-        return members()[index].value_to_corresponding_type(value);
+        return members()[index].cast_value(value);
     }
     catch (Exception & e)
     {
@@ -107,9 +109,9 @@ Field SettingsCollection<Derived>::valueToCorrespondingType(size_t index, const 
 
 
 template <class Derived>
-Field SettingsCollection<Derived>::valueToCorrespondingType(const StringRef & name, const Field & value)
+Field SettingsCollection<Derived>::castValue(const StringRef & name, const Field & value)
 {
-    return members().findStrict(name).value_to_corresponding_type(value);
+    return members().findStrict(name).cast_value(value);
 }
 
 
@@ -196,7 +198,7 @@ bool SettingsCollection<Derived>::operator ==(const SettingsCollection<Derived> 
         {
             if (left_changed != right_changed)
                 return false;
-            if (member.get_field(castToDerived()) != member.get_field(rhs.castToDerived()))
+            if (member.get_value(castToDerived()) != member.get_value(rhs.castToDerived()))
                 return false;
         }
     }
@@ -213,7 +215,7 @@ SettingsChanges SettingsCollection<Derived>::changes() const
     {
         const auto & member = the_members[i];
         if (member.is_changed(castToDerived()))
-            found_changes.push_back({member.name.toString(), member.get_field(castToDerived())});
+            found_changes.push_back({member.name.toString(), member.get_value(castToDerived())});
     }
     return found_changes;
 }
@@ -255,7 +257,7 @@ void SettingsCollection<Derived>::copyChangesFrom(const Derived & src)
     {
         const auto & member = the_members[i];
         if (member.is_changed(src))
-            member.set_field(castToDerived(), member.get_field(src));
+            member.set_value(castToDerived(), member.get_value(src));
     }
 }
 
@@ -280,7 +282,7 @@ void SettingsCollection<Derived>::serialize(WriteBuffer & buf, SettingsBinaryFor
             if (format >= SettingsBinaryFormat::STRINGS)
             {
                 details::SettingsCollectionUtils::serializeFlag(member.is_important, buf);
-                details::SettingsCollectionUtils::serializeName(member.get_string(castToDerived()), buf);
+                details::SettingsCollectionUtils::serializeName(member.get_value_as_string(castToDerived()), buf);
             }
             else
                 member.write_binary(castToDerived(), buf);
@@ -320,7 +322,7 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
         if (format >= SettingsBinaryFormat::STRINGS)
         {
             String value = details::SettingsCollectionUtils::deserializeName(buf);
-            member->set_string(castToDerived(), value);
+            member->parse_value_from_string(castToDerived(), value);
         }
         else
             member->read_binary(castToDerived(), buf);
@@ -350,14 +352,15 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    static String NAME##_getString(const Derived & collection) { return collection.NAME.toString(); } \
-    static Field NAME##_getField(const Derived & collection) { return collection.NAME.toField(); } \
-    static void NAME##_setString(Derived & collection, const String & value) { collection.NAME.set(value); } \
-    static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
+    static Field NAME##_getValue(const Derived & collection) { return static_cast<Field>(collection.NAME); } \
+    static void NAME##_setValue(Derived & collection, const Field & value) { collection.NAME = value; } \
+    static String NAME##_toString(const Derived & collection) { return collection.NAME.toString(); } \
+    static void NAME##_parseFromString(Derived & collection, const String & value) { collection.NAME.parseFromString(value); } \
     static void NAME##_writeBinary(const Derived & collection, WriteBuffer & buf) { collection.NAME.writeBinary(buf); } \
     static void NAME##_readBinary(Derived & collection, ReadBuffer & buf) { collection.NAME.readBinary(buf); } \
-    static String NAME##_valueToString(const Field & value) { SettingField##TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
-    static Field NAME##_valueToCorrespondingType(const Field & value) { SettingField##TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
+    static Field NAME##_castValue(const Field & value) { return static_cast<Field>(SettingField##TYPE{value}); } \
+    static Field NAME##_stringToValue(const String & str) { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); } \
+    static String NAME##_valueToString(const Field & value) { return SettingField##TYPE{value}.toString(); } \
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
@@ -366,8 +369,8 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
          StringRef(#TYPE, strlen(#TYPE)), \
          FLAGS & IMPORTANT, \
          [](const Derived & d) { return d.NAME.changed; }, \
-         &Functions::NAME##_getString, &Functions::NAME##_getField, \
-         &Functions::NAME##_setString, &Functions::NAME##_setField, \
+         &Functions::NAME##_getValue, &Functions::NAME##_setValue, \
+         &Functions::NAME##_toString, &Functions::NAME##_parseFromString, \
          &Functions::NAME##_writeBinary, &Functions::NAME##_readBinary, \
-         &Functions::NAME##_valueToString, &Functions::NAME##_valueToCorrespondingType});
+         &Functions::NAME##_castValue, &Functions::NAME##_stringToValue, &Functions::NAME##_valueToString });
 }
