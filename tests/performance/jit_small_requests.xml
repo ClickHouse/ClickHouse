@@ -1,5 +1,15 @@
 <test>
 
+    <stop_conditions>
+        <all_of>
+            <iterations>5</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>5000</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
 
 
 
@@ -26,8 +36,7 @@
             bitXor(x4, bitShiftRight(x4, 33)) AS x5
         SELECT count() FROM numbers(10000000) WHERE NOT ignore(x5)
         SETTINGS
-            compile_expressions = 1,
-            min_count_to_compile_expression = 1
+            compile_expressions = 1
     </query>
 
     <!-- The same expression written as ClickHouse builtin function. -->

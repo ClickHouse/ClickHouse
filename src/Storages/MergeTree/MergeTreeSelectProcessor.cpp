@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -35,6 +34,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
+    part_columns_lock(data_part->columns_lock),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
@@ -47,9 +47,12 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_TRACE(log, "Reading {} ranges from part {}, approx. {} rows starting from {}",
-            all_mark_ranges.size(), data_part->name, total_rows,
-            data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
+        LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << data_part->name
+        << ", approx. " << total_rows
+        << (all_mark_ranges.size() > 1
+        ? ", up to " + toString(total_rows)
+        : "")
+        << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();
@@ -116,6 +119,7 @@ void MergeTreeSelectProcessor::finish()
     */
     reader.reset();
     pre_reader.reset();
+    part_columns_lock.unlock();
     data_part.reset();
 }
 

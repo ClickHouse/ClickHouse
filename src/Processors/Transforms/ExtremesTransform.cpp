@@ -61,7 +61,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
         return;
 
     size_t num_columns = chunk.getNumColumns();
-    const auto & columns = chunk.getColumns();
+    auto & columns = chunk.getColumns();
 
     if (extremes_columns.empty())
     {

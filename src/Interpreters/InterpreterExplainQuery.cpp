@@ -7,7 +7,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
@@ -75,8 +74,8 @@ namespace
             {
                 if (const auto * identifier = expression.database_and_table_name->as<ASTIdentifier>())
                 {
-                    auto table_id = data.context.resolveStorageID(*identifier);
-                    const auto & storage = DatabaseCatalog::instance().getTable(table_id, data.context);
+                    const auto & [database, table] = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+                    const auto & storage = data.context.getTable(database.empty() ? data.context.getCurrentDatabase() : database, table);
 
                     if (auto * storage_view = dynamic_cast<StorageView *>(storage.get()))
                         storage_view->getRuntimeViewQuery(&select_query, data.context, true);

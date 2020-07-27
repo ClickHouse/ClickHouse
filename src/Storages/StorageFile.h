@@ -18,7 +18,7 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFile>;
 public:
@@ -38,7 +38,7 @@ public:
 
     void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     Strings getDataPaths() const override;
 
@@ -51,8 +51,6 @@ public:
         const ConstraintsDescription & constraints;
         const Context & context;
     };
-
-    NamesAndTypesList getVirtuals() const override;
 
 protected:
     friend class StorageFileSource;
@@ -85,7 +83,7 @@ private:
 
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageFile");
+    Logger * log = &Logger::get("StorageFile");
 };
 
 }

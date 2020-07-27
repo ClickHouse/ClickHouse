@@ -74,12 +74,12 @@ UInt128 stringToUUID(const String & str)
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out << "Cannot parse input: expected " << quote << s;
+    out << "Cannot parse input: expected " << escape << s;
 
     if (buf.eof())
         out << " at end of stream.";
     else
-        out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+        out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
     throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
@@ -283,9 +283,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     if (buf.eof())
         throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
-    char char_after_backslash = *buf.position();
-
-    if (char_after_backslash == 'x')
+    if (*buf.position() == 'x')
     {
         ++buf.position();
         /// escape sequence of the form \xAA
@@ -293,7 +291,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         readPODBinary(hex_code, buf);
         s.push_back(unhex2(hex_code));
     }
-    else if (char_after_backslash == 'N')
+    else if (*buf.position() == 'N')
     {
         /// Support for NULLs: \N sequence must be parsed as empty string.
         ++buf.position();
@@ -301,22 +299,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     else
     {
         /// The usual escape sequence of a single character.
-        char decoded_char = parseEscapeSequence(char_after_backslash);
-
-        /// For convenience using LIKE and regular expressions,
-        /// we leave backslash when user write something like 'Hello 100\%':
-        /// it is parsed like Hello 100\% instead of Hello 100%
-        if (decoded_char != '\\'
-            && decoded_char != '\''
-            && decoded_char != '"'
-            && decoded_char != '`'  /// MySQL style identifiers
-            && decoded_char != '/'  /// JavaScript in HTML
-            && !isControlASCII(decoded_char))
-        {
-            s.push_back('\\');
-        }
-
-        s.push_back(decoded_char);
+        s.push_back(parseEscapeSequence(*buf.position()));
         ++buf.position();
     }
 }
@@ -650,6 +633,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     ++next_pos;
             }();
 
+
             appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
 
@@ -768,9 +752,9 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     UInt16 year = 0;
     if (!append_digit(year)
-        || !append_digit(year) // NOLINT
-        || !append_digit(year) // NOLINT
-        || !append_digit(year)) // NOLINT
+        || !append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year))
         return error();
 
     if (!ignore_delimiter())
@@ -802,14 +786,14 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    static constexpr auto date_time_broken_down_length = 19;
-    static constexpr auto unix_timestamp_max_length = 10;
+    static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
+    static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
 
-    char s[date_time_broken_down_length];
+    char s[DATE_TIME_BROKEN_DOWN_LENGTH];
     char * s_pos = s;
 
     /// A piece similar to unix timestamp.
-    while (s_pos < s + unix_timestamp_max_length && !buf.eof() && isNumericASCII(*buf.position()))
+    while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
     {
         *s_pos = *buf.position();
         ++s_pos;
@@ -819,7 +803,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     /// 2015-01-01 01:02:03
     if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
     {
-        const size_t remaining_size = date_time_broken_down_length - (s_pos - s);
+        const size_t remaining_size = DATE_TIME_BROKEN_DOWN_LENGTH - (s_pos - s);
         size_t size = buf.read(s_pos, remaining_size);
         if (remaining_size != size)
         {

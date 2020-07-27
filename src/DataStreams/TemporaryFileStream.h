@@ -33,11 +33,10 @@ struct TemporaryFileStream
     {}
 
     /// Flush data from input stream into file for future reading
-    static void write(const std::string & path, const Block & header, IBlockInputStream & input,
-                      std::atomic<bool> * is_cancelled, const std::string & codec)
+    static void write(const std::string & path, const Block & header, IBlockInputStream & input, std::atomic<bool> * is_cancelled = nullptr)
     {
         WriteBufferFromFile file_buf(path);
-        CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}, false));
+        CompressedWriteBuffer compressed_buf(file_buf);
         NativeBlockOutputStream output(compressed_buf, 0, header);
         copyData(input, output, is_cancelled);
     }
@@ -59,26 +58,19 @@ public:
 protected:
     Block readImpl() override
     {
-        if (done)
-            return {};
-
-        if (!stream)
-            stream = std::make_unique<TemporaryFileStream>(path, header);
-
-        auto block = stream->block_in->read();
-        if (!block)
+        if (!done)
         {
             done = true;
-            stream.reset();
+            TemporaryFileStream stream(path, header);
+            return stream.block_in->read();
         }
-        return block;
+        return {};
     }
 
 private:
     const std::string path;
     Block header;
     bool done;
-    std::unique_ptr<TemporaryFileStream> stream;
 };
 
 }

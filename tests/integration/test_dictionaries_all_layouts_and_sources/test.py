@@ -4,7 +4,7 @@ import os
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
-from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
+from external_sources import SourceMongo, SourceHTTP, SourceHTTPS, SourceRedis
 import math
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -106,20 +106,16 @@ VALUES = {
 
 
 LAYOUTS = [
-    Layout("flat"),
     Layout("hashed"),
     Layout("cache"),
+    Layout("flat"),
     Layout("complex_key_hashed"),
     Layout("complex_key_cache"),
-    Layout("range_hashed"),
-    Layout("direct"),
-    Layout("complex_key_direct")
+    Layout("range_hashed")
 ]
 
 SOURCES = [
-    SourceCassandra("Cassandra", "localhost", "9043", "cassandra1", "9042", "", ""),
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
-    SourceMongoURI("MongoDB_URI", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
     SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
     SourceClickHouse("LocalClickHouse", "localhost", "9000", "node", "9000", "default", ""),
@@ -132,7 +128,7 @@ SOURCES = [
 
 DICTIONARIES = []
 
-# Key-value dictionaries with only one possible field for key
+# Key-value dictionaries with onle one possible field for key
 SOURCES_KV = [
     SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
     SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
@@ -184,7 +180,7 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_redis=True, with_cassandra=True)
+    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_redis=True)
     cluster.add_instance('clickhouse1')
 
 
@@ -257,15 +253,12 @@ def test_simple_dictionaries(started_cluster, fold):
         assert node.query(query) == str(answer) + '\n'
 
 
-@pytest.mark.parametrize("fold", list(range(10)))
-def test_complex_dictionaries(started_cluster, fold):
+def test_complex_dictionaries(started_cluster):
     fields = FIELDS["complex"]
     values = VALUES["complex"]
     data = [Row(fields, vals) for vals in values]
 
-    all_complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
-    complex_dicts = get_dictionaries(fold, 10, all_complex_dicts)
-
+    complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
     for dct in complex_dicts:
         dct.load_data(data)
 
@@ -290,15 +283,12 @@ def test_complex_dictionaries(started_cluster, fold):
         assert node.query(query) == str(answer) + '\n'
 
 
-@pytest.mark.parametrize("fold", list(range(10)))
-def test_ranged_dictionaries(started_cluster, fold):
+def test_ranged_dictionaries(started_cluster):
     fields = FIELDS["ranged"]
     values = VALUES["ranged"]
     data = [Row(fields, vals) for vals in values]
 
-    all_ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
-    ranged_dicts = get_dictionaries(fold, 10, all_ranged_dicts)
-
+    ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
     for dct in ranged_dicts:
         dct.load_data(data)
 
@@ -374,14 +364,12 @@ def test_key_value_simple_dictionaries(started_cluster, fold):
             assert node.query(query) == str(answer) + '\n'
 
 
-@pytest.mark.parametrize("fold", list(range(10)))
-def test_key_value_complex_dictionaries(started_cluster, fold):
+def test_key_value_complex_dictionaries(started_cluster):
     fields = FIELDS["complex"]
     values = VALUES["complex"]
     data = [Row(fields, vals) for vals in values]
 
-    all_complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
-    complex_dicts = get_dictionaries(fold, 10, all_complex_dicts)
+    complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
     for dct in complex_dicts:
         dct.load_data(data)
 
@@ -411,6 +399,6 @@ def test_key_value_complex_dictionaries(started_cluster, fold):
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
 
-        for query, answer in queries_with_answers:
-            print query
-            assert node.query(query) == str(answer) + '\n'
+    for query, answer in queries_with_answers:
+        print query
+        assert node.query(query) == str(answer) + '\n'

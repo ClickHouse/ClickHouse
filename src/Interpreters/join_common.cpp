@@ -47,9 +47,9 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
     column.type = static_cast<const DataTypeNullable &>(*column.type).getNestedType();
     if (column.column)
     {
-        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
+        auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
+        MutableColumnPtr mutable_column = (*std::move(nested_column)).mutate();
         column.column = std::move(mutable_column);
     }
 }
@@ -59,7 +59,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     ColumnRawPtrs ptrs;
     ptrs.reserve(names.size());
 
-    for (const auto & column_name : names)
+    for (auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
         column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
@@ -74,7 +74,7 @@ Columns materializeColumns(const Block & block, const Names & names)
     Columns materialized;
     materialized.reserve(names.size());
 
-    for (const auto & column_name : names)
+    for (auto & column_name : names)
     {
         const auto & src_column = block.getByName(column_name).column;
         materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
@@ -88,7 +88,7 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
     ColumnRawPtrs ptrs;
     ptrs.reserve(columns.size());
 
-    for (const auto & column : columns)
+    for (auto & column : columns)
         ptrs.push_back(column.get());
 
     return ptrs;
@@ -131,7 +131,7 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
         key_columns[i] = block_keys.getByName(column_name).column.get();
 
         /// We will join only keys, where all components are not NULL.
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
             key_columns[i] = &nullable->getNestedColumn();
     }
 

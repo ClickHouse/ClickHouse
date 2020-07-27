@@ -15,6 +15,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
@@ -26,7 +27,6 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-
 
 namespace DB
 {
@@ -42,7 +42,14 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
+    : IStorage(table_id_,
+               ColumnsDescription({
+                                          {"_path", std::make_shared<DataTypeString>()},
+                                          {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
     , uri(uri_)
     , format_name(format_name_)
     , context(context_)
@@ -332,19 +339,9 @@ void registerStorageHDFS(StorageFactory & factory)
         } else compression_method = "auto";
 
         return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
-    },
-    {
-        .source_access_type = AccessType::HDFS,
     });
 }
 
-NamesAndTypesList StorageHDFS::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
-}
 }
 
 #endif

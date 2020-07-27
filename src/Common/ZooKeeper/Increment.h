@@ -43,7 +43,7 @@ public:
 private:
     zkutil::ZooKeeperHolderPtr zookeeper_holder;
     std::string path;
-    Poco::Logger * log = &Poco::Logger::get("zkutil::Increment");
+    Logger * log = &Logger::get("zkutil::Increment");
 };
 
 }

@@ -22,7 +22,7 @@ void IRowOutputStream::write(const Block & block, size_t row_num)
         if (i != 0)
             writeFieldDelimiter();
 
-        const auto & col = block.getByPosition(i);
+        auto & col = block.getByPosition(i);
         writeField(*col.column, *col.type, row_num);
     }
 

@@ -1,17 +1,16 @@
 #include <Storages/IStorage.h>
 
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
-
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
-#include <Interpreters/ExpressionActions.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
+
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
 
 
 namespace DB
@@ -29,7 +28,10 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
-    extern const int DEADLOCK_AVOIDED;
+}
+
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
+{
 }
 
 const ColumnsDescription & IStorage::getColumns() const
@@ -37,20 +39,31 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
-const IndicesDescription & IStorage::getSecondaryIndices() const
+const ColumnsDescription & IStorage::getVirtuals() const
 {
-    return secondary_indices;
+    return virtuals;
 }
 
-
-bool IStorage::hasSecondaryIndices() const
+const IndicesDescription & IStorage::getIndices() const
 {
-    return !secondary_indices.empty();
+    return indices;
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
 {
     return constraints;
+}
+
+NameAndTypePair IStorage::getColumn(const String & column_name) const
+{
+    /// By default, we assume that there are no virtual columns in the storage.
+    return getColumns().getPhysical(column_name);
+}
+
+bool IStorage::hasColumn(const String & column_name) const
+{
+    /// By default, we assume that there are no virtual columns in the storage.
+    return getColumns().hasPhysical(column_name);
 }
 
 Block IStorage::getSampleBlock() const
@@ -67,9 +80,7 @@ Block IStorage::getSampleBlockWithVirtuals() const
 {
     auto res = getSampleBlock();
 
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : getVirtuals())
+    for (const auto & column : getColumns().getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -89,16 +100,10 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
-    std::unordered_map<String, DataTypePtr> columns_map;
-
     NamesAndTypesList all_columns = getColumns().getAll();
+    std::unordered_map<String, DataTypePtr> columns_map;
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
-
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : getVirtuals())
-        columns_map.emplace(column.name, column.type);
 
     for (const auto & name : column_names)
     {
@@ -109,8 +114,9 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
         }
         else
         {
-            throw Exception(
-                "Column " + backQuote(name) + " not found in table " + getStorageID().getNameForLogs(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            /// Virtual columns.
+            NameAndTypePair elem = getColumn(name);
+            res.insert({elem.type->createColumn(), elem.type, elem.name});
         }
     }
 
@@ -119,13 +125,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-#if !defined(ARCADIA_BUILD)
-    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
-#else
-    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
-#endif
+    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -162,10 +163,7 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     if (include_virtuals)
-    {
-        auto virtuals = getVirtuals();
-        available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
-    }
+        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -293,11 +291,17 @@ void IStorage::setColumns(ColumnsDescription columns_)
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     columns = std::move(columns_);
+
+    for (const auto & column : virtuals)
+    {
+        if (!columns.has(column.name))
+            columns.add(column);
+    }
 }
 
-void IStorage::setSecondaryIndices(IndicesDescription secondary_indices_)
+void IStorage::setIndices(IndicesDescription indices_)
 {
-    secondary_indices = std::move(secondary_indices_);
+    indices = std::move(indices_);
 }
 
 void IStorage::setConstraints(ConstraintsDescription constraints_)
@@ -307,75 +311,66 @@ void IStorage::setConstraints(ConstraintsDescription constraints_)
 
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
-    /// Virtual column maybe overriden by real column
-    return !getColumns().has(column_name) && getVirtuals().contains(column_name);
+    return getColumns().get(column_name).is_virtual;
 }
 
-RWLockImpl::LockHolder IStorage::tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const
-{
-    auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
-    if (!lock_holder)
-    {
-        const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
-        throw Exception(
-                type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
-                "\" has timed out! (" + toString(acquire_timeout.totalMilliseconds()) + "ms) "
-                "Possible deadlock avoided. Client should retry.",
-                ErrorCodes::DEADLOCK_AVOIDED);
-    }
-    return lock_holder;
-}
-
-TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id, const SettingSeconds & acquire_timeout)
+TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
 {
     TableStructureReadLockHolder result;
     if (will_add_new_data)
-        result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Read, query_id, acquire_timeout);
-    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Read, query_id, acquire_timeout);
+        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
+    result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     return result;
 }
 
-TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id, const SettingSeconds & acquire_timeout)
+TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     return result;
 }
 
-void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id, const SettingSeconds & acquire_timeout)
+void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
+{
+    if (!lock_holder.alter_intention_lock)
+        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
+}
+
+void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
     if (!lock_holder.alter_intention_lock)
         throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
-    lock_holder.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
+        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
+    lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 }
 
-TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout)
+TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
-    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
+    result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 
     return result;
 }
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getSecondaryIndices(), getConstraints());
+    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -383,11 +378,11 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+    params.apply(metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -403,255 +398,37 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
+BlockInputStreams IStorage::readStreams(
+    const Names & column_names,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    ForceTreeShapedPipeline enable_tree_shape(query_info);
+    auto pipes = read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    BlockInputStreams res;
+    res.reserve(pipes.size());
+
+    for (auto & pipe : pipes)
+        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
+
+    return res;
+}
 
 StorageID IStorage::getStorageID() const
 {
-    std::lock_guard lock(id_mutex);
+    std::lock_guard<std::mutex> lock(id_mutex);
     return storage_id;
 }
 
-void IStorage::renameInMemory(const StorageID & new_table_id)
+void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
-    std::lock_guard lock(id_mutex);
-    storage_id = new_table_id;
-}
-
-NamesAndTypesList IStorage::getVirtuals() const
-{
-    return {};
-}
-
-const StorageMetadataKeyField & IStorage::getPartitionKey() const
-{
-    return partition_key;
-}
-
-void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
-{
-    partition_key = partition_key_;
-}
-
-bool IStorage::isPartitionKeyDefined() const
-{
-    return partition_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasPartitionKey() const
-{
-    return !partition_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForPartitionKey() const
-{
-    if (hasPartitionKey())
-        return partition_key.expression->getRequiredColumns();
-    return {};
-}
-
-const StorageMetadataKeyField & IStorage::getSortingKey() const
-{
-    return sorting_key;
-}
-
-void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
-{
-    sorting_key = sorting_key_;
-}
-
-bool IStorage::isSortingKeyDefined() const
-{
-    return sorting_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasSortingKey() const
-{
-    return !sorting_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForSortingKey() const
-{
-    if (hasSortingKey())
-        return sorting_key.expression->getRequiredColumns();
-    return {};
-}
-
-Names IStorage::getSortingKeyColumns() const
-{
-    if (hasSortingKey())
-        return sorting_key.column_names;
-    return {};
-}
-
-const StorageMetadataKeyField & IStorage::getPrimaryKey() const
-{
-    return primary_key;
-}
-
-void IStorage::setPrimaryKey(const StorageMetadataKeyField & primary_key_)
-{
-    primary_key = primary_key_;
-}
-
-bool IStorage::isPrimaryKeyDefined() const
-{
-    return primary_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasPrimaryKey() const
-{
-    return !primary_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForPrimaryKey() const
-{
-    if (hasPrimaryKey())
-        return primary_key.expression->getRequiredColumns();
-    return {};
-}
-
-Names IStorage::getPrimaryKeyColumns() const
-{
-    if (hasSortingKey())
-        return primary_key.column_names;
-    return {};
-}
-
-const StorageMetadataKeyField & IStorage::getSamplingKey() const
-{
-    return sampling_key;
-}
-
-void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
-{
-    sampling_key = sampling_key_;
-}
-
-
-bool IStorage::isSamplingKeyDefined() const
-{
-    return sampling_key.definition_ast != nullptr;
-}
-
-bool IStorage::hasSamplingKey() const
-{
-    return !sampling_key.column_names.empty();
-}
-
-Names IStorage::getColumnsRequiredForSampling() const
-{
-    if (hasSamplingKey())
-        return sampling_key.expression->getRequiredColumns();
-    return {};
-}
-
-const TTLTableDescription & IStorage::getTableTTLs() const
-{
-    return table_ttl;
-}
-
-void IStorage::setTableTTLs(const TTLTableDescription & table_ttl_)
-{
-    table_ttl = table_ttl_;
-}
-
-bool IStorage::hasAnyTableTTL() const
-{
-    return hasAnyMoveTTL() || hasRowsTTL();
-}
-
-const TTLColumnsDescription & IStorage::getColumnTTLs() const
-{
-    return column_ttls_by_name;
-}
-
-void IStorage::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
-{
-    column_ttls_by_name = column_ttls_by_name_;
-}
-
-bool IStorage::hasAnyColumnTTL() const
-{
-    return !column_ttls_by_name.empty();
-}
-
-const TTLDescription & IStorage::getRowsTTL() const
-{
-    return table_ttl.rows_ttl;
-}
-
-bool IStorage::hasRowsTTL() const
-{
-    return table_ttl.rows_ttl.expression != nullptr;
-}
-
-const TTLDescriptions & IStorage::getMoveTTLs() const
-{
-    return table_ttl.move_ttl;
-}
-
-bool IStorage::hasAnyMoveTTL() const
-{
-    return !table_ttl.move_ttl.empty();
-}
-
-
-ColumnDependencies IStorage::getColumnDependencies(const NameSet & updated_columns) const
-{
-    if (updated_columns.empty())
-        return {};
-
-    ColumnDependencies res;
-
-    NameSet indices_columns;
-    NameSet required_ttl_columns;
-    NameSet updated_ttl_columns;
-
-    auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
-    {
-        auto requiered_columns = expression->getRequiredColumns();
-        for (const auto & dependency : requiered_columns)
-        {
-            if (updated_columns.count(dependency))
-            {
-                to_set.insert(requiered_columns.begin(), requiered_columns.end());
-                return true;
-            }
-        }
-
-        return false;
-    };
-
-    for (const auto & index : getSecondaryIndices())
-        add_dependent_columns(index.expression, indices_columns);
-
-    if (hasRowsTTL())
-    {
-        if (add_dependent_columns(getRowsTTL().expression, required_ttl_columns))
-        {
-            /// Filter all columns, if rows TTL expression have to be recalculated.
-            for (const auto & column : getColumns().getAllPhysical())
-                updated_ttl_columns.insert(column.name);
-        }
-    }
-
-    for (const auto & [name, entry] : getColumnTTLs())
-    {
-        if (add_dependent_columns(entry.expression, required_ttl_columns))
-            updated_ttl_columns.insert(name);
-    }
-
-    for (const auto & entry : getMoveTTLs())
-        add_dependent_columns(entry.expression, required_ttl_columns);
-
-    for (const auto & column : indices_columns)
-        res.emplace(column, ColumnDependency::SKIP_INDEX);
-    for (const auto & column : required_ttl_columns)
-        res.emplace(column, ColumnDependency::TTL_EXPRESSION);
-    for (const auto & column : updated_ttl_columns)
-        res.emplace(column, ColumnDependency::TTL_TARGET);
-
-    return res;
-
+    std::lock_guard<std::mutex> lock(id_mutex);
+    storage_id.database_name = new_database_name;
+    storage_id.table_name = new_table_name;
 }
 
 }

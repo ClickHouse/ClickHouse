@@ -19,13 +19,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path = {});
 
     MergeTreeDataPartWide(
         MergeTreeData & storage_,
         const String & name_,
-        const VolumePtr & volume,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path = {});
 
     MergeTreeReaderPtr getReader(
@@ -34,21 +34,31 @@ public:
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
+        const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{}) const override;
 
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const override;
+        const MergeTreeIndexGranularity & computed_index_granularity = {}) const override;
 
     bool isStoredOnDisk() const override { return true; }
 
     bool supportsVerticalMerge() const override { return true; }
 
+    void accumulateColumnSizes(ColumnToSize & column_to_size) const override;
+
     String getFileNameForColumn(const NameAndTypePair & column) const override;
+
+    ColumnSize getTotalColumnsSize() const override;
+
+    ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;
+
+    NameToNameMap createRenameMapForAlter(
+        AlterAnalysisResult & analysis_result,
+        const NamesAndTypesList & old_columns) const override;
 
     ~MergeTreeDataPartWide() override;
 
@@ -61,8 +71,6 @@ private:
     void loadIndexGranularity() override;
 
     ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
-
-    void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

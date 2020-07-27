@@ -38,6 +38,8 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -387,6 +389,14 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     UInt64 max_array_length_, UInt64 max_string_length_, std::optional<UInt64> random_seed_)
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
+    static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
+    static constexpr size_t MAX_STRING_SIZE = 1 << 30;
+
+    if (max_array_length > MAX_ARRAY_SIZE)
+        throw Exception("Too large array size in GenerateRandom: " + toString(max_array_length) + ", maximum: " + toString(MAX_ARRAY_SIZE), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+    if (max_string_length > MAX_STRING_SIZE)
+        throw Exception("Too large string size in GenerateRandom: " + toString(max_string_length) + ", maximum: " + toString(MAX_STRING_SIZE), ErrorCodes::TOO_LARGE_STRING_SIZE);
+
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
     setColumns(columns_);
 }
@@ -420,7 +430,6 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() == 3)
             max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
-
         return StorageGenerateRandom::create(args.table_id, args.columns, max_array_length, max_string_length, random_seed);
     });
 }
@@ -438,11 +447,11 @@ Pipes StorageGenerateRandom::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = getColumns();
+    const ColumnsDescription & columns_ = getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {
-        const auto & name_type = our_columns.get(name);
+        const auto & name_type = columns_.get(name);
         MutableColumnPtr column = name_type.type->createColumn();
         block_header.insert({std::move(column), name_type.type, name_type.name});
     }

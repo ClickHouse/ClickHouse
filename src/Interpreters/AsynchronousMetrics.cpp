@@ -1,12 +1,10 @@
 #include <Interpreters/AsynchronousMetrics.h>
-#include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
+#include "config_core.h"
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -14,20 +12,13 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
+#if __has_include(<common/config_common.h>)
+#include <common/config_common.h>
 #endif
 
 #if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
+    #include <jemalloc/jemalloc.h>
 #endif
-
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
 
 
 namespace DB
@@ -38,7 +29,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
     try
     {
         {
-            std::lock_guard lock{mutex};
+            std::lock_guard lock{wait_mutex};
             quit = true;
         }
 
@@ -52,16 +43,25 @@ AsynchronousMetrics::~AsynchronousMetrics()
 }
 
 
-AsynchronousMetricValues AsynchronousMetrics::getValues() const
+AsynchronousMetrics::Container AsynchronousMetrics::getValues() const
 {
-    std::lock_guard lock{mutex};
-    return values;
+    std::lock_guard lock{container_mutex};
+    return container;
+}
+
+
+void AsynchronousMetrics::set(const std::string & name, Value value)
+{
+    std::lock_guard lock{container_mutex};
+    container[name] = value;
 }
 
 
 void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
+
+    std::unique_lock lock{wait_mutex};
 
     /// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
     const auto get_next_minute = []
@@ -81,7 +81,6 @@ void AsynchronousMetrics::run()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        std::unique_lock lock{mutex};
         if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
             break;
     }
@@ -106,54 +105,33 @@ static void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 void AsynchronousMetrics::update()
 {
-    AsynchronousMetricValues new_values;
-
     {
         if (auto mark_cache = context.getMarkCache())
         {
-            new_values["MarkCacheBytes"] = mark_cache->weight();
-            new_values["MarkCacheFiles"] = mark_cache->count();
+            set("MarkCacheBytes", mark_cache->weight());
+            set("MarkCacheFiles", mark_cache->count());
         }
     }
 
     {
         if (auto uncompressed_cache = context.getUncompressedCache())
         {
-            new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
-            new_values["UncompressedCacheCells"] = uncompressed_cache->count();
+            set("UncompressedCacheBytes", uncompressed_cache->weight());
+            set("UncompressedCacheCells", uncompressed_cache->count());
         }
     }
 
 #if USE_EMBEDDED_COMPILER
     {
         if (auto compiled_expression_cache = context.getCompiledExpressionCache())
-            new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
+            set("CompiledExpressionCacheCount", compiled_expression_cache->count());
     }
 #endif
 
-    new_values["Uptime"] = context.getUptimeSeconds();
-
-    /// Process memory usage according to OS
-#if defined(OS_LINUX)
-    {
-        MemoryStatisticsOS::Data data = memory_stat.get();
-
-        new_values["MemoryVirtual"] = data.virt;
-        new_values["MemoryResident"] = data.resident;
-        new_values["MemoryShared"] = data.shared;
-        new_values["MemoryCode"] = data.code;
-        new_values["MemoryDataAndStack"] = data.data_and_stack;
-
-        /// We must update the value of total_memory_tracker periodically.
-        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
-        total_memory_tracker.set(data.resident);
-        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
-    }
-#endif
+    set("Uptime", context.getUptimeSeconds());
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = context.getDatabases();
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -179,10 +157,7 @@ void AsynchronousMetrics::update()
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
-                const auto & table = iterator->table();
-                if (!table)
-                    continue;
-
+                auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
@@ -223,26 +198,26 @@ void AsynchronousMetrics::update()
             }
         }
 
-        new_values["ReplicasMaxQueueSize"] = max_queue_size;
-        new_values["ReplicasMaxInsertsInQueue"] = max_inserts_in_queue;
-        new_values["ReplicasMaxMergesInQueue"] = max_merges_in_queue;
+        set("ReplicasMaxQueueSize", max_queue_size);
+        set("ReplicasMaxInsertsInQueue", max_inserts_in_queue);
+        set("ReplicasMaxMergesInQueue", max_merges_in_queue);
 
-        new_values["ReplicasSumQueueSize"] = sum_queue_size;
-        new_values["ReplicasSumInsertsInQueue"] = sum_inserts_in_queue;
-        new_values["ReplicasSumMergesInQueue"] = sum_merges_in_queue;
+        set("ReplicasSumQueueSize", sum_queue_size);
+        set("ReplicasSumInsertsInQueue", sum_inserts_in_queue);
+        set("ReplicasSumMergesInQueue", sum_merges_in_queue);
 
-        new_values["ReplicasMaxAbsoluteDelay"] = max_absolute_delay;
-        new_values["ReplicasMaxRelativeDelay"] = max_relative_delay;
+        set("ReplicasMaxAbsoluteDelay", max_absolute_delay);
+        set("ReplicasMaxRelativeDelay", max_relative_delay);
 
-        new_values["MaxPartCountForPartition"] = max_part_count_for_partition;
+        set("MaxPartCountForPartition", max_part_count_for_partition);
 
-        new_values["NumberOfDatabases"] = number_of_databases;
-        new_values["NumberOfTables"] = total_number_of_tables;
+        set("NumberOfDatabases", number_of_databases);
+        set("NumberOfTables", total_number_of_tables);
     }
 
-#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
+#if USE_JEMALLOC
     {
-#    define FOR_EACH_METRIC(M) \
+    #define FOR_EACH_METRIC(M) \
         M("allocated", size_t) \
         M("active", size_t) \
         M("metadata", size_t) \
@@ -252,35 +227,26 @@ void AsynchronousMetrics::update()
         M("retained", size_t) \
         M("background_thread.num_threads", size_t) \
         M("background_thread.num_runs", uint64_t) \
-        M("background_thread.run_interval", uint64_t)
+        M("background_thread.run_interval", uint64_t) \
 
-#    define GET_METRIC(NAME, TYPE) \
+    #define GET_METRIC(NAME, TYPE) \
         do \
         { \
             TYPE value{}; \
             size_t size = sizeof(value); \
             mallctl("stats." NAME, &value, &size, nullptr, 0); \
-            new_values["jemalloc." NAME] = value; \
+            set("jemalloc." NAME, value); \
         } while (false);
 
         FOR_EACH_METRIC(GET_METRIC)
 
-#    undef GET_METRIC
-#    undef FOR_EACH_METRIC
+    #undef GET_METRIC
+    #undef FOR_EACH_METRIC
     }
 #endif
 
     /// Add more metrics as you wish.
-
-    // Log the new metrics.
-    if (auto log = context.getAsynchronousMetricLog())
-    {
-        log->addValues(new_values);
-    }
-
-    // Finally, update the current metrics.
-    std::lock_guard lock(mutex);
-    values = new_values;
 }
+
 
 }

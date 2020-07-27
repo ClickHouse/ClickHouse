@@ -67,7 +67,7 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
 struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
     TestKeeperCreateRequest() = default;
-    explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -80,7 +80,7 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
-    explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -107,7 +107,7 @@ struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
-    explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -127,33 +127,33 @@ struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
-    explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
-    explicit TestKeeperMultiRequest(const Requests & generic_requests)
+    TestKeeperMultiRequest(const Requests & generic_requests)
     {
         requests.reserve(generic_requests.size());
 
         for (const auto & generic_request : generic_requests)
         {
-            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+            if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
                 auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
                 requests.push_back(create);
             }
-            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+            else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
-            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
+            else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
-            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
+            else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }

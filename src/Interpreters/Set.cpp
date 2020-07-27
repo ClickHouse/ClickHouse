@@ -23,7 +23,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -88,8 +87,6 @@ void NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
-                has_null = true;
-
                 if constexpr (build_filter)
                 {
                     (*out_filter)[i] = false;
@@ -131,7 +128,7 @@ void Set::setHeader(const Block & header)
         set_elements_types.emplace_back(header.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
+        if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
@@ -141,7 +138,7 @@ void Set::setHeader(const Block & header)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     if (fill_set_elements)
     {
@@ -181,7 +178,7 @@ bool Set::insertFromBlock(const Block & block)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
@@ -246,13 +243,13 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
     DataTypePtr tuple_type;
     Row tuple_values;
     const auto & list = node->as<ASTExpressionList &>();
-    for (const auto & elem : list.children)
+    for (auto & elem : list.children)
     {
         if (num_columns == 1)
         {
             Field value = extractValueFromNode(elem, *types[0], context);
 
-            if (!value.isNull() || context.getSettingsRef().transform_null_in)
+            if (!value.isNull())
                 columns[0]->insert(value);
         }
         else if (const auto * func = elem->as<ASTFunction>())
@@ -287,7 +284,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
                                     : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
-                if (value.isNull() && !context.getSettings().transform_null_in)
+                if (value.isNull())
                     break;
 
                 tuple_values[i] = value;
@@ -351,8 +348,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// We will check existence in Set only for keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
@@ -394,12 +390,7 @@ void NO_INLINE Set::executeImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
-        {
-            if (transform_null_in && has_null)
-                vec_res[i] = !negative;
-            else
-                vec_res[i] = negative;
-        }
+            vec_res[i] = negative;
         else
         {
             auto find_result = state.findKey(method.data, i, pool);
@@ -597,14 +588,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 }
 
-bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
-{
-    for (const auto & mapping : indexes_mapping)
-        if (!mapping.functions.empty())
-            return true;
-    return false;
-}
-
 void ValueWithInfinity::update(const Field & x)
 {
     /// Keep at most one element in column.
@@ -616,11 +599,8 @@ void ValueWithInfinity::update(const Field & x)
 
 const IColumn & ValueWithInfinity::getColumnIfFinite() const
 {
-#ifndef NDEBUG
     if (type != NORMAL)
         throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
-#endif
-
     return *column;
 }
 

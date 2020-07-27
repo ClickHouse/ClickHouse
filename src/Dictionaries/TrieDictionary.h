@@ -207,6 +207,8 @@ private:
 
     void calculateBytesAllocated();
 
+    void validateKeyTypes(const DataTypes & key_types) const;
+
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
@@ -248,10 +250,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-
-    std::chrono::time_point<std::chrono::system_clock> creation_time;
-
-    std::exception_ptr creation_exception;
 
     Poco::Logger * logger;
 };

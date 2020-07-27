@@ -137,73 +137,32 @@ private:
       * First part should be executed by mutations interpreter.
       * Other is just simple drop/renames, so they can be executed without interpreter.
       */
-    static void splitMutationCommands(
+    void splitMutationCommands(
         MergeTreeData::DataPartPtr part,
         const MutationCommands & commands,
         MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
+        MutationCommands & for_file_renames) const;
 
-    /// Apply commands to source_part i.e. remove and rename some columns in
-    /// source_part and return set of files, that have to be removed or renamed
-    /// from filesystem and in-memory checksums. Ordered result is important,
-    /// because we can apply renames that affects each other: x -> z, y -> x.
-    static NameToNameVector collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
+
+    /// Apply commands to source_part i.e. remove some columns in source_part
+    /// and return set of files, that have to be removed from filesystem and checksums
+    NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension) const;
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
-    static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
+    NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension) const;
 
-    /// Get the columns list of the resulting part in the same order as storage_columns.
-    static NamesAndTypesList getColumnsForNewDataPart(
-        MergeTreeData::DataPartPtr source_part,
-        const Block & updated_header,
-        NamesAndTypesList storage_columns,
-        const MutationCommands & commands_for_removes);
+    /// Get the columns list of the resulting part in the same order as all_columns.
+    NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const;
 
-    /// Get skip indices, that should exists in the resulting data part.
+    /// Get skip indcies, that should exists in the resulting data part.
     static MergeTreeIndices getIndicesForNewDataPart(
-        const IndicesDescription & all_indices,
+        const MergeTreeIndices & all_indices,
         const MutationCommands & commands_for_removes);
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
-    /// Return set of indices which should be recalculated during mutation also
-    /// wraps input stream into additional expression stream
-    std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
-        BlockInputStreamPtr & input_stream,
-        const NamesAndTypesList & updated_columns,
-        const Context & context) const;
-
-    /// Override all columns of new part using mutating_stream
-    void mutateAllPartColumns(
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        const MergeTreeIndices & skip_indices,
-        BlockInputStreamPtr mutating_stream,
-        time_t time_of_mutation,
-        const CompressionCodecPtr & codec,
-        MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
-
-    /// Mutate some columns of source part with mutation_stream
-    void mutateSomePartColumns(
-        const MergeTreeDataPartPtr & source_part,
-        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const Block & mutation_header,
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        BlockInputStreamPtr mutating_stream,
-        time_t time_of_mutation,
-        const CompressionCodecPtr & codec,
-        MergeListEntry & merge_entry,
-        bool need_remove_expired_values) const;
-
-    /// Initialize and write to disk new part fields like checksums, columns,
-    /// etc.
-    static void finalizeMutatedPart(
-        const MergeTreeDataPartPtr & source_part,
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values);
-
-public :
+public:
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
@@ -222,14 +181,11 @@ private:
         const MergeTreeData::DataPartsVector & parts,
         size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
 
-    bool checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const;
-
-
 private:
     MergeTreeData & data;
     const size_t background_pool_size;
 
-    Poco::Logger * log;
+    Logger * log;
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;

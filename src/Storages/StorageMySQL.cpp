@@ -76,14 +76,14 @@ Pipes StorageMySQL::read(
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = getColumns().getPhysical(column_name);
+        auto column_data = getColumn(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
     Pipes pipes;
     /// TODO: rewrite MySQLBlockInputStream
     pipes.emplace_back(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLBlockInputStream>(pool.get(), query, sample_block, max_block_size_)));
+            std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_)));
 
     return pipes;
 }
@@ -175,7 +175,7 @@ public:
         return splitted_blocks;
     }
 
-    static std::string dumpNamesWithBackQuote(const Block & block)
+    std::string dumpNamesWithBackQuote(const Block & block) const
     {
         WriteBufferFromOwnString out;
         for (auto it = block.begin(); it != block.end(); ++it)
@@ -186,6 +186,7 @@ public:
         }
         return out.str();
     }
+
 
 private:
     const StorageMySQL & storage;
@@ -199,7 +200,7 @@ private:
 BlockOutputStreamPtr StorageMySQL::write(
     const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)
@@ -248,9 +249,6 @@ void registerStorageMySQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.context);
-    },
-    {
-        .source_access_type = AccessType::MYSQL,
     });
 }
 

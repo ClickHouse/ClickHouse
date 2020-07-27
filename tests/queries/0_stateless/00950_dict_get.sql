@@ -1,5 +1,6 @@
--- Must use `system` database and these tables - they're configured in tests/*_dictionary.xml
-use system;
+-- Must use `test_00950` database and these tables - they're configured in tests/*_dictionary.xml
+create database if not exists test_00950;
+use test_00950;
 drop table if exists ints;
 drop table if exists strings;
 drop table if exists decimals;
@@ -269,14 +270,7 @@ select 'dictGetOrDefault', 'complex_cache_decimals' as dict_name, tuple(toUInt64
     dictGetOrDefault(dict_name, 'd64', k, toDecimal64(42, 6)),
     dictGetOrDefault(dict_name, 'd128', k, toDecimal128(42, 1));
 
---
--- Keep the tables, so that the dictionaries can be reloaded correctly and
--- SYSTEM RELOAD DICTIONARIES doesn't break.
--- We could also:
--- * drop the dictionaries -- not possible, they are configured in a .xml;
--- * switch dictionaries to DDL syntax so that they can be dropped -- tedious,
---   because there are a couple dozens of them, and also we need to have some
---   .xml dictionaries in tests so that we test backward compatibility with this
---   format;
--- * unload dictionaries -- no command for that.
---
+drop table ints;
+drop table strings;
+drop table decimals;
+drop database test_00950;

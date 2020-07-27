@@ -323,9 +323,7 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    add({StringRef(#NAME, strlen(#NAME)), \
-         StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
-         StringRef(#TYPE, strlen(#TYPE)), \
+    add({StringRef(#NAME, strlen(#NAME)), StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
          FLAGS & IMPORTANT, \
          [](const Derived & d) { return d.NAME.changed; }, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \

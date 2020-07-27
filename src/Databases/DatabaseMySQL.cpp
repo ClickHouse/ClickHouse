@@ -1,30 +1,28 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
-#    include <string>
-#    include <Core/SettingsCollection.h>
-#    include <DataTypes/DataTypeDateTime.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <DataTypes/convertMySQLDataType.h>
-#    include <Databases/DatabaseMySQL.h>
-#    include <Formats/MySQLBlockInputStream.h>
-#    include <IO/Operators.h>
-#    include <Parsers/ASTCreateQuery.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ParserCreateQuery.h>
-#    include <Parsers/parseQuery.h>
-#    include <Parsers/queryToString.h>
-#    include <Storages/StorageMySQL.h>
-#    include <Common/escapeForFileName.h>
-#    include <Common/parseAddress.h>
-#    include <Common/setThreadName.h>
 
-#    include <Poco/DirectoryIterator.h>
-#    include <Poco/File.h>
+#include <string>
+#include <Databases/DatabaseMySQL.h>
+#include <Common/parseAddress.h>
+#include <IO/Operators.h>
+#include <Formats/MySQLBlockInputStream.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Storages/StorageMySQL.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Common/setThreadName.h>
+#include <Common/escapeForFileName.h>
+#include <Parsers/queryToString.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <DataTypes/convertMySQLDataType.h>
+
+#include <Poco/File.h>
+#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -42,7 +40,6 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const SettingSeconds lock_acquire_timeout{10};
 
 static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 {
@@ -65,7 +62,7 @@ DatabaseMySQL::DatabaseMySQL(
     const Context & global_context_, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
-    , global_context(global_context_.getGlobalContext())
+    , global_context(global_context_)
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
@@ -73,7 +70,7 @@ DatabaseMySQL::DatabaseMySQL(
 {
 }
 
-bool DatabaseMySQL::empty() const
+bool DatabaseMySQL::empty(const Context &) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -103,12 +100,12 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const Context &, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
 }
 
-bool DatabaseMySQL::isTableExist(const String & name, const Context &) const
+bool DatabaseMySQL::isTableExist(const Context & context, const String & name) const
 {
-    return bool(tryGetTable(name, global_context));
+    return bool(tryGetTable(context, name));
 }
 
-StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, const Context &) const
+StoragePtr DatabaseMySQL::tryGetTable(const Context &, const String & mysql_table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -155,7 +152,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const Context &, const String & table_name, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -184,7 +181,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;
@@ -263,7 +260,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime() const
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool.Get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {
@@ -308,7 +305,7 @@ std::map<String, NamesAndTypesList> DatabaseMySQL::fetchTablesColumnsList(const 
           << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
     const auto & external_table_functions_use_nulls = global_context.getSettings().external_table_functions_use_nulls;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool.Get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();
@@ -361,7 +358,7 @@ void DatabaseMySQL::cleanOutdatedTables()
                 ++iterator;
             else
             {
-                const auto table_lock = (*iterator)->lockAlterIntention(RWLockImpl::NO_QUERY, lock_acquire_timeout);
+                const auto table_lock = (*iterator)->lockAlterIntention(RWLockImpl::NO_QUERY);
 
                 (*iterator)->shutdown();
                 (*iterator)->is_dropped = true;
@@ -373,7 +370,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & storage)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -434,7 +431,7 @@ void DatabaseMySQL::loadStoredObjects(Context &, bool)
     }
 }
 
-void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)
+void DatabaseMySQL::removeTable(const Context &, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -448,8 +445,7 @@ void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /
         throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(getDatabaseName()) +
             "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
 
-    auto table_iter = local_tables_cache.find(table_name);
-    if (table_iter == local_tables_cache.end())
+    if (!local_tables_cache.count(table_name))
         throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
             ErrorCodes::UNKNOWN_TABLE);
 
@@ -457,7 +453,6 @@ void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /
 
     try
     {
-        table_iter->second.second->drop();
         remove_flag.createFile();
     }
     catch (...)
@@ -465,7 +460,6 @@ void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /
         remove_or_detach_tables.erase(table_name);
         throw;
     }
-    table_iter->second.second->is_dropped = true;
 }
 
 DatabaseMySQL::~DatabaseMySQL()
@@ -490,7 +484,7 @@ DatabaseMySQL::~DatabaseMySQL()
     }
 }
 
-void DatabaseMySQL::createTable(const Context &, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabaseMySQL::createTable(const Context & context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
@@ -501,14 +495,14 @@ void DatabaseMySQL::createTable(const Context &, const String & table_name, cons
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
     /// we should compare the old and new create_query to make them completely consistent
-    const auto & origin_create_query = getCreateTableQuery(table_name, global_context);
+    const auto & origin_create_query = getCreateTableQuery(context, table_name);
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))
         throw Exception("The MySQL database engine can only execute attach statements of type attach table database_name.table_name",
             ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-    attachTable(table_name, storage, {});
+    attachTable(table_name, storage);
 }
 
 }

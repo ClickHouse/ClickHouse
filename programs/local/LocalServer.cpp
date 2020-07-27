@@ -8,10 +8,10 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -20,7 +20,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -92,7 +91,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
 void LocalServer::applyCmdSettings()
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context->getSettingsRef().copyChangesFrom(cmd_settings);
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -118,24 +117,10 @@ void LocalServer::tryInitPath()
 }
 
 
-static void attachSystemTables(const Context & context)
-{
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
-    if (!system_database)
-    {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
-        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
-    }
-
-    attachSystemTablesLocal(*system_database);
-}
-
-
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    Poco::Logger * log = &logger();
+    Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
@@ -147,8 +132,8 @@ try
         return Application::EXIT_OK;
     }
 
-    shared_context = Context::createShared();
-    context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+
+    context = std::make_unique<Context>(Context::createGlobal());
     context->makeGlobalContext();
     context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
@@ -179,7 +164,7 @@ try
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
-    /// There is no need for concurrent queries, override max_concurrent_queries.
+    /// There is no need for concurrent threads, override max_concurrent_queries.
     context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
@@ -202,7 +187,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
@@ -211,16 +196,15 @@ try
         /// Lock path directory before read
         status.emplace(context->getPath() + "status");
 
-        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
+        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
         loadMetadataSystem(*context);
-        attachSystemTables(*context);
+        attachSystemTables();
         loadMetadata(*context);
-        DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
     {
-        attachSystemTables(*context);
+        attachSystemTables();
     }
 
     processQueries();
@@ -262,15 +246,27 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
+void LocalServer::attachSystemTables()
+{
+    DatabasePtr system_database = context->tryGetDatabase("system");
+    if (!system_database)
+    {
+        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
+        system_database = std::make_shared<DatabaseMemory>("system");
+        context->addDatabase("system", system_database);
+    }
+
+    attachSystemTablesLocal(*system_database);
+}
+
+
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query + config().getRawString("query");
 
-    const auto & settings = context->getSettingsRef();
-
     std::vector<String> queries;
-    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+    auto parse_res = splitMultipartQuery(queries_str, queries);
 
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
@@ -278,7 +274,7 @@ void LocalServer::processQueries()
     context->makeSessionContext();
     context->makeQueryContext();
 
-    context->setUser("default", "", Poco::Net::SocketAddress{});
+    context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
     applyCmdSettings();
 
@@ -377,7 +373,7 @@ static void showClientVersion()
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
 }
 
-static std::string getHelpHeader()
+std::string LocalServer::getHelpHeader() const
 {
     return
         "usage: clickhouse-local [initial table definition] [--query <query>]\n"
@@ -392,7 +388,7 @@ static std::string getHelpHeader()
         "Either through corresponding command line parameters --table --structure --input-format and --file.";
 }
 
-static std::string getHelpFooter()
+std::string LocalServer::getHelpFooter() const
 {
     return
         "Example printing memory used by each Unix user:\n"

@@ -53,7 +53,7 @@ public:
 
         void finalize();
 
-        void sync() const;
+        void sync();
 
         void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
     };
@@ -61,7 +61,9 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     IMergeTreeDataPartWriter(
-        const MergeTreeData::DataPartPtr & data_part,
+        DiskPtr disk,
+        const String & part_path,
+        const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
@@ -101,7 +103,7 @@ public:
     void initSkipIndices();
     void initPrimaryIndex();
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 
@@ -116,7 +118,7 @@ protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
-    MergeTreeData::DataPartPtr data_part;
+    DiskPtr disk;
     String part_path;
     const MergeTreeData & storage;
     NamesAndTypesList columns_list;
@@ -136,7 +138,7 @@ protected:
     size_t next_mark = 0;
     size_t next_index_offset = 0;
 
-    /// Number of marks in data from which skip indices have to start
+    /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
     size_t skip_index_data_mark = 0;
 

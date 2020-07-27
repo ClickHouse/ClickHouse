@@ -20,19 +20,34 @@
 #include <optional>
 #include <string>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+static constexpr UInt32 max_scale = 9;
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
     : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
       TimezoneMixin(time_zone_name)
 {
+    if (scale > max_scale)
+        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>() - scale_, scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
       TimezoneMixin(time_zone_info)
-{}
+{
+    if (scale > max_scale)
+        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+}
 
 std::string DataTypeDateTime64::doGetName() const
 {
@@ -183,7 +198,7 @@ void DataTypeDateTime64::deserializeProtobuf(IColumn & column, ProtobufReader & 
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
 {
-    if (const auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
+    if (auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
         return this->scale == ptype->getScale();
     return false;
 }
@@ -205,15 +220,15 @@ std::conditional_t<Kind == ArgumentKind::Optional, std::optional<T>, T>
 getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name, const std::string context_data_type_name)
 {
     using NearestResultType = NearestFieldType<T>;
-    const auto field_type = Field::TypeToEnum<NearestResultType>::value;
+    const auto fieldType = Field::TypeToEnum<NearestResultType>::value;
     const ASTLiteral * argument = nullptr;
 
-    auto exception_message = [=](const String & message)
+    auto exceptionMessage = [=](const String & message)
     {
         return std::string("Parameter #") + std::to_string(argument_index) + " '"
                 + argument_name + "' for " + context_data_type_name
                 + message
-                + ", expected: " + Field::Types::toString(field_type) + " literal.";
+                + ", expected: " + Field::Types::toString(fieldType) + " literal.";
     };
 
     if (!arguments || arguments->children.size() <= argument_index
@@ -222,12 +237,12 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
         if constexpr (Kind == ArgumentKind::Optional)
             return {};
         else
-            throw Exception(exception_message(" is missing"),
+            throw Exception(exceptionMessage(" is missing"),
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    if (argument->value.getType() != field_type)
-        throw Exception(exception_message(String(" has wrong type: ") + argument->value.getTypeName()),
+    if (argument->value.getType() != fieldType)
+        throw Exception(exceptionMessage(String(" has wrong type: ") + argument->value.getTypeName()),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return argument->value.get<NearestResultType>();

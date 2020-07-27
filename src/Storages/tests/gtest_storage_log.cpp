@@ -45,22 +45,22 @@ public:
 
     void SetUp() override
     {
-        disk = createDisk<T>();
-        table = createStorage(disk);
+        disk_ = createDisk<T>();
+        table_ = createStorage(disk_);
     }
 
     void TearDown() override
     {
-        table->shutdown();
-        destroyDisk<T>(disk);
+        table_->shutdown();
+        destroyDisk<T>(disk_);
     }
 
-    const DB::DiskPtr & getDisk() { return disk; }
-    DB::StoragePtr & getTable() { return table; }
+    const DB::DiskPtr & getDisk() { return disk_; }
+    DB::StoragePtr & getTable() { return table_; }
 
 private:
-    DB::DiskPtr disk;
-    DB::StoragePtr table;
+    DB::DiskPtr disk_;
+    DB::StoragePtr table_;
 };
 
 
@@ -68,7 +68,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
+std::string writeData(int rows, DB::StoragePtr & table)
 {
     using namespace DB;
 
@@ -77,10 +77,9 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
     Block block;
 
     {
-        const auto & storage_columns = table->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
-        column.type = storage_columns.getPhysical("a").type;
+        column.type = table->getColumn("a").type;
         auto col = column.type->createColumn();
         ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -97,23 +96,23 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, context);
+    BlockOutputStreamPtr out = table->write({}, getContext());
     out->write(block);
 
     return data;
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::Context & context)
+std::string readData(DB::StoragePtr & table)
 {
     using namespace DB;
 
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, getContext(), stage, 8192, 1)[0]));
 
     Block sample;
     {
@@ -124,7 +123,7 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
 
     std::ostringstream ss;
     WriteBufferFromOStream out_buf(ss);
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, getContext());
 
     copyData(*in, *output);
 
@@ -136,16 +135,15 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
 TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
-    const auto & context_holder = getContext();
 
     std::string data;
 
     // Write several chunks of data.
-    data += writeData(10, this->getTable(), context_holder.context);
+    data += writeData(10, this->getTable());
     data += ",";
-    data += writeData(20, this->getTable(), context_holder.context);
+    data += writeData(20, this->getTable());
     data += ",";
-    data += writeData(10, this->getTable(), context_holder.context);
+    data += writeData(10, this->getTable());
 
-    ASSERT_EQ(data, readData(this->getTable(), context_holder.context));
+    ASSERT_EQ(data, readData(this->getTable()));
 }

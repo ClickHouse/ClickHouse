@@ -147,7 +147,7 @@ public:
     }
 
     void insertResultInto(
-        AggregateDataPtr place,
+        ConstAggregateDataPtr place,
         IColumn & to) const override
     {
         if (place[size_of_data])

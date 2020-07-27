@@ -20,7 +20,8 @@ public:
     static constexpr auto name = "caseWithExpression";
     static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
 
-    explicit FunctionCaseWithExpression(const Context & context_) : context(context_) {}
+public:
+    FunctionCaseWithExpression(const Context & context_) : context(context_) {}
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }

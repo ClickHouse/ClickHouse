@@ -34,9 +34,6 @@ protected:
     bool finished = false;
     bool finalized = false;
 
-    /// Flush data on each consumed chunk. This is intented for interactive applications to output data as soon as it's ready.
-    bool auto_flush = false;
-
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
 
     virtual void consume(Chunk) = 0;
@@ -53,8 +50,6 @@ public:
     /// Flush output buffers if any.
     virtual void flush();
 
-    void setAutoFlush() { auto_flush = true; }
-
     /// Value for rows_before_limit_at_least field.
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
 
@@ -70,9 +65,10 @@ public:
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 
+public:
     /// Compatible to IBlockOutputStream interface
 
-    void write(const Block & block);
+    void write(const Block & block) { consume(Chunk(block.getColumns(), block.rows())); }
 
     virtual void doWritePrefix() {}
     virtual void doWriteSuffix() { finalize(); }

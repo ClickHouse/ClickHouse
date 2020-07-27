@@ -30,6 +30,5 @@ INSERT INTO quorum1 VALUES (4, '2018-11-15');
 SELECT sum(x) FROM quorum1;
 SELECT sum(x) FROM quorum2;
 
-DROP TABLE quorum1 NO DELAY;
-DROP TABLE quorum2 NO DELAY;
-SELECT sleep(1) FORMAT Null;
+DROP TABLE IF EXISTS quorum1;
+DROP TABLE IF EXISTS quorum2;

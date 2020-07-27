@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <Interpreters/Context.h>
 
 #include <random>
 #include <unordered_set>
@@ -21,7 +20,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
-    , log(&Poco::Logger::get(log_name))
+    , log(&Logger::get(log_name))
 {
     task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
@@ -29,7 +28,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 void ReplicatedMergeTreeCleanupThread::run()
 {
     auto storage_settings = storage.getSettings();
-    const auto sleep_ms = storage_settings->cleanup_delay_period * 1000
+    const auto CLEANUP_SLEEP_MS = storage_settings->cleanup_delay_period * 1000
         + std::uniform_int_distribution<UInt64>(0, storage_settings->cleanup_delay_period_random_add * 1000)(rng);
 
     try
@@ -48,7 +47,7 @@ void ReplicatedMergeTreeCleanupThread::run()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    task->scheduleAfter(sleep_ms);
+    task->scheduleAfter(CLEANUP_SLEEP_MS);
 }
 
 
@@ -58,8 +57,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 
     {
         /// TODO: Implement tryLockStructureForShare.
-        auto lock = storage.lockStructureForShare(
-                false, RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+        auto lock = storage.lockStructureForShare(false, "");
         storage.clearOldTemporaryDirectories();
     }
 
@@ -234,7 +232,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         }
     }
 
-    LOG_DEBUG(log, "Removed {} old log entries: {} - {}", entries.size(), entries.front(), entries.back());
+    LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
 }
 
 
@@ -327,7 +325,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             cached_block_stats.erase(first_outdated_block->node);
         }
         else if (rc)
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, zkutil::ZooKeeper::error2string(rc));
+            LOG_WARNING(log,
+                "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
         else
         {
             /// Successfully removed blocks have to be removed from cache
@@ -338,7 +337,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
     if (num_nodes_to_delete)
-        LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
+        LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
 }
 
 
@@ -368,7 +367,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking {} blocks ({} are not cached){}", stat.numChildren, not_cached_blocks, " to clear old ones from ZooKeeper.");
+        LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"
+                                   << " to clear old ones from ZooKeeper.");
     }
 
     zkutil::AsyncResponses<Coordination::ExistsResponse> exists_futures;
@@ -454,7 +454,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", replicas_stat.version));
             zookeeper->multi(ops);
-            LOG_DEBUG(log, "Removed {} old mutation entries: {} - {}", (i + 1 - batch_start_i), entries[batch_start_i], entries[i]);
+            LOG_DEBUG(log, "Removed " << (i + 1 - batch_start_i) << " old mutation entries: " << entries[batch_start_i] << " - " << entries[i]);
             batch_start_i = i + 1;
             ops.clear();
         }

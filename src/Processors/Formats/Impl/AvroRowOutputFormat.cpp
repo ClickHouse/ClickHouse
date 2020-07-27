@@ -52,7 +52,7 @@ namespace ErrorCodes
 class OutputStreamWriteBufferAdapter : public avro::OutputStream
 {
 public:
-    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
 
     virtual bool next(uint8_t ** data, size_t * len) override
     {
@@ -286,7 +286,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
     avro::RecordSchema record_schema("row");
 
     size_t type_name_increment = 0;
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
         try
         {

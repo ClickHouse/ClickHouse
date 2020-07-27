@@ -1,33 +1,34 @@
 #include <Parsers/ParserCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Access/RowPolicy.h>
-#include <Parsers/ParserExtendedRoleSet.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <ext/range.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+}
+
+
 namespace
 {
-    using ConditionType = RowPolicy::ConditionType;
-    using ConditionTypeInfo = RowPolicy::ConditionTypeInfo;
-    constexpr auto MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
+    using ConditionIndex = RowPolicy::ConditionIndex;
 
-
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_short_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_policy_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
-            return parseIdentifierOrStringLiteral(pos, expected, new_short_name);
+            return parseIdentifierOrStringLiteral(pos, expected, new_policy_name);
         });
     }
 
@@ -72,93 +73,108 @@ namespace
         });
     }
 
-    bool parseConditions(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
+    bool parseConditions(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionIndex, ASTPtr>> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            boost::container::flat_set<std::string_view> commands;
+            static constexpr char select_op[] = "SELECT";
+            static constexpr char insert_op[] = "INSERT";
+            static constexpr char update_op[] = "UPDATE";
+            static constexpr char delete_op[] = "DELETE";
+            std::vector<const char *> ops;
 
-            auto add_all_commands = [&]
-            {
-                for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
-                {
-                    const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
-                    commands.emplace(command);
-                }
-            };
-
+            bool keyword_for = false;
             if (ParserKeyword{"FOR"}.ignore(pos, expected))
             {
+                keyword_for = true;
                 do
                 {
-                    size_t old_size = commands.size();
-                    if (ParserKeyword{"ALL"}.ignore(pos, expected))
+                    if (ParserKeyword{"SELECT"}.ignore(pos, expected))
+                        ops.push_back(select_op);
+                    else if (ParserKeyword{"INSERT"}.ignore(pos, expected))
+                        ops.push_back(insert_op);
+                    else if (ParserKeyword{"UPDATE"}.ignore(pos, expected))
+                        ops.push_back(update_op);
+                    else if (ParserKeyword{"DELETE"}.ignore(pos, expected))
+                        ops.push_back(delete_op);
+                    else if (ParserKeyword{"ALL"}.ignore(pos, expected))
                     {
-                        add_all_commands();
                     }
                     else
-                    {
-                        for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
-                        {
-                            const std::string_view & command = ConditionTypeInfo::get(condition_type).command;
-                            if (ParserKeyword{command.data()}.ignore(pos, expected))
-                            {
-                                commands.emplace(command);
-                                break;
-                            }
-                        }
-                    }
-                    if (commands.size() == old_size)
                         return false;
                 }
                 while (ParserToken{TokenType::Comma}.ignore(pos, expected));
             }
 
+            if (ops.empty())
+            {
+                ops.push_back(select_op);
+                ops.push_back(insert_op);
+                ops.push_back(update_op);
+                ops.push_back(delete_op);
+            }
+
             std::optional<ASTPtr> filter;
             std::optional<ASTPtr> check;
+            bool keyword_using = false, keyword_with_check = false;
             if (ParserKeyword{"USING"}.ignore(pos, expected))
             {
+                keyword_using = true;
                 if (!parseConditionalExpression(pos, expected, filter))
                     return false;
             }
             if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected))
             {
+                keyword_with_check = true;
                 if (!parseConditionalExpression(pos, expected, check))
                     return false;
             }
 
-            if (!filter && !check)
+            if (!keyword_for && !keyword_using && !keyword_with_check)
                 return false;
 
-            if (commands.empty())
-                add_all_commands();
-
-            if (!check && !alter)
+            if (filter && !check && !alter)
                 check = filter;
 
-            for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+            auto set_condition = [&](ConditionIndex index, const ASTPtr & condition)
             {
-                const auto & type_info = ConditionTypeInfo::get(condition_type);
-                if (commands.count(type_info.command))
+                auto it = std::find_if(conditions.begin(), conditions.end(), [index](const std::pair<ConditionIndex, ASTPtr> & element)
                 {
-                    if (type_info.is_check && check)
-                        conditions[condition_type] = check;
-                    else if (filter)
-                        conditions[condition_type] = filter;
+                    return element.first == index;
+                });
+                if (it == conditions.end())
+                    it = conditions.insert(conditions.end(), std::pair<ConditionIndex, ASTPtr>{index, nullptr});
+                it->second = condition;
+            };
+
+            for (const auto & op : ops)
+            {
+                if ((op == select_op) && filter)
+                    set_condition(RowPolicy::SELECT_FILTER, *filter);
+                else if ((op == insert_op) && check)
+                    set_condition(RowPolicy::INSERT_CHECK, *check);
+                else if (op == update_op)
+                {
+                    if (filter)
+                        set_condition(RowPolicy::UPDATE_FILTER, *filter);
+                    if (check)
+                        set_condition(RowPolicy::UPDATE_CHECK, *check);
                 }
+                else if ((op == delete_op) && filter)
+                    set_condition(RowPolicy::DELETE_FILTER, *filter);
+                else
+                    __builtin_unreachable();
             }
 
             return true;
         });
     }
 
-    bool parseMultipleConditions(
-        IParserBase::Pos & pos, Expected & expected, bool alter, std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> & conditions)
+    bool parseMultipleConditions(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionIndex, ASTPtr>> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> res_conditions;
+            std::vector<std::pair<ConditionIndex, ASTPtr>> res_conditions;
             do
             {
                 if (!parseConditions(pos, expected, alter, res_conditions))
@@ -171,25 +187,17 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
             if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
-                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
+                || !ParserGenericRoleSet{}.enableIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
+            roles = std::static_pointer_cast<ASTGenericRoleSet>(ast);
             return true;
-        });
-    }
-
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -198,10 +206,12 @@ namespace
 bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
+    bool attach = false;
     if (attach_mode)
     {
         if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected))
             return false;
+        attach = true;
     }
     else
     {
@@ -227,22 +237,22 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             or_replace = true;
     }
 
-    RowPolicy::NameParts name_parts;
+    RowPolicy::FullNameParts name_parts;
     String & database = name_parts.database;
     String & table_name = name_parts.table_name;
-    String & short_name = name_parts.short_name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, short_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
+    String & policy_name = name_parts.policy_name;
+    if (!parseIdentifierOrStringLiteral(pos, expected, policy_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
         || !parseDatabaseAndTableName(pos, expected, database, table_name))
         return false;
 
-    String new_short_name;
+    String new_policy_name;
     std::optional<bool> is_restrictive;
-    std::array<std::optional<ASTPtr>, MAX_CONDITION_TYPE> conditions;
-    String cluster;
+    std::vector<std::pair<ConditionIndex, ASTPtr>> conditions;
+    std::shared_ptr<ASTGenericRoleSet> roles;
 
     while (true)
     {
-        if (alter && new_short_name.empty() && parseRenameTo(pos, expected, new_short_name))
+        if (alter && new_policy_name.empty() && parseRenameTo(pos, expected, new_policy_name))
             continue;
 
         if (!is_restrictive && parseAsRestrictiveOrPermissive(pos, expected, is_restrictive))
@@ -251,29 +261,22 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (parseMultipleConditions(pos, expected, alter, conditions))
             continue;
 
-        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+        if (!roles && parseToRoles(pos, expected, attach, roles))
             continue;
 
         break;
     }
 
-    std::shared_ptr<ASTExtendedRoleSet> roles;
-    parseToRoles(pos, expected, attach_mode, roles);
-
-    if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
-
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
 
     query->alter = alter;
-    query->attach = attach_mode;
+    query->attach = attach;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
-    query->cluster = std::move(cluster);
     query->name_parts = std::move(name_parts);
-    query->new_short_name = std::move(new_short_name);
+    query->new_policy_name = std::move(new_policy_name);
     query->is_restrictive = is_restrictive;
     query->conditions = std::move(conditions);
     query->roles = std::move(roles);

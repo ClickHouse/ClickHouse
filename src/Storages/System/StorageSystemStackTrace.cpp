@@ -35,7 +35,7 @@ namespace
     const pid_t expected_pid = getpid();
     const int sig = SIGRTMIN;
 
-    std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
+    int sequence_num = 0;    /// For messages sent via pipe.
 
     std::optional<StackTrace> stack_trace;
 
@@ -55,7 +55,7 @@ namespace
             return;
 
         /// Signal received too late.
-        if (info->si_value.sival_int != sequence_num.load(std::memory_order_relaxed))
+        if (info->si_value.sival_int != sequence_num)
             return;
 
         /// All these methods are signal-safe.
@@ -64,8 +64,7 @@ namespace
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size, max_query_id_size);
-        if (query_id.data && query_id.size)
-            memcpy(query_id_data, query_id.data, query_id_size);
+        memcpy(query_id_data, query_id.data, query_id_size);
 
         int notification_num = info->si_value.sival_int;
         ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
@@ -113,7 +112,7 @@ namespace
 
             if (read_res == sizeof(notification_num))
             {
-                if (notification_num == sequence_num.load(std::memory_order_relaxed))
+                if (notification_num == sequence_num)
                     return true;
                 else
                     continue;   /// Drain delayed notifications.
@@ -178,7 +177,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         pid_t tid = parse<pid_t>(it->path().filename());
 
         sigval sig_value{};
-        sig_value.sival_int = sequence_num.load(std::memory_order_relaxed);
+        sig_value.sival_int = sequence_num;
         if (0 != ::sigqueue(tid, sig, sig_value))
         {
             /// The thread may has been already finished.
@@ -213,7 +212,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             res_columns[2]->insertDefault();
         }
 
-        ++sequence_num; /// FYI: For signed Integral types, arithmetic is defined to use two’s complement representation. There are no undefined results.
+        sequence_num = static_cast<int>(static_cast<unsigned>(sequence_num) + 1);
     }
 }
 

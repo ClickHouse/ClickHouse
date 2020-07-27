@@ -14,8 +14,8 @@ int main(int, char **)
 
     try
     {
-        static const size_t N = 100000;
-        static const size_t BUF_SIZE = 1048576;
+        const size_t N = 100000;
+        const size_t BUF_SIZE = 1048576;
 
         ReadBufferFromFile rand_in("/dev/urandom");
         unsigned rand = 0;

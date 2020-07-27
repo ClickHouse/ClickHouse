@@ -24,7 +24,7 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(ReadBuffer & 
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(in);
-    const auto & sample = getPort().getHeader();
+    auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
 
     data_types.resize(num_columns);

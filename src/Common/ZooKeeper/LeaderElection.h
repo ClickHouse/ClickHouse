@@ -39,7 +39,7 @@ public:
     LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
         : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
         , log_name("LeaderElection (" + path + ")")
-        , log(&Poco::Logger::get(log_name))
+        , log(&Logger::get(log_name))
     {
         task = pool.createTask(log_name, [this] { threadFunction(); });
         createNode();
@@ -67,7 +67,7 @@ private:
     LeadershipHandler handler;
     std::string identifier;
     std::string log_name;
-    Poco::Logger * log;
+    Logger * log;
 
     EphemeralNodeHolderPtr node;
     std::string node_name;

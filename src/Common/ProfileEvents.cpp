@@ -8,9 +8,6 @@
     M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
-    M(FailedQuery, "Number of failed queries.") \
-    M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
-    M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
     M(FileOpen, "Number of files opened.") \
     M(Seek, "Number of times the 'lseek' function was called.") \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.") \
@@ -89,10 +86,10 @@
     M(ZooKeeperBytesSent, "") \
     M(ZooKeeperBytesReceived, "") \
     \
-    M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry") \
+    M(DistributedConnectionFailTry, "") \
     M(DistributedConnectionMissingTable, "") \
     M(DistributedConnectionStaleReplica, "") \
-    M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
+    M(DistributedConnectionFailAtAll, "") \
     \
     M(CompileAttempt, "Number of times a compilation of generated C++ code was initiated.") \
     M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
@@ -113,7 +110,7 @@
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
     \
     M(ReplicaYieldLeadership, "Number of times Replicated table was yielded its leadership due to large replication lag relative to other replicas.") \
-    M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
+    M(ReplicaPartialShutdown, "") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
@@ -163,7 +160,7 @@
     M(RWLockAcquiredWriteLocks, "") \
     M(RWLockReadersWaitMilliseconds, "") \
     M(RWLockWritersWaitMilliseconds, "") \
-    M(DNSError, "Total count of errors in DNS resolution") \
+    M(NetworkErrors, "") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
@@ -180,25 +177,6 @@
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.") \
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
-    \
-    M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
-    M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
-    M(PerfCacheReferences, "Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
-    M(PerfCacheMisses, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in con‐junction with the PERFCOUNTHWCACHEREFERENCES event to calculate cache miss rates.") \
-    M(PerfBranchInstructions, "Retired branch instructions. Prior to Linux 2.6.35, this used the wrong event on AMD processors.") \
-    M(PerfBranchMisses, "Mispredicted branch instructions.") \
-    M(PerfBusCycles, "Bus cycles, which can be different from total cycles.") \
-    M(PerfStalledCyclesFrontend, "Stalled cycles during issue.") \
-    M(PerfStalledCyclesBackend, "Stalled cycles during retirement.") \
-    M(PerfRefCpuCycles, "Total cycles; not affected by CPU frequency scaling.") \
-    \
-    M(PerfCpuClock, "The CPU clock, a high-resolution per-CPU timer") \
-    M(PerfTaskClock, "A clock count specific to the task that is running") \
-    M(PerfContextSwitches, "Number of context switches") \
-    M(PerfCpuMigrations, "Number of times the process has migrated to a new CPU") \
-    M(PerfAlignmentFaults, "Number of alignment faults. These happen when unaligned memory accesses happen; the kernel can handle these but it reduces performance. This happens only on some architectures (never on x86).") \
-    M(PerfEmulationFaults, "Number of emulation faults. The kernel sometimes traps on unimplemented instructions and emulates them for user space. This can negatively impact performance.") \
-    \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \

@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 // Implements function, giving value for column within range of given
@@ -27,7 +28,9 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbor>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
+
+    FunctionNeighbor(const Context & context_) : context(context_) {}
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -81,14 +84,14 @@ public:
         const ColumnWithTypeAndName & offset_elem = block.getByPosition(arguments[1]);
         bool has_defaults = arguments.size() == 3;
 
-        ColumnPtr source_column_casted = castColumn(source_elem, result_type);
+        ColumnPtr source_column_casted = castColumn(source_elem, result_type, context);
         ColumnPtr offset_column = offset_elem.column;
 
         ColumnPtr default_column_casted;
         if (has_defaults)
         {
             const ColumnWithTypeAndName & default_elem = block.getByPosition(arguments[2]);
-            default_column_casted = castColumn(default_elem, result_type);
+            default_column_casted = castColumn(default_elem, result_type, context);
         }
 
         bool source_is_constant = isColumnConst(*source_column_casted);
@@ -110,6 +113,10 @@ public:
             /// Optimization for the case when we can copy many values at once.
 
             Int64 offset = offset_column->getInt(0);
+
+            /// Protection from possible overflow.
+            if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+                throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             auto result_column = result_type->createColumn();
 
@@ -145,7 +152,9 @@ public:
             if (offset == 0)
             {
                 /// Degenerate case, just copy source column as is.
-                block.getByPosition(result).column = source_is_constant ? ColumnConst::create(source_column_casted, input_rows_count) : source_column_casted;
+                block.getByPosition(result).column = source_is_constant
+                    ? ColumnConst::create(source_column_casted, input_rows_count)
+                    : source_column_casted;
             }
             else if (offset > 0)
             {
@@ -166,7 +175,13 @@ public:
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                Int64 src_idx = row + offset_column->getInt(offset_is_constant ? 0 : row);
+                Int64 offset = offset_column->getInt(offset_is_constant ? 0 : row);
+
+                /// Protection from possible overflow.
+                if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+                    throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+                Int64 src_idx = row + offset;
 
                 if (src_idx >= 0 && src_idx < Int64(input_rows_count))
                     result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
@@ -179,6 +194,9 @@ public:
             block.getByPosition(result).column = std::move(result_column);
         }
     }
+
+private:
+    const Context & context;
 };
 
 void registerFunctionNeighbor(FunctionFactory & factory)

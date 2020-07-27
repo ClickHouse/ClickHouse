@@ -54,7 +54,7 @@ private:
     size_t bytes_to_transfer = 0;
 
     using Logger = Poco::Logger;
-    Poco::Logger * log = &Poco::Logger::get("CreatingSetsBlockInputStream");
+    Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
     bool is_initialized = false;
 

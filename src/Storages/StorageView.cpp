@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTCreateQuery.h>
@@ -65,24 +64,42 @@ Pipes StorageView::read(
         current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-
-    auto pipeline = interpreter.execute().pipeline;
-
-    /// It's expected that the columns read from storage are not constant.
-    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    pipeline.addSimpleTransform([](const Block & header)
+    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
+    if (query_info.force_tree_shaped_pipeline)
     {
-        return std::make_shared<MaterializingTransform>(header);
-    });
+        QueryPipeline pipeline;
+        BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
 
-    /// And also convert to expected structure.
-    pipeline.addSimpleTransform([&](const Block & header)
+        for (auto & stream : streams)
+        {
+            stream = std::make_shared<MaterializingBlockInputStream>(stream);
+            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, getSampleBlockForColumns(column_names),
+                                                                  ConvertingBlockInputStream::MatchColumnsMode::Name);
+        }
+
+        for (auto & stream : streams)
+            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    }
+    else
     {
-        return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
-                                                     ConvertingTransform::MatchColumnsMode::Name);
-    });
+        auto pipeline = interpreter.executeWithProcessors();
 
-    pipes = std::move(pipeline).getPipes();
+        /// It's expected that the columns read from storage are not constant.
+        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+        pipeline.addSimpleTransform([](const Block & header)
+        {
+            return std::make_shared<MaterializingTransform>(header);
+        });
+
+        /// And also convert to expected structure.
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
+                                                         ConvertingTransform::MatchColumnsMode::Name, context);
+        });
+
+        pipes = std::move(pipeline).getPipes();
+    }
 
     return pipes;
 }
@@ -95,7 +112,33 @@ ASTPtr StorageView::getRuntimeViewQuery(const ASTSelectQuery & outer_query, cons
 }
 
 
-static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
+ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
+{
+    auto runtime_view_query = inner_query->clone();
+
+    /// TODO: remove getTableExpressions and getTablesWithColumns
+    {
+        const auto & table_expressions = getTableExpressions(*outer_query);
+        const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+
+        replaceTableNameWithSubquery(outer_query, runtime_view_query);
+        if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
+        {
+            for (auto & pr : tables_with_columns)
+                if (pr.table.table.empty() && pr.table.alias.empty())
+                    throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                                    ErrorCodes::ALIAS_REQUIRED);
+        }
+
+        if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*outer_query) && normalize)
+            InterpreterSelectWithUnionQuery(
+                runtime_view_query, context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify(), {});
+    }
+
+    return runtime_view_query;
+}
+
+void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
     auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
@@ -116,32 +159,6 @@ static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr &
         table_expression->subquery->setAlias(alias);
 }
 
-
-ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Context & context, bool normalize)
-{
-    auto runtime_view_query = inner_query->clone();
-
-    /// TODO: remove getTableExpressions and getTablesWithColumns
-    {
-        const auto & table_expressions = getTableExpressions(*outer_query);
-        const auto & tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
-
-        replaceTableNameWithSubquery(outer_query, runtime_view_query);
-        if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
-        {
-            for (const auto & pr : tables_with_columns)
-                if (pr.table.table.empty() && pr.table.alias.empty())
-                    throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
-                                    ErrorCodes::ALIAS_REQUIRED);
-        }
-
-        if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*outer_query) && normalize)
-            InterpreterSelectWithUnionQuery(
-                runtime_view_query, context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify(), {});
-    }
-
-    return runtime_view_query;
-}
 
 void registerStorageView(StorageFactory & factory)
 {

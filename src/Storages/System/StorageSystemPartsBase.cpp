@@ -9,12 +9,11 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Access/ContextAccess.h>
+#include <Access/AccessRightsContext.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -63,7 +62,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context)
-    : query_id(context.getCurrentQueryId()), settings(context.getSettings())
+    : query_id(context.getCurrentQueryId())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -74,11 +73,11 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
-    const auto access = context.getAccess();
-    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
+    const auto access_rights = context.getAccessRights();
+    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
 
     {
-        Databases databases = DatabaseCatalog::instance().getDatabases();
+        Databases databases = context.getDatabases();
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -97,7 +96,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
-        ColumnPtr database_column_for_filter = block_to_filter.getByName("database").column;
+        ColumnPtr database_column_ = block_to_filter.getByName("database").column;
 
         if (rows)
         {
@@ -107,7 +106,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
             for (size_t i = 0; i < rows; ++i)
             {
-                String database_name = (*database_column_for_filter)[i].get<String>();
+                String database_name = (*database_column_)[i].get<String>();
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
@@ -115,15 +114,12 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
-                    if (!storage)
-                        continue;
-
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
-                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                    if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
                         continue;
 
                     storages[std::make_pair(database_name, iterator->name())] = storage;
@@ -175,7 +171,7 @@ StoragesInfo StoragesInfoStream::next()
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
 
-        auto is_same_table = [&info, this] (size_t row) -> bool
+        auto isSameTable = [&info, this] (size_t row) -> bool
         {
             return (*database_column)[row].get<String>() == info.database &&
                    (*table_column)[row].get<String>() == info.table;
@@ -184,7 +180,7 @@ StoragesInfo StoragesInfoStream::next()
         /// We may have two rows per table which differ in 'active' value.
         /// If rows with 'active = 0' were not filtered out, this means we
         /// must collect the inactive parts. Remember this fact in StoragesInfo.
-        for (; next_row < rows && is_same_table(next_row); ++next_row)
+        for (; next_row < rows && isSameTable(next_row); ++next_row)
         {
             const auto active = (*active_column)[next_row].get<UInt64>();
             if (active == 0)
@@ -196,7 +192,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout);
+            info.table_lock = info.storage->lockStructureForShare(false, query_id);
         }
         catch (const Exception & e)
         {
@@ -259,15 +255,30 @@ Pipes StorageSystemPartsBase::read(
     return pipes;
 }
 
+NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
+{
+    if (column_name == "_state")
+        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
+
+    return IStorage::getColumn(column_name);
+}
+
+bool StorageSystemPartsBase::hasColumn(const String & column_name) const
+{
+    if (column_name == "_state")
+        return true;
+
+    return IStorage::hasColumn(column_name);
+}
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : IStorage(StorageID{"system", name_})
+    : IStorage({"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        ColumnDescription column(alias_name, tmp_columns.get(column_name).type);
+        ColumnDescription column(alias_name, tmp_columns.get(column_name).type, false);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
         tmp_columns.add(column);
@@ -280,10 +291,4 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     setColumns(tmp_columns);
 }
 
-NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_state", std::make_shared<DataTypeString>())
-    };
-}
 }

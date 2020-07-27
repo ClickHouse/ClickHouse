@@ -13,7 +13,7 @@ namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
@@ -39,27 +39,32 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
+
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
+    {
+        return part->storage.getColumnDependencies(updated_columns);
+    }
+
     StorageInMemoryMetadata getInMemoryMetadata() const override
     {
         return part->storage.getInMemoryMetadata();
     }
 
-    NamesAndTypesList getVirtuals() const override
-    {
-        return part->storage.getVirtuals();
-    }
+
+    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
+
+    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
+
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_))
+        : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
         , part(part_)
     {
         setColumns(part_->storage.getColumns());
-        setSecondaryIndices(part_->storage.getSecondaryIndices());
-        setPrimaryKey(part_->storage.getPrimaryKey());
-        setSortingKey(part_->storage.getSortingKey());
-        setColumnTTLs(part->storage.getColumnTTLs());
-        setTableTTLs(part->storage.getTableTTLs());
+        setIndices(part_->storage.getIndices());
     }
 
 private:

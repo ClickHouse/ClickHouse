@@ -65,7 +65,7 @@ Token Lexer::nextTokenImpl()
 
     const char * const token_begin = pos;
 
-    auto comment_until_end_of_line = [&]() mutable
+    auto commentUntilEndOfLine = [&]() mutable
     {
         pos = find_first_symbols<'\n'>(pos, end);    /// This means that newline in single-line comment cannot be escaped.
         return Token(TokenType::Comment, token_begin, pos);
@@ -225,7 +225,7 @@ Token Lexer::nextTokenImpl()
             if (pos < end && *pos == '-')
             {
                 ++pos;
-                return comment_until_end_of_line();
+                return commentUntilEndOfLine();
             }
 
             return Token(TokenType::Minus, token_begin, pos);
@@ -241,7 +241,7 @@ Token Lexer::nextTokenImpl()
                 if (*pos == '/')
                 {
                     ++pos;
-                    return comment_until_end_of_line();
+                    return commentUntilEndOfLine();
                 }
                 else
                 {
@@ -316,14 +316,7 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::BareWord, token_begin, pos);
             }
             else
-            {
-                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-                pos = skipWhitespacesUTF8(pos, end);
-                if (pos > token_begin)
-                    return Token(TokenType::Whitespace, token_begin, pos);
-                else
-                    return Token(TokenType::Error, token_begin, ++pos);
-            }
+                return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 

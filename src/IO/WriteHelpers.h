@@ -239,6 +239,11 @@ inline void writeFloatText(T x, WriteBuffer & buf)
 }
 
 
+inline void writeString(const String & s, WriteBuffer & buf)
+{
+    buf.write(s.data(), s.size());
+}
+
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
     buf.write(data, size);

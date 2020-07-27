@@ -80,9 +80,6 @@ protected:
     friend class MergeTreeRangeReader::DelayedStream;
 
 private:
-    /// Alter conversions, which must be applied on fly if required
-    MergeTreeData::AlterConversions alter_conversions;
-
     /// Actual data type of columns in part
     std::unordered_map<String, DataTypePtr> columns_from_part;
 };

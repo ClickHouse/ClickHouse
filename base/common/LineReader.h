@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <common/Types.h>
 
 #include <atomic>
 #include <vector>
@@ -14,11 +14,13 @@ public:
         using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
         Words words;
-        Words words_no_case;
         std::atomic<bool> ready{false};
 
         /// Get iterators for the matched range of words if any.
         WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
+
+        /// case sensitive suggestion
+        bool case_insensitive = false;
     };
 
     using Patterns = std::vector<const char *>;

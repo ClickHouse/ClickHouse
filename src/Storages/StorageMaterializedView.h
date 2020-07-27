@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
+class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
@@ -21,7 +21,9 @@ public:
 
     ASTPtr getSelectQuery() const { return select->clone(); }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
-    bool hasInnerTable() const { return has_inner_table; }
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
 
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
@@ -29,7 +31,6 @@ public:
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
-    bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
         return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
@@ -37,7 +38,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
@@ -51,14 +52,14 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
-    void renameInMemory(const StorageID & new_table_id) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void shutdown() override;
 
     void checkTableCanBeDropped() const override;
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;

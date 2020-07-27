@@ -1,13 +1,11 @@
 #pragma once
 
 #include <TableFunctions/ITableFunctionFileLike.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
-class Context;
-
 /* url(source, format, structure) - creates a temporary storage from url
  */
 class TableFunctionURL : public ITableFunctionFileLike
@@ -22,7 +20,6 @@ public:
 private:
     StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const String & compression_method) const override;
-    const char * getStorageTypeName() const override { return "URL"; }
+    AccessType getRequiredAccessType() const override;
 };
-
 }

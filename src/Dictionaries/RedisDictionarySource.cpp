@@ -5,33 +5,48 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int SUPPORT_IS_DISABLED;
+    }
 
-void registerDictionarySourceRedis(DictionarySourceFactory & factory)
-{
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                   const Poco::Util::AbstractConfiguration & config,
-                                   const String & config_prefix,
-                                   Block & sample_block,
-                                   const Context & /* context */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
+    void registerDictionarySourceRedis(DictionarySourceFactory & factory)
+    {
+        auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                     const Poco::Util::AbstractConfiguration & config,
+                                     const String & config_prefix,
+                                     Block & sample_block,
+                                     const Context & /* context */,
+                                     bool /* check_config */) -> DictionarySourcePtr {
+#if USE_POCO_REDIS
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
-    };
-    factory.registerSource("redis", create_table_source);
-}
+#else
+        UNUSED(dict_struct);
+        UNUSED(config);
+        UNUSED(config_prefix);
+        UNUSED(sample_block);
+        throw Exception{"Dictionary source of type `redis` is disabled because poco library was built without redis support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+        };
+        factory.registerSource("redis", createTableSource);
+    }
 
 }
 
 
-#include <Poco/Redis/Array.h>
-#include <Poco/Redis/Client.h>
-#include <Poco/Redis/Command.h>
-#include <Poco/Redis/Type.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#if USE_POCO_REDIS
 
-#include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
+#    include <Poco/Redis/Array.h>
+#    include <Poco/Redis/Client.h>
+#    include <Poco/Redis/Command.h>
+#    include <Poco/Redis/Type.h>
+#    include <Poco/Util/AbstractConfiguration.h>
 
-#include "RedisBlockInputStream.h"
+#    include <Common/FieldVisitors.h>
+#    include <IO/WriteHelpers.h>
+
+#    include "RedisBlockInputStream.h"
 
 
 namespace DB
@@ -81,10 +96,7 @@ namespace DB
         if (db_index != 0)
         {
             RedisCommand command("SELECT");
-            // Use poco's Int64, because it is defined as long long, and on
-            // MacOS, for the purposes of template instantiation, this type is
-            // distinct from int64_t, which is our Int64.
-            command << static_cast<Poco::Int64>(db_index);
+            command << static_cast<Int64>(db_index);
             String reply = client->execute<String>(command);
             if (reply != "+OK\r\n")
                 throw Exception{"Selecting database with index " + DB::toString(db_index)
@@ -149,7 +161,7 @@ namespace DB
 
         RedisArray keys;
         auto key_type = storageTypeToKeyType(storage_type);
-        for (const auto & key : all_keys)
+        for (auto & key : all_keys)
             if (key_type == client->execute<String>(RedisCommand("TYPE").addRedisType(key)))
                 keys.addRedisType(std::move(key));
 
@@ -171,7 +183,7 @@ namespace DB
                     /// Do not store more than max_block_size values for one request.
                     if (primary_with_secondary.size() == max_block_size + 1)
                     {
-                        hkeys.add(primary_with_secondary);
+                        hkeys.add(std::move(primary_with_secondary));
                         primary_with_secondary.clear();
                         primary_with_secondary.addRedisType(key);
                     }
@@ -218,3 +230,5 @@ namespace DB
         return RedisStorageType::SIMPLE;
     }
 }
+
+#endif

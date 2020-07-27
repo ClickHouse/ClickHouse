@@ -15,20 +15,20 @@ namespace ErrorCodes
 
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(
-    DataPartCompactPtr data_part_,
-    NamesAndTypesList columns_,
+    const DataPartCompactPtr & data_part_,
+    const NamesAndTypesList & columns_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
-    MarkRanges mark_ranges_,
-    MergeTreeReaderSettings settings_,
-    ValueSizeMap avg_value_size_hints_,
+    const MarkRanges & mark_ranges_,
+    const MergeTreeReaderSettings & settings_,
+    const ValueSizeMap & avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
-    : IMergeTreeReader(std::move(data_part_), std::move(columns_),
-        uncompressed_cache_, mark_cache_, std::move(mark_ranges_),
-        std::move(settings_), std::move(avg_value_size_hints_))
+    : IMergeTreeReader(data_part_, columns_,
+        uncompressed_cache_, mark_cache_, mark_ranges_,
+        settings_, avg_value_size_hints_)
     , marks_loader(
-        data_part->volume->getDisk(),
+        data_part->disk,
         mark_cache,
         data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
         data_part->getMarksCount(), data_part->index_granularity_info,
@@ -40,10 +40,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(data_part->volume->getDisk(), full_data_path),
+            fullPath(data_part->disk, full_data_path),
             [this, full_data_path, buffer_size]()
             {
-                return data_part->volume->getDisk()->readFile(
+                return data_part->disk->readFile(
                     full_data_path,
                     buffer_size,
                     0,
@@ -62,7 +62,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         auto buffer =
             std::make_unique<CompressedReadBufferFromFile>(
-                data_part->volume->getDisk()->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
+                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -83,12 +83,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
         {
-            /// If array of Nested column is missing in part,
-            ///  we have to read it's offsets if they exists.
             position = findColumnForOffsets(name);
             read_only_offsets[i] = (position != std::nullopt);
         }
-
 
         column_positions[i] = std::move(position);
     }

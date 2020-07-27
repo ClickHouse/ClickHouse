@@ -1,11 +1,8 @@
 #pragma once
 
+#include "config_core.h"
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
 
 
 namespace DB

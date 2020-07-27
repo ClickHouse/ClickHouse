@@ -240,7 +240,7 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
 
-    auto create_string_getter = [&](bool stream_for_prefix)
+    auto createStringGetter = [&](bool stream_for_prefix)
     {
         return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
@@ -262,11 +262,11 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
 
     if (deserialize_states.count(name) == 0)
     {
-        settings.getter = create_string_getter(true);
+        settings.getter = createStringGetter(true);
         type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
     }
 
-    settings.getter = create_string_getter(false);
+    settings.getter = createStringGetter(false);
     type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
 }
 
@@ -514,7 +514,7 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+void StorageLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -527,7 +527,7 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
         file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
-    renameInMemory(new_table_id);
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)

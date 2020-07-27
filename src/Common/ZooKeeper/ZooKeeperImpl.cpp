@@ -11,14 +11,6 @@
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
-#if USE_SSL
-#    include <Poco/Net/SecureStreamSocket.h>
-#endif
-
 #include <array>
 
 
@@ -52,13 +44,6 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int SUPPORT_IS_DISABLED;
-    }
-}
 
 /** ZooKeeper wire protocol.
 
@@ -496,7 +481,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 struct ZooKeeperCreateRequest final : CreateRequest, ZooKeeperRequest
 {
     ZooKeeperCreateRequest() = default;
-    explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 1; }
     void writeImpl(WriteBuffer & out) const override
@@ -528,7 +513,7 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
 {
     ZooKeeperRemoveRequest() = default;
-    explicit ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 2; }
     void writeImpl(WriteBuffer & out) const override
@@ -586,7 +571,7 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
 struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
 {
     ZooKeeperSetRequest() = default;
-    explicit ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 5; }
     void writeImpl(WriteBuffer & out) const override
@@ -629,7 +614,7 @@ struct ZooKeeperListResponse final : ListResponse, ZooKeeperResponse
 struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
 {
     ZooKeeperCheckRequest() = default;
-    explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 13; }
     void writeImpl(WriteBuffer & out) const override
@@ -671,22 +656,22 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
         for (const auto & generic_request : generic_requests)
         {
-            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+            if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
                 auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
                 if (create->acls.empty())
                     create->acls = default_acls;
                 requests.push_back(create);
             }
-            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+            else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
             }
-            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
+            else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
             }
-            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
+            else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
             }
@@ -725,7 +710,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
 struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
 {
-    explicit ZooKeeperMultiResponse(const Requests & requests)
+    ZooKeeperMultiResponse(const Requests & requests)
     {
         responses.reserve(requests.size());
 
@@ -773,17 +758,17 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
         {
             ZooKeeper::OpNum op_num;
             bool done;
-            int32_t error_read;
+            int32_t error_;
 
             Coordination::read(op_num, in);
             Coordination::read(done, in);
-            Coordination::read(error_read, in);
+            Coordination::read(error_, in);
 
             if (!done)
                 throw Exception("Too many results received for multi transaction", ZMARSHALLINGERROR);
             if (op_num != -1)
                 throw Exception("Unexpected op_num received at the end of results for multi transaction", ZMARSHALLINGERROR);
-            if (error_read != -1)
+            if (error_ != -1)
                 throw Exception("Unexpected error value received at the end of results for multi transaction", ZMARSHALLINGERROR);
         }
     }
@@ -832,7 +817,7 @@ ZooKeeper::~ZooKeeper()
 
 
 ZooKeeper::ZooKeeper(
-    const Nodes & nodes,
+    const Addresses & addresses,
     const String & root_path_,
     const String & auth_scheme,
     const String & auth_data,
@@ -866,7 +851,7 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-    connect(nodes, connection_timeout);
+    connect(addresses, connection_timeout);
 
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
@@ -879,11 +864,11 @@ ZooKeeper::ZooKeeper(
 
 
 void ZooKeeper::connect(
-    const Nodes & nodes,
+    const Addresses & addresses,
     Poco::Timespan connection_timeout)
 {
-    if (nodes.empty())
-        throw Exception("No nodes passed to ZooKeeper constructor", ZBADARGUMENTS);
+    if (addresses.empty())
+        throw Exception("No addresses passed to ZooKeeper constructor", ZBADARGUMENTS);
 
     static constexpr size_t num_tries = 3;
     bool connected = false;
@@ -891,25 +876,12 @@ void ZooKeeper::connect(
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (const auto & node : nodes)
+        for (const auto & address : addresses)
         {
             try
             {
-                /// Reset the state of previous attempt.
-                if (node.secure)
-                {
-#if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
-#else
-                    throw Exception{"Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-                }
-                else
-                {
-                    socket = Poco::Net::StreamSocket();
-                }
-
-                socket.connect(node.address, connection_timeout);
+                socket = Poco::Net::StreamSocket();     /// Reset the state of previous attempt.
+                socket.connect(address, connection_timeout);
 
                 socket.setReceiveTimeout(operation_timeout);
                 socket.setSendTimeout(operation_timeout);
@@ -943,7 +915,7 @@ void ZooKeeper::connect(
             }
             catch (...)
             {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
+                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
             }
         }
 
@@ -954,19 +926,15 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
+        message << "All connection tries failed while connecting to ZooKeeper. Addresses: ";
         bool first = true;
-        for (const auto & node : nodes)
+        for (const auto & address : addresses)
         {
             if (first)
                 first = false;
             else
                 message << ", ";
-
-            if (node.secure)
-                message << "secure://";
-
-            message << node.address.toString();
+            message << address.toString();
         }
 
         message << fail_reasons.str() << "\n";

@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 
+#include <common/likely.h>
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -72,7 +73,7 @@ public:
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
             throw Exception("Precision " + std::to_string(precision) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        if (unlikely(scale < 0 || static_cast<UInt32>(scale) > maxPrecision()))
+        if (unlikely(scale > maxPrecision()))
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 

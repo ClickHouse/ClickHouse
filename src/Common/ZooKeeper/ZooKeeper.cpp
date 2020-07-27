@@ -5,9 +5,9 @@
 
 #include <random>
 #include <functional>
+#include <boost/algorithm/string.hpp>
 
 #include <common/logger_useful.h>
-#include <common/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/thread_local_rng.h>
@@ -45,49 +45,43 @@ static void check(int32_t code, const std::string & path)
 }
 
 
-void ZooKeeper::init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
+void ZooKeeper::init(const std::string & implementation, const std::string & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
-    log = &Poco::Logger::get("ZooKeeper");
+    log = &Logger::get("ZooKeeper");
     hosts = hosts_;
     identity = identity_;
     session_timeout_ms = session_timeout_ms_;
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
-    implementation = implementation_;
 
     if (implementation == "zookeeper")
     {
         if (hosts.empty())
-            throw KeeperException("No hosts passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
+            throw KeeperException("No addresses passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
 
-        std::vector<std::string> hosts_strings;
-        splitInto<','>(hosts_strings, hosts);
-        Coordination::ZooKeeper::Nodes nodes;
-        nodes.reserve(hosts_strings.size());
+        std::vector<std::string> addresses_strings;
+        boost::split(addresses_strings, hosts, boost::is_any_of(","));
+        Coordination::ZooKeeper::Addresses addresses;
+        addresses.reserve(addresses_strings.size());
 
-        for (auto & host_string : hosts_strings)
+        for (const auto &address_string : addresses_strings)
         {
             try
             {
-                bool secure = bool(startsWith(host_string, "secure://"));
-
-                if (secure)
-                    host_string.erase(0, strlen("secure://"));
-
-                nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
+                addresses.emplace_back(address_string);
             }
-            catch (const Poco::Net::DNSException & e)
+            catch (const Poco::Net::DNSException &e)
             {
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
+                LOG_ERROR(log, "Cannot use ZooKeeper address " << address_string << ", reason: " << e.displayText());
             }
         }
 
-        if (nodes.empty())
-            throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::ZBADARGUMENTS);
+        if (addresses.empty())
+            throw KeeperException("Cannot use any of provided ZooKeeper addresses", Coordination::ZBADARGUMENTS);
 
         impl = std::make_unique<Coordination::ZooKeeper>(
-                nodes,
+                addresses,
                 chroot,
                 identity_.empty() ? "" : "digest",
                 identity_,
@@ -95,10 +89,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
-        if (chroot.empty())
-            LOG_TRACE(log, "Initialized, hosts: {}", hosts);
-        else
-            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
+        LOG_TRACE(log, "initialized, hosts: " << hosts << (chroot.empty() ? "" : ", chroot: " + chroot));
     }
     else if (implementation == "testkeeper")
     {
@@ -116,9 +107,9 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation)
 {
-    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+    init(implementation, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
 }
 
 struct ZooKeeperArgs
@@ -138,7 +129,6 @@ struct ZooKeeperArgs
             if (startsWith(key, "node"))
             {
                 hosts_strings.push_back(
-                        (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "") +
                         config.getString(config_name + "." + key + ".host") + ":"
                         + config.getString(config_name + "." + key + ".port", "2181")
                 );
@@ -684,7 +674,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 

@@ -16,7 +16,7 @@ namespace DB
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
+class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
     friend class StripeLogSource;
     friend class StripeLogBlockOutputStream;
@@ -35,7 +35,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(
+        const String & new_path_to_table_data,
+        const String & new_database_name,
+        const String & new_table_name,
+        TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
@@ -68,7 +72,7 @@ private:
     FileChecker file_checker;
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log;
+    Logger * log;
 };
 
 }

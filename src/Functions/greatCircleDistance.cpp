@@ -100,8 +100,6 @@ void geodistInit()
 inline float geodistDegDiff(float f)
 {
     f = fabsf(f);
-    while (f > 360)
-        f -= 360;
     if (f > 180)
         f = 360 - f;
     return f;
@@ -242,7 +240,7 @@ private:
     {
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto * arg = arguments[arg_idx].get();
+            const auto arg = arguments[arg_idx].get();
             if (!isNumber(WhichDataType(arg)))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be numeric",

@@ -84,13 +84,20 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
-            context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-            table = DatabaseCatalog::instance().getTable(table_id, context);
+            const auto & identifier = table_expression.database_and_table_name->as<ASTIdentifier &>();
+
+            String database_name;
+            String table_name;
+            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(identifier);
+            if (database_name.empty() && !context.isExternalTableExist(table_name))
+                database_name = context.getCurrentDatabase();
+            if (!database_name.empty())
+                context.checkAccess(AccessType::SHOW, database_name, table_name);
+
+            table = context.getTable(database_name, table_name);
         }
 
-        auto table_lock = table->lockStructureForShare(
-                false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto table_lock = table->lockStructureForShare(false, context.getInitialQueryId());
         columns = table->getColumns();
     }
 
@@ -99,6 +106,9 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     for (const auto & column : columns)
     {
+        if (column.is_virtual)
+            continue;
+
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 

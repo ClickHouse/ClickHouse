@@ -1,16 +1,13 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include "config_core.h"
 #if USE_MYSQL
 
-#    include <ext/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
-#    include <Interpreters/Context.h>
-#    include <Storages/IStorage.h>
-#    include <mysqlxx/Pool.h>
+#include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
+#include <mysqlxx/Pool.h>
 
 
 namespace DB
@@ -20,7 +17,7 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
+class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:

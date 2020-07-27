@@ -9,20 +9,25 @@ namespace DB
 /** SHOW CREATE QUOTA [name | CURRENT]
   * SHOW CREATE [ROW] POLICY name ON [database.]table
   * SHOW CREATE USER [name | CURRENT_USER]
-  * SHOW CREATE ROLE name
-  * SHOW CREATE [SETTINGS] PROFILE name
   */
 class ASTShowCreateAccessEntityQuery : public ASTQueryWithOutput
 {
 public:
-    using EntityType = IAccessEntity::Type;
+    enum class Kind
+    {
+        USER,
+        QUOTA,
+        ROW_POLICY,
+    };
+    const Kind kind;
+    const char * const keyword;
 
-    EntityType type;
     String name;
     bool current_quota = false;
     bool current_user = false;
-    RowPolicy::NameParts row_policy_name_parts;
+    RowPolicy::FullNameParts row_policy_name;
 
+    ASTShowCreateAccessEntityQuery(Kind kind_);
     String getID(char) const override;
     ASTPtr clone() const override;
 

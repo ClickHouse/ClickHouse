@@ -5,7 +5,6 @@
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -16,11 +15,11 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
-#include <Parsers/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTShowGrantsQuery.h>
-#include <Parsers/ASTShowPrivilegesQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTShowGrantsQuery.h>
+#include <Parsers/ASTShowQuotasQuery.h>
+#include <Parsers/ASTShowRowPoliciesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -35,7 +34,6 @@
 #include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
-#include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
@@ -50,18 +48,17 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSetRoleQuery.h>
-#include <Interpreters/InterpreterShowAccessEntitiesQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
-#include <Interpreters/InterpreterShowGrantsQuery.h>
-#include <Interpreters/InterpreterShowPrivilegesQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <Interpreters/InterpreterShowGrantsQuery.h>
+#include <Interpreters/InterpreterShowQuotasQuery.h>
+#include <Interpreters/InterpreterShowRowPoliciesQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterGrantQuery.h>
-#include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -207,10 +204,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterCreateRowPolicyQuery>(query, context);
     }
-    else if (query->as<ASTCreateSettingsProfileQuery>())
-    {
-        return std::make_unique<InterpreterCreateSettingsProfileQuery>(query, context);
-    }
     else if (query->as<ASTDropAccessEntityQuery>())
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
@@ -227,13 +220,13 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterShowGrantsQuery>(query, context);
     }
-    else if (query->as<ASTShowAccessEntitiesQuery>())
+    else if (query->as<ASTShowQuotasQuery>())
     {
-        return std::make_unique<InterpreterShowAccessEntitiesQuery>(query, context);
+        return std::make_unique<InterpreterShowQuotasQuery>(query, context);
     }
-    else if (query->as<ASTShowPrivilegesQuery>())
+    else if (query->as<ASTShowRowPoliciesQuery>())
     {
-        return std::make_unique<InterpreterShowPrivilegesQuery>(query, context);
+        return std::make_unique<InterpreterShowRowPoliciesQuery>(query, context);
     }
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

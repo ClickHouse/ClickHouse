@@ -73,7 +73,7 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree final : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
+class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
 {
     friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
@@ -96,7 +96,6 @@ public:
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -113,11 +112,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -288,13 +287,9 @@ private:
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
-    template <class Func>
-    void foreachCommittedParts(const Func & func) const;
-
-    /** Creates the minimum set of nodes in ZooKeeper and create first replica.
-      * Returns true if was created, false if exists.
+    /** Creates the minimum set of nodes in ZooKeeper.
       */
-    bool createTableIfNotExists();
+    void createTableIfNotExists();
 
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
@@ -335,6 +330,11 @@ private:
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
     void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
+
+    /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
+    void updatePartHeaderInZooKeeperAndCommit(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        AlterDataPartTransaction & transaction);
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
@@ -378,6 +378,8 @@ private:
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry);
+
+    void executeClearColumnOrIndexInPartition(const LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
 
@@ -516,6 +518,7 @@ private:
     std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
     // Partition helpers
+    void clearColumnOrIndexInPartition(const ASTPtr & partition, LogEntry && entry, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
@@ -530,7 +533,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
@@ -547,7 +550,6 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
-
 };
 
 

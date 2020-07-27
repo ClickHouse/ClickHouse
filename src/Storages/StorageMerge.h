@@ -13,7 +13,7 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public ext::shared_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
@@ -27,7 +27,11 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    /// Consider columns coming from the underlying tables
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
+
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const override;
 
     Pipes read(
         const Names & column_names,
@@ -53,17 +57,14 @@ private:
     using StorageWithLockAndName = std::tuple<StoragePtr, TableStructureReadLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
-    StorageListWithLocks getSelectedTables(const String & query_id, const Settings & settings) const;
+    StorageListWithLocks getSelectedTables(const String & query_id) const;
 
-    StorageMerge::StorageListWithLocks getSelectedTables(
-            const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const;
+    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
     DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
-
-    NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageMerge(

@@ -24,7 +24,6 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
-                  << (settings.hilite ? hilite_none : "")
                   << min_attr_name << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
@@ -53,7 +52,6 @@ void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
-                  << (settings.hilite ? hilite_none : "")
                   << min_sec << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
@@ -88,9 +86,7 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                   << Poco::toUpper(layout_type)
                   << (settings.hilite ? hilite_none : "");
 
-    if (has_brackets)
-        settings.ostr << "(";
-
+    settings.ostr << "(";
     if (parameter)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
@@ -100,39 +96,8 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
 
         parameter->second->formatImpl(settings, state, frame);
     }
-
-    if (has_brackets)
-        settings.ostr << ")";
-
     settings.ostr << ")";
-}
-
-ASTPtr ASTDictionarySettings::clone() const
-{
-    auto res = std::make_shared<ASTDictionarySettings>(*this);
-    res->children.clear();
-    res->changes = changes;
-
-    return res;
-}
-
-void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
-                                        FormatState &,
-                                        FormatStateStacked) const
-{
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "SETTINGS"
-                  << (settings.hilite ? hilite_none : "")
-                  << "(";
-    for (auto it = changes.begin(); it != changes.end(); ++it)
-    {
-        if (it != changes.begin())
-            settings.ostr << ", ";
-
-        settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
-    }
-    settings.ostr << (settings.hilite ? hilite_none : "") << ")";
+    settings.ostr << ")";
 }
 
 
@@ -155,9 +120,6 @@ ASTPtr ASTDictionary::clone() const
 
     if (range)
         res->set(res->range, range->clone());
-
-    if (dict_settings)
-        res->set(res->dict_settings, dict_settings->clone());
 
     return res;
 }
@@ -196,12 +158,6 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
     {
         settings.ostr << settings.nl_or_ws;
         range->formatImpl(settings, state, frame);
-    }
-
-    if (dict_settings)
-    {
-        settings.ostr << settings.nl_or_ws;
-        dict_settings->formatImpl(settings, state, frame);
     }
 }
 

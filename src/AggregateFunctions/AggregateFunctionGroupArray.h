@@ -17,6 +17,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <type_traits>
+#include <common/likely.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE 0xFFFFFF
 
@@ -282,7 +283,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -600,7 +601,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
@@ -815,7 +816,7 @@ public:
         data(place).last = prev;
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 

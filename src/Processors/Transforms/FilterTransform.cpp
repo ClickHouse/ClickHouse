@@ -88,7 +88,7 @@ IProcessor::Status FilterTransform::prepare()
 }
 
 
-void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
+void FilterTransform::removeFilterIfNeed(Chunk & chunk)
 {
     if (chunk && remove_filter_column)
         chunk.erase(filter_column_position);
@@ -96,7 +96,7 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    size_t num_rows_before_filtration;
+    size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     {

@@ -9,8 +9,6 @@
 #include <Poco/String.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Core/Defines.h>
-
 
 namespace DB
 {
@@ -28,7 +26,7 @@ namespace ErrorCodes
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
     ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0);
     return get(ast);
 }
 
@@ -180,7 +178,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeLowCardinality(*this);
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
-    registerDataTypeDomainGeo(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

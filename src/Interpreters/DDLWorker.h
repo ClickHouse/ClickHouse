@@ -1,5 +1,5 @@
 #pragma once
-
+#include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
@@ -13,15 +13,9 @@
 #include <mutex>
 #include <thread>
 
-namespace zkutil
-{
-    class ZooKeeper;
-}
-
 namespace DB
 {
 
-class Context;
 class ASTAlterQuery;
 class AccessRightsElements;
 struct DDLLogEntry;
@@ -30,7 +24,6 @@ struct DDLTask;
 
 /// Pushes distributed DDL query to the queue
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_required_access);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
 
 
 class DDLWorker
@@ -66,7 +59,7 @@ private:
     void processTask(DDLTask & task, const ZooKeeperPtr & zookeeper);
 
     /// Check that query should be executed on leader replica only
-    static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
+    bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage) const;
 
     /// Check that shard has consistent config with table
     void checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const;
@@ -91,7 +84,7 @@ private:
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
 
     /// Init task node
-    static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
+    void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
 
     void runMainThread();
@@ -101,7 +94,7 @@ private:
 
 private:
     Context & context;
-    Poco::Logger * log;
+    Logger * log;
     std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name

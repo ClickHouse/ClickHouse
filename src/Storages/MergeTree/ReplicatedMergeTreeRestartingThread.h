@@ -33,7 +33,7 @@ public:
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
+    Logger * log;
     std::atomic<bool> need_stop {false};
 
     /// The random data we wrote into `/replicas/me/is_active`.

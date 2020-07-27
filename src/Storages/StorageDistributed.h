@@ -3,7 +3,6 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -18,9 +17,10 @@ namespace DB
 {
 
 class Context;
+class StorageDistributedDirectoryMonitor;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -31,7 +31,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
+class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
@@ -60,13 +60,14 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
-    StoragePolicyPtr getStoragePolicy() const override;
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
 
     bool isRemote() const override { return true; }
 
-    /// Return true if distributed_group_by_no_merge may be applied.
-    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
 
     Pipes read(
         const Names & column_names,
@@ -78,11 +79,14 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
+    void drop(TableStructureWriteLockHolder &) override {}
+
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
     void renameOnDisk(const String & new_path_to_table_data);
+
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
@@ -106,32 +110,20 @@ public:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
-    /// Return list of metrics for all created monitors
-    /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
-    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
+    void requireDirectoryMonitor(const std::string & disk, const std::string & name);
 
     void flushClusterNodesAllData();
 
     ClusterPtr getCluster() const;
 
-    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
-    /// Apply the following settings:
-    /// - optimize_skip_unused_shards
-    /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(const Context &, const ASTPtr & query_ptr) const;
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
-
     ActionLock getActionLock(StorageActionBlockType type) override;
-
-    NamesAndTypesList getVirtuals() const override;
 
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    std::unique_ptr<Context> global_context;
-    Poco::Logger * log;
+    Context global_context;
+    Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -174,23 +166,25 @@ protected:
         const String & relative_data_path_,
         bool attach);
 
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
+
     void createStorage();
 
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumeJBODPtr volume;
+    VolumePtr volume;
 
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr connection_pool;
+        ConnectionPoolPtr conneciton_pool;
 
-        void flushAllData() const;
-        void shutdownAndDropAllData() const;
+        void flushAllData();
+        void shutdownAndDropAllData();
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    mutable std::mutex cluster_nodes_mutex;
+    std::mutex cluster_nodes_mutex;
 
 };
 

@@ -18,7 +18,7 @@ namespace DB
   * We don't use StorageSystemPartsBase, because it introduces virtual _state
   * column and column aliases which we don't need.
   */
-class StorageSystemDetachedParts final :
+class StorageSystemDetachedParts :
     public ext::shared_ptr_helper<StorageSystemDetachedParts>,
     public IStorage
 {
@@ -60,7 +60,7 @@ protected:
         while (StoragesInfo info = stream.next())
         {
             const auto parts = info.data->getDetachedParts();
-            for (const auto & p : parts)
+            for (auto & p : parts)
             {
                 size_t i = 0;
                 new_columns[i++]->insert(info.database);

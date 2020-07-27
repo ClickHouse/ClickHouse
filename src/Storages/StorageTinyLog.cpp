@@ -334,7 +334,7 @@ StorageTinyLog::StorageTinyLog(
     , table_path(relative_path_)
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
-    , log(&Poco::Logger::get("StorageTinyLog"))
+    , log(&Logger::get("StorageTinyLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -375,7 +375,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+void StorageTinyLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -386,7 +386,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 
     for (auto & file : files)
         file.second.data_file_path = table_path + fileName(file.second.data_file_path);
-    renameInMemory(new_table_id);
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
@@ -402,8 +402,8 @@ Pipes StorageTinyLog::read(
 
     Pipes pipes;
 
-    // When reading, we lock the entire storage, because we only have one file
-    // per column and can't modify it concurrently.
+	// When reading, we lock the entire storage, because we only have one file
+	// per column and can't modify it concurrently.
     pipes.emplace_back(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 
@@ -437,14 +437,12 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
         addFiles(column.name, *column.type);
 }
 
-void StorageTinyLog::drop()
+void StorageTinyLog::drop(TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
-    if (disk->exists(table_path))
-        disk->removeRecursive(table_path);
+    disk->removeRecursive(table_path);
     files.clear();
 }
-
 
 void registerStorageTinyLog(StorageFactory & factory)
 {

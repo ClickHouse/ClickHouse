@@ -9,7 +9,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -52,7 +51,7 @@ struct ExpressionAnalyzerData
     bool has_global_subqueries = false;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
-    TemporaryTablesMapping external_tables;
+    Tables external_tables;
 };
 
 
@@ -122,8 +121,8 @@ protected:
 
     SyntaxAnalyzerResultPtr syntax;
 
-    const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
+    const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
+    const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
     NamesAndTypesList sourceWithJoinedColumns() const;
@@ -174,7 +173,6 @@ struct ExpressionAnalysisResult
 
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
-    bool optimize_aggregation_in_order = false;
 
     ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;
@@ -196,7 +194,6 @@ struct ExpressionAnalysisResult
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
     ManyExpressionActions order_by_elements_actions;
-    ManyExpressionActions group_by_elements_actions;
 
     ExpressionAnalysisResult() = default;
 
@@ -208,15 +205,17 @@ struct ExpressionAnalysisResult
         const FilterInfoPtr & filter_info,
         const Block & source_header);
 
+    /// Filter for row-level security.
     bool hasFilter() const { return filter_info.get(); }
+
     bool hasJoin() const { return before_join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }
     bool hasHaving() const { return before_having.get(); }
     bool hasLimitBy() const { return before_limit_by.get(); }
 
-    void removeExtraColumns() const;
-    void checkActions() const;
+    void removeExtraColumns();
+    void checkActions();
     void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
 };
 
@@ -245,10 +244,12 @@ public:
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
-    const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
+    const Tables & getExternalTables() const { return external_tables; }
 
     ExpressionActionsPtr simpleSelectActions();
 
@@ -275,10 +276,9 @@ private:
       */
     SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
-
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
+                             SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -305,7 +305,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
-    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
+    bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:

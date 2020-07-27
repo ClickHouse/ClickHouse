@@ -13,7 +13,7 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS final : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
+class StorageHDFS : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageHDFS>;
 public:
@@ -27,8 +27,6 @@ public:
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
-
-    NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageHDFS(const String & uri_,
@@ -45,7 +43,7 @@ private:
     Context & context;
     String compression_method;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
+    Logger * log = &Logger::get("StorageHDFS");
 };
 }
 

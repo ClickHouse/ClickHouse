@@ -53,7 +53,7 @@ struct NumIfImpl
     using ArrayB = PaddedPODArray<B>;
     using ColVecResult = ColumnVector<ResultType>;
 
-    static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
+    static void vector_vector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -64,7 +64,7 @@ struct NumIfImpl
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void vectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32)
+    static void vector_constant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -75,7 +75,7 @@ struct NumIfImpl
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constantVector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32)
+    static void constant_vector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -86,7 +86,7 @@ struct NumIfImpl
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constantConstant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32)
+    static void constant_constant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -107,7 +107,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     using ArrayB = DecimalPaddedPODArray<Decimal<B>>;
     using ColVecResult = ColumnDecimal<ResultType>;
 
-    static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
+    static void vector_vector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -118,7 +118,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void vectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32 scale)
+    static void vector_constant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -129,7 +129,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constantVector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
+    static void constant_vector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -140,7 +140,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constantConstant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32 scale)
+    static void constant_constant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -156,15 +156,15 @@ template <typename A, typename B>
 struct NumIfImpl<A, B, NumberTraits::Error>
 {
 private:
-    [[noreturn]] static void throwError()
+    [[noreturn]] static void throw_error()
     {
-        throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("Invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 public:
-    template <typename... Args> static void vectorVector(Args &&...) { throwError(); }
-    template <typename... Args> static void vectorConstant(Args &&...) { throwError(); }
-    template <typename... Args> static void constantVector(Args &&...) { throwError(); }
-    template <typename... Args> static void constantConstant(Args &&...) { throwError(); }
+    template <typename... Args> static void vector_vector(Args &&...) { throw_error(); }
+    template <typename... Args> static void vector_constant(Args &&...) { throw_error(); }
+    template <typename... Args> static void constant_vector(Args &&...) { throw_error(); }
+    template <typename... Args> static void constant_constant(Args &&...) { throw_error(); }
 };
 
 
@@ -172,7 +172,8 @@ class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIf>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(context); }
+    FunctionIf(const Context & context_) : context(context_) {}
 
 private:
     template <typename T0, typename T1>
@@ -206,15 +207,15 @@ private:
         const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
         UInt32 scale = decimalScale<T0, T1>(block, arguments);
 
-        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::vectorVector(
+            NumIfImpl<T0, T1, ResultType>::vector_vector(
                 cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result, scale);
             return true;
         }
-        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::vectorConstant(
+            NumIfImpl<T0, T1, ResultType>::vector_constant(
                 cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), block, result, scale);
             return true;
         }
@@ -235,15 +236,15 @@ private:
         const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
         UInt32 scale = decimalScale<T0, T1>(block, arguments);
 
-        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::constantVector(
+            NumIfImpl<T0, T1, ResultType>::constant_vector(
                 cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result, scale);
             return true;
         }
-        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::constantConstant(
+            NumIfImpl<T0, T1, ResultType>::constant_constant(
                 cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result, scale);
             return true;
         }
@@ -268,7 +269,7 @@ private:
 
             const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
 
-            if (const auto * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
+            if (auto col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
             {
                 const ColVecT1 * col_right_vec = checkAndGetColumn<ColVecT1>(&col_right_array->getData());
                 if (!col_right_vec)
@@ -285,7 +286,7 @@ private:
                 block.getByPosition(result).column = std::move(res);
                 return true;
             }
-            else if (const auto * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped))
+            else if (auto col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped))
             {
                 const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
                 if (!checkColumn<ColVecT1>(&col_right_const_array_data->getData()))
@@ -324,7 +325,7 @@ private:
 
             const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
 
-            if (const auto * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
+            if (auto col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
             {
                 const ColVecT1 * col_right_vec = checkAndGetColumn<ColVecT1>(&col_right_array->getData());
 
@@ -342,7 +343,7 @@ private:
                 block.getByPosition(result).column = std::move(res);
                 return true;
             }
-            else if (const auto * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped))
+            else if (auto col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped))
             {
                 const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
                 if (!checkColumn<ColVecT1>(&col_right_const_array_data->getData()))
@@ -375,17 +376,17 @@ private:
         bool left_ok = false;
         bool right_ok = false;
 
-        if (const auto * col_left = checkAndGetColumn<ColVecT0>(col_left_untyped))
+        if (auto col_left = checkAndGetColumn<ColVecT0>(col_left_untyped))
         {
             left_ok = true;
             right_ok = executeRightType<T0, T1, ColVecT0, ColVecT1>(cond_col, block, arguments, result, col_left);
         }
-        else if (const auto * col_const_left = checkAndGetColumnConst<ColVecT0>(col_left_untyped))
+        else if (auto col_const_left = checkAndGetColumnConst<ColVecT0>(col_left_untyped))
         {
             left_ok = true;
             right_ok = executeConstRightType<T0, T1, ColVecT0, ColVecT1>(cond_col, block, arguments, result, col_const_left);
         }
-        else if (const auto * col_arr_left = checkAndGetColumn<ColumnArray>(col_left_untyped))
+        else if (auto col_arr_left = checkAndGetColumn<ColumnArray>(col_left_untyped))
         {
             if (auto col_arr_left_elems = checkAndGetColumn<ColVecT0>(&col_arr_left->getData()))
             {
@@ -394,7 +395,7 @@ private:
                     cond_col, block, arguments, result, col_arr_left, input_rows_count);
             }
         }
-        else if (const auto * col_const_arr_left = checkAndGetColumnConst<ColumnArray>(col_left_untyped))
+        else if (auto col_const_arr_left = checkAndGetColumnConst<ColumnArray>(col_left_untyped))
         {
             if (checkColumn<ColVecT0>(&assert_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
             {
@@ -415,7 +416,7 @@ private:
         return true;
     }
 
-    static bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
         const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
@@ -432,8 +433,7 @@ private:
         const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
         size_t rows = cond_data.size();
 
-        if ((col_then_fixed || col_then_const_fixed)
-            && (col_else_fixed || col_else_const_fixed))
+        if (isFixedString(block.getByPosition(result).type))
         {
             /// The result is FixedString.
 
@@ -448,16 +448,19 @@ private:
             else if (col_then_const_fixed && col_else_fixed)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
             else if (col_then_const_fixed && col_else_const_fixed)
-                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed),
+                            ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+            else
+                return false;
 
             block.getByPosition(result).column = std::move(col_res_untyped);
             return true;
         }
 
-        if ((col_then || col_then_const || col_then_fixed || col_then_const_fixed)
-            && (col_else || col_else_const || col_else_fixed || col_else_const_fixed))
+        if (isString(block.getByPosition(result).type))
         {
             /// The result is String.
+
             auto col_res = ColumnString::create();
             auto sink = StringSink(*col_res, rows);
 
@@ -485,6 +488,17 @@ private:
                 conditional(ConstSource<StringSource>(*col_then_const), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
             else if (col_then_const_fixed && col_else_const)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<StringSource>(*col_else_const), sink, cond_data);
+            else if (col_then_fixed && col_else_fixed)
+                conditional(FixedStringSource(*col_then_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
+            else if (col_then_fixed && col_else_const_fixed)
+                conditional(FixedStringSource(*col_then_fixed), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+            else if (col_then_const_fixed && col_else_fixed)
+                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
+            else if (col_then_const_fixed && col_else_const_fixed)
+                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed),
+                            ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+            else
+                return false;
 
             block.getByPosition(result).column = std::move(col_res);
             return true;
@@ -493,7 +507,7 @@ private:
         return false;
     }
 
-    static bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         /// For generic implementation, arrays must be of same type.
         if (!block.getByPosition(arguments[1]).type->equals(*block.getByPosition(arguments[2]).type))
@@ -514,7 +528,7 @@ private:
             && (col_arr_else || col_arr_else_const))
         {
             auto res = block.getByPosition(result).type->createColumn();
-            auto * col_res = assert_cast<ColumnArray *>(res.get());
+            auto col_res = assert_cast<ColumnArray *>(res.get());
 
             if (col_arr_then && col_arr_else)
                 conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
@@ -590,7 +604,8 @@ private:
         return true;
     }
 
-    static void executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    void executeGeneric(
+        const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
 
@@ -599,8 +614,8 @@ private:
 
         DataTypePtr common_type = getLeastSupertype({arg1.type, arg2.type});
 
-        ColumnPtr col_then = castColumn(arg1, common_type);
-        ColumnPtr col_else = castColumn(arg2, common_type);
+        ColumnPtr col_then = castColumn(arg1, common_type, context);
+        ColumnPtr col_else = castColumn(arg2, common_type, context);
 
         MutableColumnPtr result_column = common_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -656,30 +671,89 @@ private:
         block.getByPosition(result).column = std::move(result_column);
     }
 
-    bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    bool executeForConstAndNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->onlyNull();
 
-        if (cond_is_null)
+        ColumnPtr not_const_condition = arg_cond.column;
+        bool cond_is_const = false;
+        bool cond_is_true = false;
+        bool cond_is_false = false;
+        if (const auto * const_arg = checkAndGetColumn<ColumnConst>(*arg_cond.column))
         {
-            block.getByPosition(result).column = std::move(block.getByPosition(arguments[2]).column);
-            return true;
+            cond_is_const = true;
+            not_const_condition = const_arg->getDataColumnPtr();
+            ColumnPtr data_column = const_arg->getDataColumnPtr();
+            if (const auto * const_nullable_arg = checkAndGetColumn<ColumnNullable>(*data_column))
+            {
+                data_column = const_nullable_arg->getNestedColumnPtr();
+                if (!data_column->empty())
+                    cond_is_null = const_nullable_arg->getNullMapData()[0];
+            }
+
+            if (!data_column->empty())
+            {
+                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column)->getBool(0);
+                cond_is_false = !cond_is_null && !cond_is_true;
+            }
         }
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*arg_cond.column))
+        const auto & column1 = block.getByPosition(arguments[1]);
+        const auto & column2 = block.getByPosition(arguments[2]);
+        auto & result_column = block.getByPosition(result);
+
+        if (cond_is_true)
         {
+            if (result_column.type->equals(*column1.type))
+            {
+                result_column.column = std::move(column1.column);
+                return true;
+            }
+        }
+        else if (cond_is_false || cond_is_null)
+        {
+            if (result_column.type->equals(*column2.type))
+            {
+                result_column.column = std::move(column2.column);
+                return true;
+            }
+        }
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))
+        {
+            ColumnPtr new_cond_column = nullable->getNestedColumnPtr();
+            size_t column_size = arg_cond.column->size();
+
+            if (cond_is_null || cond_is_true || cond_is_false) /// Nullable(Nothing) or consts
+            {
+                UInt8 value = cond_is_true ? 1 : 0;
+                new_cond_column = ColumnConst::create(ColumnUInt8::create(1, value), column_size);
+            }
+            else if (checkAndGetColumn<ColumnUInt8>(*new_cond_column))
+            {
+                auto nested_column_copy = new_cond_column->cloneResized(new_cond_column->size());
+                typeid_cast<ColumnUInt8 *>(nested_column_copy.get())->applyZeroMap(nullable->getNullMapData());
+                new_cond_column = std::move(nested_column_copy);
+
+                if (cond_is_const)
+                    new_cond_column = ColumnConst::create(new_cond_column, column_size);
+            }
+            else
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of " + getName() + " condition",
+                                ErrorCodes::ILLEGAL_COLUMN);
+
             Block temporary_block
             {
-                { nullable->getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
-                block.getByPosition(arguments[1]),
-                block.getByPosition(arguments[2]),
-                block.getByPosition(result)
+                { new_cond_column, removeNullable(arg_cond.type), arg_cond.name },
+                column1,
+                column2,
+                result_column
             };
 
             executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
 
-            block.getByPosition(result).column = std::move(temporary_block.getByPosition(3).column);
+            result_column.column = std::move(temporary_block.getByPosition(3).column);
             return true;
         }
 
@@ -702,7 +776,7 @@ private:
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
             return nullable->getNestedColumnPtr();
 
         return column;
@@ -714,8 +788,8 @@ private:
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
-        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_then.column);
-        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_else.column);
+        auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_then.column);
+        auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_else.column);
 
         if (!then_is_nullable && !else_is_nullable)
             return false;
@@ -787,7 +861,7 @@ private:
         return true;
     }
 
-    bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
@@ -816,7 +890,7 @@ private:
                 if (isColumnNullable(*arg_else.column))
                 {
                     auto arg_else_column = arg_else.column;
-                    auto result_column = IColumn::mutate(std::move(arg_else_column));
+                    auto result_column = (*std::move(arg_else_column)).mutate();
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -846,7 +920,7 @@ private:
             if (cond_col)
             {
                 size_t size = input_rows_count;
-                const auto & null_map_data = cond_col->getData();
+                auto & null_map_data = cond_col->getData();
 
                 auto negated_null_map = ColumnUInt8::create();
                 auto & negated_null_map_data = negated_null_map->getData();
@@ -858,7 +932,7 @@ private:
                 if (isColumnNullable(*arg_then.column))
                 {
                     auto arg_then_column = arg_then.column;
-                    auto result_column = IColumn::mutate(std::move(arg_then_column));
+                    auto result_column = (*std::move(arg_then_column)).mutate();
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -915,7 +989,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (executeForNullableCondition(block, arguments, result, input_rows_count)
+        if (executeForConstAndNullableCondition(block, arguments, result, input_rows_count)
             || executeForNullThenElse(block, arguments, result, input_rows_count)
             || executeForNullableThenElse(block, arguments, result, input_rows_count))
             return;
@@ -963,20 +1037,17 @@ public:
             using T0 = typename Types::LeftType;
             using T1 = typename Types::RightType;
 
-            if constexpr (IsDecimalNumber<T0> == IsDecimalNumber<T1>)
-                return executeTyped<T0, T1>(cond_col, block, arguments, result, input_rows_count);
-            else
-                throw Exception("Conditional function with Decimal and non Decimal", ErrorCodes::NOT_IMPLEMENTED);
+            return executeTyped<T0, T1>(cond_col, block, arguments, result, input_rows_count);
         };
 
         TypeIndex left_id = arg_then.type->getTypeId();
         TypeIndex right_id = arg_else.type->getTypeId();
 
-        if (const auto * left_array = checkAndGetDataType<DataTypeArray>(arg_then.type.get()))
+        if (auto left_array = checkAndGetDataType<DataTypeArray>(arg_then.type.get()))
             left_id = left_array->getNestedType()->getTypeId();
 
-        if (const auto * right_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
-            right_id = right_array->getNestedType()->getTypeId();
+        if (auto rigth_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
+            right_id = rigth_array->getNestedType()->getTypeId();
 
         if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
             || executeTyped<UInt128, UInt128>(cond_col, block, arguments, result, input_rows_count)
@@ -987,6 +1058,8 @@ public:
             executeGeneric(cond_col, block, arguments, result, input_rows_count);
         }
     }
+
+    const Context & context;
 };
 
 void registerFunctionIf(FunctionFactory & factory)

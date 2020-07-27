@@ -20,24 +20,18 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
     auto all_column_files_missing = true;
 
-    const auto & storage_columns = storage.getColumns();
-    auto alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// possibly renamed
-        auto column_name_in_part = columns[i];
-
-        if (alter_conversions.isColumnRenamed(column_name_in_part))
-            column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
+        const auto & column_name = columns[i];
 
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name_in_part, *storage_columns.getPhysical(columns[i]).type))
+        if (part->hasColumnFiles(column_name, *storage.getColumn(column_name).type))
         {
             all_column_files_missing = false;
             continue;
         }
 
-        const auto column_default = storage_columns.getDefault(columns[i]);
+        const auto column_default = storage.getColumns().getDefault(column_name);
         if (!column_default)
             continue;
 
@@ -47,7 +41,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
         for (const auto & identifier : identifiers)
         {
-            if (storage_columns.hasPhysical(identifier))
+            if (storage.hasColumn(identifier))
             {
                 /// ensure each column is added only once
                 if (required_columns.count(identifier) == 0)

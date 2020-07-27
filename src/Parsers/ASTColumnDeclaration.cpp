@@ -12,9 +12,7 @@ ASTPtr ASTColumnDeclaration::clone() const
 
     if (type)
     {
-        // Type may be an ASTFunction (e.g. `create table t (a Decimal(9,0))`),
-        // so we have to clone it properly as well.
-        res->type = type->clone();
+        res->type = type;
         res->children.push_back(res->type);
     }
 

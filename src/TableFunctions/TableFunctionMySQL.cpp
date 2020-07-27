@@ -1,27 +1,26 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include "config_core.h"
 #if USE_MYSQL
-#    include <Core/Defines.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <DataTypes/convertMySQLDataType.h>
-#    include <Formats/MySQLBlockInputStream.h>
-#    include <IO/Operators.h>
-#    include <Interpreters/evaluateConstantExpression.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Storages/StorageMySQL.h>
-#    include <TableFunctions/ITableFunction.h>
-#    include <TableFunctions/TableFunctionFactory.h>
-#    include <TableFunctions/TableFunctionMySQL.h>
-#    include <Common/Exception.h>
-#    include <Common/parseAddress.h>
-#    include <Common/quoteString.h>
-#    include "registerTableFunctions.h"
 
-#    include <mysqlxx/Pool.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/MySQLBlockInputStream.h>
+#include <Access/AccessFlags.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/StorageMySQL.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionMySQL.h>
+#include <Core/Defines.h>
+#include <Common/Exception.h>
+#include <Common/parseAddress.h>
+#include <Common/quoteString.h>
+#include <DataTypes/convertMySQLDataType.h>
+#include <IO/Operators.h>
+#include "registerTableFunctions.h"
+
+#include <mysqlxx/Pool.h>
 
 
 namespace DB
@@ -57,6 +56,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     std::string remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+
+    context.checkAccess(AccessType::mysql);
 
     bool replace_query = false;
     std::string on_duplicate_clause;
@@ -99,7 +100,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         << " ORDER BY ORDINAL_POSITION";
 
     NamesAndTypesList columns;
-    MySQLBlockInputStream result(pool.get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();

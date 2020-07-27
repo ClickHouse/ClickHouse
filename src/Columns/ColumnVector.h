@@ -160,8 +160,6 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
-
     size_t byteSize() const override
     {
         return data.size() * sizeof(data[0]);
@@ -189,24 +187,18 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
-                               IColumn::SpecialSort) const override;
-
-    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
     void reserve(size_t n) override
     {
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getDataType() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override
     {
-        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
 
@@ -276,6 +268,9 @@ public:
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
+    void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

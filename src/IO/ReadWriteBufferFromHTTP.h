@@ -14,13 +14,9 @@
 #include <Poco/URI.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
-#include <Common/RemoteHostFilter.h>
+#include <Common/config.h>
 #include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
 
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
@@ -127,7 +123,7 @@ namespace detail
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Poco::Logger::get("ReadWriteBufferFromHTTP")), "Sending request to {}", uri.toString());
+            LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
             auto sess = session->getSession();
 
@@ -156,7 +152,8 @@ namespace detail
     public:
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
-        explicit ReadWriteBufferFromHTTPBase(UpdatableSessionPtr session_,
+        explicit ReadWriteBufferFromHTTPBase(
+            UpdatableSessionPtr session_,
             Poco::URI uri_,
             const std::string & method_ = {},
             OutStreamCallback out_stream_callback_ = {},
@@ -245,9 +242,9 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::
 
 public:
     explicit ReadWriteBufferFromHTTP(Poco::URI uri_,
-        const std::string & method_ = {},
-        OutStreamCallback out_stream_callback_ = {},
-        const ConnectionTimeouts & timeouts = {},
+        const std::string & method_,
+        OutStreamCallback out_stream_callback_,
+        const ConnectionTimeouts & timeouts,
         const SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
@@ -306,3 +303,4 @@ public:
 };
 
 }
+

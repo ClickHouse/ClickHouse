@@ -3,10 +3,10 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ParserGenericRoleSet.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -22,11 +22,8 @@ namespace ErrorCodes
 namespace
 {
     using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
     using ResourceType = Quota::ResourceType;
-    using ResourceTypeInfo = Quota::ResourceTypeInfo;
     using ResourceAmount = Quota::ResourceAmount;
-
 
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
@@ -51,72 +48,76 @@ namespace
                 return false;
 
             const String & key_type_str = key_type_ast->as<ASTLiteral &>().value.safeGet<const String &>();
-            for (auto kt : ext::range(Quota::KeyType::MAX))
-                if (boost::iequals(KeyTypeInfo::get(kt).name, key_type_str))
+            for (auto kt : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+                if (boost::iequals(Quota::getNameOfKeyType(kt), key_type_str))
                 {
                     key_type = kt;
                     return true;
                 }
 
             String all_key_types_str;
-            for (auto kt : ext::range(Quota::KeyType::MAX))
-                all_key_types_str += String(all_key_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
+            for (auto kt : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+                all_key_types_str += String(all_key_types_str.empty() ? "" : ", ") + "'" + Quota::getNameOfKeyType(kt) + "'";
             String msg = "Quota cannot be keyed by '" + key_type_str + "'. Expected one of these literals: " + all_key_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
         });
     }
 
-    bool parseLimit(IParserBase::Pos & pos, Expected & expected, bool first, ResourceType & resource_type, ResourceAmount & max)
+    bool parseLimit(IParserBase::Pos & pos, Expected & expected, ResourceType & resource_type, ResourceAmount & max)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (first)
-            {
-                if (!ParserKeyword{"MAX"}.ignore(pos, expected))
-                    return false;
-            }
-            else
-            {
-                if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
-                    return false;
+            if (!ParserKeyword{"MAX"}.ignore(pos, expected))
+                return false;
 
-                ParserKeyword{"MAX"}.ignore(pos, expected);
-            }
-
-            std::optional<ResourceType> res_resource_type;
-            for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
+            bool resource_type_set = false;
+            for (auto rt : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
             {
-                if (ParserKeyword{ResourceTypeInfo::get(rt).keyword.c_str()}.ignore(pos, expected))
+                if (ParserKeyword{Quota::resourceTypeToKeyword(rt)}.ignore(pos, expected))
                 {
-                    res_resource_type = rt;
+                    resource_type = rt;
+                    resource_type_set = true;
                     break;
                 }
             }
-            if (!res_resource_type)
+            if (!resource_type_set)
                 return false;
 
-            ResourceAmount res_max;
+            if (!ParserToken{TokenType::Equals}.ignore(pos, expected))
+                return false;
+
             ASTPtr max_ast;
             if (ParserNumber{}.parse(pos, max_ast, expected))
             {
                 const Field & max_field = max_ast->as<ASTLiteral &>().value;
-                const auto & type_info = ResourceTypeInfo::get(*res_resource_type);
-                if (type_info.output_denominator == 1)
-                    res_max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
+                if (resource_type == Quota::EXECUTION_TIME)
+                    max = Quota::secondsToExecutionTime(applyVisitor(FieldVisitorConvertToNumber<double>(), max_field));
                 else
-                    res_max = static_cast<ResourceAmount>(
-                        applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
+                    max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
+            }
+            else if (ParserKeyword{"ANY"}.ignore(pos, expected))
+            {
+                max = Quota::UNLIMITED;
             }
             else
                 return false;
 
-            resource_type = *res_resource_type;
-            max = res_max;
             return true;
         });
     }
 
-    bool parseLimits(IParserBase::Pos & pos, Expected & expected, ASTCreateQuotaQuery::Limits & limits)
+    bool parseCommaAndLimit(IParserBase::Pos & pos, Expected & expected, ResourceType & resource_type, ResourceAmount & max)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
+                return false;
+
+            return parseLimit(pos, expected, resource_type, max);
+        });
+    }
+
+    bool parseLimits(IParserBase::Pos & pos, Expected & expected, bool alter, ASTCreateQuotaQuery::Limits & limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -141,22 +142,23 @@ namespace
 
             new_limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
 
-            if (ParserKeyword{"NO LIMITS"}.ignore(pos, expected))
+            if (alter && ParserKeyword{"UNSET TRACKING"}.ignore(pos, expected))
             {
-                new_limits.drop = true;
+                new_limits.unset_tracking = true;
             }
-            else if (ParserKeyword{"TRACKING ONLY"}.ignore(pos, expected))
+            else if (ParserKeyword{"SET TRACKING"}.ignore(pos, expected) || ParserKeyword{"TRACKING"}.ignore(pos, expected))
             {
             }
             else
             {
+                ParserKeyword{"SET"}.ignore(pos, expected);
                 ResourceType resource_type;
                 ResourceAmount max;
-                if (!parseLimit(pos, expected, true, resource_type, max))
+                if (!parseLimit(pos, expected, resource_type, max))
                     return false;
 
                 new_limits.max[resource_type] = max;
-                while (parseLimit(pos, expected, false, resource_type, max))
+                while (parseCommaAndLimit(pos, expected, resource_type, max))
                     new_limits.max[resource_type] = max;
             }
 
@@ -165,7 +167,7 @@ namespace
         });
     }
 
-    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
+    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -173,7 +175,7 @@ namespace
             do
             {
                 ASTCreateQuotaQuery::Limits limits;
-                if (!parseLimits(pos, expected, limits))
+                if (!parseLimits(pos, expected, alter, limits))
                 {
                     all_limits.resize(old_size);
                     return false;
@@ -185,24 +187,16 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr node;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, node, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.enableIDMode(id_mode).parse(pos, node, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTExtendedRoleSet>(node);
+            roles = std::static_pointer_cast<ASTGenericRoleSet>(node);
             return true;
-        });
-    }
-
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -211,10 +205,12 @@ namespace
 bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
+    bool attach = false;
     if (attach_mode)
     {
         if (!ParserKeyword{"ATTACH QUOTA"}.ignore(pos, expected))
             return false;
+        attach = true;
     }
     else
     {
@@ -247,7 +243,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
-    String cluster;
+    std::shared_ptr<ASTGenericRoleSet> roles;
 
     while (true)
     {
@@ -257,20 +253,14 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!key_type && parseKeyType(pos, expected, key_type))
             continue;
 
-        if (parseAllLimits(pos, expected, all_limits))
+        if (parseAllLimits(pos, expected, alter, all_limits))
             continue;
 
-        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+        if (!roles && parseToRoles(pos, expected, attach, roles))
             continue;
 
         break;
     }
-
-    std::shared_ptr<ASTExtendedRoleSet> roles;
-    parseToRoles(pos, expected, attach_mode, roles);
-
-    if (cluster.empty())
-        parseOnCluster(pos, expected, cluster);
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;
@@ -279,7 +269,6 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
-    query->cluster = std::move(cluster);
     query->name = std::move(name);
     query->new_name = std::move(new_name);
     query->key_type = key_type;

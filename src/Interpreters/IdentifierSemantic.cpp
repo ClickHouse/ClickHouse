@@ -1,7 +1,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -125,20 +124,26 @@ std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & iden
     return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, ambiguous);
 }
 
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
+                                                      bool ambiguous)
+{
+    return tryChooseTable<TableWithColumnNames>(identifier, tables, ambiguous);
+}
+
 std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNamesAndTypes> & tables,
                                                       bool ambiguous)
 {
     return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous);
 }
 
-StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
+std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
         throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
 
     if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
-    return { "", identifier.name, identifier.uuid };
+        return { identifier.name_parts[0], identifier.name_parts[1] };
+    return { "", identifier.name };
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
@@ -191,13 +196,18 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 }
 
 IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
+                                                                          const TableWithColumnNames & db_and_table)
+{
+    /// TODO: ColumnName match logic is disabled cause caller's code is not ready for it
+    return canReferColumnToTable(identifier, db_and_table.table);
+}
+
+IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
                                                                           const TableWithColumnNamesAndTypes & db_and_table)
 {
     ColumnMatch match = canReferColumnToTable(identifier, db_and_table.table);
-#if 0
     if (match == ColumnMatch::NoMatch && identifier.isShort() && db_and_table.hasColumn(identifier.shortName()))
         match = ColumnMatch::ColumnName;
-#endif
     return match;
 }
 

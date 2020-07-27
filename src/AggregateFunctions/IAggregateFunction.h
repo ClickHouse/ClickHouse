@@ -31,8 +31,6 @@ using DataTypes = std::vector<DataTypePtr>;
 using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -104,9 +102,7 @@ public:
     }
 
     /// Inserts results into a column.
-    /// This method must be called once, from single thread.
-    /// After this method was called for state, you can't do anything with state but destroy.
-    virtual void insertResultInto(AggregateDataPtr place, IColumn & to) const = 0;
+    virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -145,13 +141,6 @@ public:
       */
     virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
-    /** The same for single place when need to aggregate only filtered data.
-      */
-    virtual void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const = 0;
-
-    virtual void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
-
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
@@ -159,17 +148,6 @@ public:
       */
     virtual void addBatchArray(
         size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
-
-    /** By default all NULLs are skipped during aggregation.
-     *  If it returns nullptr, the default one will be used.
-     *  If an aggregate function wants to use something instead of the default one, it overrides this function and returns its own null adapter.
-     *  nested_function is a smart pointer to this aggregate function itself.
-     *  arguments and params are for nested_function.
-     */
-    virtual AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
-    {
-        return nullptr;
-    }
 
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
@@ -205,20 +183,6 @@ public:
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
-            static_cast<const Derived *>(this)->add(place, columns, i, arena);
-    }
-
-    void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
-    {
-        for (size_t i = 0; i < batch_size; ++i)
-            if (!null_map[i])
-                static_cast<const Derived *>(this)->add(place, columns, i, arena);
-    }
-
-    void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
-    {
-        for (size_t i = batch_begin; i < batch_end; ++i)
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
@@ -279,5 +243,7 @@ public:
     }
 };
 
+
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 }

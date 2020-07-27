@@ -83,6 +83,5 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDateTime64(DataTypeFactory & factory);
-void registerDataTypeDomainGeo(DataTypeFactory & factory);
 
 }

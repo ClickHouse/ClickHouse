@@ -31,9 +31,6 @@ public:
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
 
-    /// Append processors to pipe. After this, it possibly will not have tree shape.
-    void addProcessors(const Processors & processors_);
-
     OutputPort & getPort() const { return *output_port; }
     const Block & getHeader() const { return output_port->getHeader(); }
 
@@ -45,7 +42,7 @@ public:
 
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const SourceWithProgress::LocalLimits & limits);
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
+    void setQuota(const QuotaContextPtr & quota);
 
     /// Set information about preferred executor number for sources.
     void pinSources(size_t executor_number);

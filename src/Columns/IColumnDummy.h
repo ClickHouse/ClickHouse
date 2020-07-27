@@ -65,10 +65,6 @@ public:
     {
     }
 
-    void updateWeakHash32(WeakHash32 & /*hash*/) const override
-    {
-    }
-
     void insertFrom(const IColumn &, size_t) override
     {
         ++s;
@@ -106,8 +102,6 @@ public:
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
     }
-
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override {}
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {

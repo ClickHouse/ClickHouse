@@ -17,34 +17,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
-    extern const int BAD_ARGUMENTS;
+extern const int CORRUPTED_DATA;
 }
 
-CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_, bool sanity_check)
+CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
-    if (sanity_check)
-    {
-        /// It does not make sense to apply any transformations after generic compression algorithm
-        /// So, generic compression can be only one and only at the end.
-        bool has_generic_compression = false;
-        for (const auto & codec : codecs)
-        {
-            if (codec->isNone())
-                throw Exception("It does not make sense to have codec NONE along with other compression codecs: " + getCodecDescImpl()
-                    + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            if (has_generic_compression)
-                throw Exception("The combination of compression codecs " + getCodecDescImpl() + " is meaningless,"
-                    " because it does not make sense to apply any transformations after generic compression algorithm."
-                    " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
-
-            if (codec->isGenericCompression())
-                has_generic_compression = true;
-        }
-    }
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const
@@ -53,11 +31,6 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
 }
 
 String CompressionCodecMultiple::getCodecDesc() const
-{
-    return getCodecDescImpl();
-}
-
-String CompressionCodecMultiple::getCodecDescImpl() const
 {
     WriteBufferFromOwnString out;
     for (size_t idx = 0; idx < codecs.size(); ++idx)
@@ -73,7 +46,7 @@ String CompressionCodecMultiple::getCodecDescImpl() const
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     UInt32 compressed_size = uncompressed_size;
-    for (const auto & codec : codecs)
+    for (auto & codec : codecs)
         compressed_size = codec->getCompressedReserveSize(compressed_size);
 
     ///    TotalCodecs  ByteForEachCodec       data
@@ -125,34 +98,24 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
     /// Insert all data into compressed buf
     source_size -= (compression_methods_size + 1);
 
-    for (int idx = compression_methods_size - 1; idx >= 0; --idx)
+    for (long idx = compression_methods_size - 1; idx >= 0; --idx)
     {
         UInt8 compression_method = source[idx + 1];
         const auto codec = CompressionCodecFactory::instance().get(compression_method);
-        auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
-
-        compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
+        compressed_buf.resize(compressed_buf.size() + codec->getAdditionalSizeAtTheEndOfBuffer());
         UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
 
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) +
                 ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
 
-        uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
+        uncompressed_buf.resize(uncompressed_size + codec->getAdditionalSizeAtTheEndOfBuffer());
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
         uncompressed_buf.swap(compressed_buf);
         source_size = uncompressed_size;
     }
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
-}
-
-bool CompressionCodecMultiple::isCompression() const
-{
-    for (const auto & codec : codecs)
-        if (codec->isCompression())
-            return true;
-    return false;
 }
 
 void registerCodecMultiple(CompressionCodecFactory & factory)

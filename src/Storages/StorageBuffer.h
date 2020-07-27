@@ -4,11 +4,10 @@
 #include <thread>
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/ThreadPool.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
-#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -16,6 +15,8 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
+
+class Context;
 
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
@@ -36,7 +37,7 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
@@ -53,7 +54,7 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
     Pipes read(
         const Names & column_names,
@@ -73,9 +74,9 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
     {
-        if (!destination_id)
+        if (no_destination)
             return false;
-        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
+        auto dest = global_context.tryGetTable(destination_database, destination_table);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;
@@ -87,11 +88,10 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
-    /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+     /// The structure of the subordinate table is not checked and does not change.
+     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    ~StorageBuffer() override;
 
 private:
     Context global_context;
@@ -100,7 +100,7 @@ private:
     {
         time_t first_write_time = 0;
         Block data;
-        mutable std::mutex mutex;
+        std::mutex mutex;
     };
 
     /// There are `num_shards` of independent buffers.
@@ -110,10 +110,16 @@ private:
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
 
-    StorageID destination_id;
+    const String destination_database;
+    const String destination_table;
+    bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
     bool allow_materialized;
 
     Poco::Logger * log;
+
+    Poco::Event shutdown_event;
+    /// Resets data by timeout.
+    ThreadFromGlobalPool flush_thread;
 
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
@@ -124,11 +130,7 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void flushBack();
-    void reschedule();
-
-    BackgroundSchedulePool & bg_pool;
-    BackgroundSchedulePoolTaskHolder flush_handle;
+    void flushThread();
 
 protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
@@ -142,7 +144,8 @@ protected:
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,
-        const StorageID & destination_id,
+        const String & destination_database_,
+        const String & destination_table_,
         bool allow_materialized_);
 };
 

@@ -63,14 +63,10 @@ public:
             <node>
                 <host>example1</host>
                 <port>2181</port>
-                <!-- Optional. Enables communication over SSL . -->
-                <secure>1</secure>
             </node>
             <node>
                 <host>example2</host>
                 <port>2181</port>
-                <!-- Optional. Enables communication over SSL . -->
-                <secure>1</secure>
             </node>
             <session_timeout_ms>30000</session_timeout_ms>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -265,11 +261,10 @@ private:
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
     std::string chroot;
-    std::string implementation;
 
     std::mutex mutex;
 
-    Poco::Logger * log = nullptr;
+    Logger * log = nullptr;
 };
 
 

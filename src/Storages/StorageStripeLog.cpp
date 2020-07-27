@@ -221,7 +221,7 @@ StorageStripeLog::StorageStripeLog(
     , table_path(relative_path_)
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
-    , log(&Poco::Logger::get("StorageStripeLog"))
+    , log(&Logger::get("StorageStripeLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -237,7 +237,7 @@ StorageStripeLog::StorageStripeLog(
 }
 
 
-void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+void StorageStripeLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -245,7 +245,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 
     table_path = new_path_to_table_data;
     file_checker.setPath(table_path + "sizes.json");
-    renameInMemory(new_table_id);
+    renameInMemory(new_database_name, new_table_name);
 }
 
 

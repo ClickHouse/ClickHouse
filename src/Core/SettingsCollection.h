@@ -91,7 +91,7 @@ struct SettingMaxThreads
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
-    static UInt64 getAutoValue();
+    UInt64 getAutoValue() const;
 };
 
 
@@ -251,15 +251,6 @@ enum class JoinAlgorithm
 };
 using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
 
-
-enum class SpecialSort
-{
-    NOT_SPECIFIED = 0,
-    OPENCL_BITONIC,
-};
-using SettingSpecialSort = SettingEnum<SpecialSort>;
-
-
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
@@ -306,23 +297,6 @@ enum class LogsLevel
     trace,
 };
 using SettingLogsLevel = SettingEnum<LogsLevel>;
-
-enum class DefaultDatabaseEngine
-{
-    Ordinary,
-    Atomic,
-};
-using SettingDefaultDatabaseEngine = SettingEnum<DefaultDatabaseEngine>;
-
-// Make it signed for compatibility with DataTypeEnum8
-enum QueryLogElementType : int8_t
-{
-    QUERY_START = 1,
-    QUERY_FINISH = 2,
-    EXCEPTION_BEFORE_START = 3,
-    EXCEPTION_WHILE_PROCESSING = 4,
-};
-using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
 
 
 enum class SettingsBinaryFormat
@@ -371,7 +345,6 @@ private:
 
         StringRef name;
         StringRef description;
-        StringRef type;
         bool is_important;
         IsChangedFunction is_changed;
         GetStringFunction get_string;
@@ -418,7 +391,6 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
-        const StringRef & getType() const { return member->type; }
         bool isChanged() const { return member->is_changed(*collection); }
         Field getValue() const;
         String getValueAsString() const { return member->get_string(*collection); }

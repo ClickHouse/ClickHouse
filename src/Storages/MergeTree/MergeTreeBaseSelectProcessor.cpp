@@ -6,6 +6,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -104,7 +105,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     const MergeTreeIndexGranularity & index_granularity = task->data_part->index_granularity;
     const double min_filtration_ratio = 0.00001;
 
-    auto estimate_num_rows = [current_preferred_block_size_bytes, current_max_block_size_rows,
+    auto estimateNumRows = [current_preferred_block_size_bytes, current_max_block_size_rows,
         &index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
@@ -139,7 +140,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
         return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
     };
 
-    UInt64 recommended_rows = estimate_num_rows(*task, task->range_reader);
+    UInt64 recommended_rows = estimateNumRows(*task, task->range_reader);
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
@@ -148,7 +149,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     if (read_result.num_rows == 0)
         read_result.columns.clear();
 
-    const auto & sample_block = task->range_reader.getSampleBlock();
+    auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
         throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
                         "Have " + toString(sample_block.columns()) + " in sample block "
@@ -315,12 +316,17 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             prewhere_info->alias_actions->execute(block);
 
         prewhere_info->prewhere_actions->execute(block);
+        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
+
+        if (!prewhere_column.type->canBeUsedInBooleanContext())
+            throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);
         else
         {
             auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
-            ctn.type = std::make_shared<DataTypeUInt8>();
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
 

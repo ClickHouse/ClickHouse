@@ -4,7 +4,7 @@
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
-#elif defined(USE_READLINE) && USE_READLINE
+#elif USE_READLINE
 #   include <common/ReadlineLineReader.h>
 #else
 #   include <common/LineReader.h>
@@ -39,6 +39,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -75,19 +76,22 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
-#include <Common/UTF8Helpers.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
+
+/// Similar codes \e[s, \e[u don't work in VT100 and Mosh.
+#define SAVE_CURSOR_POSITION "\033""7"
+#define RESTORE_CURSOR_POSITION "\033""8"
+
 #define CLEAR_TO_END_OF_LINE "\033[K"
 
+/// This codes are possibly not supported everywhere.
+#define DISABLE_LINE_WRAPPING "\033[?7l"
+#define ENABLE_LINE_WRAPPING "\033[?7h"
 
 namespace DB
 {
@@ -122,12 +126,13 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_a_tty = false;         /// stdin is a terminal.
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
+
+    uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
@@ -142,8 +147,7 @@ private:
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
-    SharedContextHolder shared_context = Context::createShared();
-    Context context = Context::createGlobal(shared_context.get());
+    Context context = Context::createGlobal();
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
@@ -216,15 +220,16 @@ private:
 
         configReadClient(config(), home_path);
 
+        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context.getSettingsRef())
+        for (auto && setting : context.getSettingsRef())
         {
             const String & name = setting.getName().toString();
             if (config().has(name) && !setting.isChanged())
-                context.setSetting(name, config().getString(name));
+                setting.setValue(config().getString(name));
         }
 
         /// Set path for format schema files
@@ -276,7 +281,7 @@ private:
     }
 
     /// Should we celebrate a bit?
-    static bool isNewYearMode()
+    bool isNewYearMode()
     {
         time_t current_time = time(nullptr);
 
@@ -289,7 +294,7 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    static bool isChineseNewYearMode(const String & local_tz)
+    bool isChineseNewYearMode(const String & local_tz)
     {
         /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
         static constexpr UInt16 chineseNewYearIndicators[]
@@ -358,78 +363,6 @@ private:
         return false;
     }
 
-#if USE_REPLXX
-    static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
-    {
-        using namespace replxx;
-
-        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
-        {
-            { TokenType::Whitespace, Replxx::Color::DEFAULT },
-            { TokenType::Comment, Replxx::Color::GRAY },
-            { TokenType::BareWord, Replxx::Color::DEFAULT },
-            { TokenType::Number, Replxx::Color::GREEN },
-            { TokenType::StringLiteral, Replxx::Color::CYAN },
-            { TokenType::QuotedIdentifier, Replxx::Color::MAGENTA },
-            { TokenType::OpeningRoundBracket, Replxx::Color::BROWN },
-            { TokenType::ClosingRoundBracket, Replxx::Color::BROWN },
-            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
-            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
-            { TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE },
-            { TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE },
-
-            { TokenType::Comma, Replxx::Color::INTENSE },
-            { TokenType::Semicolon, Replxx::Color::INTENSE },
-            { TokenType::Dot, Replxx::Color::INTENSE },
-            { TokenType::Asterisk, Replxx::Color::INTENSE },
-            { TokenType::Plus, Replxx::Color::INTENSE },
-            { TokenType::Minus, Replxx::Color::INTENSE },
-            { TokenType::Slash, Replxx::Color::INTENSE },
-            { TokenType::Percent, Replxx::Color::INTENSE },
-            { TokenType::Arrow, Replxx::Color::INTENSE },
-            { TokenType::QuestionMark, Replxx::Color::INTENSE },
-            { TokenType::Colon, Replxx::Color::INTENSE },
-            { TokenType::Equals, Replxx::Color::INTENSE },
-            { TokenType::NotEquals, Replxx::Color::INTENSE },
-            { TokenType::Less, Replxx::Color::INTENSE },
-            { TokenType::Greater, Replxx::Color::INTENSE },
-            { TokenType::LessOrEquals, Replxx::Color::INTENSE },
-            { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
-            { TokenType::Concatenation, Replxx::Color::INTENSE },
-            { TokenType::At, Replxx::Color::INTENSE },
-
-            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
-
-            { TokenType::Error, Replxx::Color::RED },
-            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
-            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
-            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
-        };
-
-        const Replxx::Color unknown_token_color = Replxx::Color::RED;
-
-        Lexer lexer(query.data(), query.data() + query.size());
-        size_t pos = 0;
-
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
-            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
-            {
-                if (token_to_color.find(token.type) != token_to_color.end())
-                    colors[pos + code_point_index] = token_to_color.at(token.type);
-                else
-                    colors[pos + code_point_index] = unknown_token_color;
-            }
-
-            pos += utf8_len;
-        }
-    }
-#endif
-
     int mainImpl()
     {
         UseSSL use_ssl;
@@ -473,10 +406,6 @@ private:
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
-
-        ClientInfo & client_info = context.getClientInfo();
-        client_info.setInitialQuery();
-        client_info.quota_key = config().getString("quota_key", "");
 
         connect();
 
@@ -552,6 +481,8 @@ private:
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
+                if (config().has("case_insensitive_suggestion"))
+                    Suggest::instance().setCaseInsensitive();
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
             }
@@ -561,7 +492,7 @@ private:
                 history_file = config().getString("history_file");
             else
             {
-                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
                 if (history_file_from_env)
                     history_file = history_file_from_env;
                 else if (!home_path.empty())
@@ -575,18 +506,7 @@ private:
             LineReader::Patterns query_delimiters = {";", "\\G"};
 
 #if USE_REPLXX
-            replxx::Replxx::highlighter_callback_t highlight_callback{};
-            if (config().getBool("highlight"))
-                highlight_callback = highlight;
-
-            ReplxxLineReader lr(
-                Suggest::instance(),
-                history_file,
-                config().has("multiline"),
-                query_extenders,
-                query_delimiters,
-                highlight_callback);
-
+            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
@@ -700,7 +620,9 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
+        if (
+            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+            server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -712,19 +634,11 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
-
-            if (client_version_tuple < server_version_tuple)
+            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
+                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
-                    << std::endl << std::endl;
-            }
-            else if (client_version_tuple > server_version_tuple)
-            {
-                std::cout << "ClickHouse server version is older than ClickHouse client. "
-                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -785,7 +699,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
+                        IParser::Pos token_iterator(tokens);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;
@@ -906,14 +820,12 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
-            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
-
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function) && !insert->watch)
+            if (insert && (!insert->select || input_function))
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -1006,7 +918,7 @@ private:
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    &context.getClientInfo(),
+                    nullptr,
                     true);
 
                 sendExternalTables();
@@ -1038,15 +950,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query_without_data,
-            query_id,
-            QueryProcessingStage::Complete,
-            &context.getSettingsRef(),
-            &context.getClientInfo(),
-            true);
-
+        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1067,15 +971,10 @@ private:
         ParserQuery parser(end, true);
         ASTPtr res;
 
-        const auto & settings = context.getSettingsRef();
-        size_t max_length = 0;
-        if (!allow_multi_statements)
-            max_length = settings.max_query_size;
-
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, 0);
 
             if (!res)
             {
@@ -1084,7 +983,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, 0);
 
         if (is_interactive)
         {
@@ -1226,16 +1125,11 @@ private:
                 /// to avoid losing sync.
                 if (!cancelled)
                 {
-                    auto cancel_query = [&]
-                    {
+                    auto cancelQuery = [&] {
                         connection->sendCancel();
                         cancelled = true;
                         if (is_interactive)
-                        {
-                            if (written_progress_chars)
-                                clearProgress();
                             std::cout << "Cancelling query." << std::endl;
-                        }
 
                         /// Pressing Ctrl+C twice results in shut down.
                         interrupt_listener.unblock();
@@ -1243,7 +1137,7 @@ private:
 
                     if (interrupt_listener.check())
                     {
-                        cancel_query();
+                        cancelQuery();
                     }
                     else
                     {
@@ -1254,7 +1148,7 @@ private:
                                       << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
                                       << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
 
-                            cancel_query();
+                            cancelQuery();
                         }
                     }
                 }
@@ -1262,10 +1156,10 @@ private:
                 /// Poll for changes after a cancellation check, otherwise it never reached
                 /// because of progress updates from server.
                 if (connection->poll(poll_interval))
-                    break;
+                  break;
             }
 
-            if (!receiveAndProcessPacket(cancelled))
+            if (!receiveAndProcessPacket())
                 break;
         }
 
@@ -1276,16 +1170,14 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    /// Output of result is suppressed if query was cancelled.
-    bool receiveAndProcessPacket(bool cancelled)
+    bool receiveAndProcessPacket()
     {
         Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                if (!cancelled)
-                    onData(packet.block);
+                onData(packet.block);
                 return true;
 
             case Protocol::Server::Progress:
@@ -1297,13 +1189,11 @@ private:
                 return true;
 
             case Protocol::Server::Totals:
-                if (!cancelled)
-                    onTotals(packet.block);
+                onTotals(packet.block);
                 return true;
 
             case Protocol::Server::Extremes:
-                if (!cancelled)
-                    onExtremes(packet.block);
+                onExtremes(packet.block);
                 return true;
 
             case Protocol::Server::Exception:
@@ -1395,7 +1285,7 @@ private:
 
         while (packet_type && *packet_type == Protocol::Server::Log)
         {
-            receiveAndProcessPacket(false);
+            receiveAndProcessPacket();
             packet_type = connection->checkPacket();
         }
     }
@@ -1474,7 +1364,8 @@ private:
                 }
                 else
                 {
-                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(
+                        server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                     wb = out_logs_buf.get();
                 }
             }
@@ -1548,8 +1439,7 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        if (!send_logs)
-            std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1574,14 +1464,17 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        const char * indicator = indicators[increment % 8];
+        if (written_progress_chars)
+            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+        else
+            message << SAVE_CURSOR_POSITION;
 
-        if (!send_logs && written_progress_chars)
-            message << '\r';
+        message << DISABLE_LINE_WRAPPING;
 
         size_t prefix_size = message.count();
 
-        message << indicator << " Progress: ";
+        message << indicators[increment % 8]
+            << " Progress: ";
 
         message
             << formatReadableQuantity(progress.read_rows) << " rows, "
@@ -1595,7 +1488,7 @@ private:
         else
             message << ". ";
 
-        written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
+        written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
         if (progress.total_rows_to_read > 0)
@@ -1613,7 +1506,7 @@ private:
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(getTerminalWidth()) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
@@ -1628,11 +1521,7 @@ private:
             message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
         }
 
-        message << CLEAR_TO_END_OF_LINE;
-
-        if (send_logs)
-            message << '\n';
-
+        message << ENABLE_LINE_WRAPPING;
         ++increment;
 
         message.next();
@@ -1702,14 +1591,10 @@ private:
         resetOutput();
 
         if (is_interactive && !written_first_block)
-        {
-            if (written_progress_chars)
-                clearProgress();
             std::cout << "Ok." << std::endl;
-        }
     }
 
-    static void showClientVersion()
+    void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
@@ -1804,7 +1689,6 @@ public:
         stdin_is_a_tty = isatty(STDIN_FILENO);
         stdout_is_a_tty = isatty(STDOUT_FILENO);
 
-        uint64_t terminal_width = 0;
         if (stdin_is_a_tty)
             terminal_width = getTerminalWidth();
 
@@ -1828,14 +1712,15 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
-            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
             ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+            ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
+            ("case_insensitive_suggestion", "Case sensitive suggestions.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")
@@ -1850,13 +1735,11 @@ public:
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
-            ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
-        Settings cmd_settings;
-        cmd_settings.addProgramOptions(main_description);
+        context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
@@ -1928,9 +1811,6 @@ public:
             }
         }
 
-        context.makeGlobalContext();
-        context.setSettings(cmd_settings);
-
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
         for (const auto & setting : context.getSettingsRef())
@@ -1969,8 +1849,6 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
-        if (options.count("quota_key"))
-            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))
@@ -2001,8 +1879,6 @@ public:
             config().setBool("disable_suggestion", true);
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-        if (options.count("highlight"))
-            config().setBool("highlight", options["highlight"].as<bool>());
 
         argsToConfig(common_arguments, config(), 100);
 

@@ -28,7 +28,7 @@ private:
     friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
-    explicit ConcreteColumn(int data_) : data(data_) {}
+    ConcreteColumn(int data_) : data(data_) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
     MutableColumnPtr test() const override
@@ -53,11 +53,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = IColumn::mutate(std::move(y));
+        MutableColumnPtr mut = std::move(*y).mutate();
         mut->set(2);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 
@@ -72,11 +72,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = IColumn::mutate(std::move(y));
+        MutableColumnPtr mut = std::move(*y).mutate();
         mut->set(3);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 

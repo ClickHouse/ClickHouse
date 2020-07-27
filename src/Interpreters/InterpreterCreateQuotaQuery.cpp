@@ -1,8 +1,7 @@
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTGenericRoleSet.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <ext/range.h>
@@ -15,7 +14,7 @@ namespace DB
 {
 namespace
 {
-void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<ExtendedRoleSet> & roles_from_query = {})
+void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, const std::optional<GenericRoleSet> & roles_from_query = {})
     {
         if (query.alter)
         {
@@ -34,7 +33,7 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
             auto duration = query_limits.duration;
 
             auto it = boost::range::find_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration == duration; });
-            if (query_limits.drop)
+            if (query_limits.unset_tracking)
             {
                 if (it != quota_all_limits.end())
                     quota_all_limits.erase(it);
@@ -56,37 +55,34 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
             auto & quota_limits = *it;
             quota_limits.randomize_interval = query_limits.randomize_interval;
             for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-                quota_limits.max[resource_type] = query_limits.max[resource_type];
+            {
+                if (query_limits.max[resource_type])
+                    quota_limits.max[resource_type] = *query_limits.max[resource_type];
+            }
         }
 
-        const ExtendedRoleSet * roles = nullptr;
-        std::optional<ExtendedRoleSet> temp_role_set;
+        const GenericRoleSet * roles = nullptr;
+        std::optional<GenericRoleSet> temp_role_set;
         if (roles_from_query)
             roles = &*roles_from_query;
         else if (query.roles)
             roles = &temp_role_set.emplace(*query.roles);
 
         if (roles)
-            quota.to_roles = *roles;
+            quota.roles = *roles;
     }
 }
 
 
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
-    auto & query = query_ptr->as<ASTCreateQuotaQuery &>();
+    const auto & query = query_ptr->as<const ASTCreateQuotaQuery &>();
     auto & access_control = context.getAccessControlManager();
     context.checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
-    if (!query.cluster.empty())
-    {
-        query.replaceCurrentUserTagWithName(context.getUserName());
-        return executeDDLQueryOnCluster(query_ptr, context);
-    }
-
-    std::optional<ExtendedRoleSet> roles_from_query;
+    std::optional<GenericRoleSet> roles_from_query;
     if (query.roles)
-        roles_from_query = ExtendedRoleSet{*query.roles, access_control, context.getUserID()};
+        roles_from_query = GenericRoleSet{*query.roles, access_control, context.getUserID()};
 
     if (query.alter)
     {

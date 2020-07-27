@@ -34,7 +34,7 @@ public:
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
-    Poco::Logger * log;
+    Logger * log;
     BackgroundSchedulePool::TaskHolder task;
     pcg64 rng;
 

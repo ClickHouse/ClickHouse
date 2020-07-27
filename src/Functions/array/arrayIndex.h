@@ -333,7 +333,7 @@ struct ArrayIndexStringImpl
         }
     }
 
-    static void vectorVector(
+    static void vector_vector(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const ColumnString::Chars & item_values, const ColumnString::Offsets & item_offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
@@ -714,7 +714,7 @@ private:
         }
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
         {
-            ArrayIndexStringImpl<IndexConv>::vectorVector(col_nested->getChars(), col_array->getOffsets(),
+            ArrayIndexStringImpl<IndexConv>::vector_vector(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
                 col_res->getData(), null_map_data, null_map_item);
         }

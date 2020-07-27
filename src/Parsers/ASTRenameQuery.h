@@ -29,8 +29,6 @@ public:
     using Elements = std::vector<Element>;
     Elements elements;
 
-    bool exchange{false};   /// For EXCHANGE TABLES
-
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
 
@@ -61,8 +59,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (exchange ? "EXCHANGE TABLES " : "RENAME TABLE ") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME TABLE " << (settings.hilite ? hilite_none : "");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
@@ -70,7 +67,7 @@ protected:
                 settings.ostr << ", ";
 
             settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table)
-                << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
+                << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
                 << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
         }
 

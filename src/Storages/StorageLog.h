@@ -15,7 +15,7 @@ namespace DB
 /** Implements simple table engine without support of indices.
   * The data is stored in a compressed form.
   */
-class StorageLog final : public ext::shared_ptr_helper<StorageLog>, public IStorage
+class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
     friend class LogSource;
     friend class LogBlockOutputStream;
@@ -34,7 +34,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+    void rename(
+        const String & new_path_to_table_data,
+        const String & new_database_name,
+        const String & new_table_name,
+        TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 

@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_CAST;
 }
 
 /**
@@ -111,7 +112,7 @@ public:
     virtual ~IWeightsUpdater() = default;
 
     /// Calls GradientComputer to update current mini-batch
-    virtual void addToBatch(
+    virtual void add_to_batch(
         std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
@@ -175,7 +176,7 @@ public:
 
     Nesterov(Float64 alpha) : alpha_(alpha) {}
 
-    void addToBatch(
+    void add_to_batch(
         std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
@@ -208,7 +209,7 @@ public:
         beta2_powered_ = beta2_;
     }
 
-    void addToBatch(
+    void add_to_batch(
             std::vector<Float64> & batch_gradient,
             IGradientComputer & gradient_computer,
             const std::vector<Float64> & weights,
@@ -288,7 +289,7 @@ private:
 
     /** The function is called when we want to flush current batch and update our weights
       */
-    void updateState();
+    void update_state();
 };
 
 
@@ -380,7 +381,7 @@ public:
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
-                            ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::BAD_CAST);
 
         this->data(place).predict(column->getData(), block, offset, limit, arguments, context);
     }
@@ -388,7 +389,7 @@ public:
     /** This function is called if aggregate function without State modifier is selected in a query.
      *  Inserts all weights of the model into the column 'to', so user may use such information if needed
      */
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         this->data(place).returnWeights(to);
     }
