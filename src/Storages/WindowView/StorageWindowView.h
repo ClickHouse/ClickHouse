@@ -71,7 +71,7 @@ private:
     mutable Block sample_block;
     mutable Block mergeable_header;
     UInt64 clean_interval;
-    const DateLUTImpl & time_zone;
+    const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
     UInt32 max_watermark = 0; // next watermark to fire
     UInt32 max_fired_watermark = 0;
