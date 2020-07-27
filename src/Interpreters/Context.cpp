@@ -1563,7 +1563,7 @@ void Context::reloadClusterConfig()
                 return;
             }
 
-            /// Clusters config has been suddenly changed, recompute clusters
+            // Clusters config has been suddenly changed, recompute clusters
         }
     }
 }
