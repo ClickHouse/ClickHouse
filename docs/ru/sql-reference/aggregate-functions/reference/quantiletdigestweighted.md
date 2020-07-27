@@ -23,7 +23,7 @@ quantileTDigestWeighted(level)(expr, weight)
 **Параметры**
 
 -   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
--   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../sql-reference/aggregate-functions/reference.md#data_types) или типов [Date](../../sql-reference/aggregate-functions/reference.md), [DateTime](../../sql-reference/aggregate-functions/reference.md).
+-   `expr` — Выражение над значениями столбца, которое возвращает данные [числовых типов](../../../sql-reference/data-types/index.md#data_types) или типов [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md).
 -   `weight` — Столбец с весам элементов последовательности. Вес — это количество повторений элемента в последовательности.
 
 **Возвращаемое значение**
@@ -32,9 +32,9 @@ quantileTDigestWeighted(level)(expr, weight)
 
 Тип:
 
--   [Float64](../../sql-reference/aggregate-functions/reference.md) для входных данных числового типа.
--   [Date](../../sql-reference/aggregate-functions/reference.md) если входные значения имеют тип `Date`.
--   [DateTime](../../sql-reference/aggregate-functions/reference.md) если входные значения имеют тип `DateTime`.
+-   [Float64](../../../sql-reference/data-types/float.md) для входных данных числового типа.
+-   [Date](../../../sql-reference/data-types/date.md), если входные значения имеют тип `Date`.
+-   [DateTime](../../../sql-reference/data-types/datetime.md), если входные значения имеют тип `DateTime`.
 
 **Пример**
 

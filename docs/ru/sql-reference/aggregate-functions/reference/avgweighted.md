@@ -14,8 +14,8 @@ avgWeighted(x, weight)
 
 **Параметры**
 
--   `x` — Значения. [Целые числа](../../sql-reference/aggregate-functions/reference.md) или [числа с плавающей запятой](../../sql-reference/aggregate-functions/reference.md).
--   `weight` — Веса отдельных значений. [Целые числа](../../sql-reference/aggregate-functions/reference.md) или [числа с плавающей запятой](../../sql-reference/aggregate-functions/reference.md).
+-   `x` — Значения. [Целые числа](../../../sql-reference/data-types/int-uint.md) или [числа с плавающей запятой](../../../sql-reference/data-types/float.md).
+-   `weight` — Веса отдельных значений. [Целые числа](../../../sql-reference/data-types/int-uint.md) или [числа с плавающей запятой](../../../sql-reference/data-types/float.md).
 
 Типы параметров должны совпадать.
 
@@ -24,7 +24,7 @@ avgWeighted(x, weight)
 -   Среднее арифметическое взвешенное.
 -   `NaN`, если все веса равны 0.
 
-Тип: [Float64](../../sql-reference/aggregate-functions/reference.md)
+Тип: [Float64](../../../sql-reference/data-types/float.md)
 
 **Пример**
 

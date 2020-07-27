@@ -16,7 +16,7 @@ uniq(x[, ...])
 
 **Возвращаемое значение**
 
--   Значение с типом данных [UInt64](../../sql-reference/aggregate-functions/reference.md).
+-   Значение с типом данных [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Детали реализации**
 

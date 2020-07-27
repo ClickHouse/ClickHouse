@@ -22,7 +22,7 @@ quantileTiming(level)(expr)
 
 -   `level` — Уровень квантили. Опционально. Константное значение с плавающей запятой от 0 до 1. Мы рекомендуем использовать значение `level` из диапазона `[0.01, 0.99]`. Значение по умолчанию: 0.5. При `level=0.5` функция вычисляет [медиану](https://ru.wikipedia.org/wiki/Медиана_(статистика)).
 
--   `expr` — [Выражение](../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float\*](../../sql-reference/aggregate-functions/reference.md).
+-   `expr` — [Выражение](../syntax.md#syntax-expressions) над значения столбца, которые возвращают данные типа [Float\*](../../../sql-reference/data-types/float.md).
 
         - Если в функцию передать отрицательные значения, то её поведение не определено.
         - Если значение больше, чем 30 000 (например, время загрузки страницы превышает 30 секунд), то оно приравнивается к 30 000.
@@ -46,7 +46,7 @@ quantileTiming(level)(expr)
 Тип: `Float32`.
 
 !!! note "Примечания"
-    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql-reference/aggregate-functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql-reference/statements/select/order-by.md#select-order-by).
+    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql-reference/statements/select/order-by.md#select-order-by).
 
 **Пример**
 

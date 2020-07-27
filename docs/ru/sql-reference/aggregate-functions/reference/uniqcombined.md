@@ -20,7 +20,7 @@ uniqCombined(HLL_precision)(x[, ...])
 
 **Возвращаемое значение**
 
--   Число типа [UInt64](../../sql-reference/aggregate-functions/reference.md).
+-   Число типа [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Детали реализации**
 

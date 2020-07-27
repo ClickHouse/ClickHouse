@@ -16,7 +16,7 @@ uniqHLL12(x[, ...])
 
 **Возвращаемое значение**
 
--   Значение хэша с типом данных [UInt64](../../sql-reference/aggregate-functions/reference.md).
+-   Значение хэша с типом данных [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Детали реализации**
 

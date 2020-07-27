@@ -16,7 +16,7 @@ kurtPop(expr)
 
 **Возвращаемое значение**
 
-Коэффициент эксцесса заданного распределения. Тип — [Float64](../../sql-reference/aggregate-functions/reference.md)
+Коэффициент эксцесса заданного распределения. Тип — [Float64](../../../sql-reference/data-types/float.md)
 
 **Пример**
 

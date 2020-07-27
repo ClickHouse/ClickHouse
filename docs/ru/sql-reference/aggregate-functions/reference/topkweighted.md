@@ -19,7 +19,7 @@ topKWeighted(N)(x, weight)
 **Аргументы**
 
 -   `x` – значение.
--   `weight` — вес. [UInt8](../../sql-reference/aggregate-functions/reference.md).
+-   `weight` — вес. [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
 

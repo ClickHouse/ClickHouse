@@ -16,7 +16,7 @@ skewPop(expr)
 
 **Возвращаемое значение**
 
-Коэффициент асимметрии заданного распределения. Тип — [Float64](../../sql-reference/aggregate-functions/reference.md)
+Коэффициент асимметрии заданного распределения. Тип — [Float64](../../../sql-reference/data-types/float.md)
 
 **Пример**
 
