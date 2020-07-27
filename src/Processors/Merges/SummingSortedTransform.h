@@ -16,6 +16,7 @@ public:
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
+        const Names & partition_key_columns,
         size_t max_block_size)
         : IMergingTransform(
             num_inputs, header, header, true,
@@ -23,6 +24,7 @@ public:
             num_inputs,
             std::move(description_),
             column_names_to_sum,
+            partition_key_columns,
             max_block_size)
     {
     }

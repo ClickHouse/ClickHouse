@@ -301,7 +301,7 @@ public:
         Graphite::Params graphite_params;
 
         /// Check that needed columns are present and have correct types.
-        void check(const NamesAndTypesList & columns) const;
+        void check(const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
     };
