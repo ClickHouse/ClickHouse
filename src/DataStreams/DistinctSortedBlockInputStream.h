@@ -48,7 +48,7 @@ private:
         size_t rows,
         ClearableSetVariants & variants) const;
 
-    const SortDescription & description;
+    SortDescription description;
 
     struct PreviousBlock
     {
