@@ -46,7 +46,6 @@ ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-serv
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/;
 
-<<<<<<< HEAD
 ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
