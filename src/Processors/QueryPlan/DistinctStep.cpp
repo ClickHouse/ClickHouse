@@ -23,6 +23,7 @@ static ITransformingStep::DataStreamTraits getTraits(bool pre_distinct, bool alr
             .preserves_distinct_columns = already_distinct_columns, /// Will be calculated separately otherwise
             .returns_single_stream = !pre_distinct && !already_distinct_columns,
             .preserves_number_of_streams = pre_distinct || already_distinct_columns,
+            .preserves_number_of_rows = false,
     };
 }
 

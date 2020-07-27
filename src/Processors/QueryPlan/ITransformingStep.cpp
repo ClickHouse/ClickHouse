@@ -6,6 +6,7 @@ namespace DB
 
 ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_)
     : collect_processors(collect_processors_)
+    , transform_traits(traits)
 {
     output_stream = DataStream{.header = std::move(output_header)};
 

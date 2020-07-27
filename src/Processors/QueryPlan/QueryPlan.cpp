@@ -315,7 +315,20 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlanStepPtr & child
     if (!limit)
         return;
 
+    const auto * transforming = typeid_cast<const ITransformingStep *>(child.get());
+
+    /// Skip everything which is not transform.
+    if (!transforming)
+        return;
+
     /// Now we should decide if pushing down limit possible for this step.
+
+    /// Cannot push down if child changes the number of rows.
+    if (!transforming->getTransformTraits().preserves_number_of_rows)
+        return;
+
+
+    /// ExtremesStep ? , FinishSorting, MergeSorting, MergingSorted, PartialSorting
 }
 
 void QueryPlan::optimize()
