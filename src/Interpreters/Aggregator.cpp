@@ -865,7 +865,17 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
-    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
+    String tmp_path;
+    auto volume_jbod = std::dynamic_pointer_cast<VolumeJBOD>(params.tmp_volume);
+    if (volume_jbod)
+    {
+        tmp_path = volume_jbod->getNextDisk()->getPath();
+    }
+    else
+    {
+        tmp_path = params.tmp_volume->getDisk()->getPath();
+    }
+    return writeToTemporaryFile(data_variants, tmp_path);
 }
 
 
