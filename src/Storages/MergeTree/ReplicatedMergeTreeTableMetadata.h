@@ -60,7 +60,7 @@ struct ReplicatedMergeTreeTableMetadata
         }
     };
 
-    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const;
+    void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, const Context & context) const;
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const;
 
