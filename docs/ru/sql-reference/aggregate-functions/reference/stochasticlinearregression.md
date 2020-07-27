@@ -22,7 +22,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ### Использование {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` используется на двух этапах: построение модели и предсказание новых данных. Чтобы построить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
-Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
+Для прогнозирования мы используем функцию [evalMLMethod](../../functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 

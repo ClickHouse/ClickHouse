@@ -23,7 +23,7 @@ topK(N)(column)
 
 **Пример**
 
-Возьмём набор данных [OnTime](../../getting-started/example-datasets/ontime.md) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
+Возьмём набор данных [OnTime](../../../getting-started/example-datasets/ontime.md) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res

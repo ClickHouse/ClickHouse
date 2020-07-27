@@ -12,7 +12,7 @@ kurtPop(expr)
 
 **Параметры**
 
-`expr` — [Выражение](../syntax.md#syntax-expressions), возвращающее число.
+`expr` — [Выражение](../../syntax.md#syntax-expressions), возвращающее число.
 
 **Возвращаемое значение**
 

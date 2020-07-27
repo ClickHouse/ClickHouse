@@ -15,7 +15,7 @@ groupArrayMovingSum(window_size)(numbers_for_summing)
 
 **Параметры**
 
--   `numbers_for_summing` — [выражение](../syntax.md#syntax-expressions), возвращающее значение числового типа.
+-   `numbers_for_summing` — [выражение](../../syntax.md#syntax-expressions), возвращающее значение числового типа.
 -   `window_size` — размер окна.
 
 **Возвращаемые значения**

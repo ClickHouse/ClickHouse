@@ -16,7 +16,7 @@ anyHeavy(column)
 
 **Пример**
 
-Возьмём набор данных [OnTime](../../getting-started/example-datasets/ontime.md) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
+Возьмём набор данных [OnTime](../../../getting-started/example-datasets/ontime.md) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
