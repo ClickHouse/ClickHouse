@@ -748,7 +748,7 @@ services:
             - label:disable
         dns_opt:
             - timeout:1
-            - attempts:1
+            - attempts:3
         {networks}
             {app_net}
                 {ipv4_address}
@@ -1114,7 +1114,7 @@ class ClickHouseInstance:
         print "Generate and write macros file"
         macros = self.macros.copy()
         macros['instance'] = self.name
-        with open(p.join(self.config_d_dir, 'macros.xml'), 'w') as macros_config:
+        with open(p.join(conf_d_dir, 'macros.xml'), 'w') as macros_config:
             macros_config.write(self.dict_to_xml({"macros": macros}))
 
         # Put ZooKeeper config
