@@ -1,3 +1,8 @@
+find_program(AWK_PROGRAM awk)
+if(NOT AWK_PROGRAM)
+	message(FATAL_ERROR "You need the awk program to build ClickHouse with krb5 enabled.")
+endif()
+
 set(KRB5_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/krb5/src)
 
 set(ALL_SRCS
@@ -467,7 +472,7 @@ add_custom_command(
     ./config_script
     ./compile_et.sh
     "/usr/local/share/et"
-    gawk
+    ${AWK_PROGRAM}
     sed
     >
     compile_et
