@@ -14,6 +14,7 @@ static ITransformingStep::DataStreamTraits getTraits(size_t limit)
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_number_of_rows = limit == 0,
+            .preserves_sorting = false,
     };
 }
 
@@ -27,6 +28,9 @@ MergingSortedStep::MergingSortedStep(
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
+    /// TODO: check input_stream is partially sorted (each port) by the same description.
+    output_stream->sort_description = sort_description;
+    output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
 void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)

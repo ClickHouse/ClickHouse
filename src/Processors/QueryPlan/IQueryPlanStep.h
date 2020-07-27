@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -27,8 +28,19 @@ public:
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
+    /// How data is sorted.
+    enum class SortMode
+    {
+        Chunk, /// Separate chunks are sorted
+        Port, /// Data from each port is sorted
+        Stream, /// Data is globally sorted
+    };
+
+    /// It is not guaranteed that header has columns from sort_description.
+    SortDescription sort_description;
+    SortMode sort_mode;
+
     /// Things which may be added:
-    /// * sort description
     /// * limit
     /// * estimated rows number
     /// * memory allocation context

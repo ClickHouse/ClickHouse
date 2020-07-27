@@ -24,6 +24,7 @@ static ITransformingStep::DataStreamTraits getTraits(bool pre_distinct, bool alr
             .returns_single_stream = !pre_distinct && !already_distinct_columns,
             .preserves_number_of_streams = pre_distinct || already_distinct_columns,
             .preserves_number_of_rows = false,
+            .preserves_sorting = true, /// Sorting is preserved indeed because of implementation.
     };
 }
 

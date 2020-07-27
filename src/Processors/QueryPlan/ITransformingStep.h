@@ -27,6 +27,10 @@ public:
         /// Won't change the total number of rows.
         /// Examples: true ExpressionStep (without join or array join), false for FilterStep
         bool preserves_number_of_rows;
+
+        /// Doesn't change row order.
+        /// Examples: true FilterStep, false for PartialSortingStep
+        bool preserves_sorting;
     };
 
     ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_ = true);

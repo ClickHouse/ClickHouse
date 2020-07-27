@@ -14,6 +14,7 @@ static ITransformingStep::DataStreamTraits getTraits()
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_number_of_rows = true,
+            .preserves_sorting = true,
     };
 }
 

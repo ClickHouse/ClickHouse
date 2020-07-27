@@ -12,6 +12,7 @@ static ITransformingStep::DataStreamTraits getTraits()
         .returns_single_stream = false,
         .preserves_number_of_streams = false,
         .preserves_number_of_rows = false, /// New rows are added from delayed stream
+        .preserves_sorting = false,
     };
 }
 

@@ -15,6 +15,7 @@ static ITransformingStep::DataStreamTraits getTraits(size_t limit)
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_number_of_rows = limit == 0,
+            .preserves_sorting = false,
     };
 }
 
@@ -28,6 +29,8 @@ PartialSortingStep::PartialSortingStep(
     , limit(limit_)
     , size_limits(size_limits_)
 {
+    output_stream->sort_description = sort_description;
+    output_stream->sort_mode = DataStream::SortMode::Chunk;
 }
 
 void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
