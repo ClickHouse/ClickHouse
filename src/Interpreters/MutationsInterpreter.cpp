@@ -768,7 +768,7 @@ bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_co
 {
     /// is subset
     for (const auto & storage_column : storage_columns)
-        if (!output_columns.contains(storage_column))
+        if (!output_columns.count(storage_column))
             return false;
 
     return true;
