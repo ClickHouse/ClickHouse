@@ -59,7 +59,6 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
-    NamesAndTypesList getVirtuals() const override;
 protected:
     StorageKafka(
         const StorageID & table_id_,
@@ -79,7 +78,6 @@ protected:
 private:
     // Configuration and state
     Context global_context;
-    Context kafka_context;
     Names topics;
     const String brokers;
     const String group;

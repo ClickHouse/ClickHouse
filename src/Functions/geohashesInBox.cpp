@@ -120,7 +120,7 @@ public:
             // Actually write geohashes into preallocated buffer.
             geohashesInBox(prepared_args, out);
 
-            for (UInt8 i = 1; i <= prepared_args.items_count ; ++i)
+            for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
             {
                 res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
             }

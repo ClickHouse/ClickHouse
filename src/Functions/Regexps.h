@@ -19,7 +19,11 @@
 #endif
 
 #if USE_HYPERSCAN
+#if __has_include(<hs.h>)
 #    include <hs.h>
+#else
+#    include <hs/hs.h>
+#endif
 #endif
 
 namespace ProfileEvents

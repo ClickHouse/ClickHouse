@@ -11,6 +11,7 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 
 
 namespace Poco
@@ -21,7 +22,6 @@ namespace Poco
 namespace DB
 {
 
-class Context;
 class StorageDistributed;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.

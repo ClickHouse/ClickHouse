@@ -2,13 +2,12 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockIO.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 
 namespace DB
 {
-
-class Context;
 
 
 /** Interprets the INSERT query.

@@ -39,6 +39,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -75,10 +76,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -401,10 +398,6 @@ private:
             ignore_error = config().getBool("ignore-error", false);
         }
 
-        ClientInfo & client_info = context.getClientInfo();
-        client_info.setInitialQuery();
-        client_info.quota_key = config().getString("quota_key", "");
-
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -488,7 +481,7 @@ private:
                 history_file = config().getString("history_file");
             else
             {
-                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
                 if (history_file_from_env)
                     history_file = history_file_from_env;
                 else if (!home_path.empty())
@@ -498,12 +491,15 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
+            LineReader::Patterns query_extenders = {"\\"};
+            LineReader::Patterns query_delimiters = {";", "\\G"};
+
 #if USE_REPLXX
-            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
-            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
+            LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
             /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
@@ -613,7 +609,9 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
+        if (
+            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+            server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -625,19 +623,11 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
-
-            if (client_version_tuple < server_version_tuple)
+            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
+                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
-                    << std::endl << std::endl;
-            }
-            else if (client_version_tuple > server_version_tuple)
-            {
-                std::cout << "ClickHouse server version is older than ClickHouse client. "
-                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -826,7 +816,7 @@ private:
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function) && !insert->watch)
+            if (insert && (!insert->select || input_function))
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -919,7 +909,7 @@ private:
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    &context.getClientInfo(),
+                    nullptr,
                     true);
 
                 sendExternalTables();
@@ -951,15 +941,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query_without_data,
-            query_id,
-            QueryProcessingStage::Complete,
-            &context.getSettingsRef(),
-            &context.getClientInfo(),
-            true);
-
+        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1383,7 +1365,8 @@ private:
                 }
                 else
                 {
-                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(
+                        server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                     wb = out_logs_buf.get();
                 }
             }
@@ -1483,7 +1466,7 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        const char * indicator = indicators[increment % 8];
+        auto indicator = indicators[increment % 8];
 
         if (!send_logs && written_progress_chars)
             message << '\r';
@@ -1737,7 +1720,6 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
-            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -1828,7 +1810,11 @@ public:
                 std::string text = e.displayText();
                 std::cerr << "Code: " << e.code() << ". " << text << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
-                exit(e.code());
+                /// Avoid the case when error exit code can possibly overflow to normal (zero).
+                auto exit_code = e.code() % 256;
+                if (exit_code == 0)
+                    exit_code = 255;
+                exit(exit_code);
             }
         }
 
@@ -1873,8 +1859,6 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
-        if (options.count("quota_key"))
-            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))

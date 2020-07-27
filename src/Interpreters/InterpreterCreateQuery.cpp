@@ -206,6 +206,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
     for (const auto & column : columns)
     {
+        /// Do not include virtual columns
+        if (column.is_virtual)
+            continue;
+
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 
@@ -267,8 +271,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
     return res;
 }
 
-ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, const Context & context, bool sanity_check_compression_codecs)
+ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns_ast, const Context & context)
 {
     /// First, deduce implicit types.
 
@@ -305,7 +308,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 const auto & final_column_name = col_decl.name;
                 const auto tmp_column_name = final_column_name + "_tmp";
                 const auto * data_type_ptr = column_names_and_types.back().type.get();
-
 
                 default_expr_list->children.emplace_back(
                     setAlias(addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -356,7 +358,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
-            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type, sanity_check_compression_codecs);
+            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type);
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
@@ -391,10 +393,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     if (create.columns_list)
     {
         if (create.columns_list->columns)
-        {
-            bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
-            properties.columns = getColumnsDescription(*create.columns_list->columns, context, sanity_check_compression_codecs);
-        }
+            properties.columns = getColumnsDescription(*create.columns_list->columns, context);
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
@@ -406,7 +405,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     else if (!create.as_table.empty())
     {
         String as_database_name = context.resolveDatabase(create.as_database);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, context);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockStructureForShare(
@@ -504,7 +503,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = context.resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, context);
+        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
@@ -546,7 +545,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached
-        auto query = database->getCreateTableQuery(create.table, context);
+        auto query = database->getCreateTableQuery(create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
         create.attach_short_syntax = true;
@@ -608,7 +607,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
-        if (database->isTableExist(table_name, context))
+        if (database->isTableExist(table_name))
         {
             /// TODO Check structure of table
             if (create.if_not_exists)
@@ -637,7 +636,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
             return false;
 
-        auto temporary_table = TemporaryTableHolder(context, properties.columns, properties.constraints, query_ptr);
+        auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
         context.getSessionContext().addExternalTable(table_name, std::move(temporary_table));
         return true;
     }
@@ -672,6 +671,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// But if "shutdown" is called before "startup", it will exit early, because there are no background tasks to wait.
     /// Then background task is created by "startup" method. And when destructor of a table object is called, background task is still active,
     /// and the task will use references to freed data.
+
+    /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
+    /// we can safely destroy the object without a call to "shutdown", because there is guarantee
+    /// that no background threads/similar resources remain after exception from "startup".
 
     res->startup();
     return true;

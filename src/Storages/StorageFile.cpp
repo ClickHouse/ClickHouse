@@ -183,7 +183,14 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage(args.table_id)
+    : IStorage(args.table_id,
+               ColumnsDescription({
+                                      {"_path", std::make_shared<DataTypeString>()},
+                                      {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
     , format_name(args.format_name)
     , compression_method(args.compression_method)
     , base_path(args.context.getPath())
@@ -422,6 +429,7 @@ public:
         const Context & context)
         : storage(storage_), lock(storage.rwlock)
     {
+        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
             /** NOTE: Using real file binded to FD may be misleading:
@@ -429,16 +437,20 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 3);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-                compression_method, 3);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
+
+        /// In case of CSVWithNames we have already written prefix.
+        if (naked_buffer->size())
+            prefix_written = true;
+
+        write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
     }
@@ -452,7 +464,9 @@ public:
 
     void writePrefix() override
     {
-        writer->writePrefix();
+        if (!prefix_written)
+            writer->writePrefix();
+        prefix_written = true;
     }
 
     void writeSuffix() override
@@ -470,6 +484,7 @@ private:
     std::unique_lock<std::shared_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool prefix_written{false};
 };
 
 BlockOutputStreamPtr StorageFile::write(
@@ -599,12 +614,5 @@ void registerStorageFile(StorageFactory & factory)
         {
             .source_access_type = AccessType::FILE,
         });
-}
-NamesAndTypesList StorageFile::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
 }
 }

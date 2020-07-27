@@ -218,6 +218,7 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
 
 const std::unordered_set<String> possibly_injective_function_names
 {
+        "dictGet",
         "dictGetString",
         "dictGetUInt8",
         "dictGetUInt16",
@@ -297,10 +298,18 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
 
-                const auto & dict_name = function->arguments->children[0]->as<ASTLiteral &>().value.safeGet<String>();
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
-                const auto & attr_name = function->arguments->children[1]->as<ASTLiteral &>().value.safeGet<String>();
+                const auto * dict_name_ast = function->arguments->children[0]->as<ASTLiteral>();
+                const auto * attr_name_ast = function->arguments->children[1]->as<ASTLiteral>();
+                if (!dict_name_ast || !attr_name_ast)
+                {
+                    ++i;
+                    continue;
+                }
 
+                const auto & dict_name = dict_name_ast->value.safeGet<String>();
+                const auto & attr_name = attr_name_ast->value.safeGet<String>();
+
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -566,14 +575,13 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
-/// Special columns are non physical columns, for example ALIAS
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
 {
     if (storage)
     {
         const ColumnsDescription & columns = storage->getColumns();
 
-        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -694,13 +702,11 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
-        const auto storage_virtuals = storage->getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            auto column = storage_virtuals.tryGetByName(*it);
-            if (column)
+            if (storage->hasColumn(*it))
             {
-                source_columns.push_back(*column);
+                source_columns.push_back(storage->getColumn(*it));
                 unknown_required_source_columns.erase(it++);
             }
             else
@@ -839,7 +845,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage, bool allow_aggregations) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -855,20 +861,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    if (allow_aggregations)
-    {
-        GetAggregatesVisitor::Data data;
-        GetAggregatesVisitor(data).visit(query);
-
-        /// There can not be other aggregate functions within the aggregate functions.
-        for (const ASTFunction * node : data.aggregates)
-            for (auto & arg : node->arguments->children)
-                assertNoAggregates(arg, "inside another aggregate function");
-        result.aggregates = data.aggregates;
-    }
-    else
-        assertNoAggregates(query, "in wrong place");
-
+    assertNoAggregates(query, "in wrong place");
     result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }

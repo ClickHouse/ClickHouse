@@ -9,8 +9,8 @@
 namespace DB
 {
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
 
 class MergeSortingTransform : public SortingTransform
 {

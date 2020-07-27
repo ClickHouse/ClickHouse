@@ -181,13 +181,13 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case DataDestinationType::DISK:
+            case PartDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case DataDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case DataDestinationType::TABLE:
+            case PartDestinationType::TABLE:
                 settings.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
@@ -201,7 +201,7 @@ void ASTAlterCommand::formatImpl(
             default:
                 break;
         }
-        if (move_destination_type != DataDestinationType::TABLE)
+        if (move_destination_type != PartDestinationType::TABLE)
         {
             settings.ostr << quoteString(move_destination_name);
         }

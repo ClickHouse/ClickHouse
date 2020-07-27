@@ -20,9 +20,8 @@
 #include <sys/mman.h>
 
 #include <Core/Defines.h>
-#if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
-    /// Thread and memory sanitizers do not intercept mremap. The usage of
-    /// mremap will lead to false positives.
+#ifdef THREAD_SANITIZER
+    /// Thread sanitizer does not intercept mremap. The usage of mremap will lead to false positives.
     #define DISABLE_MREMAP 1
 #endif
 #include <common/mremap.h>
@@ -278,15 +277,13 @@ private:
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
-template <typename Base, size_t _initial_bytes, size_t Alignment>
+template <typename Base, size_t N, size_t Alignment>
 class AllocatorWithStackMemory : private Base
 {
 private:
-    alignas(Alignment) char stack_memory[_initial_bytes];
+    alignas(Alignment) char stack_memory[N];
 
 public:
-    static constexpr size_t initial_bytes = _initial_bytes;
-
     /// Do not use boost::noncopyable to avoid the warning about direct base
     /// being inaccessible due to ambiguity, when derived classes are also
     /// noncopiable (-Winaccessible-base).
@@ -297,10 +294,10 @@ public:
 
     void * alloc(size_t size)
     {
-        if (size <= initial_bytes)
+        if (size <= N)
         {
             if constexpr (Base::clear_memory)
-                memset(stack_memory, 0, initial_bytes);
+                memset(stack_memory, 0, N);
             return stack_memory;
         }
 
@@ -309,18 +306,18 @@ public:
 
     void free(void * buf, size_t size)
     {
-        if (size > initial_bytes)
+        if (size > N)
             Base::free(buf, size);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size)
     {
         /// Was in stack_memory, will remain there.
-        if (new_size <= initial_bytes)
+        if (new_size <= N)
             return buf;
 
         /// Already was big enough to not fit in stack_memory.
-        if (old_size > initial_bytes)
+        if (old_size > N)
             return Base::realloc(buf, old_size, new_size, Alignment);
 
         /// Was in stack memory, but now will not fit there.
@@ -332,19 +329,9 @@ public:
 protected:
     static constexpr size_t getStackThreshold()
     {
-        return initial_bytes;
+        return N;
     }
 };
-
-// A constant that gives the number of initially available bytes in
-// the allocator. Used to check that this number is in sync with the
-// initial size of array or hash table that uses the allocator.
-template<typename TAllocator>
-constexpr size_t allocatorInitialBytes = 0;
-
-template<typename Base, size_t initial_bytes, size_t Alignment>
-constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
-    Base, initial_bytes, Alignment>> = initial_bytes;
 
 
 #if !__clang__

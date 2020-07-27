@@ -19,8 +19,8 @@ namespace DB
 class Context;
 class StorageDistributedDirectoryMonitor;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -61,6 +61,9 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
 
     bool isRemote() const override { return true; }
 
@@ -121,14 +124,12 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    std::unique_ptr<Context> global_context;
-    Logger * log;
+    Context global_context;
+    Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
@@ -176,7 +177,7 @@ protected:
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumeJBODPtr volume;
+    VolumePtr volume;
 
     struct ClusterNodeData
     {

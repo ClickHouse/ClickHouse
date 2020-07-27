@@ -1,1 +1,5 @@
-# Fortunately, we have no suppressions!
+# libc++
+race:locale
+
+# Too many mutexes: https://github.com/google/sanitizers/issues/950
+deadlock:DB::MergeTreeReadPool::fillPerPartInfo

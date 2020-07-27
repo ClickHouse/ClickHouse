@@ -20,13 +20,11 @@ class DictionaryFactory;
 void registerDictionaryRangeHashed(DictionaryFactory & factory);
 void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
 void registerDictionaryComplexKeyCache(DictionaryFactory & factory);
-void registerDictionaryComplexKeyDirect(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
-void registerDictionaryDirect(DictionaryFactory & factory);
 
 void registerDictionaries();
 }

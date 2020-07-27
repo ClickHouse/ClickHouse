@@ -21,5 +21,3 @@ src:*/contrib/openssl/*
 src:*/contrib/simdjson/*
 src:*/contrib/lz4/*
 
-# mariadbclient, NSS functions from libc
-fun:_nss_files_parse_servent

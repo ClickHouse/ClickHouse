@@ -27,6 +27,10 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
+    /// Consider columns coming from the underlying tables
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
+
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
     Pipes read(
@@ -61,9 +65,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
-
-    NamesAndTypesList getVirtuals() const override;
+    DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
 protected:
     StorageMerge(

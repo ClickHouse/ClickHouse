@@ -189,10 +189,6 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
-                               IColumn::SpecialSort) const override;
-
-    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
 
     void reserve(size_t n) override
     {
@@ -205,7 +201,6 @@ public:
 
     Field operator[](size_t n) const override
     {
-        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
 
@@ -275,6 +270,9 @@ public:
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
+    void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

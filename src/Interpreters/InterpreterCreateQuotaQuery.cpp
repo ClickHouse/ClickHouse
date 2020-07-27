@@ -56,7 +56,12 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
             auto & quota_limits = *it;
             quota_limits.randomize_interval = query_limits.randomize_interval;
             for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-                quota_limits.max[resource_type] = query_limits.max[resource_type];
+            {
+                if (query_limits.max[resource_type])
+                    quota_limits.max[resource_type] = *query_limits.max[resource_type];
+                else
+                    quota_limits.max[resource_type] = Quota::UNLIMITED;
+            }
         }
 
         const ExtendedRoleSet * roles = nullptr;

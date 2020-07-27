@@ -29,6 +29,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -95,7 +96,7 @@ namespace
     {
         if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            LOG_INFO(log, "{}%", processed * 100.0 / total);
+            LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
             watch.restart();
         }
     }
@@ -121,11 +122,12 @@ void DatabaseOrdinary::loadStoredObjects(
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     using FileNames = std::map<std::string, ASTPtr>;
+    std::mutex file_names_mutex;
     FileNames file_names;
 
     size_t total_dictionaries = 0;
 
-    auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
+    auto process_metadata = [&context, &file_names, &total_dictionaries, &file_names_mutex, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
@@ -134,6 +136,7 @@ void DatabaseOrdinary::loadStoredObjects(
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
+                std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
             }
@@ -150,7 +153,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
-    LOG_INFO(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
+    LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};

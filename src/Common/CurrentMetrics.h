@@ -94,12 +94,6 @@ namespace CurrentMetrics
             amount = new_amount;
         }
 
-        void sub(Value value = 1)
-        {
-            what->fetch_sub(value, std::memory_order_relaxed);
-            amount -= value;
-        }
-
         /// Subtract value before destructor.
         void destroy()
         {

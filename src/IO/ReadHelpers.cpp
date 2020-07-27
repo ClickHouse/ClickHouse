@@ -283,9 +283,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     if (buf.eof())
         throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
-    char char_after_backslash = *buf.position();
-
-    if (char_after_backslash == 'x')
+    if (*buf.position() == 'x')
     {
         ++buf.position();
         /// escape sequence of the form \xAA
@@ -293,7 +291,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         readPODBinary(hex_code, buf);
         s.push_back(unhex2(hex_code));
     }
-    else if (char_after_backslash == 'N')
+    else if (*buf.position() == 'N')
     {
         /// Support for NULLs: \N sequence must be parsed as empty string.
         ++buf.position();
@@ -301,22 +299,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     else
     {
         /// The usual escape sequence of a single character.
-        char decoded_char = parseEscapeSequence(char_after_backslash);
-
-        /// For convenience using LIKE and regular expressions,
-        /// we leave backslash when user write something like 'Hello 100\%':
-        /// it is parsed like Hello 100\% instead of Hello 100%
-        if (decoded_char != '\\'
-            && decoded_char != '\''
-            && decoded_char != '"'
-            && decoded_char != '`'  /// MySQL style identifiers
-            && decoded_char != '/'  /// JavaScript in HTML
-            && !isControlASCII(decoded_char))
-        {
-            s.push_back('\\');
-        }
-
-        s.push_back(decoded_char);
+        s.push_back(parseEscapeSequence(*buf.position()));
         ++buf.position();
     }
 }
@@ -649,6 +632,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
                     ++next_pos;
             }();
+
 
             appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;

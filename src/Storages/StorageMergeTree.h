@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -146,6 +146,8 @@ private:
 
     /// Just checks versions of each active data part
     bool isMutationDone(Int64 mutation_version) const;
+
+    void startBackgroundMovesIfNeeded() override;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;

@@ -184,7 +184,7 @@ bool isStorageTouchedByMutations(
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
     /// after that we will use context from destroyed stack frame in our stream.
     InterpreterSelectQuery interpreter(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits());
-    BlockInputStreamPtr in = interpreter.execute().getInputStream();
+    BlockInputStreamPtr in = interpreter.execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -221,11 +221,14 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 
     NameSet key_columns;
 
-    for (const String & col : merge_tree_data->getColumnsRequiredForPartitionKey())
-        key_columns.insert(col);
+    if (merge_tree_data->partition_key_expr)
+        for (const String & col : merge_tree_data->partition_key_expr->getRequiredColumns())
+            key_columns.insert(col);
 
-    for (const String & col : merge_tree_data->getColumnsRequiredForSortingKey())
-        key_columns.insert(col);
+    auto sorting_key_expr = merge_tree_data->sorting_key_expr;
+    if (sorting_key_expr)
+        for (const String & col : sorting_key_expr->getRequiredColumns())
+            key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
     if (!merge_tree_data->merging_params.sign_column.empty())
@@ -339,7 +342,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("not", command.predicate->clone());
+            auto negated_predicate = makeASTFunction("isZeroOrNull", command.predicate->clone());
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
@@ -687,7 +690,7 @@ void MutationsInterpreter::validate(TableStructureReadLockHolder &)
     }
 
     /// Do not use getSampleBlock in order to check the whole pipeline.
-    Block first_stage_header = select_interpreter->execute().getInputStream()->getHeader();
+    Block first_stage_header = select_interpreter->execute().in->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
     addStreamsForLaterStages(stages, in)->getHeader();
 }
@@ -697,7 +700,7 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
-    BlockInputStreamPtr in = select_interpreter->execute().getInputStream();
+    BlockInputStreamPtr in = select_interpreter->execute().in;
 
     auto result_stream = addStreamsForLaterStages(stages, in);
 

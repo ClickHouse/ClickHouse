@@ -1,4 +1,6 @@
-<test max_ignored_relative_change="0.3">
+<test>
+
+
     <settings>
         <max_threads>1</max_threads>
     </settings>
@@ -29,5 +31,4 @@
     </create_query>
 
     <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
-    <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
 </test>

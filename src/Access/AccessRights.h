@@ -49,14 +49,12 @@ public:
     void revoke(const AccessRightsElements & elements, std::string_view current_database = {});
 
     /// Returns the information about all the access granted.
-    struct GrantsAndPartialRevokes
+    struct Elements
     {
         AccessRightsElements grants;
-        AccessRightsElements revokes;
+        AccessRightsElements partial_revokes;
     };
-    AccessRightsElements getGrants() const;
-    AccessRightsElements getPartialRevokes() const;
-    GrantsAndPartialRevokes getGrantsAndPartialRevokes() const;
+    Elements getElements() const;
 
     /// Returns the information about all the access granted as a string.
     String toString() const;
@@ -93,8 +91,6 @@ private:
 
     template <typename... Args>
     AccessFlags getAccessImpl(const Args &... args) const;
-
-    void getGrantsAndPartialRevokesImpl(AccessRightsElements * grants, AccessRightsElements * partial_revokes) const;
 
     void logTree() const;
 

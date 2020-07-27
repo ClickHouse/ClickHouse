@@ -63,7 +63,6 @@ SRCS(
     parseRemoteDescription.cpp
     PipeFDs.cpp
     PODArray.cpp
-    ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
     QueryProfiler.cpp
     quoteString.cpp
@@ -86,7 +85,6 @@ SRCS(
     TerminalSize.cpp
     thread_local_rng.cpp
     ThreadFuzzer.cpp
-    ThreadProfileEvents.cpp
     ThreadPool.cpp
     ThreadStatus.cpp
     TraceCollector.cpp

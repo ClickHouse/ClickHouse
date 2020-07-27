@@ -9,12 +9,8 @@
 namespace DB
 {
 
-StorageValues::StorageValues(
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const Block & res_block_,
-    const NamesAndTypesList & virtuals_)
-    : IStorage(table_id_), res_block(res_block_), virtuals(virtuals_)
+StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_)
+    : IStorage(table_id_), res_block(res_block_)
 {
     setColumns(columns_);
 }

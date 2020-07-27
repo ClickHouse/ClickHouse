@@ -32,9 +32,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -201,7 +201,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
 
         if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
-            throw Exception{"Cannot convert field to type " + type.getName(), ErrorCodes::CANNOT_CONVERT_TYPE};
+            throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
@@ -366,5 +366,16 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }
 
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
+{
+    bool is_null = from_value.isNull();
+    if (is_null && !to_type.isNullable())
+        throw Exception("Cannot convert NULL to " + to_type.getName(), ErrorCodes::TYPE_MISMATCH);
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint);
+    if (!is_null && converted.isNull())
+        throw Exception("Cannot convert value" + (from_type_hint ? " from " + from_type_hint->getName() : "") +
+            ": it cannot be represented as " + to_type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    return converted;
+}
 
 }

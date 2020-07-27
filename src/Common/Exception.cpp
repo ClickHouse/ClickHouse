@@ -5,10 +5,8 @@
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
 #include <common/demangle.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
@@ -27,8 +25,6 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MREMAP;
 }
 
 
@@ -40,7 +36,7 @@ Exception::Exception(const std::string & msg, int code)
 #ifndef NDEBUG
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '" + msg + "'.");
         assert(false);
     }
 #endif
@@ -129,10 +125,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
 {
     try
     {
-        if (start_of_message.empty())
-            LOG_ERROR(logger, "{}", getCurrentExceptionMessage(true));
-        else
-            LOG_ERROR(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
+        LOG_ERROR(logger, start_of_message << (start_of_message.empty() ? "" : ": ") << getCurrentExceptionMessage(true));
     }
     catch (...)
     {
@@ -160,64 +153,6 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & 
 #endif
 }
 
-
-/** It is possible that the system has enough memory,
-  *  but we have shortage of the number of available memory mappings.
-  * Provide good diagnostic to user in that case.
-  */
-static void getNotEnoughMemoryMessage(std::string & msg)
-{
-#if defined(__linux__)
-    try
-    {
-        static constexpr size_t buf_size = 4096;
-        char buf[buf_size];
-
-        UInt64 max_map_count = 0;
-        {
-            ReadBufferFromFile file("/proc/sys/vm/max_map_count", buf_size, -1, buf);
-            readText(max_map_count, file);
-        }
-
-        UInt64 num_maps = 0;
-        {
-            ReadBufferFromFile file("/proc/self/maps", buf_size, -1, buf);
-            while (!file.eof())
-            {
-                char * next_pos = find_first_symbols<'\n'>(file.position(), file.buffer().end());
-                file.position() = next_pos;
-
-                if (!file.hasPendingData())
-                    continue;
-
-                if (*file.position() == '\n')
-                {
-                    ++num_maps;
-                    ++file.position();
-                }
-            }
-        }
-
-        if (num_maps > max_map_count * 0.99)
-        {
-            msg += fmt::format(
-                "\nIt looks like that the process is near the limit on number of virtual memory mappings."
-                "\nCurrent number of mappings (/proc/self/maps): {}."
-                "\nLimit on number of mappings (/proc/sys/vm/max_map_count): {}."
-                "\nYou should increase the limit for vm.max_map_count in /etc/sysctl.conf"
-                "\n",
-                num_maps, max_map_count);
-        }
-    }
-    catch (...)
-    {
-        msg += "\nCannot obtain additional info about memory usage.";
-    }
-#else
-    (void)msg;
-#endif
-}
-
 static std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
@@ -232,13 +167,6 @@ static std::string getExtraExceptionInfo(const std::exception & e)
         {
             if (errno_exception->getErrno() == ENOSPC && errno_exception->getPath())
                 getNoSpaceLeftInfoMessage(errno_exception->getPath().value(), msg);
-            else if (errno_exception->code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
-                || errno_exception->code() == ErrorCodes::CANNOT_MREMAP)
-                getNotEnoughMemoryMessage(msg);
-        }
-        else if (dynamic_cast<const std::bad_alloc *>(&e))
-        {
-            getNotEnoughMemoryMessage(msg);
         }
     }
     catch (...)

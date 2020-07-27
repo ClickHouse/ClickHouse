@@ -31,12 +31,8 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
-
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
-class MarkCache;
 
 namespace ErrorCodes
 {
@@ -64,14 +60,14 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const VolumePtr & volume,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path,
         Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const VolumePtr & volume,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path,
         Type part_type_);
 
@@ -159,7 +155,7 @@ public:
     String name;
     MergeTreePartInfo info;
 
-    VolumePtr volume;
+    DiskPtr disk;
 
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
@@ -320,7 +316,7 @@ protected:
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
 
-    /// Columns description. Cannot be changed, after part initialization.
+    /// Columns description. Cannot be changed, after part initialiation.
     NamesAndTypesList columns;
     const Type part_type;
 
@@ -353,7 +349,7 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();

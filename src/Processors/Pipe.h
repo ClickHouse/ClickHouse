@@ -31,9 +31,6 @@ public:
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
 
-    /// Append processors to pipe. After this, it possibly will not have tree shape.
-    void addProcessors(const Processors & processors_);
-
     OutputPort & getPort() const { return *output_port; }
     const Block & getHeader() const { return output_port->getHeader(); }
 

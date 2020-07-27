@@ -29,8 +29,6 @@ private:
     SortDescription description;
     UInt64 limit;
     RowsBeforeLimitCounterPtr read_rows;
-    Block threshold_block;
-    ColumnRawPtrs threshold_block_columns;
 };
 
 }

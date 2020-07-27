@@ -41,7 +41,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
-        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. Table `{}` will be created in `system` database instead of `{}`", table, database);
+        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. "
+                                             "Table `" << table << "` will be created in `system` database "
+                                             "instead of `" << database << "`");
         database = default_database_name;
     }
 
@@ -95,22 +97,12 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     if (metric_log)
         logs.emplace_back(metric_log.get());
 
-    bool lazy_load = config.getBool("system_tables_lazy_load", false);
-
-    try
+    bool lazy_load = config.getBool("system_tables_lazy_load", true);
+    for (auto & log : logs)
     {
-        for (auto & log : logs)
-        {
-            if (!lazy_load)
-                log->prepareTable();
-            log->startup();
-        }
-    }
-    catch (...)
-    {
-        /// join threads
-        shutdown();
-        throw;
+        if (!lazy_load)
+            log->prepareTable();
+        log->startup();
     }
 }
 

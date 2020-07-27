@@ -18,12 +18,14 @@ CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 void CollapsingFinalBlockInputStream::reportBadCounts()
 {
     /// With inconsistent data, this is an unavoidable error that can not be easily fixed by admins. Therefore Warning.
-    LOG_WARNING(log, "Incorrect data: number of rows with sign = 1 ({}) differs with number of rows with sign = -1 ({}) by more than one", count_positive, count_negative);
+    LOG_WARNING(log, "Incorrect data: number of rows with sign = 1 (" << count_positive
+        << ") differs with number of rows with sign = -1 (" << count_negative
+        << ") by more than one");
 }
 
 void CollapsingFinalBlockInputStream::reportBadSign(Int8 sign)
 {
-    LOG_ERROR(log, "Invalid sign: {}", static_cast<int>(sign));
+    LOG_ERROR(log, "Invalid sign: " << static_cast<int>(sign));
 }
 
 void CollapsingFinalBlockInputStream::fetchNextBlock(size_t input_index)
@@ -133,7 +135,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
         if (output_blocks.empty())
         {
             if (blocks_fetched != blocks_output)
-                LOG_ERROR(log, "Logical error: CollapsingFinalBlockInputStream has output {} blocks instead of {}", blocks_output, blocks_fetched);
+                LOG_ERROR(log, "Logical error: CollapsingFinalBlockInputStream has output " << blocks_output << " blocks instead of " << blocks_fetched);
 
             return Block();
         }

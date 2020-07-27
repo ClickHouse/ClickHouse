@@ -1,5 +1,4 @@
 #include <Storages/Kafka/StorageKafka.h>
-#include <Storages/Kafka/parseSyslogLevel.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
@@ -33,7 +32,6 @@
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <librdkafka/rdkafka.h>
 
 
 namespace DB
@@ -126,9 +124,13 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage(table_id_)
+    : IStorage(table_id_,
+    ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
+                        {"_key", std::make_shared<DataTypeString>()},
+                        {"_offset", std::make_shared<DataTypeUInt64>()},
+                        {"_partition", std::make_shared<DataTypeUInt64>()},
+                        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
     , global_context(context_.getGlobalContext())
-    , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
     , group(global_context.getMacros()->expand(group_))
@@ -142,8 +144,6 @@ StorageKafka::StorageKafka(
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
 {
-    kafka_context.makeQueryContext();
-
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
@@ -175,7 +175,7 @@ Pipes StorageKafka::read(
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
     }
 
-    LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
+    LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
     return pipes;
 }
 
@@ -212,9 +212,6 @@ void StorageKafka::shutdown()
 {
     // Interrupt streaming thread
     stream_cancelled = true;
-
-    LOG_TRACE(log, "Waiting for cleanup");
-    task->deactivate();
 
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -322,33 +319,6 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
-
-    // No need to add any prefix, messages can be distinguished
-    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
-    {
-        auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-        LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
-    });
-
-    // Configure interceptor to change thread name
-    //
-    // TODO: add interceptors support into the cppkafka.
-    // XXX:  rdkafka uses pthread_set_name_np(), but glibc-compatibliity overrides it to noop.
-    {
-        // This should be safe, since we wait the rdkafka object anyway.
-        void * self = static_cast<void *>(this);
-
-        int status;
-
-        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(), "setThreadName", rdKafkaOnNew, self);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set new interceptor");
-
-        // cppkafka always copy the configuration
-        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(), "setThreadName", rdKafkaOnConfDup, self);
-        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set dup conf interceptor");
-    }
 }
 
 bool StorageKafka::checkDependencies(const StorageID & table_id)
@@ -361,7 +331,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, global_context);
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab);
         if (!table)
             return false;
 
@@ -395,7 +365,7 @@ void StorageKafka::threadFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
 
                 // Exit the loop & reschedule if some stream stalled
                 auto some_stream_is_stalled = streamToViews();
@@ -429,7 +399,7 @@ void StorageKafka::threadFunc()
 bool StorageKafka::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id, global_context);
+    auto table = DatabaseCatalog::instance().getTable(table_id);
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
@@ -441,6 +411,9 @@ bool StorageKafka::streamToViews()
     size_t block_size = max_block_size;
     if (block_size == 0)
         block_size = settings.max_block_size;
+
+    auto kafka_context = Context(global_context);
+    kafka_context.makeQueryContext();
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -717,15 +690,5 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
-NamesAndTypesList StorageKafka::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_topic", std::make_shared<DataTypeString>()},
-        {"_key", std::make_shared<DataTypeString>()},
-        {"_offset", std::make_shared<DataTypeUInt64>()},
-        {"_partition", std::make_shared<DataTypeUInt64>()},
-        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
-    };
-}
 
 }

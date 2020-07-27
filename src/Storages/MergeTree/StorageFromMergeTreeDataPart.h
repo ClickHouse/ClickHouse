@@ -39,6 +39,9 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
+
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
     {
         return part->storage.getColumnDependencies(updated_columns);
@@ -49,21 +52,17 @@ public:
         return part->storage.getInMemoryMetadata();
     }
 
-    NamesAndTypesList getVirtuals() const override
-    {
-        return part->storage.getVirtuals();
-    }
+    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
+
+    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_))
+        : IStorage(getIDFromPart(part_), ColumnsDescription(part_->storage.getColumns().getVirtuals(), true))
         , part(part_)
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());
-        setSortingKey(part_->storage.getSortingKey());
-        setColumnTTLs(part->storage.getColumnTTLs());
-        setTableTTLs(part->storage.getTableTTLs());
     }
 
 private:

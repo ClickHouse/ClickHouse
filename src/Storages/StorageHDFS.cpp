@@ -42,7 +42,14 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
+    : IStorage(table_id_,
+               ColumnsDescription({
+                                          {"_path", std::make_shared<DataTypeString>()},
+                                          {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
     , uri(uri_)
     , format_name(format_name_)
     , context(context_)
@@ -338,13 +345,6 @@ void registerStorageHDFS(StorageFactory & factory)
     });
 }
 
-NamesAndTypesList StorageHDFS::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
-}
 }
 
 #endif

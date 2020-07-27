@@ -100,7 +100,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         threshold = k;
     }
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold, load_factor, argument_types, params));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(
+        *argument_types[0], threshold, load_factor, argument_types, params));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, load_factor, params));

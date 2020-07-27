@@ -149,11 +149,21 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table})->getStorageID();
     }
 
     if (!select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+}
+
+NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
+{
+    return getTargetTable()->getColumn(column_name);
+}
+
+bool StorageMaterializedView::hasColumn(const String & column_name) const
+{
+    return getTargetTable()->hasColumn(column_name);
 }
 
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
@@ -163,7 +173,7 @@ StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
     return result;
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr &query_ptr) const
 {
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
 }
@@ -204,7 +214,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -362,12 +372,12 @@ void StorageMaterializedView::shutdown()
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return DatabaseCatalog::instance().getTable(target_table_id, global_context);
+    return DatabaseCatalog::instance().getTable(target_table_id);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
+    return DatabaseCatalog::instance().tryGetTable(target_table_id);
 }
 
 Strings StorageMaterializedView::getDataPaths() const

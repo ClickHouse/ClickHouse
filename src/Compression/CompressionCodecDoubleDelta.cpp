@@ -166,6 +166,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         throw Exception("Cannot compress, data size " + toString(source_size)
                         + " is not aligned to " + toString(sizeof(ValueType)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
+    const char * dest_start = dest;
 
     const UInt32 items_count = source_size / sizeof(ValueType);
     unalignedStore<UInt32>(dest, items_count);
@@ -229,7 +230,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + writer.count() / 8;
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename ValueType>

@@ -22,6 +22,14 @@ struct ExtractRaw
                 expects_end.pop_back();
                 current_expect_end = expects_end.empty() ? 0 : expects_end.back();
             }
+            else if (current_expect_end == '"')
+            {
+                /// skip backslash
+                if (*pos == '\\' && pos + 1 < end && pos[1] == '"')
+                {
+                    pos++;
+                }
+            }
             else
             {
                 switch (*pos)
@@ -37,11 +45,6 @@ struct ExtractRaw
                     case '"' :
                         current_expect_end = '"';
                         expects_end.push_back(current_expect_end);
-                        break;
-                    case '\\':
-                        /// skip backslash
-                        if (pos + 1 < end && pos[1] == '"')
-                            pos++;
                         break;
                     default:
                         if (!current_expect_end && (*pos == ',' || *pos == '}'))

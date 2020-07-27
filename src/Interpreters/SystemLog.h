@@ -11,6 +11,7 @@
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -51,7 +53,7 @@ namespace DB
 
         static std::string name();
         static Block createBlock();
-        void appendToBlock(MutableColumns & columns) const;
+        void appendToBlock(Block & block) const;
     };
     */
 
@@ -62,13 +64,6 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
-class Context;
-class QueryLog;
-class QueryThreadLog;
-class PartLog;
-class TextLog;
-class TraceLog;
-class MetricLog;
 
 
 class ISystemLog
@@ -169,9 +164,9 @@ private:
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
     // An always-incrementing index of the first message currently in the queue.
-    // We use it to give a global sequential index to every message, so that we
-    // can wait until a particular message is flushed. This is used to implement
-    // synchronous log flushing for SYSTEM FLUSH LOGS.
+    // We use it to give a global sequential index to every message, so that we can wait
+    // until a particular message is flushed. This is used to implement synchronous log
+    // flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
     std::condition_variable flush_event;
@@ -179,8 +174,6 @@ private:
     uint64_t requested_flush_before = 0;
     // Flushed log up to this index, exclusive
     uint64_t flushed_before = 0;
-    // Logged overflow message at this queue front index
-    uint64_t logged_queue_full_at_index = -1;
 
     void savingThreadFunction();
 
@@ -203,8 +196,8 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     size_t flush_interval_milliseconds_)
     : context(context_)
     , table_id(database_name_, table_name_)
-    , storage_def(storage_def_)
-    , flush_interval_milliseconds(flush_interval_milliseconds_)
+    , storage_def(storage_def_),
+    flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
@@ -214,7 +207,6 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::startup()
 {
-    std::unique_lock lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -245,25 +237,14 @@ void SystemLog<LogElement>::add(const LogElement & element)
             requested_flush_before = queue_end;
 
         flush_event.notify_all();
-        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
+        LOG_INFO(log, "Queue is half full for system log '" + demangle(typeid(*this).name()) + "'.");
     }
 
     if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
     {
-        // Ignore all further entries until the queue is flushed.
-        // Log a message about that. Don't spam it -- this might be especially
-        // problematic in case of trace log. Remember what the front index of the
-        // queue was when we last logged the message. If it changed, it means the
-        // queue was flushed, and we can log again.
-        if (queue_front_index != logged_queue_full_at_index)
-        {
-            logged_queue_full_at_index = queue_front_index;
-
-            // TextLog sets its logger level to 0, so this log is a noop and
-            // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
-        }
-
+        // TextLog sets its logger level to 0, so this log is a noop and there
+        // is no recursive logging.
+        LOG_ERROR(log, "Queue is full for system log '" + demangle(typeid(*this).name()) + "'.");
         return;
     }
 
@@ -306,11 +287,6 @@ void SystemLog<LogElement>::stopFlushThread()
     {
         std::unique_lock lock(mutex);
 
-        if (!saving_thread.joinable())
-        {
-            return;
-        }
-
         if (is_shutdown)
         {
             return;
@@ -343,14 +319,8 @@ void SystemLog<LogElement>::savingThreadFunction()
 
             {
                 std::unique_lock lock(mutex);
-                flush_event.wait_for(lock,
-                    std::chrono::milliseconds(flush_interval_milliseconds),
-                    [&] ()
-                    {
-                        return requested_flush_before > flushed_before
-                            || is_shutdown;
-                    }
-                );
+                flush_event.wait_for(lock, std::chrono::milliseconds(flush_interval_milliseconds),
+                    [&] () { return requested_flush_before > flushed_before || is_shutdown; });
 
                 queue_front_index += queue.size();
                 to_flush_end = queue_front_index;
@@ -374,7 +344,6 @@ void SystemLog<LogElement>::savingThreadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    LOG_TRACE(log, "Terminating");
 }
 
 
@@ -383,19 +352,16 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, {} entries to flush", to_flush.size());
+        LOG_TRACE(log, "Flushing system log");
 
-        /// We check for existence of the table and create it as needed at every
-        /// flush. This is done to allow user to drop the table at any moment
-        /// (new empty table will be created automatically). BTW, flush method
-        /// is called from single thread.
+        /// We check for existence of the table and create it as needed at every flush.
+        /// This is done to allow user to drop the table at any moment (new empty table will be created automatically).
+        /// BTW, flush method is called from single thread.
         prepareTable();
 
         Block block = LogElement::createBlock();
-        MutableColumns columns = block.mutateColumns();
         for (const auto & elem : to_flush)
-            elem.appendToBlock(columns);
-        block.setColumns(std::move(columns));
+            elem.appendToBlock(block);
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -404,7 +370,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert->table_id = table_id;
         ASTPtr query_ptr(insert.release());
 
-        InterpreterInsertQuery interpreter(query_ptr, context);
+        // we need query context to do inserts to target table with MV containing subqueries or joins
+        auto insert_context = Context(context);
+        insert_context.makeQueryContext();
+
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         io.out->writePrefix();
@@ -416,13 +386,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    {
-        std::unique_lock lock(mutex);
-        flushed_before = to_flush_end;
-        flush_event.notify_all();
-    }
-
-    LOG_TRACE(log, "Flushed system log");
+    std::unique_lock lock(mutex);
+    flushed_before = to_flush_end;
+    flush_event.notify_all();
 }
 
 
@@ -431,7 +397,7 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    table = DatabaseCatalog::instance().tryGetTable(table_id);
 
     if (table)
     {
@@ -442,7 +408,7 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
+            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
@@ -461,7 +427,8 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
+                " Renaming it to " << backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
@@ -469,13 +436,13 @@ void SystemLog<LogElement>::prepareTable()
             table = nullptr;
         }
         else if (!is_prepared)
-            LOG_DEBUG(log, "Will use existing table {} for {}", description, LogElement::name());
+            LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
     }
 
     if (!table)
     {
         /// Create the table.
-        LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
+        LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
 
         auto create = getCreateTableQuery();
 
@@ -483,7 +450,7 @@ void SystemLog<LogElement>::prepareTable()
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = DatabaseCatalog::instance().getTable(table_id, context);
+        table = DatabaseCatalog::instance().getTable(table_id);
     }
 
     is_prepared = true;

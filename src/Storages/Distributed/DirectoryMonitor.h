@@ -9,8 +9,6 @@
 #include <IO/ReadBufferFromFile.h>
 
 
-namespace CurrentMetrics { class Increment; }
-
 namespace DB
 {
 
@@ -39,9 +37,9 @@ public:
     bool scheduleAfter(size_t ms);
 private:
     void run();
-    bool processFiles(CurrentMetrics::Increment & metric_pending_files);
-    void processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files);
-    void processFilesWithBatching(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files);
+    bool processFiles();
+    void processFile(const std::string & file_path);
+    void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
     static bool isFileBrokenErrorCode(int code);
     void markAsBroken(const std::string & file_path) const;

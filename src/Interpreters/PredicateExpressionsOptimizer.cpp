@@ -49,13 +49,6 @@ static ASTs splitConjunctionPredicate(const std::initializer_list<const ASTPtr> 
 {
     std::vector<ASTPtr> res;
 
-    auto remove_expression_at_index = [&res] (const size_t index)
-    {
-        if (index < res.size() - 1)
-            std::swap(res[index], res.back());
-        res.pop_back();
-    };
-
     for (const auto & predicate : predicates)
     {
         if (!predicate)
@@ -65,14 +58,15 @@ static ASTs splitConjunctionPredicate(const std::initializer_list<const ASTPtr> 
 
         for (size_t idx = 0; idx < res.size();)
         {
-            const auto & expression = res.at(idx);
+            ASTPtr expression = res.at(idx);
 
             if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
             {
+                res.erase(res.begin() + idx);
+
                 for (auto & child : function->arguments->children)
                     res.emplace_back(child);
 
-                remove_expression_at_index(idx);
                 continue;
             }
             ++idx;

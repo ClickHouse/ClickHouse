@@ -12,7 +12,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_SSL
+#if USE_POCO_NETSSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/HTTPSClientSession.h>
@@ -73,7 +73,7 @@ namespace
         HTTPSessionPtr session;
 
         if (https)
-#if USE_SSL
+#if USE_POCO_NETSSL
             session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
@@ -173,7 +173,7 @@ namespace
                 auto msg = Poco::AnyCast<std::string>(session_data);
                 if (!msg.empty())
                 {
-                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
+                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");
                     /// Host can change IP
                     const auto ip = DNSResolver::instance().resolveHost(host).toString();
                     if (ip != session->getHost())

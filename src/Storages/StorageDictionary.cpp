@@ -96,17 +96,29 @@ String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesLi
 StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
-    const DictionaryStructure & dictionary_structure_)
+    const ColumnsDescription & columns_,
+    Location location_)
     : IStorage(table_id_)
     , dictionary_name(dictionary_name_)
+    , location(location_)
 {
-    setColumns(ColumnsDescription{getNamesAndTypes(dictionary_structure_)});
+    setColumns(columns_);
+}
+
+
+StorageDictionary::StorageDictionary(
+    const StorageID & table_id_, const String & dictionary_name_, const DictionaryStructure & dictionary_structure_, Location location_)
+    : StorageDictionary(table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, location_)
+{
 }
 
 
 void StorageDictionary::checkTableCanBeDropped() const
 {
-    throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query.", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+    if (location == Location::SameDatabaseAndNameAsDictionary)
+        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+    if (location == Location::DictionaryDatabase)
+        throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
 Pipes StorageDictionary::read(
@@ -138,11 +150,14 @@ void registerStorageDictionary(StorageFactory & factory)
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
         String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
-        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-        checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
+        if (!args.attach)
+        {
+            const auto & dictionary = args.context.getExternalDictionariesLoader().getDictionary(dictionary_name);
+            const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+            checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
+        }
 
-        return StorageDictionary::create(args.table_id, dictionary_name, dictionary_structure);
+        return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom);
     });
 }
 

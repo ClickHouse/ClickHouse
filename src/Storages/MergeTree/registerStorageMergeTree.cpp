@@ -17,8 +17,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
-#include <Interpreters/Context.h>
-
 
 namespace DB
 {

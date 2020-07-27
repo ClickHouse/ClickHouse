@@ -147,11 +147,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             /// That is, do not insert the same data to the same partition twice.
             block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
+            LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << current_block.block.rows() << " rows");
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
+            LOG_DEBUG(log, "Wrote block with " << current_block.block.rows() << " rows");
         }
 
         try
@@ -198,7 +198,8 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
+void ReplicatedMergeTreeBlockOutputStream::commitPart(
+    zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     storage.check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
@@ -214,7 +215,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     if (!block_number_lock)
     {
-        LOG_INFO(log, "Block with ID {} already exists; ignoring it.", block_id);
+        LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it.");
         part->is_duplicate = true;
         last_block_is_duplicate = true;
         ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
@@ -329,7 +330,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         if (multi_code == Coordination::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
-            LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
+            LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
             part->is_duplicate = true;
             transaction.rollback();

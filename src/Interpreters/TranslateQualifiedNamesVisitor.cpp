@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -207,13 +208,11 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
                 has_asterisk = true;
-                break;
             }
             else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
             {
                 visit(*qa, child, data); /// check if it's OK before rewrite
                 has_asterisk = true;
-                break;
             }
         }
 
@@ -296,7 +295,8 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
             {
                 String alias = key->tryGetAlias();
                 if (alias.empty())
-                    throw Exception("Logical error: expected identifier or alias, got: " + key->getID(), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Wrong key in USING. Expected identifier or alias, got: " + key->getID(),
+                                    ErrorCodes::UNSUPPORTED_JOIN_KEYS);
                 data.join_using_columns.insert(alias);
             }
     }
