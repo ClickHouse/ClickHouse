@@ -8,13 +8,14 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::DataStreamTraits getTraits(bool has_filter)
 {
     return ITransformingStep::DataStreamTraits
     {
             .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
+            .preserves_number_of_rows = !has_filter,
     };
 }
 
@@ -29,7 +30,7 @@ TotalsHavingStep::TotalsHavingStep(
     : ITransformingStep(
             input_stream_,
             TotalsHavingTransform::transformHeader(input_stream_.header, expression_, final_),
-            getTraits())
+            getTraits(!filter_column_.empty()))
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)

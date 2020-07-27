@@ -14,6 +14,7 @@ static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr 
             .preserves_distinct_columns = !expression->hasJoinOrArrayJoin(), /// I suppose it actually never happens
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
+            .preserves_number_of_rows = false,
     };
 }
 

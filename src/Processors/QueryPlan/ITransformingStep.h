@@ -23,6 +23,10 @@ public:
         /// Won't change the number of ports for pipeline.
         /// Examples: true for ExpressionStep, false for MergeSortingStep
         bool preserves_number_of_streams;
+
+        /// Won't change the total number of rows.
+        /// Examples: true ExpressionStep (without join or array join), false for FilterStep
+        bool preserves_number_of_rows;
     };
 
     ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_ = true);
@@ -30,6 +34,8 @@ public:
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
     virtual void transformPipeline(QueryPipeline & pipeline) = 0;
+
+    const DataStreamTraits & getTransformTraits() const { return transform_traits; }
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -41,6 +47,8 @@ private:
     /// We collect processors got after pipeline transformation.
     Processors processors;
     bool collect_processors;
+
+    DataStreamTraits transform_traits;
 };
 
 }

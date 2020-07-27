@@ -6,13 +6,14 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::DataStreamTraits getTraits(size_t limit)
 {
     return ITransformingStep::DataStreamTraits
     {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
+            .preserves_number_of_rows = limit == 0,
     };
 }
 
@@ -25,7 +26,7 @@ MergeSortingStep::MergeSortingStep(
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits())
+    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
