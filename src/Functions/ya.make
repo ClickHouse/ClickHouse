@@ -34,7 +34,6 @@ PEERDIR(
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
 SRCS(
     abs.cpp
-    abtesting.cpp
     acos.cpp
     addDays.cpp
     addHours.cpp
