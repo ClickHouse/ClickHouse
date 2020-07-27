@@ -361,7 +361,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         Generator generator;
         generator.init(block, arguments);
@@ -454,7 +454,7 @@ private:
         const ColumnArray::Offsets & src_array_offsets,
         const char * delimiter, const size_t delimiter_size,
         ColumnString::Chars & dst_chars,
-        ColumnString::Offsets & dst_string_offsets)
+        ColumnString::Offsets & dst_string_offsets) const
     {
         size_t size = src_array_offsets.size();
 
@@ -536,7 +536,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         String delimiter;
         if (arguments.size() == 2)

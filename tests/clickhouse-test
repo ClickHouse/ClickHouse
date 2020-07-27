@@ -202,9 +202,8 @@ def run_tests_array(all_tests_with_params):
         (name, ext) = os.path.splitext(case)
 
         try:
+            sys.stdout.flush()
             sys.stdout.write("{0:72}".format(name + ": "))
-            if run_total == 1:
-                sys.stdout.flush()
 
             if args.skip and any(s in name for s in args.skip):
                 print(MSG_SKIPPED + " - skip")
@@ -598,16 +597,14 @@ def main(args):
             if jobs > run_total:
                 run_total = jobs
 
+            batch_size = len(all_tests) / jobs
             all_tests_array = []
-            for n in range(1, 1 + int(run_total)):
-                start = int(tests_n / run_total * (n - 1))
-                end = int(tests_n / run_total * n)
-                all_tests_array.append([all_tests[start : end], suite, suite_dir, suite_tmp_dir, run_total])
+            for i in range(0, len(all_tests), batch_size):
+                all_tests_array.append((all_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
 
             if jobs > 1:
                 with closing(multiprocessing.Pool(processes=jobs)) as pool:
                     pool.map(run_tests_array, all_tests_array)
-                    pool.terminate()
             else:
                 run_tests_array(all_tests_array[int(run_n)-1])
 

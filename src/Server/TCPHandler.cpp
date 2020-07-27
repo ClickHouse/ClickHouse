@@ -313,6 +313,18 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
+// Server should die on std logic errors in debug, like with assert()
+// or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
+// tests.
+#ifndef NDEBUG
+        catch (const std::logic_error & e)
+        {
+            state.io.onException();
+            exception.emplace(Exception::CreateFromSTDTag{}, e);
+            sendException(*exception, send_exception_with_stack_trace);
+            std::abort();
+        }
+#endif
         catch (const std::exception & e)
         {
             state.io.onException();

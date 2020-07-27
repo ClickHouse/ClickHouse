@@ -41,7 +41,7 @@ class TableJoin
       * It's possible to use name `expr(t2 columns)`.
       */
 
-    friend class SyntaxAnalyzer;
+    friend class TreeRewriter;
 
     const SizeLimits size_limits;
     const size_t default_max_bytes = 0;
