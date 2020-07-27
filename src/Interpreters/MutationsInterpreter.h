@@ -42,7 +42,7 @@ public:
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
 
-    /// At least one mutation stage affects all columns in storage
+    /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
 private:

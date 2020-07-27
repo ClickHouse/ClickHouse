@@ -777,10 +777,10 @@ bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_co
 bool MutationsInterpreter::isAffectingAllColumns() const
 {
     auto storage_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-    for (const auto & stage : stages)
-        if (stage.isAffectingAllColumns(storage_columns))
-            return true;
-    return false;
+    if (stages.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
+
+    return stages.back().isAffectingAllColumns(storage_columns);
 }
 
 }

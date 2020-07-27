@@ -240,7 +240,8 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         total_size.add(size);
 
 #ifndef NDEBUG
-        if (rows_count != 0 && column.type->isValueRepresentedByNumber())
+        /// Most trivial types
+        if (rows_count != 0 && column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)
