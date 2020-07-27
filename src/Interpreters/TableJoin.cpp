@@ -13,7 +13,7 @@
 namespace DB
 {
 
-TableJoin::TableJoin(const Settings & settings, VolumeJBODPtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
@@ -21,7 +21,6 @@ TableJoin::TableJoin(const Settings & settings, VolumeJBODPtr tmp_volume_)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
@@ -253,7 +252,7 @@ bool TableJoin::allowMergeJoin() const
     return allow_merge_join;
 }
 
-bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & names, NamesAndTypesList & result_columns) const
+bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & src_names, NamesAndTypesList & dst_columns) const
 {
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
     if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
@@ -263,18 +262,26 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     if (right_keys.size() != 1)
         return false;
 
+    /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
+    auto it_key = original_names.find(right_keys[0]);
+    if (it_key == original_names.end())
+        return false;
+
+    if (dict_key != it_key->second)
+        return false; /// JOIN key != Dictionary key
+
     for (const auto & col : sample_block)
     {
-        String original = original_names.find(col.name)->second;
         if (col.name == right_keys[0])
-        {
-            if (original != dict_key)
-                return false; /// JOIN key != Dictionary key
             continue; /// do not extract key column
-        }
 
-        names.push_back(original);
-        result_columns.push_back({col.name, col.type});
+        auto it = original_names.find(col.name);
+        if (it != original_names.end())
+        {
+            String original = it->second;
+            src_names.push_back(original);
+            dst_columns.push_back({col.name, col.type});
+        }
     }
 
     return true;

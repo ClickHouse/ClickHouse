@@ -12,13 +12,11 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
-    extern const int INCORRECT_DISK_INDEX;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -36,9 +34,7 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    DiskPtr getDisk(size_t i) const override;
-
-    Disks getDisks() const override { return {disk}; }
+    DiskPtr getDisk() const override { return disk; }
 
     void update(UInt64 new_size) override;
 
@@ -91,7 +87,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving 0 bytes on disk {}", backQuote(name));
+        LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk " << backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -100,8 +96,10 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving {} on disk {}, having unreserved {}.",
-            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
+        LOG_DEBUG(
+            &Logger::get("DiskLocal"),
+            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name) << ", having unreserved "
+                         << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -284,15 +282,6 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
-DiskPtr DiskLocalReservation::getDisk(size_t i) const
-{
-    if (i != 0)
-    {
-        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
-    }
-    return disk;
-}
-
 void DiskLocalReservation::update(UInt64 new_size)
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
@@ -310,7 +299,7 @@ DiskLocalReservation::~DiskLocalReservation()
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '" + disk->getName() + "'.");
         }
         else
         {
@@ -318,7 +307,7 @@ DiskLocalReservation::~DiskLocalReservation()
         }
 
         if (disk->reservation_count == 0)
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '" + disk->getName() + "'.");
         else
             --disk->reservation_count;
     }

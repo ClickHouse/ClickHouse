@@ -48,6 +48,7 @@ static void loadDatabase(
     const String & database_path,
     bool force_restore_data)
 {
+
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 

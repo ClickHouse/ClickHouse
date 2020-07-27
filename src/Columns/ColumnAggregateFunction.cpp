@@ -6,7 +6,6 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -28,51 +27,6 @@ namespace ErrorCodes
 }
 
 
-static std::string getTypeString(const AggregateFunctionPtr & func)
-{
-    WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << func->getName();
-    const auto & parameters = func->getParameters();
-    const auto & argument_types = func->getArgumentTypes();
-
-    if (!parameters.empty())
-    {
-        stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
-        {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
-        }
-        stream << ')';
-    }
-
-    for (const auto & argument_type : argument_types)
-        stream << ", " << argument_type->getName();
-
-    stream << ')';
-    return stream.str();
-}
-
-
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-    : func(func_), type_string(getTypeString(func))
-{
-}
-
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
-    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
-{
-
-}
-
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
-{
-    func = func_;
-    type_string = getTypeString(func);
-}
-
-
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
@@ -88,35 +42,35 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
 MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
-      * then you just need to copy pointers to it and also shared ownership of data.
-      *
-      * Also replace the aggregate function with the nested function.
-      * That is, if this column is the states of the aggregate function `aggState`,
-      * then we return the same column, but with the states of the aggregate function `agg`.
-      * These are the same states, changing only the function to which they correspond.
-      *
-      * Further is quite difficult to understand.
-      * Example when this happens:
-      *
-      * SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
-      *
-      * This calculates the aggregate function `quantileTimingState`.
-      * Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
-      * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
-      *  in the ColumnAggregateFunction column of type
-      *  AggregateFunction(quantileTimingState(0.5), UInt64).
-      * Then, in `TotalsHavingTransform`, it will be called `convertToValues` method,
-      *  to get the "ready" values.
-      * But it just converts a column of type
-      *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
-      * into `AggregateFunction(quantileTiming(0.5), UInt64)`
-      * - in the same states.
-      *
-      * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
-      * And this converts a column of type
-      *   AggregateFunction(quantileTiming(0.5), UInt64)
-      * into UInt16 - already finished result of `quantileTiming`.
-      */
+        * then you just need to copy pointers to it and also shared ownership of data.
+        *
+        * Also replace the aggregate function with the nested function.
+        * That is, if this column is the states of the aggregate function `aggState`,
+        * then we return the same column, but with the states of the aggregate function `agg`.
+        * These are the same states, changing only the function to which they correspond.
+        *
+        * Further is quite difficult to understand.
+        * Example when this happens:
+        *
+        * SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
+        *
+        * This calculates the aggregate function `quantileTimingState`.
+        * Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
+        * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
+        *  in the ColumnAggregateFunction column of type
+        *  AggregateFunction(quantileTimingState(0.5), UInt64).
+        * Then, in `TotalsHavingBlockInputStream`, it will be called `convertToValues` method,
+        *  to get the "ready" values.
+        * But it just converts a column of type
+        *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
+        * into `AggregateFunction(quantileTiming(0.5), UInt64)`
+        * - in the same states.
+        *column_aggregate_func
+        * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
+        * And this converts a column of type
+        *   AggregateFunction(quantileTiming(0.5), UInt64)
+        * into UInt16 - already finished result of `quantileTiming`.
+        */
     auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*column);
     auto & func = column_aggregate_func.func;
     auto & data = column_aggregate_func.data;
@@ -135,7 +89,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     res->reserve(data.size());
 
     for (auto * val : data)
-        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertResultInto(val, *res);
 
     return res;
 }
@@ -355,13 +309,6 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
-void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
-{
-    /// Fallback to per-element hashing, as there is no faster way
-    for (size_t i = 0; i < size(); ++i)
-        updateHashWithValue(i, hash);
-}
-
 /// The returned size is less than real size. The reason is that some parts of
 /// aggregate function data may be allocated on shared arenas. These arenas are
 /// used for several blocks, and also may be updated concurrently from other
@@ -389,10 +336,15 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
     return create(func);
 }
 
+String ColumnAggregateFunction::getTypeString() const
+{
+    return DataTypeAggregateFunction(func, func->getArgumentTypes(), func->getParameters()).getName();
+}
+
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = AggregateFunctionStateData();
-    field.get<AggregateFunctionStateData &>().name = type_string;
+    field.get<AggregateFunctionStateData &>().name = getTypeString();
     {
         WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
@@ -403,7 +355,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = AggregateFunctionStateData();
-    res.get<AggregateFunctionStateData &>().name = type_string;
+    res.get<AggregateFunctionStateData &>().name = getTypeString();
     {
         WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
@@ -473,6 +425,8 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 
 void ColumnAggregateFunction::insert(const Field & x)
 {
+    String type_string = getTypeString();
+
     if (x.getType() != Field::Types::AggregateFunctionState)
         throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
                         "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
@@ -595,8 +549,6 @@ void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/,
         res[i] = i;
 }
 
-void ColumnAggregateFunction::updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const {}
-
 void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
@@ -610,7 +562,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     AggregateDataPtr place = place_buffer.data();
 
     AggregateFunctionStateData serialized;
-    serialized.name = type_string;
+    serialized.name = getTypeString();
 
     func->create(place);
     try

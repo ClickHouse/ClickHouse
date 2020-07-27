@@ -5,9 +5,6 @@
 namespace DB
 {
 
-class Context;
-class ExternalDictionariesLoader;
-
 
 class DatabaseWithDictionaries : public DatabaseOnDisk
 {

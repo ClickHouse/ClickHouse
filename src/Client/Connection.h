@@ -50,8 +50,6 @@ class Connection;
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
-using Scalars = std::map<String, Block>;
-
 
 /// Packet that could be received from server.
 struct Packet
@@ -170,8 +168,6 @@ public:
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
 
-    bool isConnected() const { return connected; }
-
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
 
@@ -251,16 +247,16 @@ private:
         {
         }
 
-        Poco::Logger * get()
+        Logger * get()
         {
             if (!log)
-                log = &Poco::Logger::get("Connection (" + parent.getDescription() + ")");
+                log = &Logger::get("Connection (" + parent.getDescription() + ")");
 
             return log;
         }
 
     private:
-        std::atomic<Poco::Logger *> log;
+        std::atomic<Logger *> log;
         Connection & parent;
     };
 

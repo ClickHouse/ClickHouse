@@ -113,9 +113,8 @@ public:
         auto nested_type = array_type->getNestedType();
         DataTypes argument_types = {nested_type};
         Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+        AggregateFunctionPtr bitmap_function
+            = AggregateFunctionFactory::instance().get(AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row);
 
         return std::make_shared<DataTypeAggregateFunction>(bitmap_function, argument_types, params_row);
     }
@@ -157,9 +156,8 @@ private:
 
         // output data
         Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+        AggregateFunctionPtr bitmap_function
+            = AggregateFunctionFactory::instance().get(AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
         col_to->reserve(offsets.size());
 

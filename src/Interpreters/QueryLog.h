@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/ClientInfo.h>
 #include <Core/SettingsCollection.h>
 
 
@@ -63,7 +62,7 @@ struct QueryLogElement
     static std::string name() { return "QueryLog"; }
 
     static Block createBlock();
-    void appendToBlock(MutableColumns & columns) const;
+    void appendToBlock(Block & block) const;
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

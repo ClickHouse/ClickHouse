@@ -110,7 +110,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         JoinCommon::convertColumnToNullable(column, true);
         if (column.type->isNullable() && !negative_null_map.empty())
         {
-            MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
+            MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
@@ -129,7 +129,7 @@ static void changeNullability(MutableColumnPtr & mutable_column)
     else
         column = makeNullable(column);
 
-    mutable_column = IColumn::mutate(std::move(column));
+    mutable_column = (*std::move(column)).mutate();
 }
 
 static ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
@@ -205,7 +205,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , log(&Poco::Logger::get("HashJoin"))
+    , log(&Logger::get("HashJoin"))
 {
     setSampleBlock(right_sample_block);
 }
@@ -424,7 +424,7 @@ void HashJoin::setSampleBlock(const Block & block)
     /// You have to restore this lock if you call the function outside of ctor.
     //std::unique_lock lock(rwlock);
 
-    LOG_DEBUG(log, "setSampleBlock: {}", block.dumpStructure());
+    LOG_DEBUG(log, "setSampleBlock: " << block.dumpStructure());
 
     if (!empty())
         return;

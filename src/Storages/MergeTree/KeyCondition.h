@@ -3,6 +3,7 @@
 #include <sstream>
 #include <optional>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
@@ -14,13 +15,14 @@
 namespace DB
 {
 
-class Context;
+
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/** A field, that can be stored in two representations:
+/** A field, that can be stored in two reperesenations:
   * - A standalone field.
   * - A field with reference to its position in a block.
   *   It's needed for execution of functions on ranges during
