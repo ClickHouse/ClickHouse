@@ -16,7 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -339,7 +339,7 @@ void MergeTreeData::checkProperties(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
+            auto syntax = TreeRewriter(global_context).analyze(added_key_column_expr_list, all_columns);
             Names used_columns = syntax->requiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
@@ -404,7 +404,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(combined_expr_list, columns.getAllPhysical());
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
@@ -1275,57 +1275,6 @@ void MergeTreeData::dropIfEmpty()
 namespace
 {
 
-/// If true, then in order to ALTER the type of the column from the type from to the type to
-/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
-/// The function works for Arrays and Nullables of the same structure.
-bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
-{
-    if (from->getName() == to->getName())
-        return true;
-
-    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
-        {
-            { typeid(DataTypeEnum8),    typeid(DataTypeEnum8)    },
-            { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
-            { typeid(DataTypeEnum16),   typeid(DataTypeEnum16)   },
-            { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
-            { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
-            { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
-            { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
-            { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
-        };
-
-    while (true)
-    {
-        auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
-        for (auto it = it_range.first; it != it_range.second; ++it)
-        {
-            if (it->second == typeid(*to))
-                return true;
-        }
-
-        const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
-        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
-        if (arr_from && arr_to)
-        {
-            from = arr_from->getNestedType().get();
-            to = arr_to->getNestedType().get();
-            continue;
-        }
-
-        const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
-        const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_from && nullable_to)
-        {
-            from = nullable_from->getNestedType().get();
-            to = nullable_to->getNestedType().get();
-            continue;
-        }
-
-        return false;
-    }
-}
-
 /// Conversion that is allowed for partition key.
 /// Partition key should be serialized in the same way after conversion.
 /// NOTE: The list is not complete.
@@ -1361,11 +1310,20 @@ bool isSafeForPartitionKeyConversion(const IDataType * from, const IDataType * t
 
 }
 
-void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings &) const
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+
+    if (!settings.allow_non_metadata_alters)
+    {
+
+        auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, global_context);
+
+        if (!mutation_commands.empty())
+            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
+    }
     commands.apply(new_metadata, global_context);
 
     /// Set of columns that shouldn't be altered.
@@ -1467,8 +1425,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             }
             dropped_columns.emplace(command.column_name);
         }
-        else if (command.isModifyingData(getInMemoryMetadata()))
+        else if (command.isRequireMutationStage(getInMemoryMetadata()))
         {
+            /// This alter will override data on disk. Let's check that it doesn't
+            /// modify immutable column.
             if (columns_alter_type_forbidden.count(command.column_name))
                 throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
@@ -1478,7 +1438,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 if (command.type == AlterCommand::MODIFY_COLUMN)
                 {
                     auto it = old_types.find(command.column_name);
-                    if (it == old_types.end() || !isSafeForPartitionKeyConversion(it->second, command.data_type.get()))
+
+                    assert(it != old_types.end());
+                    if (!isSafeForPartitionKeyConversion(it->second, command.data_type.get()))
                         throw Exception("ALTER of partition key column " + backQuoteIfNeed(command.column_name) + " from type "
                                 + it->second->getName() + " to type " + command.data_type->getName()
                                 + " is not safe because it can change the representation of partition key",
@@ -1491,10 +1453,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 if (command.type == AlterCommand::MODIFY_COLUMN)
                 {
                     auto it = old_types.find(command.column_name);
-                    if (it == old_types.end() || !isMetadataOnlyConversion(it->second, command.data_type.get()))
-                        throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " from type "
-                            + it->second->getName() + " to type " + command.data_type->getName() + " must be metadata-only",
-                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                    assert(it != old_types.end());
+                    throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " from type "
+                        + it->second->getName() + " to type " + command.data_type->getName() + " must be metadata-only",
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
             }
         }
@@ -2453,19 +2415,6 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
-
-    /// If the checksums file is not present, calculate the checksums and write them to disk.
-    /// Check the data while we are at it.
-    if (part->checksums.empty())
-    {
-        part->checksums = checkDataPart(part, false);
-        {
-            auto out = disk->writeFile(full_part_path + "checksums.txt.tmp", 4096);
-            part->checksums.write(*out);
-        }
-
-        disk->moveFile(full_part_path + "checksums.txt.tmp", full_part_path + "checksums.txt");
-    }
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const
@@ -3642,7 +3591,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
         {
             std::ostringstream message;
             message << "Table can't create parts with adaptive granularity, but settings"
-                    << "min_rows_for_wide_part = " << settings.min_rows_for_wide_part
+                    << " min_rows_for_wide_part = " << settings.min_rows_for_wide_part
                     << ", min_bytes_for_wide_part = " << settings.min_bytes_for_wide_part
                     << ", min_rows_for_compact_part = " << settings.min_rows_for_compact_part
                     << ", min_bytes_for_compact_part = " << settings.min_bytes_for_compact_part

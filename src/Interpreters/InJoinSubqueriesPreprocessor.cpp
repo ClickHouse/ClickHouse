@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
     extern const int LOGICAL_ERROR;
 }
@@ -150,6 +151,12 @@ private:
     {
         if (node.name == "in" || node.name == "notIn")
         {
+            if (node.arguments->children.size() != 2)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Function '{}' expects two arguments, given: '{}'",
+                    node.name, node.formatForErrorMessage());
+            }
             auto & subquery = node.arguments->children.at(1);
             std::vector<ASTPtr> renamed;
             NonGlobalTableVisitor::Data table_data{data.checker, data.context, renamed, &node, nullptr};

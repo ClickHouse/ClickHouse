@@ -95,10 +95,10 @@ CREATE USER u2_01292 DEFAULT ROLE r1_01292, r2_01292 SETTINGS readonly = 1
 CREATE USER u3_01292 HOST LIKE \'%.%.myhost.com\' DEFAULT ROLE r1_01292, r2_01292
 CREATE USER u4_01292 HOST LIKE \'%.%.myhost.com\' DEFAULT ROLE r1_01292, r2_01292
 -- system.users
-u1_01292	disk	plaintext_password	[]	[]	['localhost']	[]	[]	1	[]	[]
-u2_01292	disk	no_password	[]	[]	[]	[]	['%.%.myhost.com']	0	[]	[]
-u3_01292	disk	sha256_password	[]	['192.169.1.1','192.168.0.0/16']	['localhost']	[]	[]	0	['r1_01292']	[]
-u4_01292	disk	double_sha1_password	[]	['::/0']	[]	[]	[]	1	[]	['r1_01292']
+u1_01292	disk	plaintext_password	{}	[]	['localhost']	[]	[]	1	[]	[]
+u2_01292	disk	no_password	{}	[]	[]	[]	['%.%.myhost.com']	0	[]	[]
+u3_01292	disk	sha256_password	{}	['192.169.1.1','192.168.0.0/16']	['localhost']	[]	[]	0	['r1_01292']	[]
+u4_01292	disk	double_sha1_password	{}	['::/0']	[]	[]	[]	1	[]	['r1_01292']
 -- system.settings_profile_elements
 \N	u1_01292	\N	0	readonly	1	\N	\N	\N	\N
 \N	u2_01292	\N	0	\N	\N	\N	\N	\N	default
