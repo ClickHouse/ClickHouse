@@ -761,7 +761,6 @@ void StorageWindowView::threadFuncFireProc()
             next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, *time_zone);
         }
 
-        next_fire_signal = getWindowUpperBound(timestamp_now);
         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
         fire_signal_condition.wait_for(lock, std::chrono::microseconds(static_cast<UInt64>(next_fire_signal) * 1000000 - timestamp_usec));
     }
