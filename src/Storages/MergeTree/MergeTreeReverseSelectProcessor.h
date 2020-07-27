@@ -18,7 +18,6 @@ class MergeTreeReverseSelectProcessor : public MergeTreeBaseSelectProcessor
 public:
     MergeTreeReverseSelectProcessor(
         const MergeTreeData & storage,
-        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
@@ -58,6 +57,8 @@ private:
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
+    /// Forbids to change columns list of the part during reading
+    std::shared_lock<std::shared_mutex> part_columns_lock;
 
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;
@@ -70,7 +71,7 @@ private:
 
     Chunks chunks;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
+    Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
 };
 
 }

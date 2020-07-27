@@ -2,16 +2,11 @@
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
-#include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
-#include <Core/Settings.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-#include <common/logger_useful.h>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/adaptor/map.hpp>
 #include <cstring>
 
 
@@ -21,29 +16,37 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
 namespace
 {
-    using EntityType = IAccessStorage::EntityType;
-    using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
+    char getTypeChar(std::type_index type)
+    {
+        if (type == typeid(User))
+            return 'U';
+        if (type == typeid(Quota))
+            return 'Q';
+        if (type == typeid(RowPolicy))
+            return 'P';
+        return 0;
+    }
 
-    UUID generateID(EntityType type, const String & name)
+
+    UUID generateID(std::type_index type, const String & name)
     {
         Poco::MD5Engine md5;
         md5.update(name);
         char type_storage_chars[] = " USRSXML";
-        type_storage_chars[0] = EntityTypeInfo::get(type).unique_char;
+        type_storage_chars[0] = getTypeChar(type);
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
         return result;
     }
 
-    UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
+    UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getFullName()); }
 
     UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
     {
@@ -81,14 +84,7 @@ namespace
             user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
 
-        const auto profile_name_config = user_config + ".profile";
-        if (config.has(profile_name_config))
-        {
-            auto profile_name = config.getString(profile_name_config);
-            SettingsProfileElement profile_element;
-            profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, profile_name);
-            user->settings.push_back(std::move(profile_element));
-        }
+        user->profile = config.getString(user_config + ".profile");
 
         /// Fill list of allowed hosts.
         const auto networks_config = user_config + ".networks";
@@ -143,31 +139,25 @@ namespace
             }
         }
 
-        /// By default all databases are accessible
-        /// and the user can grant everything he has.
-        user->access.grantWithGrantOption(AccessType::ALL);
+        user->access.grant(AccessType::ALL); /// By default all databases are accessible.
 
         if (databases)
         {
-            user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
-            user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            user->access.fullRevoke(AccessFlags::databaseLevel());
             for (const String & database : *databases)
-                user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
+                user->access.grant(AccessFlags::databaseLevel(), database);
         }
 
         if (dictionaries)
         {
-            user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            user->access.fullRevoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
             for (const String & dictionary : *dictionaries)
-                user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
+                user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG, dictionary);
         }
+        else if (databases)
+            user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
 
-        bool access_management = config.getBool(user_config + ".access_management", false);
-        if (!access_management)
-        {
-            user->access.revoke(AccessType::ACCESS_MANAGEMENT);
-            user->access.revokeGrantOption(AccessType::ALL);
-        }
+        user->access_with_grant_option = user->access;
 
         return user;
     }
@@ -227,16 +217,17 @@ namespace
             limits.duration = duration;
             limits.randomize_interval = config.getBool(interval_config + ".randomize", false);
 
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-            {
-                const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
-                auto value = config.getString(interval_config + "." + type_info.name, "0");
-                if (value != "0")
-                    limits.max[resource_type] = type_info.amountFromString(value);
-            }
+            using ResourceType = Quota::ResourceType;
+            limits.max[ResourceType::QUERIES] = config.getUInt64(interval_config + ".queries", Quota::UNLIMITED);
+            limits.max[ResourceType::ERRORS] = config.getUInt64(interval_config + ".errors", Quota::UNLIMITED);
+            limits.max[ResourceType::RESULT_ROWS] = config.getUInt64(interval_config + ".result_rows", Quota::UNLIMITED);
+            limits.max[ResourceType::RESULT_BYTES] = config.getUInt64(interval_config + ".result_bytes", Quota::UNLIMITED);
+            limits.max[ResourceType::READ_ROWS] = config.getUInt64(interval_config + ".read_rows", Quota::UNLIMITED);
+            limits.max[ResourceType::READ_BYTES] = config.getUInt64(interval_config + ".read_bytes", Quota::UNLIMITED);
+            limits.max[ResourceType::EXECUTION_TIME] = Quota::secondsToExecutionTime(config.getUInt64(interval_config + ".execution_time", Quota::UNLIMITED));
         }
 
-        quota->to_roles.add(user_ids);
+        quota->roles.add(user_ids);
 
         return quota;
     }
@@ -250,7 +241,7 @@ namespace
         for (const auto & user_name : user_names)
         {
             if (config.has("users." + user_name + ".quota"))
-                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(EntityType::USER, user_name));
+                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(typeid(User), user_name));
         }
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
@@ -334,102 +325,13 @@ namespace
                 String filter = (it != user_to_filters.end()) ? it->second : "1";
 
                 auto policy = std::make_shared<RowPolicy>();
-                policy->setNameParts(user_name, database, table_name);
+                policy->setFullName(database, table_name, user_name);
                 policy->conditions[RowPolicy::SELECT_FILTER] = filter;
-                policy->to_roles.add(generateID(EntityType::USER, user_name));
+                policy->roles.add(generateID(typeid(User), user_name));
                 policies.push_back(policy);
             }
         }
         return policies;
-    }
-
-
-    SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
-                                                     const String & path_to_constraints)
-    {
-        SettingsProfileElements profile_elements;
-        Poco::Util::AbstractConfiguration::Keys names;
-        config.keys(path_to_constraints, names);
-        for (const String & name : names)
-        {
-            SettingsProfileElement profile_element;
-            size_t setting_index = Settings::findIndexStrict(name);
-            profile_element.setting_index = setting_index;
-            Poco::Util::AbstractConfiguration::Keys constraint_types;
-            String path_to_name = path_to_constraints + "." + name;
-            config.keys(path_to_name, constraint_types);
-            for (const String & constraint_type : constraint_types)
-            {
-                if (constraint_type == "min")
-                    profile_element.min_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "max")
-                    profile_element.max_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "readonly")
-                    profile_element.readonly = true;
-                else
-                    throw Exception("Setting " + constraint_type + " value for " + name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
-            }
-            profile_elements.push_back(std::move(profile_element));
-        }
-        return profile_elements;
-    }
-
-    std::shared_ptr<SettingsProfile> parseSettingsProfile(
-        const Poco::Util::AbstractConfiguration & config,
-        const String & profile_name)
-    {
-        auto profile = std::make_shared<SettingsProfile>();
-        profile->setName(profile_name);
-        String profile_config = "profiles." + profile_name;
-
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(profile_config, keys);
-
-        for (const std::string & key : keys)
-        {
-            if (key == "profile" || key.starts_with("profile["))
-            {
-                String parent_profile_name = config.getString(profile_config + "." + key);
-                SettingsProfileElement profile_element;
-                profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, parent_profile_name);
-                profile->elements.emplace_back(std::move(profile_element));
-                continue;
-            }
-
-            if (key == "constraints" || key.starts_with("constraints["))
-            {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
-                continue;
-            }
-
-            SettingsProfileElement profile_element;
-            size_t setting_index = Settings::findIndexStrict(key);
-            profile_element.setting_index = setting_index;
-            profile_element.value = Settings::valueToCorrespondingType(setting_index, config.getString(profile_config + "." + key));
-            profile->elements.emplace_back(std::move(profile_element));
-        }
-
-        return profile;
-    }
-
-
-    std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
-    {
-        std::vector<AccessEntityPtr> profiles;
-        Poco::Util::AbstractConfiguration::Keys profile_names;
-        config.keys("profiles", profile_names);
-        for (const auto & profile_name : profile_names)
-        {
-            try
-            {
-                profiles.push_back(parseSettingsProfile(config, profile_name));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Could not parse profile " + backQuote(profile_name));
-            }
-        }
-        return profiles;
     }
 }
 
@@ -448,19 +350,17 @@ void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfig
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, getLogger()))
-        all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }
 
 
-std::optional<UUID> UsersConfigAccessStorage::findImpl(EntityType type, const String & name) const
+std::optional<UUID> UsersConfigAccessStorage::findImpl(std::type_index type, const String & name) const
 {
     return memory_storage.find(type, name);
 }
 
 
-std::vector<UUID> UsersConfigAccessStorage::findAllImpl(EntityType type) const
+std::vector<UUID> UsersConfigAccessStorage::findAllImpl(std::type_index type) const
 {
     return memory_storage.findAll(type);
 }
@@ -486,21 +386,21 @@ String UsersConfigAccessStorage::readNameImpl(const UUID & id) const
 
 UUID UsersConfigAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
 {
-    throwReadonlyCannotInsert(entity->getType(), entity->getName());
+    throwReadonlyCannotInsert(entity->getType(), entity->getFullName());
 }
 
 
 void UsersConfigAccessStorage::removeImpl(const UUID & id)
 {
     auto entity = read(id);
-    throwReadonlyCannotRemove(entity->getType(), entity->getName());
+    throwReadonlyCannotRemove(entity->getType(), entity->getFullName());
 }
 
 
 void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 {
     auto entity = read(id);
-    throwReadonlyCannotUpdate(entity->getType(), entity->getName());
+    throwReadonlyCannotUpdate(entity->getType(), entity->getFullName());
 }
 
 
@@ -510,7 +410,7 @@ ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & 
 }
 
 
-ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }
@@ -522,7 +422,7 @@ bool UsersConfigAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(EntityType type) const
+bool UsersConfigAccessStorage::hasSubscriptionImpl(std::type_index type) const
 {
     return memory_storage.hasSubscription(type);
 }

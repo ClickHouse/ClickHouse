@@ -31,8 +31,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Year>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfYearInterval(DayNum(d), years);
@@ -47,8 +45,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Quarter>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
@@ -63,8 +59,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Month>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfMonthInterval(DayNum(d), months);
@@ -79,8 +73,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Week>
     {
-        static constexpr auto name = function_name;
-
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
@@ -95,8 +87,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Day>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfDayInterval(DayNum(d), days);
@@ -111,8 +101,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Hour>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
@@ -121,8 +109,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Minute>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone)
@@ -134,8 +120,6 @@ namespace
     template <>
     struct Transform<IntervalKind::Second>
     {
-        static constexpr auto name = function_name;
-
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone)
@@ -327,7 +311,7 @@ private:
 
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
-            const auto transform = TransformDateTime64<Transform<unit>>{from_datatype.getScale()};
+            const auto transform = DateTime64BasicTransformWrapper<Transform<unit>>{from_datatype.getScale()};
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = transform.execute(time_data[i], num_units, time_zone);
         }

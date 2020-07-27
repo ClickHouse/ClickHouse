@@ -228,13 +228,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// If initialized column is nullable.
     bool is_nullable = false;
 
-    static const ColumnLowCardinality & getLowCardinalityColumn(const IColumn * column)
+    static const ColumnLowCardinality & getLowCardinalityColumn(const IColumn * low_cardinality_column)
     {
-        auto low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
-        if (!low_cardinality_column)
+        auto column = typeid_cast<const ColumnLowCardinality *>(low_cardinality_column);
+        if (!column)
             throw Exception("Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
                             "Excepted LowCardinality, got " + column->getName(), ErrorCodes::LOGICAL_ERROR);
-        return *low_cardinality_column;
+        return *column;
     }
 
     HashMethodSingleLowCardinalityColumn(

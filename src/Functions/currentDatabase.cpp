@@ -49,7 +49,6 @@ public:
 void registerFunctionCurrentDatabase(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCurrentDatabase>();
-    factory.registerFunction<FunctionCurrentDatabase>("DATABASE", FunctionFactory::CaseInsensitive);
 }
 
 }

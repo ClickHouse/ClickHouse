@@ -68,7 +68,7 @@ public:
         return impl->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments);
     }
 
-    bool isInjective(const Block & sample_block) const final { return impl->isInjective(sample_block); }
+    bool isInjective(const Block & sample_block) final { return impl->isInjective(sample_block); }
     bool isDeterministic() const final { return impl->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
     bool hasInformationAboutMonotonicity() const final { return impl->hasInformationAboutMonotonicity(); }
@@ -95,8 +95,6 @@ public:
     bool isDeterministic() const final { return impl->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
-
-    bool isInjective(const Block & block) const final { return impl->isInjective(block); }
 
     bool isStateful() const final { return impl->isStateful(); }
 
@@ -197,7 +195,7 @@ public:
 
     bool isStateful() const override { return function->isStateful(); }
 
-    bool isInjective(const Block & sample_block) const override { return function->isInjective(sample_block); }
+    bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 
     bool isDeterministic() const override { return function->isDeterministic(); }
 
@@ -228,7 +226,6 @@ public:
 
     bool isDeterministic() const override { return function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
-    bool isInjective(const Block &block) const override { return function->isInjective(block); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

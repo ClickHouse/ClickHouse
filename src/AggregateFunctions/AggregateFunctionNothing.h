@@ -25,7 +25,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return argument_types.front();
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
     void create(AggregateDataPtr) const override
@@ -67,7 +67,7 @@ public:
     {
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
+    void insertResultInto(ConstAggregateDataPtr, IColumn & to) const override
     {
         to.insertDefault();
     }

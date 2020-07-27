@@ -32,7 +32,7 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatImpl(const Context & context_) : context(context_) {}
+    ConcatImpl(const Context & context_) : context(context_) {}
     static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
@@ -41,7 +41,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const Block &) const override { return is_injective; }
+    bool isInjective(const Block &) override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -61,7 +61,7 @@ public:
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto * arg = arguments[arg_idx].get();
+            const auto arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function "
                                     + getName(),
@@ -116,17 +116,14 @@ private:
 
     void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
-        const size_t num_arguments = arguments.size();
-        assert(num_arguments >= 2);
-
         auto c_res = ColumnString::create();
-        std::vector<const ColumnString::Chars *> data(num_arguments);
-        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
-        std::vector<size_t> fixed_string_sizes(num_arguments);
-        std::vector<String> constant_strings(num_arguments);
+        std::vector<const ColumnString::Chars *> data(arguments.size());
+        std::vector<const ColumnString::Offsets *> offsets(arguments.size());
+        std::vector<size_t> fixed_string_N(arguments.size());
+        std::vector<String> constant_strings(arguments.size());
         bool has_column_string = false;
         bool has_column_fixed_string = false;
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
             const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -139,7 +136,7 @@ private:
             {
                 has_column_fixed_string = true;
                 data[i] = &fixed_col->getChars();
-                fixed_string_sizes[i] = fixed_col->getN();
+                fixed_string_N[i] = fixed_col->getN();
             }
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
             {
@@ -151,9 +148,9 @@ private:
         }
 
         String pattern;
-        pattern.reserve(2 * num_arguments);
+        pattern.reserve(2 * arguments.size());
 
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < arguments.size(); ++i)
             pattern += "{}";
 
         FormatImpl::formatExecute(
@@ -162,7 +159,7 @@ private:
             std::move(pattern),
             data,
             offsets,
-            fixed_string_sizes,
+            fixed_string_N,
             constant_strings,
             c_res->getChars(),
             c_res->getOffsets(),

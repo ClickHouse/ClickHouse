@@ -23,7 +23,7 @@ void registerFunctionsLogical(FunctionFactory & factory)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>(FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>();
 }
 
 namespace ErrorCodes
@@ -153,7 +153,7 @@ class AssociativeApplierImpl
 
 public:
     /// Remembers the last N columns from `in`.
-    explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
+    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
@@ -177,7 +177,7 @@ class AssociativeApplierImpl<Op, 1>
     using ResultValueType = typename Op::ResultType;
 
 public:
-    explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
+    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
     inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
@@ -199,9 +199,9 @@ struct ValueGetterBuilderImpl<Type, Types...>
 {
     static TernaryValueGetter build(const IColumn * x)
     {
-        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
+        if (const auto nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
-            if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
+            if (const auto nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
                 return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
                 { return Ternary::makeValue(column_data[i], null_data[i]); };
@@ -240,7 +240,7 @@ class AssociativeGenericApplierImpl
 
 public:
     /// Remembers the last N columns from `in`.
-    explicit AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
+    AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
         : val_getter{ValueGetterBuilder::build(in[in.size() - N])}, next{in} {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
@@ -266,7 +266,7 @@ class AssociativeGenericApplierImpl<Op, 1>
 
 public:
     /// Remembers the last N columns from `in`.
-    explicit AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
+    AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
         : val_getter{ValueGetterBuilder::build(in[in.size() - 1])} {}
 
     inline ResultValueType apply(const size_t i) const { return val_getter(i); }
@@ -302,13 +302,13 @@ struct OperationApplier
             return;
         }
 
-        const OperationApplierImpl<Op, N> operation_applier_impl(in);
+        const OperationApplierImpl<Op, N> operationApplierImpl(in);
         size_t i = 0;
         for (auto & res : result_data)
             if constexpr (CarryResult)
-                res = Op::apply(res, operation_applier_impl.apply(i++));
+                res = Op::apply(res, operationApplierImpl.apply(i++));
             else
-                res = operation_applier_impl.apply(i++);
+                res = operationApplierImpl.apply(i++);
 
         in.erase(in.end() - N, in.end());
     }
@@ -444,7 +444,7 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     Columns converted_columns_holder;
     for (const IColumn * column : arguments)
     {
-        if (const auto * uint8_column = checkAndGetColumn<ColumnUInt8>(column))
+        if (auto uint8_column = checkAndGetColumn<ColumnUInt8>(column))
             uint8_args.push_back(uint8_column);
         else
         {

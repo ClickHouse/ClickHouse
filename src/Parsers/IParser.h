@@ -56,6 +56,8 @@ public:
     /// Token iterator augmented with depth information. This allows to control recursion depth.
     struct Pos : TokenIterator
     {
+        using TokenIterator::TokenIterator;
+
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
@@ -124,7 +126,7 @@ public:
         return parse(pos, node, expected);
     }
 
-    virtual ~IParser() = default;
+    virtual ~IParser() {}
 };
 
 using ParserPtr = std::unique_ptr<IParser>;

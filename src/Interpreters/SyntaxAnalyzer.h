@@ -11,21 +11,16 @@ namespace DB
 {
 
 class ASTFunction;
-struct ASTTablesInSelectQueryElement;
-class TableJoin;
+class AnalyzedJoin;
 class Context;
 struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct SyntaxAnalyzerResult
 {
-    ConstStoragePtr storage;
-    StorageMetadataPtr metadata_snapshot;
-    std::shared_ptr<TableJoin> analyzed_join;
-    const ASTTablesInSelectQueryElement * ast_join = nullptr;
+    StoragePtr storage;
+    std::shared_ptr<AnalyzedJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
     NameSet source_columns_set; /// Set of names of source_columns.
@@ -51,25 +46,20 @@ struct SyntaxAnalyzerResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
-    bool optimize_trivial_count = false;
-
     /// Results of scalar sub queries
     Scalars scalars;
 
-    SyntaxAnalyzerResult(
-        const NamesAndTypesList & source_columns_,
-        ConstStoragePtr storage_ = {},
-        const StorageMetadataPtr & metadata_snapshot_ = {},
-        bool add_special = true)
+    bool maybe_optimize_trivial_count = false;
+
+    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, StoragePtr storage_ = {}, bool add_virtuals = true)
         : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
         , source_columns(source_columns_)
     {
-        collectSourceColumns(add_special);
+        collectSourceColumns(add_virtuals);
     }
 
-    void collectSourceColumns(bool add_special);
-    void collectUsedColumns(const ASTPtr & query, bool is_select);
+    void collectSourceColumns(bool add_virtuals);
+    void collectUsedColumns(const ASTPtr & query);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Scalars & getScalars() const { return scalars; }
 };
@@ -96,12 +86,7 @@ public:
     {}
 
     /// Analyze and rewrite not select query
-    SyntaxAnalyzerResultPtr analyze(
-        ASTPtr & query,
-        const NamesAndTypesList & source_columns_,
-        ConstStoragePtr storage = {},
-        const StorageMetadataPtr & metadata_snapshot = {},
-        bool allow_aggregations = false) const;
+    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, StoragePtr storage = {}) const;
 
     /// Analyze and rewrite select query
     SyntaxAnalyzerResultPtr analyzeSelect(
@@ -109,13 +94,12 @@ public:
         SyntaxAnalyzerResult && result,
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
-        const Names & required_result_columns = {},
-        std::shared_ptr<TableJoin> table_join = {}) const;
+        const Names & required_result_columns = {}) const;
 
 private:
     const Context & context;
 
-    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings);
+    void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings) const;
 };
 
 }

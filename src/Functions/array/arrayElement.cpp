@@ -53,29 +53,29 @@ private:
                      ArrayImpl::NullMapBuilder & builder, size_t input_rows_count);
 
     template <typename DataType>
-    static bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+    bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType, typename DataType>
-    static bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
         ArrayImpl::NullMapBuilder & builder);
 
-    static bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
-        ArrayImpl::NullMapBuilder & builder);
-
-    template <typename IndexType>
-    static bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
-        ArrayImpl::NullMapBuilder & builder);
-
-    static bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+    bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    static bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+        ArrayImpl::NullMapBuilder & builder);
+
+    bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    static bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result,
+    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
+        ArrayImpl::NullMapBuilder & builder);
+
+    template <typename IndexType>
+    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result,
                           const PaddedPODArray <IndexType> & indices, ArrayImpl::NullMapBuilder & builder,
                           size_t input_rows_count);
 
@@ -95,7 +95,7 @@ namespace ArrayImpl
 class NullMapBuilder
 {
 public:
-    explicit operator bool() const { return src_null_map; }
+    operator bool() const { return src_null_map; }
     bool operator!() const { return !src_null_map; }
 
     void initSource(const UInt8 * src_null_map_)
@@ -732,18 +732,10 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 {
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function '{}' must be array, got '{}' instead",
-            getName(), arguments[0]->getName());
-    }
+        throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     if (!isInteger(arguments[1]))
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument for function '{}' must be integer, got '{}' instead",
-            getName(), arguments[1]->getName());
-    }
+        throw Exception("Second argument for function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return array_type->getNestedType();
 }

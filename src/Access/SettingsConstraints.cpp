@@ -30,23 +30,16 @@ void SettingsConstraints::clear()
 }
 
 
-void SettingsConstraints::setMinValue(const StringRef & setting_name, const Field & min_value)
+void SettingsConstraints::setMinValue(const StringRef & name, const Field & min_value)
 {
-    setMinValue(Settings::findIndexStrict(setting_name), min_value);
-}
-
-void SettingsConstraints::setMinValue(size_t setting_index, const Field & min_value)
-{
+    size_t setting_index = Settings::findIndexStrict(name);
     getConstraintRef(setting_index).min_value = Settings::valueToCorrespondingType(setting_index, min_value);
 }
 
-Field SettingsConstraints::getMinValue(const StringRef & setting_name) const
-{
-    return getMinValue(Settings::findIndexStrict(setting_name));
-}
 
-Field SettingsConstraints::getMinValue(size_t setting_index) const
+Field SettingsConstraints::getMinValue(const StringRef & name) const
 {
+    size_t setting_index = Settings::findIndexStrict(name);
     const auto * ptr = tryGetConstraint(setting_index);
     if (ptr)
         return ptr->min_value;
@@ -57,21 +50,14 @@ Field SettingsConstraints::getMinValue(size_t setting_index) const
 
 void SettingsConstraints::setMaxValue(const StringRef & name, const Field & max_value)
 {
-    setMaxValue(Settings::findIndexStrict(name), max_value);
-}
-
-void SettingsConstraints::setMaxValue(size_t setting_index, const Field & max_value)
-{
+    size_t setting_index = Settings::findIndexStrict(name);
     getConstraintRef(setting_index).max_value = Settings::valueToCorrespondingType(setting_index, max_value);
 }
 
-Field SettingsConstraints::getMaxValue(const StringRef & setting_name) const
-{
-    return getMaxValue(Settings::findIndexStrict(setting_name));
-}
 
-Field SettingsConstraints::getMaxValue(size_t setting_index) const
+Field SettingsConstraints::getMaxValue(const StringRef & name) const
 {
+    size_t setting_index = Settings::findIndexStrict(name);
     const auto * ptr = tryGetConstraint(setting_index);
     if (ptr)
         return ptr->max_value;
@@ -80,23 +66,16 @@ Field SettingsConstraints::getMaxValue(size_t setting_index) const
 }
 
 
-void SettingsConstraints::setReadOnly(const StringRef & setting_name, bool read_only)
+void SettingsConstraints::setReadOnly(const StringRef & name, bool read_only)
 {
-    setReadOnly(Settings::findIndexStrict(setting_name), read_only);
-}
-
-void SettingsConstraints::setReadOnly(size_t setting_index, bool read_only)
-{
+    size_t setting_index = Settings::findIndexStrict(name);
     getConstraintRef(setting_index).read_only = read_only;
 }
 
-bool SettingsConstraints::isReadOnly(const StringRef & setting_name) const
-{
-    return isReadOnly(Settings::findIndexStrict(setting_name));
-}
 
-bool SettingsConstraints::isReadOnly(size_t setting_index) const
+bool SettingsConstraints::isReadOnly(const StringRef & name) const
 {
+    size_t setting_index = Settings::findIndexStrict(name);
     const auto * ptr = tryGetConstraint(setting_index);
     if (ptr)
         return ptr->read_only;
@@ -104,26 +83,20 @@ bool SettingsConstraints::isReadOnly(size_t setting_index) const
         return false;
 }
 
-void SettingsConstraints::set(const StringRef & setting_name, const Field & min_value, const Field & max_value, bool read_only)
-{
-    set(Settings::findIndexStrict(setting_name), min_value, max_value, read_only);
-}
 
-void SettingsConstraints::set(size_t setting_index, const Field & min_value, const Field & max_value, bool read_only)
+void SettingsConstraints::set(const StringRef & name, const Field & min_value, const Field & max_value, bool read_only)
 {
+    size_t setting_index = Settings::findIndexStrict(name);
     auto & ref = getConstraintRef(setting_index);
     ref.min_value = min_value;
     ref.max_value = max_value;
     ref.read_only = read_only;
 }
 
-void SettingsConstraints::get(const StringRef & setting_name, Field & min_value, Field & max_value, bool & read_only) const
-{
-    get(Settings::findIndexStrict(setting_name), min_value, max_value, read_only);
-}
 
-void SettingsConstraints::get(size_t setting_index, Field & min_value, Field & max_value, bool & read_only) const
+void SettingsConstraints::get(const StringRef & name, Field & min_value, Field & max_value, bool & read_only) const
 {
+    size_t setting_index = Settings::findIndexStrict(name);
     const auto * ptr = tryGetConstraint(setting_index);
     if (ptr)
     {
@@ -138,6 +111,7 @@ void SettingsConstraints::get(size_t setting_index, Field & min_value, Field & m
         read_only = false;
     }
 }
+
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {

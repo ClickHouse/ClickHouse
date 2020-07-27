@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 
+#include <common/likely.h>
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>

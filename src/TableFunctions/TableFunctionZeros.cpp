@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemZeros.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
@@ -31,7 +32,9 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
         UInt64 length = evaluateArgument(context, arguments[0]);
 
-        auto res = StorageSystemZeros::create(StorageID(getDatabaseName(), table_name), multithreaded, length);
+        context.checkAccess(AccessType::zeros);
+
+        auto res = StorageSystemZeros::create(table_name, multithreaded, length);
         res->startup();
         return res;
     }

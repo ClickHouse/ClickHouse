@@ -5,7 +5,7 @@
 
 namespace DB
 {
-class ASTRolesOrUsersSet;
+class ASTGenericRoleSet;
 
 /** SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
   * SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
@@ -21,8 +21,8 @@ public:
     };
     Kind kind = Kind::SET_ROLE;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_users;
+    std::shared_ptr<ASTGenericRoleSet> roles;
+    std::shared_ptr<ASTGenericRoleSet> to_users;
 
     String getID(char) const override;
     ASTPtr clone() const override;

@@ -239,6 +239,11 @@ inline void writeFloatText(T x, WriteBuffer & buf)
 }
 
 
+inline void writeString(const String & s, WriteBuffer & buf)
+{
+    buf.write(s.data(), s.size());
+}
+
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
     buf.write(data, size);
@@ -996,26 +1001,6 @@ inline String toString(const T & x)
     WriteBufferFromOwnString buf;
     writeText(x, buf);
     return buf.str();
-}
-
-inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
-{
-    /// c_str is guaranteed to return zero-terminated string
-    buffer.write(s.c_str(), s.size() + 1);
-}
-
-template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
-writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
-{
-    if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
-
-    writePODBinary(x, buf);
 }
 
 }

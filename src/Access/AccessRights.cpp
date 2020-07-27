@@ -1,9 +1,7 @@
 #include <Access/AccessRights.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
-#include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/sort.hpp>
 #include <unordered_map>
 
 namespace DB
@@ -11,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -24,6 +23,13 @@ namespace
         COLUMN_LEVEL,
     };
 
+    enum RevokeMode
+    {
+        NORMAL_REVOKE_MODE,  /// for AccessRights::revoke()
+        PARTIAL_REVOKE_MODE, /// for AccessRights::partialRevoke()
+        FULL_REVOKE_MODE,    /// for AccessRights::fullRevoke()
+    };
+
     struct Helper
     {
         static const Helper & instance()
@@ -32,221 +38,21 @@ namespace
             return res;
         }
 
-        const AccessFlags all_flags = AccessFlags::allFlags();
-        const AccessFlags database_flags = AccessFlags::allDatabaseFlags();
-        const AccessFlags table_flags = AccessFlags::allTableFlags();
-        const AccessFlags column_flags = AccessFlags::allColumnFlags();
-        const AccessFlags dictionary_flags = AccessFlags::allDictionaryFlags();
-        const AccessFlags column_level_flags = column_flags;
-        const AccessFlags table_level_flags = table_flags | dictionary_flags | column_level_flags;
-        const AccessFlags database_level_flags = database_flags | table_level_flags;
-
-        const AccessFlags show_databases_flag = AccessType::SHOW_DATABASES;
-        const AccessFlags show_tables_flag = AccessType::SHOW_TABLES;
-        const AccessFlags show_columns_flag = AccessType::SHOW_COLUMNS;
-        const AccessFlags show_dictionaries_flag = AccessType::SHOW_DICTIONARIES;
+        const AccessFlags database_level_flags = AccessFlags::databaseLevel();
+        const AccessFlags table_level_flags = AccessFlags::tableLevel();
+        const AccessFlags column_level_flags = AccessFlags::columnLevel();
+        const AccessFlags show_flag = AccessType::SHOW;
+        const AccessFlags exists_flag = AccessType::EXISTS;
         const AccessFlags create_table_flag = AccessType::CREATE_TABLE;
-        const AccessFlags create_view_flag = AccessType::CREATE_VIEW;
         const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
-        const AccessFlags alter_table_flag = AccessType::ALTER_TABLE;
-        const AccessFlags alter_view_flag = AccessType::ALTER_VIEW;
-        const AccessFlags truncate_flag = AccessType::TRUNCATE;
-        const AccessFlags drop_table_flag = AccessType::DROP_TABLE;
-        const AccessFlags drop_view_flag = AccessType::DROP_VIEW;
-        const AccessFlags alter_ttl_flag = AccessType::ALTER_TTL;
-        const AccessFlags alter_materialize_ttl_flag = AccessType::ALTER_MATERIALIZE_TTL;
-        const AccessFlags system_reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
-        const AccessFlags system_reload_embedded_dictionaries = AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES;
     };
 
-    using Kind = AccessRightsElementWithOptions::Kind;
-
-    struct ProtoElement
+    std::string_view checkCurrentDatabase(const std::string_view & current_database)
     {
-        AccessFlags access_flags;
-        boost::container::small_vector<std::string_view, 3> full_name;
-        bool grant_option = false;
-        Kind kind = Kind::GRANT;
-
-        friend bool operator<(const ProtoElement & left, const ProtoElement & right)
-        {
-            static constexpr auto compare_name = [](const boost::container::small_vector<std::string_view, 3> & left_name,
-                                                    const boost::container::small_vector<std::string_view, 3> & right_name,
-                                                    size_t i)
-            {
-                if (i < left_name.size())
-                {
-                    if (i < right_name.size())
-                        return left_name[i].compare(right_name[i]);
-                    else
-                        return 1; /// left_name is longer => left_name > right_name
-                }
-                else if (i < right_name.size())
-                    return 1; /// right_name is longer => left < right
-                else
-                    return 0; /// left_name == right_name
-            };
-
-            if (int cmp = compare_name(left.full_name, right.full_name, 0))
-                return cmp < 0;
-
-            if (int cmp = compare_name(left.full_name, right.full_name, 1))
-                return cmp < 0;
-
-            if (left.kind != right.kind)
-                return (left.kind == Kind::GRANT);
-
-            if (left.grant_option != right.grant_option)
-                return right.grant_option;
-
-            if (int cmp = compare_name(left.full_name, right.full_name, 2))
-                return cmp < 0;
-
-            return (left.access_flags < right.access_flags);
-        }
-
-        AccessRightsElementWithOptions getResult() const
-        {
-            AccessRightsElementWithOptions res;
-            res.access_flags = access_flags;
-            res.grant_option = grant_option;
-            res.kind = kind;
-            switch (full_name.size())
-            {
-                case 0:
-                {
-                    res.any_database = true;
-                    res.any_table = true;
-                    res.any_column = true;
-                    break;
-                }
-                case 1:
-                {
-                    res.any_database = false;
-                    res.database = full_name[0];
-                    res.any_table = true;
-                    res.any_column = true;
-                    break;
-                }
-                case 2:
-                {
-                    res.any_database = false;
-                    res.database = full_name[0];
-                    res.any_table = false;
-                    res.table = full_name[1];
-                    res.any_column = true;
-                    break;
-                }
-                case 3:
-                {
-                    res.any_database = false;
-                    res.database = full_name[0];
-                    res.any_table = false;
-                    res.table = full_name[1];
-                    res.any_column = false;
-                    res.columns.emplace_back(full_name[2]);
-                    break;
-                }
-            }
-            return res;
-        }
-    };
-
-    class ProtoElements : public std::vector<ProtoElement>
-    {
-    public:
-        AccessRightsElementsWithOptions getResult() const
-        {
-            ProtoElements sorted = *this;
-            boost::range::sort(sorted);
-            AccessRightsElementsWithOptions res;
-            res.reserve(sorted.size());
-
-            for (size_t i = 0; i != sorted.size();)
-            {
-                size_t count_elements_with_diff_columns = sorted.countElementsWithDifferenceInColumnOnly(i);
-                if (count_elements_with_diff_columns == 1)
-                {
-                    /// Easy case: one Element is converted to one AccessRightsElement.
-                    const auto & element = sorted[i];
-                    if (element.access_flags)
-                        res.emplace_back(element.getResult());
-                    ++i;
-                }
-                else
-                {
-                    /// Difficult case: multiple Elements are converted to one or multiple AccessRightsElements.
-                    sorted.appendResultWithElementsWithDifferenceInColumnOnly(i, count_elements_with_diff_columns, res);
-                    i += count_elements_with_diff_columns;
-                }
-            }
-            return res;
-        }
-
-    private:
-        size_t countElementsWithDifferenceInColumnOnly(size_t start) const
-        {
-            const auto & start_element = (*this)[start];
-            if ((start_element.full_name.size() != 3) || (start == size() - 1))
-                return 1;
-
-            auto it = std::find_if(begin() + start + 1, end(), [&](const ProtoElement & element)
-            {
-                return (element.full_name.size() != 3) || (element.full_name[0] != start_element.full_name[0])
-                    || (element.full_name[1] != start_element.full_name[1]) || (element.grant_option != start_element.grant_option)
-                    || (element.kind != start_element.kind);
-            });
-
-            return it - (begin() + start);
-        }
-
-        /// Collects columns together to write multiple columns into one AccessRightsElement.
-        /// That procedure allows to output access rights in more compact way,
-        /// e.g. "SELECT(x, y)" instead of "SELECT(x), SELECT(y)".
-        void appendResultWithElementsWithDifferenceInColumnOnly(size_t start, size_t count, AccessRightsElementsWithOptions & res) const
-        {
-            const auto * pbegin = data() + start;
-            const auto * pend = pbegin + count;
-            AccessFlags handled_flags;
-
-            while (pbegin < pend)
-            {
-                while (pbegin < pend && !(pbegin->access_flags - handled_flags))
-                    ++pbegin;
-
-                while (pbegin < pend && !((pend - 1)->access_flags - handled_flags))
-                    --pend;
-
-                if (pbegin >= pend)
-                    break;
-
-                AccessFlags common_flags = (pbegin->access_flags - handled_flags);
-                for (const auto * element = pbegin + 1; element != pend; ++element)
-                {
-                    if (auto new_common_flags = (element->access_flags - handled_flags) & common_flags)
-                        common_flags = new_common_flags;
-                }
-
-                res.emplace_back();
-                auto & back = res.back();
-                back.grant_option = pbegin->grant_option;
-                back.kind = pbegin->kind;
-                back.any_database = false;
-                back.database = pbegin->full_name[0];
-                back.any_table = false;
-                back.table = pbegin->full_name[1];
-                back.any_column = false;
-                back.access_flags = common_flags;
-                for (const auto * element = pbegin; element != pend; ++element)
-                {
-                    if (((element->access_flags - handled_flags) & common_flags) == common_flags)
-                        back.columns.emplace_back(element->full_name[2]);
-                }
-
-                handled_flags |= common_flags;
-            }
-        }
-    };
+        if (current_database.empty())
+            throw Exception("No current database", ErrorCodes::LOGICAL_ERROR);
+        return current_database;
+    }
 }
 
 
@@ -255,10 +61,13 @@ struct AccessRights::Node
 public:
     std::shared_ptr<const String> node_name;
     Level level = GLOBAL_LEVEL;
-    AccessFlags access;           /// access = (inherited_access - partial_revokes) | explicit_grants
-    AccessFlags final_access;     /// final_access = access | implicit_access
-    AccessFlags min_access;       /// min_access = final_access & child[0].final_access & ... & child[N-1].final_access
-    AccessFlags max_access;       /// max_access = final_access | child[0].final_access | ... | child[N-1].final_access
+    AccessFlags explicit_grants;
+    AccessFlags partial_revokes;
+    AccessFlags inherited_access; /// the access inherited from the parent node
+    AccessFlags raw_access;       /// raw_access = (inherited_access - partial_revokes) | explicit_grants
+    AccessFlags access;           /// access = raw_access | implicit_access
+    AccessFlags min_access;       /// min_access = access & child[0].access & ... | child[N-1].access
+    AccessFlags max_access;       /// max_access = access | child[0].access | ... | child[N-1].access
     std::unique_ptr<std::unordered_map<std::string_view, Node>> children;
 
     Node() = default;
@@ -266,13 +75,13 @@ public:
 
     Node & operator =(const Node & src)
     {
-        if (this == &src)
-            return *this;
-
         node_name = src.node_name;
         level = src.level;
+        inherited_access = src.inherited_access;
+        explicit_grants = src.explicit_grants;
+        partial_revokes = src.partial_revokes;
+        raw_access = src.raw_access;
         access = src.access;
-        final_access = src.final_access;
         min_access = src.min_access;
         max_access = src.max_access;
         if (src.children)
@@ -282,9 +91,9 @@ public:
         return *this;
     }
 
-    void grant(AccessFlags flags, const Helper & helper)
+    void grant(AccessFlags access_to_grant, const Helper & helper)
     {
-        if (!flags)
+        if (!access_to_grant)
             return;
 
         if (level == GLOBAL_LEVEL)
@@ -293,77 +102,125 @@ public:
         }
         else if (level == DATABASE_LEVEL)
         {
-            AccessFlags grantable = flags & helper.database_level_flags;
+            AccessFlags grantable = access_to_grant & helper.database_level_flags;
             if (!grantable)
-                throw Exception(flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
-            flags = grantable;
+                throw Exception(access_to_grant.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
+            access_to_grant = grantable;
         }
         else if (level == TABLE_LEVEL)
         {
-            AccessFlags grantable = flags & helper.table_level_flags;
+            AccessFlags grantable = access_to_grant & helper.table_level_flags;
             if (!grantable)
-                throw Exception(flags.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
-            flags = grantable;
+                throw Exception(access_to_grant.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
+            access_to_grant = grantable;
         }
         else if (level == COLUMN_LEVEL)
         {
-            AccessFlags grantable = flags & helper.column_level_flags;
+            AccessFlags grantable = access_to_grant & helper.column_level_flags;
             if (!grantable)
-                throw Exception(flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
-            flags = grantable;
+                throw Exception(access_to_grant.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
+            access_to_grant = grantable;
         }
 
-        addGrantsRec(flags);
-        calculateFinalAccessRec(helper);
+        AccessFlags new_explicit_grants = access_to_grant - partial_revokes;
+        if (level == TABLE_LEVEL)
+            removeExplicitGrantsRec(new_explicit_grants);
+        removePartialRevokesRec(access_to_grant);
+        explicit_grants |= new_explicit_grants;
+
+        calculateAllAccessRec(helper);
     }
 
     template <typename ... Args>
-    void grant(const AccessFlags & flags, const Helper & helper, const std::string_view & name, const Args &... subnames)
+    void grant(const AccessFlags & access_to_grant, const Helper & helper, const std::string_view & name, const Args &... subnames)
     {
         auto & child = getChild(name);
-        child.grant(flags, helper, subnames...);
-        eraseChildIfPossible(child);
-        calculateFinalAccess(helper);
+        child.grant(access_to_grant, helper, subnames...);
+        eraseChildIfEmpty(child);
+        calculateImplicitAccess(helper);
+        calculateMinAndMaxAccess();
     }
 
     template <typename StringT>
-    void grant(const AccessFlags & flags, const Helper & helper, const std::vector<StringT> & names)
+    void grant(const AccessFlags & access_to_grant, const Helper & helper, const std::vector<StringT> & names)
     {
         for (const auto & name : names)
         {
             auto & child = getChild(name);
-            child.grant(flags, helper);
-            eraseChildIfPossible(child);
+            child.grant(access_to_grant, helper);
+            eraseChildIfEmpty(child);
         }
-        calculateFinalAccess(helper);
+        calculateImplicitAccess(helper);
+        calculateMinAndMaxAccess();
     }
 
-    void revoke(const AccessFlags & flags, const Helper & helper)
+    template <int mode>
+    void revoke(const AccessFlags & access_to_revoke, const Helper & helper)
     {
-        removeGrantsRec(flags);
-        calculateFinalAccessRec(helper);
+        if constexpr (mode == NORMAL_REVOKE_MODE)
+        {
+            if (level == TABLE_LEVEL)
+                removeExplicitGrantsRec(access_to_revoke);
+            else
+                removeExplicitGrants(access_to_revoke);
+        }
+        else if constexpr (mode == PARTIAL_REVOKE_MODE)
+        {
+            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
+            if (level == TABLE_LEVEL)
+                removeExplicitGrantsRec(access_to_revoke);
+            else
+                removeExplicitGrants(access_to_revoke);
+            removePartialRevokesRec(new_partial_revokes);
+            partial_revokes |= new_partial_revokes;
+        }
+        else /// mode == FULL_REVOKE_MODE
+        {
+            AccessFlags new_partial_revokes = access_to_revoke - explicit_grants;
+            removeExplicitGrantsRec(access_to_revoke);
+            removePartialRevokesRec(new_partial_revokes);
+            partial_revokes |= new_partial_revokes;
+        }
+        calculateAllAccessRec(helper);
     }
 
-    template <typename... Args>
-    void revoke(const AccessFlags & flags, const Helper & helper, const std::string_view & name, const Args &... subnames)
+    template <int mode, typename... Args>
+    void revoke(const AccessFlags & access_to_revoke, const Helper & helper, const std::string_view & name, const Args &... subnames)
     {
-        auto & child = getChild(name);
+        Node * child;
+        if (mode == NORMAL_REVOKE_MODE)
+        {
+            if (!(child = tryGetChild(name)))
+                return;
+        }
+        else
+            child = &getChild(name);
 
-        child.revoke(flags, helper, subnames...);
-        eraseChildIfPossible(child);
-        calculateFinalAccess(helper);
+        child->revoke<mode>(access_to_revoke, helper, subnames...);
+        eraseChildIfEmpty(*child);
+        calculateImplicitAccess(helper);
+        calculateMinAndMaxAccess();
     }
 
-    template <typename StringT>
-    void revoke(const AccessFlags & flags, const Helper & helper, const std::vector<StringT> & names)
+    template <int mode, typename StringT>
+    void revoke(const AccessFlags & access_to_revoke, const Helper & helper, const std::vector<StringT> & names)
     {
+        Node * child;
         for (const auto & name : names)
         {
-            auto & child = getChild(name);
-            child.revoke(flags, helper);
-            eraseChildIfPossible(child);
+            if (mode == NORMAL_REVOKE_MODE)
+            {
+                if (!(child = tryGetChild(name)))
+                    continue;
+            }
+            else
+                child = &getChild(name);
+
+            child->revoke<mode>(access_to_revoke, helper);
+            eraseChildIfEmpty(*child);
         }
-        calculateFinalAccess(helper);
+        calculateImplicitAccess(helper);
+        calculateMinAndMaxAccess();
     }
 
     bool isGranted(const AccessFlags & flags) const
@@ -383,7 +240,7 @@ public:
         if (child)
             return child->isGranted(flags, subnames...);
         else
-            return final_access.contains(flags);
+            return access.contains(flags);
     }
 
     template <typename StringT>
@@ -404,7 +261,7 @@ public:
             }
             else
             {
-                if (!final_access.contains(flags))
+                if (!access.contains(flags))
                     return false;
             }
         }
@@ -413,7 +270,7 @@ public:
 
     friend bool operator ==(const Node & left, const Node & right)
     {
-        if (left.access != right.access)
+        if ((left.explicit_grants != right.explicit_grants) || (left.partial_revokes != right.partial_revokes))
             return false;
 
         if (!left.children)
@@ -426,48 +283,48 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
-    void makeUnion(const Node & other, const Helper & helper)
+    bool isEmpty() const
     {
-        makeUnionRec(other);
-        calculateFinalAccessRec(helper);
+        return !explicit_grants && !partial_revokes && !children;
     }
 
-    void makeIntersection(const Node & other, const Helper & helper)
+    void merge(const Node & other, const Helper & helper)
     {
-        makeIntersectionRec(other);
-        calculateFinalAccessRec(helper);
+        mergeRawAccessRec(other);
+        calculateGrantsAndPartialRevokesRec();
+        calculateAllAccessRec(helper);
     }
 
-    ProtoElements getElements() const
+    void traceTree(Poco::Logger * log) const
     {
-        ProtoElements res;
-        getElementsRec(res, {}, *this, {});
-        return res;
-    }
-
-    static ProtoElements getElements(const Node * node, const Node * node_with_grant_option)
-    {
-        ProtoElements res;
-        getElementsRec(res, {}, node, {}, node_with_grant_option, {});
-        return res;
-    }
-
-    void logTree(Poco::Logger * log, const String & title) const
-    {
-        LOG_TRACE(log, "Tree({}): level={}, name={}, access={}, final_access={}, min_access={}, max_access={}, num_children={}",
-            title, level, node_name ? *node_name : "NULL", access.toString(),
-            final_access.toString(), min_access.toString(), max_access.toString(),
-            (children ? children->size() : 0));
-
+        LOG_TRACE(log, "Tree(" << level << "): name=" << (node_name ? *node_name : "NULL")
+                  << ", explicit_grants=" << explicit_grants.toString()
+                  << ", partial_revokes=" << partial_revokes.toString()
+                  << ", inherited_access=" << inherited_access.toString()
+                  << ", raw_access=" << raw_access.toString()
+                  << ", access=" << access.toString()
+                  << ", min_access=" << min_access.toString()
+                  << ", max_access=" << max_access.toString()
+                  << ", num_children=" << (children ? children->size() : 0));
         if (children)
         {
             for (auto & child : *children | boost::adaptors::map_values)
-                child.logTree(log, title);
+                child.traceTree(log);
         }
     }
 
 private:
-    Node * tryGetChild(const std::string_view & name) const
+    Node * tryGetChild(const std::string_view & name)
+    {
+        if (!children)
+            return nullptr;
+        auto it = children->find(name);
+        if (it == children->end())
+            return nullptr;
+        return &it->second;
+    }
+
+    const Node * tryGetChild(const std::string_view & name) const
     {
         if (!children)
             return nullptr;
@@ -488,13 +345,14 @@ private:
         Node & new_child = (*children)[*new_child_name];
         new_child.node_name = std::move(new_child_name);
         new_child.level = static_cast<Level>(level + 1);
-        new_child.access = access;
+        new_child.inherited_access = raw_access;
+        new_child.raw_access = raw_access;
         return new_child;
     }
 
-    void eraseChildIfPossible(Node & child)
+    void eraseChildIfEmpty(Node & child)
     {
-        if (!canEraseChild(child))
+        if (!child.isEmpty())
             return;
         auto it = children->find(*child.node_name);
         children->erase(it);
@@ -502,146 +360,46 @@ private:
             children = nullptr;
     }
 
-    bool canEraseChild(const Node & child) const
+    void calculateImplicitAccess(const Helper & helper)
     {
-        return (access == child.access) && !child.children;
+        access = raw_access;
+        if (access & helper.database_level_flags)
+            access |= helper.show_flag | helper.exists_flag;
+        else if ((level >= DATABASE_LEVEL) && children)
+            access |= helper.exists_flag;
+
+        if ((level == GLOBAL_LEVEL) && (access & helper.create_table_flag))
+            access |= helper.create_temporary_table_flag;
     }
 
-    void addGrantsRec(const AccessFlags & flags)
+    void calculateMinAndMaxAccess()
     {
-        access |= flags;
+        min_access = access;
+        max_access = access;
         if (children)
         {
-            for (auto it = children->begin(); it != children->end();)
+            for (const auto & child : *children | boost::adaptors::map_values)
             {
-                auto & child = it->second;
-                child.addGrantsRec(flags);
-                if (canEraseChild(child))
-                    it = children->erase(it);
-                else
-                    ++it;
-            }
-            if (children->empty())
-                children = nullptr;
-        }
-    }
-
-    void removeGrantsRec(const AccessFlags & flags)
-    {
-        access &= ~flags;
-        if (children)
-        {
-            for (auto it = children->begin(); it != children->end();)
-            {
-                auto & child = it->second;
-                child.removeGrantsRec(flags);
-                if (canEraseChild(child))
-                    it = children->erase(it);
-                else
-                    ++it;
-            }
-            if (children->empty())
-                children = nullptr;
-        }
-    }
-
-    static void getElementsRec(
-        ProtoElements & res,
-        const boost::container::small_vector<std::string_view, 3> & full_name,
-        const Node & node,
-        const AccessFlags & parent_access)
-    {
-        auto access = node.access;
-        auto revokes = parent_access - access;
-        auto grants = access - parent_access;
-
-        if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
-
-        if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
-
-        if (node.children)
-        {
-            for (const auto & [child_name, child] : *node.children)
-            {
-                boost::container::small_vector<std::string_view, 3> child_full_name = full_name;
-                child_full_name.push_back(child_name);
-                getElementsRec(res, child_full_name, child, access);
+                min_access &= child.min_access;
+                max_access |= child.max_access;
             }
         }
     }
 
-    static void getElementsRec(
-        ProtoElements & res,
-        const boost::container::small_vector<std::string_view, 3> & full_name,
-        const Node * node,
-        const AccessFlags & parent_access,
-        const Node * node_go,
-        const AccessFlags & parent_access_go)
+    void calculateAllAccessRec(const Helper & helper)
     {
-        auto access = node ? node->access : parent_access;
-        auto access_go = node_go ? node_go->access : parent_access_go;
-        auto revokes = parent_access - access;
-        auto revokes_go = parent_access_go - access_go - revokes;
-        auto grants_go = access_go - parent_access_go;
-        auto grants = access - parent_access - grants_go;
+        partial_revokes &= inherited_access;
+        raw_access = (inherited_access - partial_revokes) | explicit_grants;
 
-        if (revokes)
-            res.push_back(ProtoElement{revokes, full_name, false, Kind::REVOKE});
-
-        if (revokes_go)
-            res.push_back(ProtoElement{revokes_go, full_name, true, Kind::REVOKE});
-
-        if (grants)
-            res.push_back(ProtoElement{grants, full_name, false, Kind::GRANT});
-
-        if (grants_go)
-            res.push_back(ProtoElement{grants_go, full_name, true, Kind::GRANT});
-
-        if (node && node->children)
-        {
-            for (const auto & [child_name, child] : *node->children)
-            {
-                boost::container::small_vector<std::string_view, 3> child_full_name = full_name;
-                child_full_name.push_back(child_name);
-                const Node * child_node = &child;
-                const Node * child_node_go = nullptr;
-                if (node_go && node_go->children)
-                {
-                    auto it = node_go->children->find(child_name);
-                    if (it != node_go->children->end())
-                        child_node_go = &it->second;
-                }
-                getElementsRec(res, child_full_name, child_node, access, child_node_go, access_go);
-            }
-
-        }
-        if (node_go && node_go->children)
-        {
-            for (const auto & [child_name, child] : *node_go->children)
-            {
-                if (node && node->children && node->children->count(child_name))
-                    continue; /// already processed
-                boost::container::small_vector<std::string_view, 3> child_full_name = full_name;
-                child_full_name.push_back(child_name);
-                const Node * child_node = nullptr;
-                const Node * child_node_go = &child;
-                getElementsRec(res, child_full_name, child_node, access, child_node_go, access_go);
-            }
-        }
-    }
-
-    void calculateFinalAccessRec(const Helper & helper)
-    {
         /// Traverse tree.
         if (children)
         {
             for (auto it = children->begin(); it != children->end();)
             {
                 auto & child = it->second;
-                child.calculateFinalAccessRec(helper);
-                if (canEraseChild(child))
+                child.inherited_access = raw_access;
+                child.calculateAllAccessRec(helper);
+                if (child.isEmpty())
                     it = children->erase(it);
                 else
                     ++it;
@@ -650,117 +408,62 @@ private:
                 children = nullptr;
         }
 
-        calculateFinalAccess(helper);
+        calculateImplicitAccess(helper);
+        calculateMinAndMaxAccess();
     }
 
-    void calculateFinalAccess(const Helper & helper)
+    void removeExplicitGrants(const AccessFlags & change)
     {
-        /// Calculate min and max access among children.
-        AccessFlags min_access_among_children = helper.all_flags;
-        AccessFlags max_access_among_children;
+        explicit_grants -= change;
+    }
+
+    void removeExplicitGrantsRec(const AccessFlags & change)
+    {
+        removeExplicitGrants(change);
         if (children)
         {
-            for (const auto & child : *children | boost::adaptors::map_values)
-            {
-                min_access_among_children &= child.min_access;
-                max_access_among_children |= child.max_access;
-            }
+            for (auto & child : *children | boost::adaptors::map_values)
+                child.removeExplicitGrantsRec(change);
         }
-
-        /// Calculate implicit access:
-        AccessFlags implicit_access;
-
-        if (level <= DATABASE_LEVEL)
-        {
-            if (access & helper.database_flags)
-                implicit_access |= helper.show_databases_flag;
-        }
-        if (level <= TABLE_LEVEL)
-        {
-            if (access & helper.table_flags)
-                implicit_access |= helper.show_tables_flag;
-            if (access & helper.dictionary_flags)
-                implicit_access |= helper.show_dictionaries_flag;
-        }
-        if (level <= COLUMN_LEVEL)
-        {
-            if (access & helper.column_flags)
-                implicit_access |= helper.show_columns_flag;
-        }
-        if (children && max_access_among_children)
-        {
-            if (level == DATABASE_LEVEL)
-                implicit_access |= helper.show_databases_flag;
-            else if (level == TABLE_LEVEL)
-                implicit_access |= helper.show_tables_flag;
-        }
-
-        if (level == GLOBAL_LEVEL)
-        {
-            if ((access | max_access_among_children) & helper.create_table_flag)
-                implicit_access |= helper.create_temporary_table_flag;
-
-            if (access & helper.system_reload_dictionary)
-                implicit_access |= helper.system_reload_embedded_dictionaries;
-        }
-
-        if (level <= TABLE_LEVEL)
-        {
-            if (access & helper.create_table_flag)
-                implicit_access |= helper.create_view_flag;
-
-            if (access & helper.drop_table_flag)
-                implicit_access |= helper.drop_view_flag;
-
-            if (access & helper.alter_table_flag)
-                implicit_access |= helper.alter_view_flag;
-
-            if (access & helper.alter_ttl_flag)
-                implicit_access |= helper.alter_materialize_ttl_flag;
-        }
-
-        final_access = access | implicit_access;
-
-        /// Calculate min and max access:
-        /// min_access = final_access & child[0].final_access & ... & child[N-1].final_access
-        /// max_access = final_access | child[0].final_access | ... | child[N-1].final_access
-        min_access = final_access & min_access_among_children;
-        max_access = final_access | max_access_among_children;
     }
 
-    void makeUnionRec(const Node & rhs)
+    void removePartialRevokesRec(const AccessFlags & change)
+    {
+        partial_revokes -= change;
+        if (children)
+        {
+            for (auto & child : *children | boost::adaptors::map_values)
+                child.removePartialRevokesRec(change);
+        }
+    }
+
+    void mergeRawAccessRec(const Node & rhs)
     {
         if (rhs.children)
         {
             for (const auto & [rhs_childname, rhs_child] : *rhs.children)
-                getChild(rhs_childname).makeUnionRec(rhs_child);
+                getChild(rhs_childname).mergeRawAccessRec(rhs_child);
         }
-        access |= rhs.access;
+        raw_access |= rhs.raw_access;
         if (children)
         {
             for (auto & [lhs_childname, lhs_child] : *children)
             {
+                lhs_child.inherited_access = raw_access;
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.access |= rhs.access;
+                    lhs_child.raw_access |= rhs.raw_access;
             }
         }
     }
 
-    void makeIntersectionRec(const Node & rhs)
+    void calculateGrantsAndPartialRevokesRec()
     {
-        if (rhs.children)
-        {
-            for (const auto & [rhs_childname, rhs_child] : *rhs.children)
-                getChild(rhs_childname).makeIntersectionRec(rhs_child);
-        }
-        access &= rhs.access;
+        explicit_grants = raw_access - inherited_access;
+        partial_revokes = inherited_access - raw_access;
         if (children)
         {
-            for (auto & [lhs_childname, lhs_child] : *children)
-            {
-                if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.access &= rhs.access;
-            }
+            for (auto & child : *children | boost::adaptors::map_values)
+                child.calculateGrantsAndPartialRevokesRec();
         }
     }
 };
@@ -784,10 +487,6 @@ AccessRights & AccessRights::operator =(const AccessRights & src)
         root = std::make_unique<Node>(*src.root);
     else
         root = nullptr;
-    if (src.root_with_grant_option)
-        root_with_grant_option = std::make_unique<Node>(*src.root_with_grant_option);
-    else
-        root_with_grant_option = nullptr;
     return *this;
 }
 
@@ -800,279 +499,294 @@ AccessRights::AccessRights(const AccessFlags & access)
 
 bool AccessRights::isEmpty() const
 {
-    return !root && !root_with_grant_option;
+    return !root;
 }
 
 
 void AccessRights::clear()
 {
     root = nullptr;
-    root_with_grant_option = nullptr;
 }
 
 
-template <bool with_grant_option, typename... Args>
-void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
+template <typename... Args>
+void AccessRights::grantImpl(const AccessFlags & access, const Args &... args)
 {
-    auto helper = [&](std::unique_ptr<Node> & root_node)
-    {
-        if (!root_node)
-            root_node = std::make_unique<Node>();
-        root_node->grant(flags, Helper::instance(), args...);
-        if (!root_node->access && !root_node->children)
-            root_node = nullptr;
-    };
-    helper(root);
-
-    if constexpr (with_grant_option)
-        helper(root_with_grant_option);
+    if (!root)
+        root = std::make_unique<Node>();
+    root->grant(access, Helper::instance(), args...);
+    if (root->isEmpty())
+        root = nullptr;
 }
 
-template <bool with_grant_option>
-void AccessRights::grantImpl(const AccessRightsElement & element)
+void AccessRights::grantImpl(const AccessRightsElement & element, std::string_view current_database)
 {
     if (element.any_database)
-        grantImpl<with_grant_option>(element.access_flags);
+    {
+        grantImpl(element.access_flags);
+    }
     else if (element.any_table)
-        grantImpl<with_grant_option>(element.access_flags, element.database);
+    {
+        if (element.database.empty())
+            grantImpl(element.access_flags, checkCurrentDatabase(current_database));
+        else
+            grantImpl(element.access_flags, element.database);
+    }
     else if (element.any_column)
-        grantImpl<with_grant_option>(element.access_flags, element.database, element.table);
+    {
+        if (element.database.empty())
+            grantImpl(element.access_flags, checkCurrentDatabase(current_database), element.table);
+        else
+            grantImpl(element.access_flags, element.database, element.table);
+    }
     else
-        grantImpl<with_grant_option>(element.access_flags, element.database, element.table, element.columns);
+    {
+        if (element.database.empty())
+            grantImpl(element.access_flags, checkCurrentDatabase(current_database), element.table, element.columns);
+        else
+            grantImpl(element.access_flags, element.database, element.table, element.columns);
+    }
 }
 
-template <bool with_grant_option>
-void AccessRights::grantImpl(const AccessRightsElements & elements)
+void AccessRights::grantImpl(const AccessRightsElements & elements, std::string_view current_database)
 {
     for (const auto & element : elements)
-        grantImpl<with_grant_option>(element);
+        grantImpl(element, current_database);
 }
 
-void AccessRights::grant(const AccessFlags & flags) { grantImpl<false>(flags); }
-void AccessRights::grant(const AccessFlags & flags, const std::string_view & database) { grantImpl<false>(flags, database); }
-void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) { grantImpl<false>(flags, database, table); }
-void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { grantImpl<false>(flags, database, table, column); }
-void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { grantImpl<false>(flags, database, table, columns); }
-void AccessRights::grant(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { grantImpl<false>(flags, database, table, columns); }
-void AccessRights::grant(const AccessRightsElement & element) { grantImpl<false>(element); }
-void AccessRights::grant(const AccessRightsElements & elements) { grantImpl<false>(elements); }
+void AccessRights::grant(const AccessFlags & access) { grantImpl(access); }
+void AccessRights::grant(const AccessFlags & access, const std::string_view & database) { grantImpl(access, database); }
+void AccessRights::grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table) { grantImpl(access, database, table); }
+void AccessRights::grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) { grantImpl(access, database, table, column); }
+void AccessRights::grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { grantImpl(access, database, table, columns); }
+void AccessRights::grant(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) { grantImpl(access, database, table, columns); }
+void AccessRights::grant(const AccessRightsElement & element, std::string_view current_database) { grantImpl(element, current_database); }
+void AccessRights::grant(const AccessRightsElements & elements, std::string_view current_database) { grantImpl(elements, current_database); }
 
-void AccessRights::grantWithGrantOption(const AccessFlags & flags) { grantImpl<true>(flags); }
-void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database) { grantImpl<true>(flags, database); }
-void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) { grantImpl<true>(flags, database, table); }
-void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { grantImpl<true>(flags, database, table, column); }
-void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { grantImpl<true>(flags, database, table, columns); }
-void AccessRights::grantWithGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { grantImpl<true>(flags, database, table, columns); }
-void AccessRights::grantWithGrantOption(const AccessRightsElement & element) { grantImpl<true>(element); }
-void AccessRights::grantWithGrantOption(const AccessRightsElements & elements) { grantImpl<true>(elements); }
-
-
-template <bool grant_option, typename... Args>
-void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
+template <int mode, typename... Args>
+void AccessRights::revokeImpl(const AccessFlags & access, const Args &... args)
 {
-    auto helper = [&](std::unique_ptr<Node> & root_node)
-    {
-        if (!root_node)
-            return;
-        root_node->revoke(flags, Helper::instance(), args...);
-        if (!root_node->access && !root_node->children)
-            root_node = nullptr;
-    };
-    helper(root_with_grant_option);
-
-    if constexpr (!grant_option)
-        helper(root);
+    if (!root)
+        return;
+    root->revoke<mode>(access, Helper::instance(), args...);
+    if (root->isEmpty())
+        root = nullptr;
 }
 
-template <bool grant_option>
-void AccessRights::revokeImpl(const AccessRightsElement & element)
+template <int mode>
+void AccessRights::revokeImpl(const AccessRightsElement & element, std::string_view current_database)
 {
     if (element.any_database)
-        revokeImpl<grant_option>(element.access_flags);
+    {
+        revokeImpl<mode>(element.access_flags);
+    }
     else if (element.any_table)
-        revokeImpl<grant_option>(element.access_flags, element.database);
+    {
+        if (element.database.empty())
+            revokeImpl<mode>(element.access_flags, checkCurrentDatabase(current_database));
+        else
+            revokeImpl<mode>(element.access_flags, element.database);
+    }
     else if (element.any_column)
-        revokeImpl<grant_option>(element.access_flags, element.database, element.table);
+    {
+        if (element.database.empty())
+            revokeImpl<mode>(element.access_flags, checkCurrentDatabase(current_database), element.table);
+        else
+            revokeImpl<mode>(element.access_flags, element.database, element.table);
+    }
     else
-        revokeImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
+    {
+        if (element.database.empty())
+            revokeImpl<mode>(element.access_flags, checkCurrentDatabase(current_database), element.table, element.columns);
+        else
+            revokeImpl<mode>(element.access_flags, element.database, element.table, element.columns);
+    }
 }
 
-template <bool grant_option>
-void AccessRights::revokeImpl(const AccessRightsElements & elements)
+template <int mode>
+void AccessRights::revokeImpl(const AccessRightsElements & elements, std::string_view current_database)
 {
     for (const auto & element : elements)
-        revokeImpl<grant_option>(element);
+        revokeImpl<mode>(element, current_database);
 }
 
-void AccessRights::revoke(const AccessFlags & flags) { revokeImpl<false>(flags); }
-void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database) { revokeImpl<false>(flags, database); }
-void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) { revokeImpl<false>(flags, database, table); }
-void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<false>(flags, database, table, column); }
-void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<false>(flags, database, table, columns); }
-void AccessRights::revoke(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<false>(flags, database, table, columns); }
-void AccessRights::revoke(const AccessRightsElement & element) { revokeImpl<false>(element); }
-void AccessRights::revoke(const AccessRightsElements & elements) { revokeImpl<false>(elements); }
+void AccessRights::revoke(const AccessFlags & access) { revokeImpl<NORMAL_REVOKE_MODE>(access); }
+void AccessRights::revoke(const AccessFlags & access, const std::string_view & database) { revokeImpl<NORMAL_REVOKE_MODE>(access, database); }
+void AccessRights::revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table) { revokeImpl<NORMAL_REVOKE_MODE>(access, database, table); }
+void AccessRights::revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<NORMAL_REVOKE_MODE>(access, database, table, column); }
+void AccessRights::revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<NORMAL_REVOKE_MODE>(access, database, table, columns); }
+void AccessRights::revoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<NORMAL_REVOKE_MODE>(access, database, table, columns); }
+void AccessRights::revoke(const AccessRightsElement & element, std::string_view current_database) { revokeImpl<NORMAL_REVOKE_MODE>(element, current_database); }
+void AccessRights::revoke(const AccessRightsElements & elements, std::string_view current_database) { revokeImpl<NORMAL_REVOKE_MODE>(elements, current_database); }
 
-void AccessRights::revokeGrantOption(const AccessFlags & flags) { revokeImpl<true>(flags); }
-void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database) { revokeImpl<true>(flags, database); }
-void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) { revokeImpl<true>(flags, database, table); }
-void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<true>(flags, database, table, column); }
-void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<true>(flags, database, table, columns); }
-void AccessRights::revokeGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<true>(flags, database, table, columns); }
-void AccessRights::revokeGrantOption(const AccessRightsElement & element) { revokeImpl<true>(element); }
-void AccessRights::revokeGrantOption(const AccessRightsElements & elements) { revokeImpl<true>(elements); }
+void AccessRights::partialRevoke(const AccessFlags & access) { revokeImpl<PARTIAL_REVOKE_MODE>(access); }
+void AccessRights::partialRevoke(const AccessFlags & access, const std::string_view & database) { revokeImpl<PARTIAL_REVOKE_MODE>(access, database); }
+void AccessRights::partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table) { revokeImpl<PARTIAL_REVOKE_MODE>(access, database, table); }
+void AccessRights::partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<PARTIAL_REVOKE_MODE>(access, database, table, column); }
+void AccessRights::partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<PARTIAL_REVOKE_MODE>(access, database, table, columns); }
+void AccessRights::partialRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<PARTIAL_REVOKE_MODE>(access, database, table, columns); }
+void AccessRights::partialRevoke(const AccessRightsElement & element, std::string_view current_database) { revokeImpl<PARTIAL_REVOKE_MODE>(element, current_database); }
+void AccessRights::partialRevoke(const AccessRightsElements & elements, std::string_view current_database) { revokeImpl<PARTIAL_REVOKE_MODE>(elements, current_database); }
+
+void AccessRights::fullRevoke(const AccessFlags & access) { revokeImpl<FULL_REVOKE_MODE>(access); }
+void AccessRights::fullRevoke(const AccessFlags & access, const std::string_view & database) { revokeImpl<FULL_REVOKE_MODE>(access, database); }
+void AccessRights::fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table) { revokeImpl<FULL_REVOKE_MODE>(access, database, table); }
+void AccessRights::fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) { revokeImpl<FULL_REVOKE_MODE>(access, database, table, column); }
+void AccessRights::fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) { revokeImpl<FULL_REVOKE_MODE>(access, database, table, columns); }
+void AccessRights::fullRevoke(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) { revokeImpl<FULL_REVOKE_MODE>(access, database, table, columns); }
+void AccessRights::fullRevoke(const AccessRightsElement & element, std::string_view current_database) { revokeImpl<FULL_REVOKE_MODE>(element, current_database); }
+void AccessRights::fullRevoke(const AccessRightsElements & elements, std::string_view current_database) { revokeImpl<FULL_REVOKE_MODE>(elements, current_database); }
 
 
-AccessRightsElementsWithOptions AccessRights::getElements() const
+AccessRights::Elements AccessRights::getElements() const
 {
-#if 0
-    logTree();
-#endif
     if (!root)
         return {};
-    if (!root_with_grant_option)
-        return root->getElements().getResult();
-    return Node::getElements(root.get(), root_with_grant_option.get()).getResult();
+    Elements res;
+    if (root->explicit_grants)
+        res.grants.push_back({root->explicit_grants});
+    if (root->children)
+    {
+        for (const auto & [db_name, db_node] : *root->children)
+        {
+            if (db_node.partial_revokes)
+                res.partial_revokes.push_back({db_node.partial_revokes, db_name});
+            if (db_node.explicit_grants)
+                res.grants.push_back({db_node.explicit_grants, db_name});
+            if (db_node.children)
+            {
+                for (const auto & [table_name, table_node] : *db_node.children)
+                {
+                    if (table_node.partial_revokes)
+                        res.partial_revokes.push_back({table_node.partial_revokes, db_name, table_name});
+                    if (table_node.explicit_grants)
+                        res.grants.push_back({table_node.explicit_grants, db_name, table_name});
+                    if (table_node.children)
+                    {
+                        for (const auto & [column_name, column_node] : *table_node.children)
+                        {
+                            if (column_node.partial_revokes)
+                                res.partial_revokes.push_back({column_node.partial_revokes, db_name, table_name, column_name});
+                            if (column_node.explicit_grants)
+                                res.grants.push_back({column_node.explicit_grants, db_name, table_name, column_name});
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return res;
 }
 
 
 String AccessRights::toString() const
 {
-    return getElements().toString();
-}
-
-
-template <bool grant_option, typename... Args>
-bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args) const
-{
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
+    auto elements = getElements();
+    String res;
+    if (!elements.grants.empty())
     {
-        if (!root_node)
-            return flags.isEmpty();
-        return root_node->isGranted(flags, args...);
-    };
-    if constexpr (grant_option)
-        return helper(root_with_grant_option);
-    else
-        return helper(root);
-}
-
-template <bool grant_option>
-bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
-{
-    if (element.any_database)
-        return isGrantedImpl<grant_option>(element.access_flags);
-    else if (element.any_table)
-        return isGrantedImpl<grant_option>(element.access_flags, element.database);
-    else if (element.any_column)
-        return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table);
-    else
-        return isGrantedImpl<grant_option>(element.access_flags, element.database, element.table, element.columns);
-}
-
-template <bool grant_option>
-bool AccessRights::isGrantedImpl(const AccessRightsElements & elements) const
-{
-    for (const auto & element : elements)
-        if (!isGrantedImpl<grant_option>(element))
-            return false;
-    return true;
-}
-
-bool AccessRights::isGranted(const AccessFlags & flags) const { return isGrantedImpl<false>(flags); }
-bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database) const { return isGrantedImpl<false>(flags, database); }
-bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return isGrantedImpl<false>(flags, database, table); }
-bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return isGrantedImpl<false>(flags, database, table, column); }
-bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return isGrantedImpl<false>(flags, database, table, columns); }
-bool AccessRights::isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return isGrantedImpl<false>(flags, database, table, columns); }
-bool AccessRights::isGranted(const AccessRightsElement & element) const { return isGrantedImpl<false>(element); }
-bool AccessRights::isGranted(const AccessRightsElements & elements) const { return isGrantedImpl<false>(elements); }
-
-bool AccessRights::hasGrantOption(const AccessFlags & flags) const { return isGrantedImpl<true>(flags); }
-bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database) const { return isGrantedImpl<true>(flags, database); }
-bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return isGrantedImpl<true>(flags, database, table); }
-bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return isGrantedImpl<true>(flags, database, table, column); }
-bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return isGrantedImpl<true>(flags, database, table, columns); }
-bool AccessRights::hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return isGrantedImpl<true>(flags, database, table, columns); }
-bool AccessRights::hasGrantOption(const AccessRightsElement & element) const { return isGrantedImpl<true>(element); }
-bool AccessRights::hasGrantOption(const AccessRightsElements & elements) const { return isGrantedImpl<true>(elements); }
-
-
-bool operator ==(const AccessRights & left, const AccessRights & right)
-{
-    auto helper = [](const std::unique_ptr<AccessRights::Node> & left_node, const std::unique_ptr<AccessRights::Node> & right_node)
+        res += "GRANT ";
+        res += elements.grants.toString();
+    }
+    if (!elements.partial_revokes.empty())
     {
-        if (!left_node)
-            return !right_node;
-        if (!right_node)
-            return false;
-        return *left_node == *right_node;
-    };
-    return helper(left.root, right.root) && helper(left.root_with_grant_option, right.root_with_grant_option);
-}
-
-
-void AccessRights::makeUnion(const AccessRights & other)
-{
-    auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
-    {
-        if (!root_node)
-        {
-            if (other_root_node)
-                root_node = std::make_unique<Node>(*other_root_node);
-            return;
-        }
-        if (other_root_node)
-        {
-            root_node->makeUnion(*other_root_node, Helper::instance());
-            if (!root_node->access && !root_node->children)
-                root_node = nullptr;
-        }
-    };
-    helper(root, other.root);
-    helper(root_with_grant_option, other.root_with_grant_option);
-}
-
-
-void AccessRights::makeIntersection(const AccessRights & other)
-{
-    auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
-    {
-        if (!root_node)
-        {
-            if (other_root_node)
-                root_node = std::make_unique<Node>(*other_root_node);
-            return;
-        }
-        if (other_root_node)
-        {
-            root_node->makeIntersection(*other_root_node, Helper::instance());
-            if (!root_node->access && !root_node->children)
-                root_node = nullptr;
-        }
-    };
-    helper(root, other.root);
-    helper(root_with_grant_option, other.root_with_grant_option);
-}
-
-
-AccessRights AccessRights::getFullAccess()
-{
-    AccessRights res;
-    res.grantWithGrantOption(AccessType::ALL);
+        if (!res.empty())
+            res += ", ";
+        res += "REVOKE ";
+        res += elements.partial_revokes.toString();
+    }
+    if (res.empty())
+        res = "GRANT USAGE ON *.*";
     return res;
 }
 
 
-void AccessRights::logTree() const
+template <typename... Args>
+bool AccessRights::isGrantedImpl(const AccessFlags & access, const Args &... args) const
+{
+    if (!root)
+        return access.isEmpty();
+    return root->isGranted(access, args...);
+}
+
+bool AccessRights::isGrantedImpl(const AccessRightsElement & element, std::string_view current_database) const
+{
+    if (element.any_database)
+    {
+        return isGrantedImpl(element.access_flags);
+    }
+    else if (element.any_table)
+    {
+        if (element.database.empty())
+            return isGrantedImpl(element.access_flags, checkCurrentDatabase(current_database));
+        else
+            return isGrantedImpl(element.access_flags, element.database);
+    }
+    else if (element.any_column)
+    {
+        if (element.database.empty())
+            return isGrantedImpl(element.access_flags, checkCurrentDatabase(current_database), element.table);
+        else
+            return isGrantedImpl(element.access_flags, element.database, element.table);
+    }
+    else
+    {
+        if (element.database.empty())
+            return isGrantedImpl(element.access_flags, checkCurrentDatabase(current_database), element.table, element.columns);
+        else
+            return isGrantedImpl(element.access_flags, element.database, element.table, element.columns);
+    }
+}
+
+bool AccessRights::isGrantedImpl(const AccessRightsElements & elements, std::string_view current_database) const
+{
+    for (const auto & element : elements)
+        if (!isGrantedImpl(element, current_database))
+            return false;
+    return true;
+}
+
+bool AccessRights::isGranted(const AccessFlags & access) const { return isGrantedImpl(access); }
+bool AccessRights::isGranted(const AccessFlags & access, const std::string_view & database) const { return isGrantedImpl(access, database); }
+bool AccessRights::isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const { return isGrantedImpl(access, database, table); }
+bool AccessRights::isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return isGrantedImpl(access, database, table, column); }
+bool AccessRights::isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return isGrantedImpl(access, database, table, columns); }
+bool AccessRights::isGranted(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return isGrantedImpl(access, database, table, columns); }
+bool AccessRights::isGranted(const AccessRightsElement & element, std::string_view current_database) const { return isGrantedImpl(element, current_database); }
+bool AccessRights::isGranted(const AccessRightsElements & elements, std::string_view current_database) const { return isGrantedImpl(elements, current_database); }
+
+
+bool operator ==(const AccessRights & left, const AccessRights & right)
+{
+    if (!left.root)
+        return !right.root;
+    if (!right.root)
+        return false;
+    return *left.root == *right.root;
+}
+
+
+void AccessRights::merge(const AccessRights & other)
+{
+    if (!root)
+    {
+        *this = other;
+        return;
+    }
+    if (other.root)
+    {
+        root->merge(*other.root, Helper::instance());
+        if (root->isEmpty())
+            root = nullptr;
+    }
+}
+
+
+void AccessRights::traceTree() const
 {
     auto * log = &Poco::Logger::get("AccessRights");
     if (root)
-    {
-        root->logTree(log, "");
-        if (root_with_grant_option)
-            root->logTree(log, "go");
-    }
+        root->traceTree(log);
     else
         LOG_TRACE(log, "Tree: NULL");
 }

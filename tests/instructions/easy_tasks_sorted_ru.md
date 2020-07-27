@@ -2,7 +2,7 @@
 
 ## Недостатки юзабилити, если пользователь не может прочитать конфиг клиента.
 
-`programs/client/Client.cpp`
+`dbms/programs/client/Client.cpp`
 
 Делаем `chmod 000 /etc/clickhouse-client/config.xml` и смотрим, что получится.
 
