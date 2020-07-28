@@ -1,5 +1,4 @@
 #include <Interpreters/Set.h>
-#include <Interpreters/Context.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -90,18 +89,14 @@ void CreatingSetsBlockInputStream::createAll()
 
 void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 {
-    if (subquery.set)
-        LOG_TRACE(log, "Creating set.");
-    if (subquery.join)
-        LOG_TRACE(log, "Creating join.");
-    if (subquery.table)
-        LOG_TRACE(log, "Filling temporary table.");
-
+    LOG_TRACE(log, (subquery.set ? "Creating set. " : "")
+        << (subquery.join ? "Creating join. " : "")
+        << (subquery.table ? "Filling temporary table. " : ""));
     Stopwatch watch;
 
     BlockOutputStreamPtr table_out;
     if (subquery.table)
-        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), context);
+        table_out = subquery.table->write({}, context);
 
     bool done_with_set = !subquery.set;
     bool done_with_join = !subquery.join;
@@ -169,14 +164,19 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
     if (head_rows != 0)
     {
-        auto seconds = watch.elapsedSeconds();
+        std::stringstream msg;
+        msg << std::fixed << std::setprecision(3);
+        msg << "Created. ";
 
         if (subquery.set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
+            msg << "Set with " << subquery.set->getTotalRowCount() << " entries from " << head_rows << " rows. ";
         if (subquery.join)
-            LOG_DEBUG(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
+            msg << "Join with " << subquery.join->getTotalRowCount() << " entries from " << head_rows << " rows. ";
         if (subquery.table)
-            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
+            msg << "Table with " << head_rows << " rows. ";
+
+        msg << "In " << watch.elapsedSeconds() << " sec.";
+        LOG_DEBUG(log, msg.rdbuf());
     }
     else
     {

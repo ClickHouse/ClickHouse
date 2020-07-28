@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
@@ -24,7 +24,7 @@ namespace DB
 
 /** Class for asynchronous data writing.
   */
-class WriteBufferAIO final : public WriteBufferFromFileBase
+class WriteBufferAIO : public WriteBufferFromFileBase
 {
 public:
     WriteBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,

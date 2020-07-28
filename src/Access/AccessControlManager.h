@@ -2,7 +2,6 @@
 
 #include <Access/MultipleAccessStorage.h>
 #include <Poco/AutoPtr.h>
-#include <boost/container/flat_set.hpp>
 #include <memory>
 
 
@@ -20,24 +19,22 @@ namespace Poco
 
 namespace DB
 {
-class ContextAccess;
-struct ContextAccessParams;
+class AccessRightsContext;
+using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
+class AccessRightsContextFactory;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
-class EnabledRoles;
-class RoleCache;
-class EnabledRowPolicies;
-class RowPolicyCache;
-class EnabledQuota;
-class QuotaCache;
-struct QuotaUsage;
-struct SettingsProfile;
-using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
-class EnabledSettings;
-class SettingsProfilesCache;
-class SettingsProfileElements;
+class RoleContext;
+using RoleContextPtr = std::shared_ptr<const RoleContext>;
+class RoleContextFactory;
+class RowPolicyContext;
+using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
+class RowPolicyContextFactory;
+class QuotaContext;
+using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
+class QuotaContextFactory;
+struct QuotaUsageInfo;
 class ClientInfo;
-class ExternalAuthenticators;
 struct Settings;
 
 
@@ -49,54 +46,38 @@ public:
     ~AccessControlManager();
 
     void setLocalDirectory(const String & directory);
-    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
-    void setDefaultProfileName(const String & default_profile_name);
 
-    std::shared_ptr<const ContextAccess> getContextAccess(
+    AccessRightsContextPtr getAccessRightsContext(
         const UUID & user_id,
-        const boost::container::flat_set<UUID> & current_roles,
+        const std::vector<UUID> & current_roles,
         bool use_default_roles,
         const Settings & settings,
         const String & current_database,
         const ClientInfo & client_info) const;
 
-    std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
+    RoleContextPtr getRoleContext(
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
 
-    std::shared_ptr<const EnabledRoles> getEnabledRoles(
-        const boost::container::flat_set<UUID> & current_roles,
-        const boost::container::flat_set<UUID> & current_roles_with_admin_option) const;
-
-    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
+    RowPolicyContextPtr getRowPolicyContext(
         const UUID & user_id,
-        const boost::container::flat_set<UUID> & enabled_roles) const;
+        const std::vector<UUID> & enabled_roles) const;
 
-    std::shared_ptr<const EnabledQuota> getEnabledQuota(
-        const UUID & user_id,
+    QuotaContextPtr getQuotaContext(
         const String & user_name,
-        const boost::container::flat_set<UUID> & enabled_roles,
+        const UUID & user_id,
+        const std::vector<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
         const String & custom_quota_key) const;
 
-    std::vector<QuotaUsage> getAllQuotasUsage() const;
-
-    std::shared_ptr<const EnabledSettings> getEnabledSettings(const UUID & user_id,
-                                                              const SettingsProfileElements & settings_from_user,
-                                                              const boost::container::flat_set<UUID> & enabled_roles,
-                                                              const SettingsProfileElements & settings_from_enabled_roles) const;
-
-    std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
-
-    const ExternalAuthenticators & getExternalAuthenticators() const;
+    std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
 
 private:
-    class ContextAccessCache;
-    std::unique_ptr<ContextAccessCache> context_access_cache;
-    std::unique_ptr<RoleCache> role_cache;
-    std::unique_ptr<RowPolicyCache> row_policy_cache;
-    std::unique_ptr<QuotaCache> quota_cache;
-    std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
-    std::unique_ptr<ExternalAuthenticators> external_authenticators;
+    std::unique_ptr<AccessRightsContextFactory> access_rights_context_factory;
+    std::unique_ptr<RoleContextFactory> role_context_factory;
+    std::unique_ptr<RowPolicyContextFactory> row_policy_context_factory;
+    std::unique_ptr<QuotaContextFactory> quota_context_factory;
 };
 
 }

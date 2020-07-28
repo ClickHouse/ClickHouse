@@ -10,7 +10,7 @@ namespace DB
 XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
 {
-    const auto & sample = getPort(PortKind::Main).getHeader();
+    auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
     field_tag_names.resize(sample.columns());
@@ -124,7 +124,7 @@ void XMLRowOutputFormat::writeBeforeTotals()
 void XMLRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
     size_t totals_columns = columns.size();
-    const auto & header = getPort(PortKind::Totals).getHeader();
+    auto & header = getPort(PortKind::Totals).getHeader();
     for (size_t i = 0; i < totals_columns; ++i)
     {
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
@@ -167,7 +167,7 @@ void XMLRowOutputFormat::writeAfterExtremes()
 
 void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    const auto & header = getPort(PortKind::Extremes).getHeader();
+    auto & header = getPort(PortKind::Extremes).getHeader();
 
     writeCString("\t\t<", *ostr);
     writeCString(title, *ostr);

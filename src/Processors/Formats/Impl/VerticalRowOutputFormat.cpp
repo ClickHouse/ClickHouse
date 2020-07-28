@@ -14,7 +14,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
 {
-    const auto & sample = getPort(PortKind::Main).getHeader();
+    auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
     using Widths = std::vector<size_t>;
@@ -142,7 +142,7 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
     row_number = 0;
     field_number = 0;
 
-    const auto & header = getPort(port_kind).getHeader();
+    auto & header = getPort(port_kind).getHeader();
     size_t num_columns = columns.size();
 
     writeCString(title, out);
@@ -158,7 +158,7 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         if (i != 0)
             writeFieldDelimiter();
 
-        const auto & col = header.getByPosition(i);
+        auto & col = header.getByPosition(i);
         writeField(*columns[i], *col.type, row_num);
     }
 }

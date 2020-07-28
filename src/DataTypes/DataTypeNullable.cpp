@@ -93,7 +93,7 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
 
     /// First serialize null map.
     settings.path.push_back(Substream::NullMap);
-    if (auto * stream = settings.getter(settings.path))
+    if (auto stream = settings.getter(settings.path))
         DataTypeUInt8().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
 
     /// Then serialize contents of arrays.
@@ -112,7 +112,7 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto * stream = settings.getter(settings.path))
+    if (auto stream = settings.getter(settings.path))
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
 
     settings.path.back() = Substream::NullableElements;
@@ -419,12 +419,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
 
     if (col.isNullAt(row_num))
-    {
-        if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
-            writeCString("ᴺᵁᴸᴸ", ostr);
-        else
-            writeCString("NULL", ostr);
-    }
+        writeCString("ᴺᵁᴸᴸ", ostr);
     else
         nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
 }

@@ -1,13 +1,11 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
-
+#include "config_formats.h"
 #if USE_PROTOBUF
-#    include <DataTypes/IDataType.h>
-#    include <Formats/ProtobufReader.h>
-#    include <Processors/Formats/IRowInputFormat.h>
+
+#include <DataTypes/IDataType.h>
+#include <Processors/Formats/IRowInputFormat.h>
+#include <Formats/ProtobufReader.h>
 
 namespace DB
 {

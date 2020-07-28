@@ -1,22 +1,21 @@
 #include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/TableLockHolder.h>
+#include <Storages/TableStructureLockHolder.h>
 
 namespace DB
 {
 
 class Context;
-class HashJoin;
-using HashJoinPtr = std::shared_ptr<HashJoin>;
+class Join;
+using HashJoinPtr = std::shared_ptr<Join>;
 
-template <bool or_null>
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {
 public:
     ExecutableFunctionJoinGet(HashJoinPtr join_, String attr_name_)
         : join(std::move(join_)), attr_name(std::move(attr_name_)) {}
 
-    static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
+    static constexpr auto name = "joinGet";
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -31,13 +30,12 @@ private:
     const String attr_name;
 };
 
-template <bool or_null>
 class FunctionJoinGet final : public IFunctionBaseImpl
 {
 public:
-    static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
+    static constexpr auto name = "joinGet";
 
-    FunctionJoinGet(TableLockHolder table_lock_, StoragePtr storage_join_,
+    FunctionJoinGet(TableStructureReadLockHolder table_lock_, StoragePtr storage_join_,
                     HashJoinPtr join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
         : table_lock(std::move(table_lock_))
@@ -57,7 +55,7 @@ public:
     ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const override;
 
 private:
-    TableLockHolder table_lock;
+    TableStructureReadLockHolder table_lock;
     StoragePtr storage_join;
     HashJoinPtr join;
     const String attr_name;
@@ -65,11 +63,10 @@ private:
     DataTypePtr return_type;
 };
 
-template <bool or_null>
 class JoinGetOverloadResolver final : public IFunctionOverloadResolverImpl
 {
 public:
-    static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
+    static constexpr auto name = "joinGet";
     static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<JoinGetOverloadResolver>(context); }
 
     explicit JoinGetOverloadResolver(const Context & context_) : context(context_) {}

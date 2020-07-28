@@ -4,16 +4,14 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
+#include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/ArrayJoinAction.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
 
 
 namespace DB
@@ -24,8 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class Context;
-class TableJoin;
+class AnalyzedJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
@@ -42,7 +39,6 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class ExpressionActions;
-class CompiledExpressionCache;
 
 /** Action on the block.
   */
@@ -101,7 +97,7 @@ public:
     std::shared_ptr<ArrayJoinAction> array_join;
 
     /// For JOIN
-    std::shared_ptr<const TableJoin> table_join;
+    std::shared_ptr<const AnalyzedJoin> table_join;
     JoinPtr join;
 
     /// For PROJECT.
@@ -118,7 +114,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -139,8 +135,13 @@ private:
     void executeOnTotals(Block & block) const;
 
     /// Executes action on block (modify it). Block could be splitted in case of JOIN. Then not_processed block is created.
-    void execute(Block & block, ExtraBlockPtr & not_processed) const;
-    void execute(Block & block, bool dry_run) const;
+    void execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const;
+
+    void execute(Block & block, bool dry_run) const
+    {
+        ExtraBlockPtr extra;
+        execute(block, dry_run, extra);
+    }
 };
 
 
@@ -151,14 +152,30 @@ class ExpressionActions
 public:
     using Actions = std::vector<ExpressionAction>;
 
-    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_);
+    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
+        : input_columns(input_columns_), settings(context_.getSettingsRef())
+    {
+        for (const auto & input_elem : input_columns)
+            sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
+
+#if USE_EMBEDDED_COMPILER
+    compilation_cache = context_.getCompiledExpressionCache();
+#endif
+    }
 
     /// For constant columns the columns themselves can be contained in `input_columns_`.
-    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_);
-
-    ~ExpressionActions();
-
-    ExpressionActions(const ExpressionActions & other) = default;
+    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
+        : settings(context_.getSettingsRef())
+    {
+        for (const auto & input_elem : input_columns_)
+        {
+            input_columns.emplace_back(input_elem.name, input_elem.type);
+            sample_block.insert(input_elem);
+        }
+#if USE_EMBEDDED_COMPILER
+        compilation_cache = context_.getCompiledExpressionCache();
+#endif
+    }
 
     /// Add the input column.
     /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
@@ -206,10 +223,8 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
-    /// Execute the expression on the block with continuation. This method in only supported for single JOIN.
-    void execute(Block & block, ExtraBlockPtr & not_processed) const;
-
-    bool hasJoinOrArrayJoin() const;
+    /// Execute the expression on the block with continuation.
+    void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
 
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;
@@ -320,14 +335,10 @@ struct ExpressionActionsChain
         steps.clear();
     }
 
-    ExpressionActionsPtr getLastActions(bool allow_empty = false)
+    ExpressionActionsPtr getLastActions()
     {
         if (steps.empty())
-        {
-            if (allow_empty)
-                return {};
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
-        }
 
         return steps.back().actions;
     }
@@ -337,13 +348,6 @@ struct ExpressionActionsChain
         if (steps.empty())
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-        return steps.back();
-    }
-
-    Step & lastStep(const NamesAndTypesList & columns)
-    {
-        if (steps.empty())
-            steps.emplace_back(std::make_shared<ExpressionActions>(columns, context));
         return steps.back();
     }
 

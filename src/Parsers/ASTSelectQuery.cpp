@@ -5,7 +5,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -154,11 +153,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         if (limit_with_ties)
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << " WITH TIES" << (s.hilite ? hilite_none : "");
     }
-    else if (limitOffset())
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "OFFSET " << (s.hilite ? hilite_none : "");
-        limitOffset()->formatImpl(s, state, frame);
-    }
 
     if (settings())
     {
@@ -254,7 +248,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
 }
 
 
-ASTPtr ASTSelectQuery::sampleSize() const
+ASTPtr ASTSelectQuery::sample_size() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
     if (!table_expression)
@@ -264,7 +258,7 @@ ASTPtr ASTSelectQuery::sampleSize() const
 }
 
 
-ASTPtr ASTSelectQuery::sampleOffset() const
+ASTPtr ASTSelectQuery::sample_offset() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
     if (!table_expression)
@@ -296,7 +290,7 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
+ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
@@ -307,10 +301,10 @@ ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 }
 
 
-ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
+ASTPtr ASTSelectQuery::array_join_expression_list() const
 {
     bool is_left;
-    return arrayJoinExpressionList(is_left);
+    return array_join_expression_list(is_left);
 }
 
 
@@ -333,12 +327,6 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
-    assert(database_name != "_temporary_and_external_tables");
-    replaceDatabaseAndTable(StorageID(database_name, table_name));
-}
-
-void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
-{
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
 
     if (!table_expression)
@@ -353,7 +341,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = createTableIdentifier(table_id);
+    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);

@@ -18,10 +18,8 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    IMergeTreeReader(
-        const MergeTreeData::DataPartPtr & data_part_,
+    IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
         const NamesAndTypesList & columns_,
-        const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -63,8 +61,6 @@ protected:
     /// Returns actual column type in part, which can differ from table metadata.
     NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
 
-    void checkNumberOfColumns(size_t num_columns_to_read) const;
-
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
     /// Stores states for IDataType::deserializeBinaryBulk
@@ -79,18 +75,11 @@ protected:
     MergeTreeReaderSettings settings;
 
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
-
-    using ColumnPosition = std::optional<size_t>;
-    ColumnPosition findColumnForOffsets(const String & column_name) const;
 
     friend class MergeTreeRangeReader::DelayedStream;
 
 private:
-    /// Alter conversions, which must be applied on fly if required
-    MergeTreeData::AlterConversions alter_conversions;
-
     /// Actual data type of columns in part
     std::unordered_map<String, DataTypePtr> columns_from_part;
 };

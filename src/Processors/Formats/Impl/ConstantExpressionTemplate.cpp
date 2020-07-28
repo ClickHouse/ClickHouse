@@ -1,20 +1,13 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -24,6 +17,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Interpreters/convertFieldToType.h>
 #include <boost/functional/hash.hpp>
 
 
@@ -83,7 +77,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
     {
         /// It can be Array(Nullable(nested_type)) or Tuple(..., Nullable(nested_type), ...)
         bool is_nullable = false;
-        if (const auto * nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
+        if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
         {
             nested_type = nullable->getNestedType();
             is_nullable = true;
@@ -144,7 +138,7 @@ public:
     {
         if (visitIfLiteral(ast, force_nullable))
             return;
-        if (auto * function = ast->as<ASTFunction>())
+        if (auto function = ast->as<ASTFunction>())
             visit(*function, force_nullable);
         else if (ast->as<ASTQueryParameter>())
             return;
@@ -481,7 +475,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         {
             const auto & [nested_field_type, is_nullable] = type_info.nested_types[i];
             if (is_nullable)
-                if (const auto * nullable = dynamic_cast<const DataTypeNullable *>(nested_types[i].get()))
+                if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_types[i].get()))
                     nested_types[i] = nullable->getNestedType();
 
             WhichDataType nested_type_info(nested_types[i]);
@@ -577,10 +571,10 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
         return res;
 
     /// Extract column with evaluated expression and mask for NULLs
-    const auto & tuple = assert_cast<const ColumnTuple &>(*res);
+    auto & tuple = assert_cast<const ColumnTuple &>(*res);
     if (tuple.tupleSize() != 2)
         throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
-    const auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
+    auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
 
     for (size_t i = 0; i < is_null.size(); ++i)
         if (is_null.getUInt(i))

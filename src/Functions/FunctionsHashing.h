@@ -3,24 +3,22 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
-#if !defined(ARCADIA_BUILD)
-#    include <murmurhash2.h>
-#    include <murmurhash3.h>
-#    include "config_functions.h"
-#    include "config_core.h"
-#endif
+#include <murmurhash2.h>
+#include <murmurhash3.h>
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 
+#include "config_functions.h"
 #if USE_XXHASH
-#    include <xxhash.h>
+#   include <xxhash.h>
 #endif
 
+#include "config_core.h"
 #if USE_SSL
-#    include <openssl/md5.h>
-#    include <openssl/sha.h>
+#   include <openssl/md5.h>
+#   include <openssl/sha.h>
 #endif
 
 #include <Poco/ByteOrder.h>
@@ -40,8 +38,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/TargetSpecific.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
 
@@ -223,7 +219,7 @@ struct SipHash128Impl
     }
 };
 
-#if !defined(ARCADIA_BUILD)
+
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
   * Usually there is no reason to use MurmurHash.
@@ -335,21 +331,9 @@ struct MurmurHash3Impl64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct MurmurHash3Impl128
-{
-    static constexpr auto name = "murmurHash3_128";
-    enum { length = 16 };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        MurmurHash3_x64_128(begin, size, 0, out_char_data);
-    }
-};
-#endif
-
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
-///  but obtain the same result as it is done in signed integers with two's complement arithmetic.
+///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
 struct JavaHashImpl
 {
     static constexpr auto name = "javaHash";
@@ -425,6 +409,17 @@ struct HiveHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct MurmurHash3Impl128
+{
+    static constexpr auto name = "murmurHash3_128";
+    enum { length = 16 };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        MurmurHash3_x64_128(begin, size, 0, out_char_data);
+    }
 };
 
 struct ImplCityHash64
@@ -533,7 +528,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[0]))
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -567,22 +562,6 @@ public:
 
             block.getByPosition(result).column = std::move(col_to);
         }
-        else if (
-            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_to = ColumnFixedString::create(Impl::length);
-            const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
-            const auto size = col_from_fix->size();
-            auto & chars_to = col_to->getChars();
-            const auto length = col_from_fix->getN();
-            chars_to.resize(size * Impl::length);
-            for (size_t i = 0; i < size; ++i)
-            {
-                Impl::apply(
-                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
-            }
-            block.getByPosition(result).column = std::move(col_to);
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + getName(),
@@ -591,13 +570,12 @@ public:
 };
 
 
-DECLARE_MULTITARGET_CODE(
-
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -665,46 +643,13 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Impl, typename Name>
-class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
-{
-public:
-    explicit FunctionIntHash(const Context & context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
-    #endif
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
-    }
-
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<FunctionIntHash>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
-DECLARE_MULTITARGET_CODE(
 
 template <typename Impl>
 class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -991,39 +936,6 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Impl>
-class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl>
-{
-public:
-    explicit FunctionAnyHash(const Context & context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionAnyHash<Impl>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionAnyHash<Impl>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionAnyHash<Impl>>();
-    #endif
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
-    }
-
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<FunctionAnyHash>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
 
 struct URLHashImpl
 {
@@ -1233,16 +1145,12 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
-
-#if !defined(ARCADIA_BUILD)
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
-#endif
-
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;

@@ -49,27 +49,23 @@ public:
     {
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument for function '{}' must have type AggregateFunction - state of aggregate function."
-                " Got '{}' instead", getName(), arguments[0]->getName());
-        }
+            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type->getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        auto column = block.getByPosition(arguments.at(0)).column;
-        if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
+        const ColumnAggregateFunction * column_with_states
+            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+        if (!column_with_states)
             throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        /// Column is copied here, because there is no guarantee that we own it.
-        auto mut_column = IColumn::mutate(std::move(column));
-        block.getByPosition(result).column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
+        block.getByPosition(result).column = column_with_states->convertToValues();
     }
 };
 

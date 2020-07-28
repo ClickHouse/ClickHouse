@@ -7,7 +7,6 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
-#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -49,7 +48,6 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 
 BlockInputStreamPtr FileDictionarySource::loadAll()
 {
-    LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();
@@ -71,7 +69,7 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -84,12 +82,10 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
 
-        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
-
-        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
+        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, check_config);
     };
 
-    factory.registerSource("file", create_table_source);
+    factory.registerSource("file", createTableSource);
 }
 
 }
