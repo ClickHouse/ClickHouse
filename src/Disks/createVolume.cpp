@@ -43,11 +43,7 @@ VolumePtr createVolumeFromConfig(
         return std::make_shared<VolumeJBOD>(name, config, config_prefix, disk_selector);
     }
     String raid_type = config.getString(config_prefix + ".raid_type");
-    if (raid_type == "RAID 1" || raid_type == "RAID-1" || raid_type == "RAID1")
-    {
-        return std::make_shared<VolumeRAID1>(name, config, config_prefix, disk_selector);
-    }
-    else if (raid_type == "JBOD")
+    if (raid_type == "JBOD")
     {
         return std::make_shared<VolumeJBOD>(name, config, config_prefix, disk_selector);
     }

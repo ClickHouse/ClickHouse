@@ -569,7 +569,6 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// on first iteration write block to a temporary directory for subsequent
     /// hardlinking to ensure the inode is not freed until we're done
     {
-
         const std::string path(disk + data_path + *it);
         Poco::File(path).createDirectory();
 
