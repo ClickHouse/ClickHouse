@@ -5,6 +5,10 @@
 #include <IO/Operators.h>
 #include <stack>
 #include <Processors/QueryPlan/LimitStep.h>
+#include "MergingSortedStep.h"
+#include "FinishSortingStep.h"
+#include "MergeSortingStep.h"
+#include "PartialSortingStep.h"
 
 namespace DB
 {
@@ -129,6 +133,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 QueryPipelinePtr QueryPlan::buildQueryPipeline()
 {
     checkInitialized();
+    optimize();
 
     struct Frame
     {
@@ -308,8 +313,50 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlanStepPtr & child)
+/// If plan looks like Limit -> Sorting, update limit for Sorting
+bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 {
+    QueryPlanStepPtr & step = node->step;
+    QueryPlan::Node * child = nullptr;
+    bool updated = false;
+
+    if (auto * merging_sorted = typeid_cast<MergingSortedStep *>(step.get()))
+    {
+        /// TODO: remove LimitStep here.
+        merging_sorted->updateLimit(limit);
+        updated = true;
+        child = node->children.front();
+    }
+    else if (auto * finish_sorting = typeid_cast<FinishSortingStep *>(step.get()))
+    {
+        /// TODO: remove LimitStep here.
+        finish_sorting->updateLimit(limit);
+        updated = true;
+    }
+    else if (auto * merge_sorting = typeid_cast<MergeSortingStep *>(step.get()))
+    {
+        merge_sorting->updateLimit(limit);
+        updated = true;
+        child = node->children.front();
+    }
+    else if (auto * partial_sorting = typeid_cast<PartialSortingStep *>(step.get()))
+    {
+        partial_sorting->updateLimit(limit);
+        updated = true;
+    }
+
+    /// We often have chain PartialSorting -> MergeSorting -> MergingSorted
+    /// Try update limit for them also if possible.
+    if (child)
+        tryUpdateLimitForSortingSteps(child, limit);
+
+    return updated;
+}
+
+/// Move LimitStep down if possible.
+static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_node)
+{
+    auto & child = child_node->step;
     const auto * limit = typeid_cast<const LimitStep *>(parent.get());
 
     if (!limit)
@@ -319,6 +366,10 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlanStepPtr & child
 
     /// Skip everything which is not transform.
     if (!transforming)
+        return;
+
+    /// Special cases for sorting steps.
+    if (tryUpdateLimitForSortingSteps(child_node, limit->limitPlusOffset()))
         return;
 
     /// Now we should decide if pushing down limit possible for this step.
@@ -356,7 +407,7 @@ void QueryPlan::optimize()
         {
             /// First entrance, try push down.
             if (frame.node->children.size() == 1)
-                tryPushDownLimit(frame.node->step, frame.node->children.front()->step);
+                tryPushDownLimit(frame.node->step, frame.node->children.front());
         }
 
         if (frame.next_child < frame.node->children.size())

@@ -23,6 +23,8 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
+    size_t limitPlusOffset() const { return limit + offset; }
+
 private:
     size_t limit;
     size_t offset;
