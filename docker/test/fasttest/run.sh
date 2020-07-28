@@ -94,4 +94,19 @@ TESTS_TO_SKIP="parquet avro h3 odbc mysql sha256 _orc_ arrow 01098_temporary_and
 
 clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip $TESTS_TO_SKIP 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
+pkill clickhouse-server
+
+clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+
+until clickhouse-client --query "SELECT 1"
+do
+    sleep 0.1
+done
+
+FAILED_TESTS=`grep 'FAIL\|TIMEOUT\|ERROR' test_log.txt  | awk 'BEGIN { ORS=" " }; { print substr($3, 1, length($3)-1) }'`
+
+echo "Going to run again: $FAILED_TESTS"
+
+clickhouse-test --no-long --testname --shard --zookeeper $FAILED_TESTS 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/test_log.txt
+
 mv /var/log/clickhouse-server/* /test_output
