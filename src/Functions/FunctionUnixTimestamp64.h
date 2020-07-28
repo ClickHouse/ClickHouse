@@ -64,7 +64,7 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         using SourceColumnType = typename SourceDataType::ColumnType;
         using ResultColumnType = typename ResultDataType::ColumnType;

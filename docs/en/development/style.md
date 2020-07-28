@@ -1,6 +1,6 @@
 ---
 toc_priority: 68
-toc_title: How to Write C++ Code
+toc_title: C++ Guide
 ---
 
 # How to Write C++ Code {#how-to-write-c-code}
