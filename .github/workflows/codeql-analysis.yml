@@ -27,7 +27,6 @@ jobs:
 
     - run: sudo apt-get update && sudo apt-get install -y git cmake python ninja-build gcc-9 g++-9 && mkdir build
     - run: cd build && CC=gcc-9 CXX=g++-9 cmake ..
-    - run: cd build && ninja
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v1
