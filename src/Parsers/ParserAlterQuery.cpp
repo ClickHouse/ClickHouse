@@ -469,10 +469,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
                 return false;
 
-            if (!s_where.ignore(pos, expected))
-                return false;
+            bool at_least_one_condition = false;
 
-            if (!parser_exp_elem.parse(pos, command->predicate, expected))
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+                at_least_one_condition = true;
+            }
+
+            if (s_where.ignore(pos, expected))
+            {
+                if (!parser_exp_elem.parse(pos, command->predicate, expected))
+                    return false;
+                at_least_one_condition = true;
+            }
+
+            if (!at_least_one_condition)
                 return false;
 
             command->type = ASTAlterCommand::UPDATE;

@@ -90,7 +90,7 @@ void ASTAlterCommand::formatImpl(
         column->formatImpl(settings, state, frame);
         if (partition)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
     }
@@ -143,7 +143,7 @@ void ASTAlterCommand::formatImpl(
         index->formatImpl(settings, state, frame);
         if (partition)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
     }
@@ -154,7 +154,7 @@ void ASTAlterCommand::formatImpl(
         index->formatImpl(settings, state, frame);
         if (partition)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
     }
@@ -264,16 +264,34 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::DELETE)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
-        predicate->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE" << (settings.hilite ? hilite_none : "");
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+        if (predicate)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " WHERE " << (settings.hilite ? hilite_none : "");
+            predicate->formatImpl(settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::UPDATE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UPDATE " << (settings.hilite ? hilite_none : "");
         update_assignments->formatImpl(settings, state, frame);
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        predicate->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+
+        if (predicate)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+            predicate->formatImpl(settings, state, frame);
+        }
     }
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
