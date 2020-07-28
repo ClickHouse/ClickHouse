@@ -15,11 +15,10 @@ if (ENABLE_KRB5)
     set (USE_KRB5 1)
     set (KRB5_LIBRARY krb5)
 
-    set (KRB5_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/krb5/include")
-
-    list (APPEND KRB5_INCLUDE_DIR
+    set (KRB5_INCLUDE_DIR
         "${ClickHouse_SOURCE_DIR}/contrib/krb5/src/include"
-        )
+        "${ClickHouse_BINARY_DIR}/contrib/krb5-cmake/include"
+    )
 
 endif ()
 

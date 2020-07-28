@@ -557,10 +557,10 @@ add_custom_target(
     VERBATIM
 )
 
-add_library(krb5)
+add_library(${KRB5_LIBRARY})
 
 add_dependencies(
-    krb5
+    ${KRB5_LIBRARY}
     ERRMAP_H
     ERROR_MAP_H
     KRB_5_H
@@ -574,7 +574,7 @@ add_custom_command(
     WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/generic"
 )
 
-target_sources(krb5 PRIVATE
+target_sources(${KRB5_LIBRARY} PRIVATE
     ${ALL_SRCS}
 )
 
@@ -627,12 +627,12 @@ add_custom_command(
 
 
 
-target_include_directories(krb5 PUBLIC
+target_include_directories(${KRB5_LIBRARY} PUBLIC
     ${KRB5_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
-target_include_directories(krb5 PRIVATE
+target_include_directories(${KRB5_LIBRARY} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  #for autoconf.h
     ${KRB5_SOURCE_DIR}
     ${KRB5_SOURCE_DIR}/include
@@ -652,10 +652,10 @@ target_include_directories(krb5 PRIVATE
     ${KRB5_SOURCE_DIR}/lib/krb5/rcache
     ${KRB5_SOURCE_DIR}/lib/krb5/unicode
     ${KRB5_SOURCE_DIR}/lib/krb5/os
-    ${OPENSSL_INCLUDE_DIR}
+    # ${OPENSSL_INCLUDE_DIR}
 )
 
-target_compile_definitions(krb5 PRIVATE
+target_compile_definitions(${KRB5_LIBRARY} PRIVATE
     KRB5_PRIVATE
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
@@ -663,4 +663,8 @@ target_compile_definitions(krb5 PRIVATE
     BINDIR="/usr/local/bin"
     SBINDIR="/usr/local/sbin"
     LIBDIR="/usr/local/lib"
+)
+
+target_link_libraries(${KRB5_LIBRARY}
+    PRIVATE ${OPENSSL_CRYPTO_LIBRARY}
 )
