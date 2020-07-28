@@ -6,15 +6,19 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits(size_t limit)
+static ITransformingStep::Traits getTraits(size_t limit)
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
+        {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_number_of_rows = limit == 0,
             .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = limit == 0,
+        }
     };
 }
 
