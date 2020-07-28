@@ -1759,8 +1759,8 @@ RQ_SRS_006_RBAC_SetDefaultRole_Syntax = Requirement(
         '[ClickHouse] SHALL support the following syntax for the `SET DEFAULT ROLE` statement.\n'
         '\n'
         '```sql\n'
-        'SET DEFAULT ROLE \n'
-        '    {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} \n'
+        'SET DEFAULT ROLE\n'
+        '    {NONE | role [,...] | ALL | ALL EXCEPT role [,...]}\n'
         '    TO {user|CURRENT_USER} [,...]\n'
         '\n'
         '```\n'
@@ -1935,7 +1935,7 @@ RQ_SRS_006_RBAC_User_Drop_OnCluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP USER` statement \n'
+        '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP USER` statement\n'
         'to specify the name of the cluster the user should be dropped from.\n'
         ),
         link=None
@@ -2009,7 +2009,7 @@ RQ_SRS_006_RBAC_Role_Create_Settings = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying settings and profile using `SETTINGS` \n'
+        '[ClickHouse] SHALL support specifying settings and profile using `SETTINGS`\n'
         'clause in the `CREATE ROLE` statement.\n'
         ),
         link=None
@@ -2068,7 +2068,7 @@ RQ_SRS_006_RBAC_Role_Alter_IfExists = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering one **role** using `ALTER ROLE IF EXISTS` statement, where no exception \n'
+        '[ClickHouse] SHALL support altering one **role** using `ALTER ROLE IF EXISTS` statement, where no exception\n'
         'will be thrown if the role does not exist.\n'
         ),
         link=None
@@ -2082,7 +2082,7 @@ RQ_SRS_006_RBAC_Role_Alter_Cluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering one **role** using `ALTER ROLE role ON CLUSTER` statement to specify the \n'
+        '[ClickHouse] SHALL support altering one **role** using `ALTER ROLE role ON CLUSTER` statement to specify the\n'
         'cluster location of the specified role.\n'
         ),
         link=None
@@ -2096,9 +2096,9 @@ RQ_SRS_006_RBAC_Role_Alter_Rename = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering one **role** using `ALTER ROLE role RENAME TO` statement which renames the \n'
-        'role to a specified new name. If the new name already exists, that an exception SHALL be raised unless the \n'
-        '`IF EXISTS` clause is specified, by which no exception will be raised and nothing will change. \n'
+        '[ClickHouse] SHALL support altering one **role** using `ALTER ROLE role RENAME TO` statement which renames the\n'
+        'role to a specified new name. If the new name already exists, that an exception SHALL be raised unless the\n'
+        '`IF EXISTS` clause is specified, by which no exception will be raised and nothing will change.\n'
         ),
         link=None
     )
@@ -2111,7 +2111,7 @@ RQ_SRS_006_RBAC_Role_Alter_Settings = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering the settings of one **role** using `ALTER ROLE role SETTINGS` statement.\n'
+        '[ClickHouse] SHALL support altering the settings of one **role** using `ALTER ROLE role SETTINGS ...` statement.\n'
         'Altering variable values, creating max and min values, specifying readonly or writable, and specifying the\n'
         'profiles for which this alter change shall be applied to, are all supported, using the following syntax.\n'
         '\n'
@@ -2273,6 +2273,20 @@ RQ_SRS_006_RBAC_Grant_Privilege_To = Requirement(
         description=(
         '[ClickHouse] SHALL support granting privileges to one or more users or roles using `TO` clause\n'
         'in the `GRANT PRIVILEGE` statement.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Grant_Privilege_To_Effect = Requirement(
+        name='RQ.SRS-006.RBAC.Grant.Privilege.To.Effect',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL grant privileges to any set of users and/or roles specified in the `TO` clause of the grant statement.\n'
+        'Any new operation by one of the specified users or roles with the granted privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2854,6 +2868,54 @@ RQ_SRS_006_RBAC_Grant_Privilege_On = Requirement(
         link=None
     )
 
+RQ_SRS_006_RBAC_Grant_Privilege_On_Effect = Requirement(
+        name='RQ.SRS-006.RBAC.Grant.Privilege.On.Effect',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL grant privilege on a table specified in the `ON` clause.\n'
+        'Any new operation by user or role with privilege on the granted table SHALL succeed.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns = Requirement(
+        name='RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting the privilege **some_privilege** to one or more users or roles\n'
+        'for a database or a table using the `GRANT some_privilege(column)` statement for one column.\n'
+        'Multiple columns will be supported with `GRANT some_privilege(column1, column2...)` statement.\n'
+        'The privileges will be granted for only the specified columns.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect = Requirement(
+        name='RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns.Effect',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL grant the privilege **some_privilege** to the specified users or roles\n'
+        'after the successful execution of the `GRANT some_privilege(column)` statement for the specified column.\n'
+        'Granting of the privilege **some_privilege** over multiple columns SHALL happen after the successful\n'
+        'execution of the `GRANT some_privilege(column1, column2...)` statement.\n'
+        'Any new operation by a user or a user that had the specified role\n'
+        'which requires the privilege **some_privilege** over specified columns SHALL succeed.\n'
+        ),
+        link=None
+    )
+
 RQ_SRS_006_RBAC_Grant_Privilege_OnCluster = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.OnCluster',
         version='1.0',
@@ -2913,8 +2975,8 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Cluster_Effect = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL remove some privilege from the specified users or roles\n'
-        'on cluster **cluster_name** after the successful execution of the \n'
-        '`REVOKE ON CLUSTER cluster_name some_privilege` statement. Any new operation by a user or a user \n'
+        'on cluster **cluster_name** after the successful execution of the\n'
+        '`REVOKE ON CLUSTER cluster_name some_privilege` statement. Any new operation by a user or a user\n'
         'that had the specified role which requires that privilege on cluster **cluster_name** SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
@@ -3573,7 +3635,7 @@ RQ_SRS_006_RBAC_Revoke_Privilege_From_Effect = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL remove **priviliges** to any set of users specified in the `FROM` clause \n'
+        '[ClickHouse] SHALL remove **priviliges** to any set of users specified in the `FROM` clause\n'
         'in the `REVOKE` privilege statement. The details of the removed **privileges** will be specified\n'
         'in the other clauses. Any new operation by one of the specified users whose **privileges** have been\n'
         'revoked SHALL fail. The patterns that expand the `FROM` clause are listed below\n'
@@ -3599,7 +3661,7 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Syntax = Requirement(
         '```sql\n'
         'REVOKE [ON CLUSTER cluster_name] privilege\n'
         '    [(column_name [,...])] [,...]\n'
-        '    ON {db.table|db.*|*.*|table|*} \n'
+        '    ON {db.table|db.*|*.*|table|*}\n'
         '    FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]\n'
         '```\n'
         '<!-- old syntax, for reference -->\n'
@@ -3690,7 +3752,7 @@ RQ_SRS_006_RBAC_Grant_Role_CurrentUser = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting one or more roles to current user using \n'
+        '[ClickHouse] SHALL support granting one or more roles to current user using\n'
         '`TO CURRENT_USER` clause in the `GRANT` role statement.\n'
         ),
         link=None
@@ -3705,7 +3767,7 @@ RQ_SRS_006_RBAC_Grant_Role_CurrentUser_Effect = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL add all the privileges that are assigned to the role\n'
-        'which is granted to the current user via the `GRANT` statement. Any new operation that \n'
+        'which is granted to the current user via the `GRANT` statement. Any new operation that\n'
         'requires the privileges included in the role SHALL succeed.\n'
         ),
         link=None
@@ -3847,7 +3909,7 @@ RQ_SRS_006_RBAC_Revoke_Role_Cluster = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support revoking one or more roles from\n'
-        'one or more users or roles from one or more clusters \n'
+        'one or more users or roles from one or more clusters\n'
         'using the `REVOKE ON CLUSTER` role statement.\n'
         ),
         link=None
@@ -3862,7 +3924,7 @@ RQ_SRS_006_RBAC_Revoke_Role_Cluster_Effect = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL remove all the privileges that are assigned to the role\n'
-        'that is being revoked from the user or the role from the cluster(s) \n'
+        'that is being revoked from the user or the role from the cluster(s)\n'
         'to which the `REVOKE ON CLUSTER` role statement is applied.\n'
         'Any new operation, by the user or users that have the role which included the role being revoked,\n'
         'that requires the privileges included in the role SHALL fail if the user does not have it otherwise.\n'
@@ -3912,7 +3974,7 @@ RQ_SRS_006_RBAC_Revoke_Role_Syntax = Requirement(
         '[ClickHouse] SHALL support the following syntax for the `REVOKE` role statement\n'
         '\n'
         '```sql\n'
-        'REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] \n'
+        'REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR]\n'
         '    role [,...]\n'
         '    FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]\n'
         '```\n'
@@ -4405,7 +4467,7 @@ RQ_SRS_006_RBAC_SettingsProfile_Alter_Assignment_Inherit = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering the settings profile by inheriting settings from \n'
+        '[ClickHouse] SHALL support altering the settings profile by inheriting settings from\n'
         'specified profile using `INHERIT` clause in the `ALTER SETTINGS PROFILE` statement.\n'
         ),
         link=None
@@ -4604,7 +4666,7 @@ RQ_SRS_006_RBAC_Quota_Create_Cluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support creating quotas on a specific cluster with the \n'
+        '[ClickHouse] SHALL support creating quotas on a specific cluster with the\n'
         '`ON CLUSTER` clause in the `CREATE QUOTA` statement.\n'
         ),
         link=None
@@ -4622,7 +4684,7 @@ RQ_SRS_006_RBAC_Quota_Create_Interval = Requirement(
         'a period of time over for which the quota SHALL apply using the\n'
         '`FOR INTERVAL` clause in the `CREATE QUOTA` statement.\n'
         '\n'
-        'This statement SHALL also support a number and a time period which will be one \n'
+        'This statement SHALL also support a number and a time period which will be one\n'
         'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
         '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number\n'
@@ -4643,10 +4705,10 @@ RQ_SRS_006_RBAC_Quota_Create_Interval_Randomized = Requirement(
         'a period of time over for which the quota SHALL apply using the\n'
         '`FOR RANDOMIZED INTERVAL` clause in the `CREATE QUOTA` statement.\n'
         '\n'
-        'This statement SHALL also support a number and a time period which will be one \n'
+        'This statement SHALL also support a number and a time period which will be one\n'
         'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some \n'
+        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some\n'
         'real number to define the interval.\n'
         ),
         link=None
@@ -4805,7 +4867,7 @@ RQ_SRS_006_RBAC_Quota_Create_KeyedByOptions = Requirement(
         '[ClickHouse] SHALL support to track quota separately for some parameter\n'
         "using the `KEYED BY 'parameter'` clause in the `CREATE QUOTA` statement.\n"
         '\n'
-        "'parameter' can be one of: \n"
+        "'parameter' can be one of:\n"
         "`{'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}`\n"
         ),
         link=None
@@ -4955,7 +5017,7 @@ RQ_SRS_006_RBAC_Quota_Alter_Cluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support altering quotas on a specific cluster with the \n'
+        '[ClickHouse] SHALL support altering quotas on a specific cluster with the\n'
         '`ON CLUSTER` clause in the `ALTER QUOTA` statement.\n'
         ),
         link=None
@@ -4973,7 +5035,7 @@ RQ_SRS_006_RBAC_Quota_Alter_Interval = Requirement(
         'a period of time over for which the quota SHALL apply using the\n'
         '`FOR INTERVAL` clause in the `ALTER QUOTA` statement.\n'
         '\n'
-        'This statement SHALL also support a number and a time period which will be one \n'
+        'This statement SHALL also support a number and a time period which will be one\n'
         'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
         '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number\n'
@@ -4994,10 +5056,10 @@ RQ_SRS_006_RBAC_Quota_Alter_Interval_Randomized = Requirement(
         'a period of time over for which the quota SHALL apply using the\n'
         '`FOR RANDOMIZED INTERVAL` clause in the `ALTER QUOTA` statement.\n'
         '\n'
-        'This statement SHALL also support a number and a time period which will be one \n'
+        'This statement SHALL also support a number and a time period which will be one\n'
         'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some \n'
+        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some\n'
         'real number to define the interval.\n'
         ),
         link=None
@@ -5156,7 +5218,7 @@ RQ_SRS_006_RBAC_Quota_Alter_KeyedByOptions = Requirement(
         '[ClickHouse] SHALL support altering quota to track quota separately for some parameter\n'
         "using the `KEYED BY 'parameter'` clause in the `ALTER QUOTA` statement.\n"
         '\n'
-        "'parameter' can be one of: \n"
+        "'parameter' can be one of:\n"
         "`{'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}`\n"
         ),
         link=None
@@ -5376,7 +5438,7 @@ RQ_SRS_006_RBAC_Quota_ShowQuotas_Syntax = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support using the `SHOW QUOTAS` statement \n'
+        '[ClickHouse] SHALL support using the `SHOW QUOTAS` statement\n'
         'with the following syntax\n'
         '``` sql\n'
         'SHOW QUOTAS\n'
@@ -5573,7 +5635,7 @@ RQ_SRS_006_RBAC_RowPolicy_Create_ForSelect = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying which rows are affected \n'
+        '[ClickHouse] SHALL support specifying which rows are affected\n'
         'using the `FOR SELECT` clause in the `CREATE ROW POLICY` statement.\n'
         'REQUIRES CONFIRMATION\n'
         ),
@@ -5741,7 +5803,7 @@ RQ_SRS_006_RBAC_RowPolicy_Alter_ForSelect = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support modifying rows on which to apply the row policy \n'
+        '[ClickHouse] SHALL support modifying rows on which to apply the row policy\n'
         'using the `FOR SELECT` clause in the `ALTER ROW POLICY` statement.\n'
         'REQUIRES FUNCTION CONFIRMATION.\n'
         ),
@@ -5756,7 +5818,7 @@ RQ_SRS_006_RBAC_RowPolicy_Alter_OnCluster = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying cluster on which to alter the row policy \n'
+        '[ClickHouse] SHALL support specifying cluster on which to alter the row policy\n'
         'using the `ON CLUSTER` clause in the `ALTER ROW POLICY` statement.\n'
         ),
         link=None
@@ -5770,7 +5832,7 @@ RQ_SRS_006_RBAC_RowPolicy_Alter_On = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying table on which to alter the row policy \n'
+        '[ClickHouse] SHALL support specifying table on which to alter the row policy\n'
         'using the `ON` clause in the `ALTER ROW POLICY` statement.\n'
         ),
         link=None
@@ -5784,7 +5846,7 @@ RQ_SRS_006_RBAC_RowPolicy_Alter_Rename = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support renaming the row policy using the `RENAME` clause \n'
+        '[ClickHouse] SHALL support renaming the row policy using the `RENAME` clause\n'
         'in the `ALTER ROW POLICY` statement.\n'
         ),
         link=None
@@ -6064,7 +6126,7 @@ RQ_SRS_006_RBAC_RowPolicy_ShowCreateRowPolicy_On = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support showing statement used to create row policy on specific table \n'
+        '[ClickHouse] SHALL support showing statement used to create row policy on specific table\n'
         'using the `ON` in the `SHOW CREATE ROW POLICY` statement.\n'
         ),
         link=None
