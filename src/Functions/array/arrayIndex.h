@@ -660,6 +660,11 @@ struct ArrayIndexGenericNullImpl
     }
 };
 
+inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
+{
+    return ((isNativeNumber(left) || isEnum(left)) && isNativeNumber(right)) || left->equals(*right);
+}
+
 inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
 {
     if (allowNested(array_inner_type, arg))
@@ -730,11 +735,6 @@ inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypeP
     }
 
     return false;
-}
-
-inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
-{
-    return ((isNativeNumber(left) || isEnum(left)) && isNativeNumber(right)) || left->equals(*right);
 }
 
 template <class ConcreteAction, class Name>
