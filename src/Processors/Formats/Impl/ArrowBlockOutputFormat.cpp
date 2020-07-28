@@ -5,8 +5,10 @@
 #include <Formats/FormatFactory.h>
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
+#include <arrow/result.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
+
 
 namespace DB
 {
@@ -15,8 +17,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
+ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), stream{stream_}, format_settings{format_settings_}, arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
@@ -29,18 +31,14 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow");
 
     if (!writer)
-    {
-        // TODO: should we use arrow::ipc::IpcOptions::alignment?
-        auto status = arrow::ipc::RecordBatchFileWriter::Open(arrow_ostream.get(), arrow_table->schema(), &writer);
-        if (!status.ok())
-            throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
-    }
+        prepareWriter(arrow_table->schema());
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = writer->WriteTable(*arrow_table, format_settings.arrow.row_group_size);
 
     if (!status.ok())
-        throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while writing a table: {}", status.ToString());
 }
 
 void ArrowBlockOutputFormat::finalize()
@@ -49,8 +47,26 @@ void ArrowBlockOutputFormat::finalize()
     {
         auto status = writer->Close();
         if (!status.ok())
-            throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+                "Error while closing a table: {}", status.ToString());
     }
+}
+
+void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
+{
+    arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
+
+    // TODO: should we use arrow::ipc::IpcOptions::alignment?
+    if (stream)
+        writer_status = arrow::ipc::NewStreamWriter(arrow_ostream.get(), schema);
+    else
+        writer_status = arrow::ipc::NewFileWriter(arrow_ostream.get(), schema);
+
+    if (!writer_status.ok())
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while opening a table writer: {}", writer_status.status().ToString());
+
+    writer = *writer_status;
 }
 
 void registerOutputFormatProcessorArrow(FormatFactory & factory)
@@ -62,7 +78,17 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
            FormatFactory::WriteCallback,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
+        });
+
+    factory.registerOutputFormatProcessor(
+        "ArrowStream",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           FormatFactory::WriteCallback,
+           const FormatSettings & format_settings)
+        {
+            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
 }
 

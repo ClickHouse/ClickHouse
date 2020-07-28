@@ -216,8 +216,12 @@ public:
     };
 
     using Lookups = std::variant<
+        Entry<UInt8>::LookupPtr,
+        Entry<UInt16>::LookupPtr,
         Entry<UInt32>::LookupPtr,
         Entry<UInt64>::LookupPtr,
+        Entry<Int8>::LookupPtr,
+        Entry<Int16>::LookupPtr,
         Entry<Int32>::LookupPtr,
         Entry<Int64>::LookupPtr,
         Entry<Float32>::LookupPtr,
@@ -226,29 +230,16 @@ public:
         Entry<Decimal64>::LookupPtr,
         Entry<Decimal128>::LookupPtr>;
 
-    enum class Type
-    {
-        keyu32,
-        keyu64,
-        keyi32,
-        keyi64,
-        keyf32,
-        keyf64,
-        keyDecimal32,
-        keyDecimal64,
-        keyDecimal128,
-    };
-
     AsofRowRefs() {}
-    AsofRowRefs(Type t);
+    AsofRowRefs(TypeIndex t);
 
-    static std::optional<Type> getTypeSize(const IColumn * asof_column, size_t & type_size);
+    static std::optional<TypeIndex> getTypeSize(const IColumn * asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    void insert(Type type, const IColumn * asof_column, const Block * block, size_t row_num);
+    void insert(TypeIndex type, const IColumn * asof_column, const Block * block, size_t row_num);
 
     // This will internally synchronize
-    const RowRef * findAsof(Type type, ASOF::Inequality inequality, const IColumn * asof_column, size_t row_num) const;
+    const RowRef * findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn * asof_column, size_t row_num) const;
 
 private:
     // Lookups can be stored in a HashTable because it is memmovable

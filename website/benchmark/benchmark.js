@@ -7,12 +7,16 @@ var data_sizes =
 
 
 var systems = [];
+var systems_full = [];
+var system_kinds = [];
 var systems_uniq = {};
 for (r in results) {
     if (systems_uniq[results[r].system])
         continue;
     systems_uniq[results[r].system] = 1;
     systems.push(results[r].system);
+    systems_full.push(results[r].system_full);
+    system_kinds.push(results[r].kind);
 }
 
 var runs = ["first (cold cache)", "second", "third"];
@@ -26,13 +30,17 @@ try {
 } catch (e) {
 }
 
+if (!current_systems.length) {
+    current_systems = systems;
+}
+
 function update_hash() {
     window.location.hash = JSON.stringify([current_data_size, current_systems, current_runs]);
 }
 
 
 function generate_selectors(elem) {
-    var html = '<table class="table table-borderless"><tbody><tr id="systems_selector"><th scope="row" class="text-right w-15"><strong class="fake-btn">Compare</strong></th><td>';
+    var html = '<div id="systems_selector"><h3>Compare</h3>';
 
     var available_results = results;
 
@@ -48,34 +56,46 @@ function generate_selectors(elem) {
     for (var i = 0; i < systems.length; i++) {
         var selected = current_systems.indexOf(systems[i]) != -1;
         var available = available_systems_for_current_data_size.indexOf(systems[i]) != -1;
+        var button_class = 'btn-outline-dark';
+        if (system_kinds[i] == 'cloud' || system_kinds[i] == 'vps') {
+            button_class = 'btn-outline-primary';
+        } else if (system_kinds[i] == 'desktop' || system_kinds[i] == 'laptop') {
+            button_class = 'btn-outline-secondary';
+        };
 
-        html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' +
+        html += '<button type="button" class="btn btn-sm mr-2 mb-2 ' + button_class +
             (selected && available ? ' active' : '') +
-            (available ? '' : ' disabled') +
-            '">' + systems[i] + '</button>';
+            (available ? '' : ' disabled') + '"';
+        if (systems_full[i]) {
+            html += ' data-toggle="tooltip" data-placement="bottom" title="' + systems_full[i] + '"';
+        }
+        html += '>' + systems[i] + '</button>';
     }
 
-    html += '</td></tr>';
     if (current_data_size) {
-        html += '<tr id="data_size_selector"><th scope="row" class="text-right w-15"><strong class="fake-btn">Dataset&nbsp;size</strong></th><td>';
+        html += '</div><div id="data_size_selector"><h3>Dataset&nbsp;size</h3>';
 
         for (var i = 0; i < data_sizes.length; i++) {
-            html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
+            html += '<button type="button" class="btn btn-sm btn-outline-dark mr-2 mb-2' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
         }
     }
 
-    html += '</td></tr>';
-    html += '<tr id="runs_selector"><th scope="row" class="text-right w-15"><strong class="fake-btn">Run</strong></th><td>';
+    html += '</div><div id="runs_selector"><h3>Run</h3>';
 
     for (var i = 0; i < runs.length; i++) {
-        html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' + (current_runs.indexOf(String(i)) != -1 ? ' active' : '') + '" data-run-id="' + i + '">' + runs[i] + '</button>';
+        html += '<button type="button" class="btn btn-sm btn-outline-dark mr-2 mb-2' + (current_runs.indexOf(String(i)) != -1 ? ' active' : '') + '" data-run-id="' + i + '">' + runs[i] + '</button>';
     }
 
-    html += '</td></tr></tbody></table>';
+    html += '</div>';
 
     elem.html(html);
 
+    $('button').focus(function() {
+       $('[data-toggle="tooltip"]').tooltip('hide');
+    });
+
     $('#systems_selector button:not(.disabled)').click(function (event) {
+        event.preventDefault();
         var target = $(event.target || event.srcElement);
 
         if (target.hasClass("active") && current_systems.length == 1) {
@@ -98,6 +118,7 @@ function generate_selectors(elem) {
 
     if (current_data_size) {
         $('#data_size_selector button').click(function (event) {
+            event.preventDefault();
             var target = $(event.target || event.srcElement);
 
             current_data_size = target.attr("data-size-id");
@@ -110,6 +131,7 @@ function generate_selectors(elem) {
     }
 
     $('#runs_selector button').click(function (event) {
+        event.preventDefault();
         var target = $(event.target || event.srcElement);
 
         if (target.hasClass("active") && current_runs.length == 1) {
@@ -172,12 +194,16 @@ function generate_comparison_table() {
 
     var html = "";
 
-    html += "<table class='table table-bordered'>";
+    html += "<table class='table table-bordered table-sm'>";
     html += "<tr>";
     html += "<th><input id='query_checkbox_toggler' type='checkbox' checked /></th>";
     html += "<th>Query</th>";
     for (var j = 0; j < filtered_results.length; j++) {
-        html += "<th colspan='" + current_runs.length + "'>" + filtered_results[j].system +
+        html += "<th colspan='" + current_runs.length + "'";
+        if (filtered_results[j].system_full) {
+            html += ' data-toggle="tooltip" title="' + filtered_results[j].system_full + '"';
+        }
+        html += " class='text-center'>" + filtered_results[j].system.replace(/ /g, '&nbsp;') +
             (filtered_results[j].version ? " (" + filtered_results[j].version + ")" : "") + "</th>";
     }
     html += "</tr>";
@@ -369,16 +395,22 @@ function generate_diagram() {
         }
     }
 
-    html += "<table class='table table-borderless'>";
+    html += "<table class='table table-borderless table-sm'>";
+    var table_rows = [];
 
     for (var j = 0; j < filtered_results.length; j++) {
         var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
+        var table_row = "";
 
-        html += "<tr>";
-        html += "<td class='text-right w-15'><strong>" + filtered_results[j].system + "</strong>" +
-            (filtered_results[j].version ? "<br />(" + filtered_results[j].version.replace(/ /g, '&nbsp;') + ")" : "") + "</td>";
+        table_row += "<tr>";
+        table_row += "<td class='text-right w-15 align-middle'";
+        if (filtered_results[j].system_full) {
+            table_row += ' data-toggle="tooltip" data-placement="right" title="' + filtered_results[j].system_full + '"';
+        }
+        table_row += ">" + filtered_results[j].system + "" +
+            (filtered_results[j].version ? "<br /><span class='text-muted'(" + filtered_results[j].version.replace(/ /g, '&nbsp;') + ")</span>" : "") + "</td>";
 
-        html += "<td class='w-75'>";
+        table_row += "<td class='w-75'>";
 
         for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
@@ -391,19 +423,40 @@ function generate_diagram() {
                 percents = (ratio * 100 / max_total_ratio).toFixed(2);
             }
 
-            html += '<div class="progress ml-2 my-2" style="height:1rem;"><div class="progress-bar bg-orange" style="width: ' + percents + '%;">&nbsp;</div></div>';
+
+            table_row += '<div class="progress ml-2 my-2" style="height:1rem;"><div class="progress-bar ';
+
+            var bg = 'bg-dark';
+            if (filtered_results[j].kind == 'cloud' || filtered_results[j].kind == 'vps') {
+                bg = 'bg-primary';
+            } else if (filtered_results[j].kind == 'desktop' || filtered_results[j].kind == 'laptop' || filtered_results[j].kind == 'phone') {
+                bg = 'bg-secondary';
+            }
+
+            table_row += bg + '" style="width: ' + percents + '%;">&nbsp;</div></div>';
 
         }
 
-        html += "</td>";
 
-        html += "<td class='align-middle'><strong>" + (total_ratio / min_total_ratio).toFixed(2) + "</strong></td>";
-        html += "</tr>";
+        table_row += "</td>";
+
+        table_row += "<td class='align-middle'><strong>" + (total_ratio / min_total_ratio).toFixed(2) + "</strong></td>";
+        table_row += "</tr>";
+        table_rows.push({ data: table_row, value: total_ratio / min_total_ratio });
+    }
+    table_rows.sort(function(a, b) { return a.value - b.value; });
+
+    for (var j = 0; j < table_rows.length; j++) {
+        html += table_rows[j].data;
     }
 
     html += "</table>";
 
     $('#diagram').html(html);
+    $('[data-toggle="tooltip"]').tooltip({
+        trigger: 'hover',
+        delay: { "show": 300, "hide": 100 }
+    });
 }
 
 generate_selectors($('#selectors'));

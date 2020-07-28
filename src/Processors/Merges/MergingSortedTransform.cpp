@@ -43,7 +43,7 @@ void MergingSortedTransform::onFinish()
 
     const auto & merged_data = algorithm.getMergedData();
 
-    auto * log = &Logger::get("MergingSortedTransform");
+    auto * log = &Poco::Logger::get("MergingSortedTransform");
 
     double seconds = total_stopwatch.elapsedSeconds();
 
@@ -53,7 +53,7 @@ void MergingSortedTransform::onFinish()
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
             merged_data.totalChunks(), merged_data.totalMergedRows(), seconds,
             merged_data.totalMergedRows() / seconds,
-            formatReadableSizeWithBinarySuffix(merged_data.totalAllocatedBytes() / seconds));
+            ReadableSize(merged_data.totalAllocatedBytes() / seconds));
 }
 
 }

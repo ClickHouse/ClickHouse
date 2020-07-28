@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AMD EPYC 7702, 256 cores, 512 GiB, NVMe SSD",
+        "system":       "AMD EPYC 7702",
+        "system_full":  "AMD EPYC 7702, 256 cores, 512 GiB, NVMe SSD",
         "time":         "2020-04-09 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.006, 0.002, 0.002],

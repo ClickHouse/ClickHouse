@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 
+
 namespace DB
 {
 
@@ -63,7 +64,7 @@ public:
                     const IColumn * lon_max_column,
                     const IColumn * lat_max_column,
                     const IColumn * precision_column,
-                    ColumnPtr & result)
+                    ColumnPtr & result) const
     {
         static constexpr size_t max_array_size = 10'000'000;
 
@@ -120,10 +121,8 @@ public:
             // Actually write geohashes into preallocated buffer.
             geohashesInBox(prepared_args, out);
 
-            for (UInt8 i = 1; i <= prepared_args.items_count ; ++i)
-            {
+            for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
                 res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
-            }
             res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + prepared_args.items_count);
         }
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())
@@ -141,7 +140,7 @@ public:
         result = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
         const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();

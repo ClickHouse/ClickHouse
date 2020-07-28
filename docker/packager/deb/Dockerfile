@@ -5,7 +5,7 @@ RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnup
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
 RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
 
-
+# initial packages
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
@@ -54,6 +54,8 @@ RUN apt-get --allow-unauthenticated update -y \
             libboost-system-dev \
             libboost-filesystem-dev \
             libboost-thread-dev \
+            libboost-iostreams-dev \
+            libboost-regex-dev \
             zlib1g-dev \
             liblz4-dev \
             libdouble-conversion-dev \
@@ -66,6 +68,7 @@ RUN apt-get --allow-unauthenticated update -y \
             libre2-dev \
             libjemalloc-dev \
             libmsgpack-dev \
+            libcurl4-openssl-dev \
             opencl-headers \
             ocl-icd-libopencl1 \
             intel-opencl-icd \
@@ -80,8 +83,10 @@ RUN apt-get --allow-unauthenticated update -y \
             pigz \
             moreutils \
             libcctz-dev \
-            libldap2-dev
-
+            libldap2-dev \
+            libsasl2-dev \
+            heimdal-multidev \
+            libhyperscan-dev
 
 
 # This symlink required by gcc to find lld compiler

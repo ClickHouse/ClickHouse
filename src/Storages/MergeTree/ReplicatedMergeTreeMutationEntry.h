@@ -35,7 +35,7 @@ struct ReplicatedMergeTreeMutationEntry
     /// Replica which initiated mutation
     String source_replica;
 
-    /// Accuired numbers of blocks
+    /// Accured numbers of blocks
     /// partition_id -> block_number
     std::map<String, Int64> block_numbers;
 

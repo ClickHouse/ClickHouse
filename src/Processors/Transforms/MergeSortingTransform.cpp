@@ -31,7 +31,7 @@ class MergeSorter;
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileTransform(const Block & header, Logger * log_, std::string path_)
+    BufferingToFileTransform(const Block & header, Poco::Logger * log_, std::string path_)
         : IAccumulatingTransform(header, header), log(log_)
         , path(std::move(path_)), file_buf_out(path), compressed_buf_out(file_buf_out)
         , out_stream(std::make_shared<NativeBlockOutputStream>(compressed_buf_out, 0, header))
@@ -80,7 +80,7 @@ public:
     }
 
 private:
-    Logger * log;
+    Poco::Logger * log;
     std::string path;
     WriteBufferFromFile file_buf_out;
     CompressedWriteBuffer compressed_buf_out;
@@ -231,9 +231,8 @@ void MergeSortingTransform::generate()
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
             LOG_INFO(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
 
-            if (!chunks.empty())
-                processors.emplace_back(std::make_shared<MergeSorterSource>(
-                        header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
+            processors.emplace_back(std::make_shared<MergeSorterSource>(
+                    header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
         }
 
         generated_prefix = true;
@@ -267,7 +266,7 @@ void MergeSortingTransform::remerge()
         new_chunks.emplace_back(std::move(chunk));
     }
 
-    LOG_DEBUG(log, "Memory usage is lowered from {} to {}", formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks), formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+    LOG_DEBUG(log, "Memory usage is lowered from {} to {}", ReadableSize(sum_bytes_in_blocks), ReadableSize(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
     if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)

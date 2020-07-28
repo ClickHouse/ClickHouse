@@ -1,0 +1,8 @@
+<yandex>
+    <merge_tree>
+        <max_bytes_to_merge_at_min_space_in_pool>1</max_bytes_to_merge_at_min_space_in_pool>
+        <max_bytes_to_merge_at_max_space_in_pool>2</max_bytes_to_merge_at_max_space_in_pool>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>100</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <max_replicated_merges_in_queue>0</max_replicated_merges_in_queue>
+    </merge_tree>
+</yandex>

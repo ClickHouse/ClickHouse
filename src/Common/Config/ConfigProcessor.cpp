@@ -66,21 +66,21 @@ ConfigProcessor::ConfigProcessor(
     , name_pool(new Poco::XML::NamePool(65521))
     , dom_parser(name_pool)
 {
-    if (log_to_console && !Logger::has("ConfigProcessor"))
+    if (log_to_console && !Poco::Logger::has("ConfigProcessor"))
     {
         channel_ptr = new Poco::ConsoleChannel;
-        log = &Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
+        log = &Poco::Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
     }
     else
     {
-        log = &Logger::get("ConfigProcessor");
+        log = &Poco::Logger::get("ConfigProcessor");
     }
 }
 
 ConfigProcessor::~ConfigProcessor()
 {
     if (channel_ptr) /// This means we have created a new console logger in the constructor.
-        Logger::destroy("ConfigProcessor");
+        Poco::Logger::destroy("ConfigProcessor");
 }
 
 

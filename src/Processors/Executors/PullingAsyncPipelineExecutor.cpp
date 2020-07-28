@@ -14,9 +14,10 @@ struct PullingAsyncPipelineExecutor::Data
 {
     PipelineExecutorPtr executor;
     std::exception_ptr exception;
-    std::atomic_bool is_executed = false;
+    std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
     ThreadFromGlobalPool thread;
+    Poco::Event finish_event;
 
     ~Data()
     {
@@ -36,8 +37,11 @@ struct PullingAsyncPipelineExecutor::Data
 
 PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
-    pipeline.setOutput(lazy_format);
+    if (!pipeline.isCompleted())
+    {
+        lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
+        pipeline.setOutputFormat(lazy_format);
+    }
 }
 
 PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
@@ -54,7 +58,8 @@ PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
 
 const Block & PullingAsyncPipelineExecutor::getHeader() const
 {
-    return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
+    return lazy_format ? lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader()
+                       : pipeline.getHeader(); /// Empty.
 }
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
@@ -78,6 +83,9 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
         data.exception = std::current_exception();
         data.has_exception = true;
     }
+
+    data.is_finished = true;
+    data.finish_event.set();
 }
 
 
@@ -99,20 +107,33 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (data->has_exception)
     {
         /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
-        lazy_format->finish();
+        if (lazy_format)
+            lazy_format->finish();
+
         data->has_exception = false;
         std::rethrow_exception(std::move(data->exception));
     }
 
-    if (lazy_format->isFinished())
+    bool is_execution_finished = lazy_format ? lazy_format->isFinished()
+                                             : data->is_finished.load();
+
+    if (is_execution_finished)
     {
-        data->is_executed = true;
+        /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
+        data->is_finished = true;
         /// Wait thread ant rethrow exception if any.
         cancel();
         return false;
     }
 
-    chunk = lazy_format->getChunk(milliseconds);
+    if (lazy_format)
+    {
+        chunk = lazy_format->getChunk(milliseconds);
+        return true;
+    }
+
+    chunk.clear();
+    data->finish_event.tryWait(milliseconds);
     return true;
 }
 
@@ -147,11 +168,11 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 void PullingAsyncPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
-    if (data && !data->is_executed && data->executor)
+    if (data && !data->is_finished && data->executor)
         data->executor->cancel();
 
     /// Finish lazy format. Otherwise thread.join() may hung.
-    if (!lazy_format->isFinished())
+    if (lazy_format && !lazy_format->isFinished())
         lazy_format->finish();
 
     /// Join thread here to wait for possible exception.
@@ -165,12 +186,14 @@ void PullingAsyncPipelineExecutor::cancel()
 
 Chunk PullingAsyncPipelineExecutor::getTotals()
 {
-    return lazy_format->getTotals();
+    return lazy_format ? lazy_format->getTotals()
+                       : Chunk();
 }
 
 Chunk PullingAsyncPipelineExecutor::getExtremes()
 {
-    return lazy_format->getExtremes();
+    return lazy_format ? lazy_format->getExtremes()
+                       : Chunk();
 }
 
 Block PullingAsyncPipelineExecutor::getTotalsBlock()
@@ -197,7 +220,9 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
 
 BlockStreamProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
-    return lazy_format->getProfileInfo();
+    static BlockStreamProfileInfo profile_info;
+    return lazy_format ? lazy_format->getProfileInfo()
+                       : profile_info;
 }
 
 }

@@ -78,7 +78,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_profile>default</default_profile>
 ```
 
-## dictionaries\_config {#dictionaries-config}
+## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
 
 Путь к конфигурации внешних словарей.
 
@@ -95,7 +95,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries\_lazy\_load {#dictionaries-lazy-load}
+## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
 
 Отложенная загрузка словарей.
 
@@ -372,6 +372,50 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
+## max_server_memory_usage {#max_server_memory_usage}
+
+Ограничивает объём оперативной памяти, используемой сервером ClickHouse. Настройка может быть задана только для профиля `default`.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — объём используемой памяти не ограничен.
+
+Значение по умолчанию: `0`.
+
+**Дополнительная информация**
+
+Значение по умолчанию для `max_server_memory_usage` рассчитывается как `memory_amount * max_server_memory_usage_to_ram_ratio`.
+
+**См. также**
+
+-   [max_memory_usage](../settings/query-complexity.md#settings_max_memory_usage)
+
+## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
+
+Определяет долю оперативной памяти, доступную для использования сервером Clickhouse. Если сервер попытается использовать больше, предоставляемый ему объём памяти будет ограничен до расчётного значения. 
+
+Возможные значения:
+
+-   Положительное число с плавающей запятой.
+-   0 — сервер Clickhouse может использовать всю оперативную память.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+На серверах с небольшим объёмом оперативной памяти и файла подкачки может потребоваться установить настройку `max_server_memory_usage_to_ram_ratio` в значение, большее 1.
+
+**Пример**
+
+``` xml
+<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+```
+
+**См. также**
+
+-   [max_server_memory_usage](#max_server_memory_usage)
+
 ## max\_connections {#max-connections}
 
 Максимальное количество входящих соединений.
@@ -574,11 +618,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
 Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -842,6 +886,10 @@ ClickHouse использует ZooKeeper для хранения метадан
 Обновление выполняется асинхронно, отдельным системным потоком.
 
 **Значение по умолчанию**: 15.
+
+**Смотрите также**
+
+-   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
 
 ## access_control_path {#access_control_path}
 

@@ -1,9 +1,17 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & context)
+{
+    return createImpl(context.getSettingsRef().cast_keep_nullable);
+}
+
+void registerFunctionFixedString(FunctionFactory & factory);
 
 void registerFunctionsConversion(FunctionFactory & factory)
 {
@@ -27,7 +35,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();
-    factory.registerFunction<FunctionToFixedString>();
+
+    registerFunctionFixedString(factory);
 
     factory.registerFunction<FunctionToUnixTimestamp>();
     factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
@@ -69,6 +78,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
     factory.registerFunction<FunctionParseDateTime64BestEffort>();

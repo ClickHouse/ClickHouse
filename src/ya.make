@@ -19,6 +19,7 @@ PEERDIR(
     clickhouse/src/IO
     clickhouse/src/Parsers
     clickhouse/src/Processors
+    clickhouse/src/Server
     clickhouse/src/Storages
     clickhouse/src/TableFunctions
 )

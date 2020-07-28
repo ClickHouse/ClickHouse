@@ -12,9 +12,12 @@ RUN apt-get update \
             g++ \
             gdb \
             git \
+            gnuplot \
+            imagemagick \
             libc6-dbg \
             moreutils \
             ncdu \
+            numactl \
             p7zip-full \
             parallel \
             psmisc \

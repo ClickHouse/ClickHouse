@@ -14,12 +14,12 @@ class MergeTreeSequentialSource : public SourceWithProgress
 public:
     MergeTreeSequentialSource(
         const MergeTreeData & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool read_with_direct_io_,
         bool take_column_types_from_storage,
-        bool quiet = false
-    );
+        bool quiet = false);
 
     ~MergeTreeSequentialSource() override;
 
@@ -35,6 +35,7 @@ protected:
 private:
 
     const MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
@@ -45,7 +46,7 @@ private:
     /// Should read using direct IO
     bool read_with_direct_io;
 
-    Logger * log = &Logger::get("MergeTreeSequentialSource");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeSequentialSource");
 
     std::shared_ptr<MarkCache> mark_cache;
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;

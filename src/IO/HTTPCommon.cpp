@@ -68,7 +68,7 @@ namespace
             throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive)
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host=true)
     {
         HTTPSessionPtr session;
 
@@ -83,7 +83,10 @@ namespace
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
-        session->setHost(DNSResolver::instance().resolveHost(host).toString());
+        if (resolve_host)
+            session->setHost(DNSResolver::instance().resolveHost(host).toString());
+        else
+            session->setHost(host);
         session->setPort(port);
 
         /// doesn't work properly without patch
@@ -173,7 +176,7 @@ namespace
                 auto msg = Poco::AnyCast<std::string>(session_data);
                 if (!msg.empty())
                 {
-                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
+                    LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
                     /// Host can change IP
                     const auto ip = DNSResolver::instance().resolveHost(host).toString();
                     if (ip != session->getHost())
@@ -202,13 +205,13 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
+HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host)
 {
     const std::string & host = uri.getHost();
     UInt16 port = uri.getPort();
     bool https = isHTTPS(uri);
 
-    auto session = makeHTTPSessionImpl(host, port, https, false);
+    auto session = makeHTTPSessionImpl(host, port, https, false, resolve_host);
     setTimeouts(*session, timeouts);
     return session;
 }

@@ -9,7 +9,6 @@
 #include <IO/ReadBuffer.h>
 #include <Parsers/queryToString.h>
 #include <Compression/CompressionCodecMultiple.h>
-#include <Compression/CompressionCodecLZ4.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -120,7 +119,7 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
 
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
-            throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("CompressionCodecFactory: the codec family code '" + std::to_string(*byte_code) + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
 void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator)
@@ -146,24 +145,28 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 
 
 void registerCodecNone(CompressionCodecFactory & factory);
+void registerCodecLZ4(CompressionCodecFactory & factory);
+void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
+void registerCodecMultiple(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
-    default_codec = std::make_shared<CompressionCodecLZ4>();
     registerCodecLZ4(*this);
     registerCodecNone(*this);
     registerCodecZSTD(*this);
-    registerCodecMultiple(*this);
     registerCodecLZ4HC(*this);
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
+    registerCodecMultiple(*this);
+
+    default_codec = get("LZ4", {}, false);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
