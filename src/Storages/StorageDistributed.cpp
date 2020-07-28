@@ -850,7 +850,6 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : storage_policy->getDisks())
     {
-        disk->reserve(0);
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;
         Poco::File(path + relative_data_path).renameTo(new_path);
