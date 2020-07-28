@@ -45,6 +45,16 @@ public:
         return part->storage.getVirtuals();
     }
 
+    String getPartitionId() const
+    {
+        return part->info.partition_id;
+    }
+
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const
+    {
+        return part->storage.getPartitionIDFromQuery(ast, context);
+    }
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))

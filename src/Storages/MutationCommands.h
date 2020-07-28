@@ -43,8 +43,10 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
-    /// For MATERIALIZE INDEX
+    /// For MATERIALIZE INDEX.
     String index_name;
+
+    /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition;
 
     /// For reads, drops and etc.
@@ -59,6 +61,8 @@ struct MutationCommand
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
+
+    ASTPtr && getPartitionAndPredicate() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries

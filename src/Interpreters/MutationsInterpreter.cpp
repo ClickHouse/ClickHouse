@@ -5,6 +5,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -119,19 +120,22 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
     count_func->arguments = std::make_shared<ASTExpressionList>();
     select->select()->children.push_back(count_func);
 
-    if (commands.size() == 1)
-        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
-    else
+    std::vector<ASTPtr> conditions;
+    for (const MutationCommand & command : commands)
     {
-        auto coalesced_predicates = std::make_shared<ASTFunction>();
-        coalesced_predicates->name = "or";
-        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-
-        for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
-
+        ASTPtr condition = command.getPartitionAndPredicate();
+        if (condition)
+            conditions.emplace_back(std::move(condition));
+    }
+    if (conditions.size() > 1)
+    {
+        auto coalesced_predicates = makeASTFunction("or");
+        coalesced_predicates->arguments->children = std::move(conditions);
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
+    }
+    else if (conditions.size() == 1)
+    {
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(conditions[0]));
     }
 
     return select;
@@ -170,11 +174,25 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
+    bool all_commands_can_be_skipped = true;
+    auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
     for (const MutationCommand & command : commands)
     {
         if (!command.predicate) /// The command touches all rows.
             return true;
+
+        if (command.partition && storage_from_merge_tree_data_part)
+        {
+            const String partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(command.partition, context_copy);
+            if (partition_id == storage_from_merge_tree_data_part->getPartitionId())
+                all_commands_can_be_skipped = false;
+        }
+        else
+            all_commands_can_be_skipped = false;
     }
+
+    if (all_commands_can_be_skipped)
+        return false;
 
     context_copy.setSetting("max_streams_to_max_threads_ratio", 1);
     context_copy.setSetting("max_threads", 1);
@@ -343,7 +361,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("isZeroOrNull", command.predicate->clone());
+            auto negated_predicate = makeASTFunction("isZeroOrNull", command.getPartitionAndPredicate());
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
@@ -381,7 +399,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
-                        command.predicate->clone(),
+                        command.getPartitionAndPredicate(),
                         makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
@@ -752,7 +770,7 @@ const Block & MutationsInterpreter::getUpdatedHeader() const
 size_t MutationsInterpreter::evaluateCommandsSize()
 {
     for (const MutationCommand & command : commands)
-        if (unlikely(!command.predicate)) /// The command touches all rows.
+        if (unlikely(!command.predicate && !command.partition)) /// The command touches all rows.
             return mutation_ast->size();
 
     return std::max(prepareQueryAffectedAST(commands)->size(), mutation_ast->size());
