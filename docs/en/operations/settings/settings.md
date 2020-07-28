@@ -1535,7 +1535,7 @@ Default value: 16.
 
 ## validate\_polygons {#validate_polygons}
 
-Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
 
 Possible values:
 
