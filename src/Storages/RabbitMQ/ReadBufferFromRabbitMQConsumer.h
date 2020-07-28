@@ -50,7 +50,8 @@ public:
 
     void allowNext() { allowed = true; } // Allow to read next message.
     void checkSubscription();
-    void ackMessages(UInt64 last_inserted_delivery_tag);
+    void updateNextDeliveryTag(UInt64 delivery_tag) { last_inserted_delivery_tag = delivery_tag; }
+    void ackMessages();
 
     auto getConsumerTag() const { return consumer_tag; }
     auto getDeliveryTag() const { return current.delivery_tag; }
@@ -80,18 +81,16 @@ private:
 
     String consumer_tag;
     ConcurrentBoundedQueue<MessageData> received;
-    UInt64 prev_tag = 0, max_tag = 0;
+    UInt64 last_inserted_delivery_tag = 0, prev_tag = 0;
     MessageData current;
     std::vector<String> queues;
     std::unordered_map<String, bool> subscribed_queue;
-    std::atomic<bool> ack = false;
-    std::mutex wait_ack;
 
     bool nextImpl() override;
 
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
     void iterateEventLoop();
-
 };
+
 }

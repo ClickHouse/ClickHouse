@@ -284,9 +284,6 @@ void StorageRabbitMQ::unbindExchange()
 {
     std::call_once(flag, [&]()
     {
-        if (exchange_removed.load())
-            return;
-
         setup_channel->removeExchange(bridge_exchange)
         .onSuccess([&]()
         {

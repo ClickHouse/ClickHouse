@@ -124,23 +124,26 @@ Block RabbitMQBlockInputStream::readImpl()
 
         auto new_rows = read_rabbitmq_message();
 
-        auto exchange_name = storage.getExchange();
-        auto consumer_tag = buffer->getConsumerTag();
-        auto delivery_tag = buffer->getDeliveryTag();
-        auto redelivered = buffer->getRedelivered();
-
-        for (size_t i = 0; i < new_rows; ++i)
+        if (new_rows)
         {
-            virtual_columns[0]->insert(exchange_name);
-            virtual_columns[1]->insert(consumer_tag);
-            virtual_columns[2]->insert(delivery_tag);
-            virtual_columns[3]->insert(redelivered);
+            auto exchange_name = storage.getExchange();
+            auto consumer_tag = buffer->getConsumerTag();
+            auto delivery_tag = buffer->getDeliveryTag();
+            auto redelivered = buffer->getRedelivered();
+
+            buffer->updateNextDeliveryTag(delivery_tag);
+
+            for (size_t i = 0; i < new_rows; ++i)
+            {
+                virtual_columns[0]->insert(exchange_name);
+                virtual_columns[1]->insert(consumer_tag);
+                virtual_columns[2]->insert(delivery_tag);
+                virtual_columns[3]->insert(redelivered);
+            }
+
+            total_rows = total_rows + new_rows;
         }
 
-        if (delivery_tag > last_inserted_delivery_tag)
-            last_inserted_delivery_tag = delivery_tag;
-
-        total_rows = total_rows + new_rows;
         buffer->allowNext();
 
         if (!new_rows || !checkTimeLimit())
@@ -167,7 +170,7 @@ void RabbitMQBlockInputStream::readSuffixImpl()
     if (!buffer)
         return;
 
-    buffer->ackMessages(last_inserted_delivery_tag);
+    buffer->ackMessages();
 }
 
 }

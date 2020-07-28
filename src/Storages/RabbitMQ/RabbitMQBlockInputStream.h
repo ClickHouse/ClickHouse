@@ -39,7 +39,6 @@ private:
     const Block virtual_header;
 
     ConsumerBufferPtr buffer;
-    UInt64 last_inserted_delivery_tag;
 };
 
 }

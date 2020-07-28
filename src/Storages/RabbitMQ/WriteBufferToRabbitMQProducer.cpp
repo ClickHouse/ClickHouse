@@ -150,6 +150,7 @@ void WriteBufferToRabbitMQProducer::countRow()
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
     String payload;
+    current = 0;
 
     auto returned_callback = [&](const AMQP::Message & message, int16_t /* code */, const std::string & /* description */)
     {

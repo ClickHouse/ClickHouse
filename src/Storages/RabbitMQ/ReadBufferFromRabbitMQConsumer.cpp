@@ -14,7 +14,7 @@
 namespace DB
 {
 
-static const auto QUEUE_SIZE = 50000; /// Equals capacity of a single rabbitmq queue
+static const auto QUEUE_SIZE = 50000;
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
@@ -57,10 +57,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
-    if (ack.load() && max_tag && consumer_channel)
-        consumer_channel->ack(max_tag, AMQP::multiple);
     consumer_channel->close();
-
     received.clear();
     BufferBase::set(nullptr, 0, 0);
 }
@@ -68,7 +65,7 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
-    bool bindings_created = false, bindings_error = false;
+    std::atomic<bool> bindings_created = false, bindings_error = false;
 
     auto success_callback = [&](const std::string &  queue_name_, int msgcount, int /* consumercount */)
     {
@@ -220,13 +217,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
                 message_received += row_delimiter;
 
             received.push({deliveryTag, message_received, redelivered});
-
-            std::lock_guard lock(wait_ack);
-            if (ack.exchange(false) && prev_tag && prev_tag <= max_tag && consumer_channel)
-            {
-                consumer_channel->ack(prev_tag, AMQP::multiple); /// Will ack all up to last tag staring from last acked.
-                LOG_TRACE(log, "Consumer {} acknowledged messages with deliveryTags up to {}", consumer_tag, prev_tag);
-            }
         }
     })
     .onError([&](const char * message)
@@ -239,7 +229,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 
 void ReadBufferFromRabbitMQConsumer::checkSubscription()
 {
-    if (count_subscribed == num_queues)
+    if (count_subscribed == num_queues || !consumer_channel->usable())
         return;
 
     wait_subscribed = num_queues;
@@ -264,13 +254,14 @@ void ReadBufferFromRabbitMQConsumer::checkSubscription()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::ackMessages(UInt64 last_inserted_delivery_tag)
+void ReadBufferFromRabbitMQConsumer::ackMessages()
 {
-    if (last_inserted_delivery_tag > prev_tag)
+    UInt64 delivery_tag = last_inserted_delivery_tag;
+    if (delivery_tag && delivery_tag > prev_tag)
     {
-        std::lock_guard lock(wait_ack); /// See onReceived() callback.
-        prev_tag = last_inserted_delivery_tag;
-        ack.store(true);
+        prev_tag = delivery_tag;
+        consumer_channel->ack(prev_tag, AMQP::multiple); /// Will ack all up to last tag staring from last acked.
+        LOG_TRACE(log, "Consumer {} acknowledged messages with deliveryTags up to {}", consumer_tag, prev_tag);
     }
 }
 
@@ -291,7 +282,6 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         auto * new_position = const_cast<char *>(current.message.data());
         BufferBase::set(new_position, current.message.size(), 0);
         allowed = false;
-        max_tag = current.delivery_tag;
 
         return true;
     }
