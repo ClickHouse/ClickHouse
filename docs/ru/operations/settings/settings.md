@@ -1280,9 +1280,9 @@ Default value: 0.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
-Включает параллельную обработку запросов `INSERT` ... `SELECT`.
+Включает параллельную обработку распределённых запросов `INSERT ... SELECT`.
 
-Обе таблицы должны быть [реплицируемыми](../../engines/table-engines/mergetree-family/replication.md) или нереплицируемыми и использовать один кластер. Тогда запрос `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` выполняется в локальной таблице на каждом шарде. 
+Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде. 
 
 Допустимые значения:
 
