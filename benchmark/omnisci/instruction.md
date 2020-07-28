@@ -27,6 +27,7 @@ https://docs.omnisci.com/installation-and-configuration/installation/installing-
 - Sorting is slow and disabled with default settings for large resultsets.
 `Exception: Sorting the result would be too slow`
 `Cast from dictionary-encoded string to none-encoded would be slow`
+- There is approximate count distinct function but the precision is not documented.
 
 To enable sorting of large resultsets, see:
 https://stackoverflow.com/questions/62977734/omnissci-sorting-the-result-would-be-too-slow
