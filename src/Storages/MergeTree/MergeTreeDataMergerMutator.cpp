@@ -222,16 +222,12 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     }
 
     time_t current_time = std::time(nullptr);
-    time_t next_ttl_merge_time = last_merge_with_ttl != 0 ? last_merge_with_ttl + data_settings->merge_with_ttl_timeout : current_time;
 
     IMergeSelector::Partitions partitions;
 
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
-    bool has_parts_with_expired_ttl = false;
-    size_t partition_with_expired_ttl_index = 0;
-    bool has_multiple_partitions_with_ttl_expired_parts = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         /// Check predicate only for first part in each partition.
@@ -263,22 +259,6 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.min_ttl = part->ttl_infos.part_min_ttl;
         part_info.max_ttl = part->ttl_infos.part_max_ttl;
 
-        time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
-
-        if (!has_multiple_partitions_with_ttl_expired_parts && ttl && ttl < next_ttl_merge_time)
-        {
-            if (has_parts_with_expired_ttl)
-            {
-                if (partition_with_expired_ttl_index != partitions.size() - 1)
-                    has_multiple_partitions_with_ttl_expired_parts = true;
-            }
-            else
-            {
-                has_parts_with_expired_ttl = true;
-                partition_with_expired_ttl_index = partitions.size() - 1;
-            }
-        }
-
         partitions.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
@@ -291,39 +271,38 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         prev_part = &part;
     }
 
-    std::unique_ptr<IMergeSelector> merge_selector;
+    IMergeSelector::PartsInPartition parts_to_merge;
 
-    bool can_merge_with_ttl = next_ttl_merge_time <= current_time;
-
-    /// NOTE Could allow selection of different merge strategy.
-    if (can_merge_with_ttl && has_parts_with_expired_ttl && !ttl_merges_blocker.isCancelled())
+    if (!ttl_merges_blocker.isCancelled())
     {
-        merge_selector = std::make_unique<TTLMergeSelector>(next_ttl_merge_time, data_settings->ttl_only_drop_parts);
-        if (!has_multiple_partitions_with_ttl_expired_parts)
-            last_merge_with_ttl = next_ttl_merge_time;
+        TTLMergeSelector merge_selector(
+                next_ttl_merge_times_by_partition,
+                current_time,
+                data_settings->merge_with_ttl_timeout,
+                data_settings->ttl_only_drop_parts);
+        parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge);
     }
-    else
+
+    if (parts_to_merge.empty())
     {
         SimpleMergeSelector::Settings merge_settings;
         if (aggressive)
             merge_settings.base = 1;
-        merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
+
+        parts_to_merge = SimpleMergeSelector(merge_settings)
+                            .select(partitions, max_total_size_to_merge);
+
+        /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
+        if (parts_to_merge.size() == 1)
+            throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
+
+        if (parts_to_merge.empty())
+        {
+            if (out_disable_reason)
+                *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
+            return false;
+        }
     }
-
-    IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
-        partitions,
-        max_total_size_to_merge);
-
-    if (parts_to_merge.empty())
-    {
-        if (out_disable_reason)
-            *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
-        return false;
-    }
-
-    /// Allow to "merge" part with itself if we need remove some values with expired ttl
-    if (parts_to_merge.size() == 1 && !has_parts_with_expired_ttl)
-        throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
 
     MergeTreeData::DataPartsVector parts;
     parts.reserve(parts_to_merge.size());
