@@ -1,5 +1,6 @@
 ---
 toc_priority: 43
+toc_title: CHECK
 ---
 
 # CHECK TABLE Statement {#check-table}
