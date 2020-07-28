@@ -9,6 +9,8 @@ namespace DB
 class ITransformingStep : public IQueryPlanStep
 {
 public:
+    /// This flags are used to automatically set properties for output stream.
+    /// They are specified in constructor and cannot be changed.
     struct DataStreamTraits
     {
         /// Keep distinct_columns unchanged.
@@ -24,22 +26,34 @@ public:
         /// Examples: true for ExpressionStep, false for MergeSortingStep
         bool preserves_number_of_streams;
 
-        /// Won't change the total number of rows.
-        /// Examples: true ExpressionStep (without join or array join), false for FilterStep
-        bool preserves_number_of_rows;
-
         /// Doesn't change row order.
         /// Examples: true FilterStep, false for PartialSortingStep
         bool preserves_sorting;
     };
 
-    ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_ = true);
+    /// This flags are used by QueryPlan optimizers.
+    /// They can be changed after some optimizations.
+    struct TransformTraits
+    {
+        /// Won't change the total number of rows.
+        /// Examples: true ExpressionStep (without join or array join), false for FilterStep
+        bool preserves_number_of_rows;
+    };
+
+    struct Traits
+    {
+        DataStreamTraits data_stream_traits;
+        TransformTraits transform_traits;
+    };
+
+    ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_ = true);
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
     virtual void transformPipeline(QueryPipeline & pipeline) = 0;
 
-    const DataStreamTraits & getTransformTraits() const { return transform_traits; }
+    const TransformTraits & getTransformTraits() const { return transform_traits; }
+    const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -47,12 +61,14 @@ protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
     static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
 
+    TransformTraits transform_traits;
+
 private:
     /// We collect processors got after pipeline transformation.
     Processors processors;
     bool collect_processors;
 
-    DataStreamTraits transform_traits;
+    const DataStreamTraits data_stream_traits;
 };
 
 }
