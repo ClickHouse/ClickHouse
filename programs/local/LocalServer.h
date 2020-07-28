@@ -2,9 +2,7 @@
 
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
-#include <filesystem>
 #include <memory>
-#include <optional>
 #include <loggers/Loggers.h>
 #include <Interpreters/Context.h>
 
@@ -40,7 +38,6 @@ private:
     void applyCmdSettings();
     void processQueries();
     void setupUsers();
-    void cleanup();
 
 protected:
     SharedContextHolder shared_context;
@@ -48,8 +45,6 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
-
-    std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
 
 }

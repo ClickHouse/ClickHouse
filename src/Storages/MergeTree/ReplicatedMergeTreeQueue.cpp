@@ -1023,12 +1023,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
-            {
-                if (auto part_in_memory = asInMemoryPart(part))
-                    sum_parts_size_in_bytes += part_in_memory->block.bytes();
-                else
-                    sum_parts_size_in_bytes += part->getBytesOnDisk();
-            }
+                sum_parts_size_in_bytes += part->getBytesOnDisk();
         }
 
         if (merger_mutator.merges_blocker.isCancelled())
@@ -1064,6 +1059,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 entry.typeToString(), entry.new_part_name,
                 ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
 
+            return false;
+        }
+    }
+
+    /// TODO: it makes sense to check DROP_RANGE also
+    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::REPLACE_RANGE)
+    {
+        String conflicts_description;
+        String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
+        auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
+
+        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
+        {
+            LOG_DEBUG(log, conflicts_description);
             return false;
         }
     }

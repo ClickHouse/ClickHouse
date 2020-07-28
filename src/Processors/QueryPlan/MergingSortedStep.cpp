@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -10,9 +9,7 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true,
-            .returns_single_stream = true,
-            .preserves_number_of_streams = false,
+            .preserves_distinct_columns = true
     };
 }
 
@@ -26,6 +23,9 @@ MergingSortedStep::MergingSortedStep(
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
+    /// Streams are merged together, only global distinct keys remain distinct.
+    /// Note: we can not clear it if know that there will be only one stream in pipeline. Should we add info about it?
+    output_stream->local_distinct_columns.clear();
 }
 
 void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
@@ -44,14 +44,6 @@ void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
 
         pipeline.enableQuotaForCurrentStreams();
     }
-}
-
-void MergingSortedStep::describeActions(FormatSettings & settings) const
-{
-    String prefix(settings.offset, ' ');
-    settings.out << prefix << "Sort description: ";
-    dumpSortDescription(sort_description, input_streams.front().header, settings.out);
-    settings.out << '\n';
 }
 
 }

@@ -621,7 +621,6 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
-    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -641,11 +640,6 @@ const AccessControlManager & Context::getAccessControlManager() const
     return shared->access_control_manager;
 }
 
-void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    auto lock = getLock();
-    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
-}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
@@ -1563,7 +1557,7 @@ void Context::reloadClusterConfig()
                 return;
             }
 
-            // Clusters config has been suddenly changed, recompute clusters
+            /// Clusters config has been suddenly changed, recompute clusters
         }
     }
 }
@@ -1941,7 +1935,7 @@ void Context::reloadConfig() const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->config_reload_callback)
-        throw Exception("Can't reload config because config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't reload config beacuse config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
 
     shared->config_reload_callback();
 }

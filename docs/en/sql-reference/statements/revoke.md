@@ -3,7 +3,7 @@ toc_priority: 40
 toc_title: REVOKE
 ---
 
-# REVOKE Statement {#revoke}
+# REVOKE {#revoke}
 
 Revokes privileges from users or roles.
 

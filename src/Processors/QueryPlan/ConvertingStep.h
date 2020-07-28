@@ -4,7 +4,6 @@
 namespace DB
 {
 
-/// Convert one block structure to another. See ConvertingTransform.
 class ConvertingStep : public ITransformingStep
 {
 public:
@@ -13,8 +12,6 @@ public:
     String getName() const override { return "Converting"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
-
-    void describeActions(FormatSettings & settings) const override;
 
 private:
     Block result_header;

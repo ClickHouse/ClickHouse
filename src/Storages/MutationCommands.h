@@ -28,7 +28,7 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
-        READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
+        READ_COLUMN,
         DROP_COLUMN,
         DROP_INDEX,
         MATERIALIZE_TTL,

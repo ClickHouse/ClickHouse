@@ -26,12 +26,7 @@ done &
 
 sleep 4
 
-# if we have too many simultaneous queries
-until $CLICKHOUSE_CLIENT --query "SELECT 1" 2>/dev/null 1>/dev/null
-do
-    sleep 0.5
-done
-
+# we just test race conditions, not logic
 $CLICKHOUSE_CLIENT --query "SELECT 1"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS table_for_concurrent_alter"

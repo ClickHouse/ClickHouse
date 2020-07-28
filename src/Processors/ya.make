@@ -105,7 +105,6 @@ SRCS(
     OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
-    printPipeline.cpp
     QueryPipeline.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
@@ -139,7 +138,7 @@ SRCS(
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
-    QueryPlan/AddingDelayedSourceStep.cpp
+    QueryPlan/AddingDelayedStreamStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
@@ -158,7 +157,7 @@ SRCS(
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
     QueryPlan/MergingSortedStep.cpp
-    QueryPlan/OffsetStep.cpp
+    QueryPlan/OffsetsStep.cpp
     QueryPlan/PartialSortingStep.cpp
     QueryPlan/UnionStep.cpp
     QueryPlan/ReadFromPreparedSource.cpp

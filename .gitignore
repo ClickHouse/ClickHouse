@@ -12,7 +12,6 @@
 /build
 /build_*
 /build-*
-/tests/venv
 
 /docs/build
 /docs/publish

@@ -89,7 +89,7 @@ endif()
 target_link_libraries(clickhouse_functions PRIVATE hyperscan)
 
 if(USE_SIMDJSON)
-    target_link_libraries(clickhouse_functions PRIVATE simdjson)
+    target_link_libraries(clickhouse_functions PRIVATE ${SIMDJSON_LIBRARY})
 endif()
 
 if(USE_RAPIDJSON)

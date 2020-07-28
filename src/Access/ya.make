@@ -17,11 +17,10 @@ SRCS(
     EnabledRolesInfo.cpp
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
-    ExternalAuthenticators.cpp
+    GrantedAccess.cpp
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
-    LDAPClient.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp
     Quota.cpp
