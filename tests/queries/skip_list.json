@@ -55,8 +55,7 @@
         "01200_mutations_memory_consumption",
         "01103_check_cpu_instructions_at_startup",
         "01037_polygon_dicts_",
-        "hyperscan",
-        "00992_system_parts_race_condition_zookeeper"
+        "hyperscan"
     ],
     "unbundled-build": [
         "00429",
