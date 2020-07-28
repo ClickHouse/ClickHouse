@@ -133,6 +133,10 @@ public:
       * But we assume, that it is injective. This could be documented as implementation-specific behaviour.
       *
       * sample_block should contain data types of arguments and values of constants, if relevant.
+      * NOTE: to check is function injective with any arguments, you can pass
+      *       empty block as sample_block (since most of the time function will
+      *       ignore it anyway, and creating arguments just for checking is
+      *       function injective or not is overkill).
       */
     virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
 

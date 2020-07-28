@@ -66,11 +66,11 @@ int main(int argc, char ** argv)
         }
 
         Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-        Logger::root().setChannel(channel);
-        Logger::root().setLevel("trace");
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-        LineReader lr({}, '\\');
+        LineReader lr({}, false, {"\\"}, {});
 
         do
         {

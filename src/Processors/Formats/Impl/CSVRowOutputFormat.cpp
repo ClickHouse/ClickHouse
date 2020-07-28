@@ -19,7 +19,7 @@ CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_
 }
 
 
-void CSVRowOutputFormat::writePrefix()
+void CSVRowOutputFormat::doWritePrefix()
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();

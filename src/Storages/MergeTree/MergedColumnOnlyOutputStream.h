@@ -15,6 +15,7 @@ public:
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
         const MergeTreeDataPartPtr & data_part,
+        const StorageMetadataPtr & metadata_snapshot_,
         const Block & header_,
         CompressionCodecPtr default_codec_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,

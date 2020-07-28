@@ -99,7 +99,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         }
 
         writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
-        LOG_WARNING(&Logger::get("DiskSelector"), warning.str());
+        LOG_WARNING(&Poco::Logger::get("DiskSelector"), warning.str());
     }
 
     return result;

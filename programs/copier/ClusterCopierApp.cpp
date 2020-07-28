@@ -1,4 +1,6 @@
 #include "ClusterCopierApp.h"
+#include <Common/StatusFile.h>
+
 
 namespace DB
 {
@@ -91,7 +93,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
 void ClusterCopierApp::mainImpl()
 {
-    StatusFile status_file(process_path + "/status");
+    StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
     ThreadStatus thread_status;
 
     auto * log = &logger();
@@ -114,7 +116,7 @@ void ClusterCopierApp::mainImpl()
     registerDisks();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
     context->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.

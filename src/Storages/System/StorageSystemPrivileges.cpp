@@ -9,7 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessFlags.h>

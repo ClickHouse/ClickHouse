@@ -53,7 +53,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const std::string & config_prefix,
     Block & sample_block_,
     const Context & context_)
-    : log(&Logger::get("ExecutableDictionarySource"))
+    : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct{dict_struct_}
     , command{config.getString(config_prefix + ".command")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
@@ -64,7 +64,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 }
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
-    : log(&Logger::get("ExecutableDictionarySource"))
+    : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , command{other.command}

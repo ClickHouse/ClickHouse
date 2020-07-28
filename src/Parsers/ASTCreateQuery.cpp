@@ -108,17 +108,9 @@ void ASTColumnsElement::formatImpl(const FormatSettings & s, FormatState & state
         return;
     }
 
-    frame.need_parens = false;
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
-
-    s.ostr << s.nl_or_ws << indent_str;
     s.ostr << (s.hilite ? hilite_keyword : "") << prefix << (s.hilite ? hilite_none : "");
-
-    FormatSettings nested_settings = s;
-    nested_settings.one_line = true;
-    nested_settings.nl_or_ws = ' ';
-
-    elem->formatImpl(nested_settings, state, frame);
+    s.ostr << ' ';
+    elem->formatImpl(s, state, frame);
 }
 
 
@@ -172,7 +164,12 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 
     if (!list.children.empty())
-        list.formatImpl(s, state, frame);
+    {
+        if (s.one_line)
+            list.formatImpl(s, state, frame);
+        else
+            list.formatImplMultiline(s, state, frame);
+    }
 }
 
 
@@ -273,11 +270,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
     }
 
+    frame.expression_list_always_start_on_new_line = true;
+
     if (columns_list)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
-        ++frame_nested.indent;
         columns_list->formatImpl(settings, state, frame_nested);
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
@@ -286,10 +284,14 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
-        ++frame_nested.indent;
-        dictionary_attributes_list->formatImpl(settings, state, frame_nested);
+        if (settings.one_line)
+            dictionary_attributes_list->formatImpl(settings, state, frame_nested);
+        else
+            dictionary_attributes_list->formatImplMultiline(settings, state, frame_nested);
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
+
+    frame.expression_list_always_start_on_new_line = false;
 
     if (storage)
         storage->formatImpl(settings, state, frame);

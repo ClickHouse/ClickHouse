@@ -41,6 +41,7 @@ public:
     virtual Poco::URI getMainURI() const = 0;
     virtual Poco::URI getColumnsInfoURI() const = 0;
     virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
+    virtual bool isSchemaAllowed() = 0;
     virtual String getName() const = 0;
 
     virtual ~IXDBCBridgeHelper() = default;
@@ -61,6 +62,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper");
 
     std::optional<IdentifierQuotingStyle> quote_style;
+    std::optional<bool> is_schema_allowed;
 
 protected:
     auto getConnectionString() const
@@ -80,6 +82,7 @@ public:
     static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto COL_INFO_HANDLER = "/columns_info";
     static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
+    static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
     XDBCBridgeHelper(const Context & global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
@@ -109,7 +112,8 @@ public:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
+            ReadWriteBufferFromHTTP buf(
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
@@ -125,6 +129,27 @@ public:
         }
 
         return *quote_style;
+    }
+
+    bool isSchemaAllowed() override
+    {
+        if (!is_schema_allowed.has_value())
+        {
+            startBridgeSync();
+
+            auto uri = createBaseURI();
+            uri.setPath(SCHEMA_ALLOWED_HANDLER);
+            uri.addQueryParameter("connection_string", getConnectionString());
+
+            ReadWriteBufferFromHTTP buf(
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+
+            bool res;
+            readBoolText(res, buf);
+            is_schema_allowed = res;
+        }
+
+        return *is_schema_allowed;
     }
 
     /**
@@ -208,7 +233,8 @@ private:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(ping_url, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
+            ReadWriteBufferFromHTTP buf(
+                ping_url, Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(context));
             return checkString(XDBCBridgeHelper::PING_OK_ANSWER, buf);
         }
         catch (...)
@@ -272,11 +298,11 @@ struct ODBCBridgeMixin
         return AccessType::ODBC;
     }
 
-    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
+    static std::unique_ptr<ShellCommand> startBridge(
+        const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
-
 
         std::vector<std::string> cmd_args;
         path.setFileName("clickhouse-odbc-bridge");

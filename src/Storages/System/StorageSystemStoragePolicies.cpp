@@ -17,7 +17,8 @@ namespace ErrorCodes
 StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & name_)
         : IStorage({"system", name_})
 {
-    setColumns(
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(
         ColumnsDescription({
              {"policy_name", std::make_shared<DataTypeString>()},
              {"volume_name", std::make_shared<DataTypeString>()},
@@ -26,17 +27,19 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
              {"max_data_part_size", std::make_shared<DataTypeUInt64>()},
              {"move_factor", std::make_shared<DataTypeFloat32>()}
     }));
+    setInMemoryMetadata(storage_metadata);
 }
 
 Pipes StorageSystemStoragePolicies::read(
-        const Names & column_names,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     MutableColumnPtr col_policy_name = ColumnString::create();
     MutableColumnPtr col_volume_name = ColumnString::create();
@@ -75,7 +78,7 @@ Pipes StorageSystemStoragePolicies::read(
     Chunk chunk(std::move(res_columns), num_rows);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
 
     return pipes;
 }

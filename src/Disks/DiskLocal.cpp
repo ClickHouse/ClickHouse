@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int CANNOT_TRUNCATE_FILE;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -91,7 +92,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk {}", backQuote(name));
+        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving 0 bytes on disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -100,8 +101,8 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving {} on disk {}, having unreserved {}.",
-            formatReadableSizeWithBinarySuffix(bytes), backQuote(name), formatReadableSizeWithBinarySuffix(unreserved_space));
+        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving {} on disk {}, having unreserved {}.",
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -261,6 +262,13 @@ void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
     DB::createHardLink(disk_path + src_path, disk_path + dst_path);
 }
 
+void DiskLocal::truncateFile(const String & path, size_t size)
+{
+    int res = truncate((disk_path + path).c_str(), size);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+}
+
 void DiskLocal::createFile(const String & path)
 {
     Poco::File(disk_path + path).createFile();
@@ -310,7 +318,7 @@ DiskLocalReservation::~DiskLocalReservation()
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
         }
         else
         {
@@ -318,7 +326,7 @@ DiskLocalReservation::~DiskLocalReservation()
         }
 
         if (disk->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
         else
             --disk->reservation_count;
     }

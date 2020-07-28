@@ -94,7 +94,7 @@ ODBCBlockOutputStream::ODBCBlockOutputStream(Poco::Data::Session && session_,
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
     , quoting(quoting_)
-    , log(&Logger::get("ODBCBlockOutputStream"))
+    , log(&Poco::Logger::get("ODBCBlockOutputStream"))
 {
     description.init(sample_block);
 }

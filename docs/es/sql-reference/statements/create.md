@@ -155,7 +155,7 @@ Si se especifica un códec, el códec predeterminado no se aplica. Los códecs s
 La compresión es compatible con los siguientes motores de tablas:
 
 -   [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) familia. Admite códecs de compresión de columnas y selecciona el método de compresión predeterminado mediante [compresión](../../operations/server-configuration-parameters/settings.md#server-settings-compression) configuración.
--   [Registro](../../engines/table-engines/log-family/log-family.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
+-   [Registro](../../engines/table-engines/log-family/index.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
 -   [Establecer](../../engines/table-engines/special/set.md). Solo admite la compresión predeterminada.
 -   [Unir](../../engines/table-engines/special/join.md). Solo admite la compresión predeterminada.
 

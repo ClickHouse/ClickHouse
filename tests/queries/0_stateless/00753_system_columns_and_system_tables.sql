@@ -84,6 +84,8 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tab
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Buffer';
+DROP TABLE IF EXISTS check_system_tables;
+DROP TABLE IF EXISTS check_system_tables_null;
 CREATE TABLE check_system_tables_null (key UInt16) ENGINE = Null();
 CREATE TABLE check_system_tables (key UInt16) ENGINE = Buffer(
     currentDatabase(),
@@ -96,5 +98,16 @@ CREATE TABLE check_system_tables (key UInt16) ENGINE = Buffer(
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+
+SELECT 'Check lifetime_bytes/lifetime_rows for Buffer';
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+OPTIMIZE TABLE check_system_tables; -- flush
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+OPTIMIZE TABLE check_system_tables; -- flush
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT * FROM numbers_mt(101); -- direct block write (due to min_rows exceeded)
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 DROP TABLE check_system_tables_null;

@@ -181,7 +181,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     }
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-    return DatabaseCatalog::instance().getTable(table_id);
+    return DatabaseCatalog::instance().getTable(table_id, context);
 }
 
 bool JoinedTables::resolveTables()
@@ -207,11 +207,11 @@ bool JoinedTables::resolveTables()
     return !tables_with_columns.empty();
 }
 
-void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header)
+void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header)
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = storage->getColumns();
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
@@ -261,7 +261,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context.resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (table)
         {
             if (dynamic_cast<StorageJoin *>(table.get()) ||

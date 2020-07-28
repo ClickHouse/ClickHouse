@@ -1,15 +1,13 @@
-#include "config_functions.h"
-#if USE_H3
-#    include <Columns/ColumnArray.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <Common/typeid_cast.h>
-#    include <ext/range.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
-#    include <h3api.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -47,7 +45,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
         const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
@@ -92,4 +90,3 @@ void registerFunctionH3ToChildren(FunctionFactory & factory)
 }
 
 }
-#endif

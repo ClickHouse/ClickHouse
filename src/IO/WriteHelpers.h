@@ -89,16 +89,20 @@ inline void writeStringBinary(const std::string & s, WriteBuffer & buf)
     buf.write(s.data(), s.size());
 }
 
-inline void writeStringBinary(const char * s, WriteBuffer & buf)
-{
-    writeVarUInt(strlen(s), buf);
-    buf.write(s, strlen(s));
-}
-
 inline void writeStringBinary(const StringRef & s, WriteBuffer & buf)
 {
     writeVarUInt(s.size, buf);
     buf.write(s.data, s.size);
+}
+
+inline void writeStringBinary(const char * s, WriteBuffer & buf)
+{
+    writeStringBinary(StringRef{s}, buf);
+}
+
+inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
+{
+    writeStringBinary(StringRef{s}, buf);
 }
 
 
@@ -413,15 +417,19 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const StringRef & s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(s.data(), s.data() + s.size(), buf, settings);
+    writeJSONString(s.data, s.data + s.size, buf, settings);
 }
 
-
-inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(ref.data, ref.data + ref.size, buf, settings);
+    writeJSONString(StringRef{s}, buf, settings);
+}
+
+inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
+{
+    writeJSONString(StringRef{s}, buf, settings);
 }
 
 
@@ -751,7 +759,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
             between_date_time_delimiter,
             '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
             fractional_time_delimiter,
-            // Exactly MaxScale zeroes
+            // Exactly MaxScale zeros
             '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
         };
         buf.write(s, sizeof(s) - (MaxScale - scale)
@@ -996,6 +1004,26 @@ inline String toString(const T & x)
     WriteBufferFromOwnString buf;
     writeText(x, buf);
     return buf.str();
+}
+
+inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
+{
+    /// c_str is guaranteed to return zero-terminated string
+    buffer.write(s.c_str(), s.size() + 1);
+}
+
+template <typename T>
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+{
+    if constexpr (sizeof(x) == 2)
+        x = __builtin_bswap16(x);
+    else if constexpr (sizeof(x) == 4)
+        x = __builtin_bswap32(x);
+    else if constexpr (sizeof(x) == 8)
+        x = __builtin_bswap64(x);
+
+    writePODBinary(x, buf);
 }
 
 }

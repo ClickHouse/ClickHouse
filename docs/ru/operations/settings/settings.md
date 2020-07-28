@@ -520,6 +520,31 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
+## network_compression_method {#network_compression_method}
+
+Задает метод сжатия данных, используемый при обмене данными между серверами и при обмене между сервером и [clickhouse-client](../../interfaces/cli.md).
+
+Возможные значения:
+
+-   `LZ4` — устанавливает метод сжатия LZ4.
+-   `ZSTD` — устанавливает метод сжатия ZSTD.
+
+Значение по умолчанию: `LZ4`.
+
+См. также:
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) имеет значение `ZSTD`.
+
+Возможные значения:
+
+-   Положительное целое число от 1 до 15.
+
+Значение по умолчанию: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
@@ -536,7 +561,7 @@ log_queries=1
 
 Установка логирования информации о потоках выполнения запроса.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log).
+Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
 Пример:
 
@@ -644,6 +669,17 @@ log_query_threads=1
 
 Значение по умолчанию: 256 Кб.
 
+## max\_parser\_depth {#max_parser_depth}
+
+Ограничивает максимальную глубину рекурсии в парсере рекурсивного спуска. Позволяет контролировать размер стека.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Глубина рекурсии не ограничена.
+
+Значение по умолчанию: 1000.
+
 ## interactive\_delay {#interactive-delay}
 
 Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса.
@@ -689,6 +725,17 @@ log_query_threads=1
 
 Значение по умолчанию: 50.
 
+## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
+
+Время ожидания соединения в миллисекундах, когда пул соединений заполнен.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Бесконечный таймаут.
+
+Значение по умолчанию: 0.
+
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 Максимальное количество попыток соединения с каждой репликой, для движка таблиц Distributed.
@@ -699,6 +746,21 @@ log_query_threads=1
 
 Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
 Подробнее смотрите раздел «Экстремальные значения».
+
+## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
+
+Время ожидания в миллисекундах для чтения сообщений из [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) перед повторной попыткой.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Бесконечный таймаут.
+
+Значение по умолчанию: 5000.
+
+См. также:
+
+-   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -718,6 +780,17 @@ log_query_threads=1
 `1` - отменить старый запрос и начать выполнять новый.
 
 Эта настройка, выставленная в 1, используется в Яндекс.Метрике для реализации suggest-а значений для условий сегментации. После ввода очередного символа, если старый запрос ещё не выполнился, его следует отменить.
+
+## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
+
+Время ожидания завершения выполнения запроса с тем же `query_id`, когда активирована настройка [replace_running_query](#replace-running-query).
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — Создание исключения, которое не позволяет выполнить новый запрос, если сервер уже выполняет запрос с тем же `query_id`.
+
+Значение по умолчанию: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -1025,7 +1098,7 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
-## optimize_skip_unused_shards {#optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
 
@@ -1036,15 +1109,39 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0
 
-## force_optimize_skip_unused_shards {#force-optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
+
+Контролирует настройку [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+
+Возможные значения:
+
+-    0 — Выключена, `optimize_skip_unused_shards` работает всегда.
+-    1 — Включает `optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-    2 — Включает `optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
 
 Разрешает или запрещает выполнение запроса, если настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards) включена, а пропуск неиспользуемых шардов невозможен. Если данная настройка включена и пропуск невозможен, ClickHouse генерирует исключение.
 
 Возможные значения:
 
--   0 — Выключена. ClickHouse не генерирует исключение.
--   1 — Включена. Выполнение запроса запрещается, только если у таблицы есть ключ шардирования.
--   2 — Включена. Выполнение запроса запрещается, даже если для таблицы не определен ключ шардирования.
+-    0 — Выключена, `force_optimize_skip_unused_shards` работает всегда.
+-    1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-    2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
+
+Контролирует настройку [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+
+Возможные значения:
+
+-   0 - Disabled, `force_optimize_skip_unused_shards` works on all levels.
+-   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
+-   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
 Значение по умолчанию: 0
 
@@ -1180,5 +1277,207 @@ Default value: 0.
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+
+Включает параллельную обработку распределённых запросов `INSERT ... SELECT`.
+
+Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде. 
+
+Допустимые значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+## insert_distributed_sync {#insert_distributed_sync}
+
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).  
+
+Возможные значения:
+
+-   0 — Данные добавляются в асинхронном режиме.
+-   1 — Данные добавляются в синхронном режиме.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+## validate\_polygons {#validate_polygons}
+
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+
+Допустимые значения:
+
+- 0 — генерирование исключения отключено. `pointInPolygon` принимает недопустимые многоугольники и возвращает для них, возможно, неверные результаты.
+- 1 — генерирование исключения включено.
+
+Значение по умолчанию: 1.
+
+## always_fetch_merged_part {#always_fetch_merged_part}
+
+Запрещает слияние данных для таблиц семейства [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md).
+
+Если слияние запрещено, реплика никогда не выполняет слияние отдельных кусков данных, а всегда загружает объединённые данные из других реплик. Если объединённых данных пока нет, реплика ждет их появления. Нагрузка на процессор и диски на реплике уменьшается, но нагрузка на сеть в кластере возрастает. Настройка может быть полезна на репликах с относительно слабыми процессорами или медленными дисками, например, на репликах для хранения архивных данных.
+
+Возможные значения:
+
+-   0 — таблицы семейства `Replicated*MergeTree` выполняют слияние данных на реплике.
+-   1 — таблицы семейства `Replicated*MergeTree` не выполняют слияние данных на реплике, а загружают объединённые данные из других реплик.
+
+Значение по умолчанию: 0.
+
+**См. также:** 
+
+-   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md)
+
+## transform_null_in {#transform_null_in}
+
+Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
+
+По умолчанию, значения `NULL` нельзя сравнивать, поскольку `NULL` обозначает неопределённое значение. Следовательно, сравнение `expr = NULL` должно всегда возвращать `false`. С этой настройкой `NULL = NULL` возвращает `true` в операторе `IN`.
+
+Possible values:
+
+-   0 — Сравнение значений `NULL` в операторе `IN` возвращает `false`.
+-   1 — Сравнение значений `NULL` в операторе `IN` возвращает `true`.
+
+Значение по умолчанию: 0.
+
+**Пример** 
+
+Рассмотрим таблицу `null_in`:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+Consider the `null_in` table:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+Запрос:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+Ответ:
+
+```text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+Запрос:
+
+```sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+
+Ответ:
+
+```text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**См. также** 
+
+-   [Обработка значения NULL в операторе IN](../../sql-reference/operators/in.md#in-null-processing)
+
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+## background_move_pool_size {#background_move_pool_size}
+
+Задает количество потоков для фоновых перемещений кусков между дисками. Работает для таблиц с движком [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 8.
+
+## background_schedule_pool_size {#background_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновых задач. Работает для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц, стримов в [Kafka](../../engines/table-engines/integrations/kafka.md) и обновления IP адресов у записей во внутреннем [DNS кеше](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
+
+Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
+
+Значение по умолчанию: `Пустая строка`.
+
+## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
+
+Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+
+Допустимые значения:
+
+-   Положительное целое число.
+-   0 — Склейка блоков выключена.
+
+Значение по умолчанию: 1048576.
+
+**См. также:**
+
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
+
+## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
+
+Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+
+Допустимые значения:
+
+-   Положительное целое число.
+-   0 — Склейка блоков выключена.
+
+Значение по умолчанию: 268435456.
+
+**См. также:**
+
+-   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

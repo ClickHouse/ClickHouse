@@ -618,7 +618,12 @@ if (USE_INTERNAL_CCTZ)
 
         add_library(tzdata STATIC ${TZ_OBJS})
         set_target_properties(tzdata PROPERTIES LINKER_LANGUAGE C)
-        target_link_libraries(cctz -Wl,--whole-archive tzdata -Wl,--no-whole-archive) # whole-archive prevents symbols from being discarded
+        # whole-archive prevents symbols from being discarded for unknown reason
+        # CMake can shuffle each of target_link_libraries arguments with other
+        # libraries in linker command. To avoid this we hardcode whole-archive
+        # library into single string.
+        add_dependencies(cctz tzdata)
+        target_link_libraries(cctz INTERFACE "-Wl,--whole-archive $<TARGET_FILE:tzdata> -Wl,--no-whole-archive")
     endif ()
 
 else ()

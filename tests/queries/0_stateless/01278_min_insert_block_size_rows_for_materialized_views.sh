@@ -54,7 +54,7 @@ EOL
 echo "create table null_01278 as data_01278 Engine=Null();" | execute
 for i in $(seq 1 $TEST_01278_PARTS); do
     echo "create table part_01278_$i as data_01278 Engine=Buffer(currentDatabase(), null_01278, 1, 86400, 86400, 1e5, 1e6, 10e6, 100e6);"
-    echo "create materialized view mv_01278_$i to part_01278_$i as select * from data_01278 where key%$TEST_01278_PARTS+1 == $i;"
+    echo "create materialized view mv_01278_$i to part_01278_$i as select * from data_01278 where key%$TEST_01278_PARTS+1 != $i;"
 done | execute
 echo "create table out_01278 as data_01278 Engine=Merge(currentDatabase(), 'part_01278_');" | execute
 
