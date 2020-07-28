@@ -606,6 +606,10 @@ file(COPY ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/gssapi_krb5.h
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/gssapi/
 )
 
+file(COPY ${KRB5_SOURCE_DIR}/util/et/com_err.h
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/
+)
+
 file(MAKE_DIRECTORY
     ${CMAKE_CURRENT_BINARY_DIR}/include/krb5
 )
@@ -626,6 +630,7 @@ add_custom_command(
     COMMAND cat ${KRBHDEP} > ${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h
     DEPENDS ${KRBHDEP}
 )
+
 
 
 target_include_directories(krb5 PUBLIC
