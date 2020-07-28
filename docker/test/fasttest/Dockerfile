@@ -45,8 +45,7 @@ RUN apt-get --allow-unauthenticated update -y \
           sudo \
           moreutils \
           curl \
-          brotli \
-          psmisc
+          brotli
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
