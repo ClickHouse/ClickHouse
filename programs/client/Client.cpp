@@ -954,6 +954,10 @@ private:
                 return true;
             }
 
+            full_query = all_queries_text.substr(
+                this_query_begin - all_queries_text.data(),
+                this_query_end - this_query_begin);
+
             // INSERT queries may have the inserted data in the query text
             // that follow the query itself, e.g. "insert into t format CSV 1;2".
             // They need special handling. First of all, here we find where the
@@ -962,35 +966,30 @@ private:
             // The VALUES format needs even more handling -- we also allow the
             // data to be delimited by semicolon. This case is handled later by
             // the format parser itself.
-            String query_sans_data;
             auto * insert_ast = parsed_query->as<ASTInsertQuery>();
             if (insert_ast && insert_ast->data)
             {
                 this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
                 insert_ast->end = this_query_end;
-                query_sans_data = all_queries_text.substr(
+                query_to_send = all_queries_text.substr(
                     this_query_begin - all_queries_text.data(),
                     insert_ast->data - this_query_begin);
             }
             else
             {
-                query_sans_data = all_queries_text.substr(
+                query_to_send = all_queries_text.substr(
                     this_query_begin - all_queries_text.data(),
                     this_query_end - this_query_begin);
             }
 
             // Look for the hint in the text of query + insert data, if any.
             // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            TestHint test_hint(test_mode, all_queries_text.substr(
-                    this_query_begin - all_queries_text.data(),
-                    this_query_end - this_query_begin));
+            TestHint test_hint(test_mode, full_query);
             expected_client_error = test_hint.clientError();
             expected_server_error = test_hint.serverError();
 
             try
             {
-                full_query = query_sans_data;
-                query_to_send = query_sans_data;
                 processParsedSingleQuery();
 
                 if (insert_ast && insert_ast->data)
@@ -1009,7 +1008,7 @@ private:
                 last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                 actual_client_error = last_exception_received_from_server->code();
                 if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << query_sans_data << std::endl << last_exception_received_from_server->message();
+                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
                 received_exception_from_server = true;
             }
 
