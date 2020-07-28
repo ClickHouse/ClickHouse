@@ -475,16 +475,21 @@ void HTTPHandler::processQuery(
         reserved_param_suffixes.emplace_back("_structure");
     }
 
+    std::string database = request.get("X-ClickHouse-Database", "");
+    std::string default_format = request.get("X-ClickHouse-Format", "");
+
     SettingsChanges settings_changes;
     for (const auto & [key, value] : params)
     {
         if (key == "database")
         {
-            context.setCurrentDatabase(value);
+            if (database.empty())
+                database = value;
         }
         else if (key == "default_format")
         {
-            context.setDefaultFormat(value);
+            if (default_format.empty())
+                default_format = value;
         }
         else if (param_could_be_skipped(key))
         {
@@ -496,6 +501,12 @@ void HTTPHandler::processQuery(
                 settings_changes.push_back({key, value});
         }
     }
+
+    if (!database.empty())
+        context.setCurrentDatabase(database);
+
+    if (!default_format.empty())
+        context.setDefaultFormat(default_format);
 
     /// For external data we also want settings
     context.checkSettingsConstraints(settings_changes);
