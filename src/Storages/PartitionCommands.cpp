@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeString.h>
 
 
-
 namespace DB
 {
 
