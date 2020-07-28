@@ -119,7 +119,7 @@ do
     sleep 0.1
 done
 
-FAILED_TESTS=`grep 'FAIL\|TIMEOUT\|ERROR' test_log.txt  | awk 'BEGIN { ORS=" " }; { print substr($3, 1, length($3)-1) }'`
+FAILED_TESTS=`grep 'FAIL\|TIMEOUT\|ERROR' /test_output/test_log.txt | awk 'BEGIN { ORS=" " }; { print substr($3, 1, length($3)-1) }'`
 
 echo "Going to run again: $FAILED_TESTS"
 
