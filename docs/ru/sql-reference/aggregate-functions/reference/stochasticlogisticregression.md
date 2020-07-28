@@ -10,7 +10,7 @@ toc_priority: 222
 
 Параметры те же, что и в stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-Смотрите раздел [parameters](#agg_functions-stochasticlinearregression-parameters).
+Смотрите раздел [parameters](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression-parameters).
 
 ``` text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
@@ -20,7 +20,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 <!-- -->
 
-Смотрите раздел `Построение модели` в описании [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) .
+Смотрите раздел `Построение модели` в описании [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#stochasticlinearregression-usage-fitting) .
 
     Прогнозируемые метки должны быть в диапазоне \[-1, 1\].
 
