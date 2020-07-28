@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
@@ -348,7 +348,7 @@ inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisi
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
+    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
@@ -463,7 +463,7 @@ static Field applyFunctionForField(
     return (*block.safeGetByPosition(1).column)[0];
 }
 
-static FieldRef applyFunction(FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     /// Fallback for fields without block reference.
     if (field.isExplicit())
@@ -1098,10 +1098,10 @@ BoolMask KeyCondition::checkInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    MonotonicFunctionsChain & functions,
+    const MonotonicFunctionsChain & functions,
     DataTypePtr current_type)
 {
-    for (auto & func : functions)
+    for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
         IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(

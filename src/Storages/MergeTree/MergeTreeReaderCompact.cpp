@@ -43,9 +43,33 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           settings.save_marks_in_cache,
           data_part->getColumns().size())
 {
-    size_t buffer_size = settings.max_read_buffer_size;
-    const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+    size_t columns_num = columns.size();
 
+    column_positions.resize(columns_num);
+    read_only_offsets.resize(columns_num);
+    auto name_and_type = columns.begin();
+    for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
+    {
+        const auto & [name, type] = getColumnFromPart(*name_and_type);
+        auto position = data_part->getColumnPosition(name);
+
+        if (!position && typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            /// If array of Nested column is missing in part,
+            ///  we have to read its offsets if they exist.
+            position = findColumnForOffsets(name);
+            read_only_offsets[i] = (position != std::nullopt);
+        }
+
+        column_positions[i] = std::move(position);
+    }
+
+    /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
+    auto buffer_size = getReadBufferSize(data_part, marks_loader, column_positions, all_mark_ranges);
+    if (!buffer_size || settings.max_read_buffer_size < buffer_size)
+        buffer_size = settings.max_read_buffer_size;
+
+    const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
@@ -80,28 +104,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
     }
-
-    size_t columns_num = columns.size();
-
-    column_positions.resize(columns_num);
-    read_only_offsets.resize(columns_num);
-    auto name_and_type = columns.begin();
-    for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
-    {
-        const auto & [name, type] = getColumnFromPart(*name_and_type);
-        auto position = data_part->getColumnPosition(name);
-
-        if (!position && typeid_cast<const DataTypeArray *>(type.get()))
-        {
-            /// If array of Nested column is missing in part,
-            ///  we have to read its offsets if they exist.
-            position = findColumnForOffsets(name);
-            read_only_offsets[i] = (position != std::nullopt);
-        }
-
-        column_positions[i] = std::move(position);
-    }
-
 }
 
 size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
@@ -237,6 +239,90 @@ bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_posi
     const auto & [last_mark, last_column] = *last_read_granule;
     return (mark == last_mark && column_position == last_column + 1)
         || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->getColumns().size() - 1);
+}
+
+namespace
+{
+
+/// A simple class that helps to iterate over 2-dim marks of compact parts.
+class MarksCounter
+{
+public:
+    MarksCounter(size_t rows_num_, size_t columns_num_)
+        : rows_num(rows_num_), columns_num(columns_num_) {}
+
+    struct Iterator
+    {
+        size_t row;
+        size_t column;
+        MarksCounter * counter;
+
+        Iterator(size_t row_, size_t column_, MarksCounter * counter_)
+            : row(row_), column(column_), counter(counter_) {}
+
+        Iterator operator++()
+        {
+            if (column + 1 == counter->columns_num)
+            {
+                ++row;
+                column = 0;
+            }
+            else
+            {
+                ++column;
+            }
+
+            return *this;
+        }
+
+        bool operator==(const Iterator & other) const { return row == other.row && column == other.column; }
+        bool operator!=(const Iterator & other) const { return !(*this == other); }
+    };
+
+    Iterator get(size_t row, size_t column) { return Iterator(row, column, this); }
+    Iterator end() { return get(rows_num, 0); }
+
+private:
+    size_t rows_num;
+    size_t columns_num;
+};
+
+}
+
+size_t MergeTreeReaderCompact::getReadBufferSize(
+    const DataPartPtr & part,
+    MergeTreeMarksLoader & marks_loader,
+    const ColumnPositions & column_positions,
+    const MarkRanges & mark_ranges)
+{
+    size_t buffer_size = 0;
+    size_t columns_num = column_positions.size();
+    size_t file_size = part->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+
+    MarksCounter counter(part->getMarksCount(), part->getColumns().size());
+
+    for (const auto & mark_range : mark_ranges)
+    {
+        for (size_t mark = mark_range.begin; mark < mark_range.end; ++mark)
+        {
+            for (size_t i = 0; i < columns_num; ++i)
+            {
+                if (!column_positions[i])
+                    continue;
+
+                auto it = counter.get(mark, *column_positions[i]);
+                size_t cur_offset = marks_loader.getMark(it.row, it.column).offset_in_compressed_file;
+
+                while (it != counter.end() && cur_offset == marks_loader.getMark(it.row, it.column).offset_in_compressed_file)
+                    ++it;
+
+                size_t next_offset = (it == counter.end() ? file_size : marks_loader.getMark(it.row, it.column).offset_in_compressed_file);
+                buffer_size = std::max(buffer_size, next_offset - cur_offset);
+            }
+        }
+    }
+
+    return buffer_size;
 }
 
 }
