@@ -64,9 +64,9 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
 void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << "(";
     elements->formatImpl(settings, state, frame);
-    settings.ostr << (has_brackets ? ")" : "");
+    settings.ostr << ")";
     settings.ostr << (settings.hilite ? hilite_none : "");
 }
 

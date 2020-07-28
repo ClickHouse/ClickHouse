@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -9,16 +8,15 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const Block & header_,
-    CompressionCodecPtr default_codec,
+    const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,
+    CompressionCodecPtr default_codec, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
-    const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
-    , header(header_)
+    const MergeTreeIndexGranularityInfo * index_granularity_info,
+    bool is_writing_temp_files)
+    : IMergedBlockOutputStream(data_part),
+    header(header_), sync(sync_)
 {
     const auto & global_settings = data_part->storage.global_context.getSettings();
     MergeTreeWriterSettings writer_settings(
@@ -26,14 +24,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         global_settings.min_bytes_to_use_direct_io);
 
-    writer = data_part->getWriter(
-        header.getNamesAndTypesList(),
-        metadata_snapshot_,
-        indices_to_recalc,
-        default_codec,
-        std::move(writer_settings),
-        index_granularity);
+    writer_settings.is_writing_temp_files = is_writing_temp_files;
+    writer_settings.skip_offsets = skip_offsets_;
 
+    writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc,
+        default_codec,std::move(writer_settings), index_granularity);
     writer->setWrittenOffsetColumns(offset_columns_);
     writer->initSkipIndices();
 }
@@ -42,7 +37,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 {
     std::unordered_set<String> skip_indexes_column_names_set;
     for (const auto & index : writer->getSkipIndices())
-        std::copy(index->index.column_names.cbegin(), index->index.column_names.cend(),
+        std::copy(index->columns.cbegin(), index->columns.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
@@ -62,22 +57,13 @@ void MergedColumnOnlyOutputStream::writeSuffix()
     throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums()
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finishDataSerialization(checksums);
+    writer->finishDataSerialization(checksums, sync);
     writer->finishSkipIndicesSerialization(checksums);
 
-    auto columns = new_part->getColumns();
-
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
-    for (const String & removed_file : removed_files)
-        if (all_checksums.files.count(removed_file))
-            all_checksums.files.erase(removed_file);
-
-    new_part->setColumns(columns);
     return checksums;
 }
 

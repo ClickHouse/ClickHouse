@@ -2,14 +2,11 @@
 
 #include <memory>
 
+#include "config_core.h"
 #include <Core/Names.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
 
 /// This file contains user interface for functions.
 /// For developer interface (in case you need to implement a new function) see IFunctionImpl.h
@@ -133,8 +130,12 @@ public:
       * But we assume, that it is injective. This could be documented as implementation-specific behaviour.
       *
       * sample_block should contain data types of arguments and values of constants, if relevant.
+      * NOTE: to check is function injective with any arguments, you can pass
+      *       empty block as sample_block (since most of the time function will
+      *       ignore it anyway, and creating arguments just for checking is
+      *       function injective or not is overkill).
       */
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) { return false; }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
@@ -189,7 +190,6 @@ public:
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const = 0;
     virtual bool isDeterministicInScopeOfQuery() const = 0;
-    virtual bool isInjective(const Block &) const = 0;
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const = 0;

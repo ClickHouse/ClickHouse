@@ -77,7 +77,7 @@ struct KeysSerializationVersion
             throw Exception("Invalid version for DataTypeLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
+    KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
 };
 
 /// Version is stored at the start of each granule. It's used to store indexes type and flags.
@@ -546,7 +546,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
+    if (auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
@@ -604,7 +604,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     auto * low_cardinality_state = checkAndGetLowCardinalityDeserializeState(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    auto read_dictionary = [this, low_cardinality_state, keys_stream]()
+    auto readDictionary = [this, low_cardinality_state, keys_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *keys_stream);
@@ -617,7 +617,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         low_cardinality_state->global_dictionary = std::move(column_unique);
     };
 
-    auto read_additional_keys = [this, low_cardinality_state, indexes_stream]()
+    auto readAdditionalKeys = [this, low_cardinality_state, indexes_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
@@ -636,7 +636,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
     };
 
-    auto read_indexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
+    auto readIndexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
     {
         auto indexes_type = low_cardinality_state->index_type.getDataType();
         MutableColumnPtr indexes_column = indexes_type->createColumn();
@@ -672,7 +672,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             ColumnLowCardinality::Index(indexes_column->getPtr()).check(
                     maps.dictionary_map->size() + maps.additional_keys_map->size());
 
-            auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
+            auto used_keys = (*std::move(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0))).mutate();
 
             if (!maps.additional_keys_map->empty())
             {
@@ -715,12 +715,12 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
             if (index_type.need_global_dictionary && need_update_dictionary)
             {
-                read_dictionary();
+                readDictionary();
                 low_cardinality_state->need_update_dictionary = false;
             }
 
             if (low_cardinality_state->index_type.has_additional_keys)
-                read_additional_keys();
+                readAdditionalKeys();
             else
                 low_cardinality_state->additional_keys = nullptr;
 
@@ -728,7 +728,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
 
         size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
-        read_indexes(num_rows_to_read);
+        readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
     }
@@ -835,7 +835,7 @@ template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
 {
-    const auto & low_cardinality_column = getColumnLowCardinality(column);
+    auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
     (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
@@ -879,8 +879,8 @@ template <typename Creator>
 MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDataType & keys_type,
                                                                       const Creator & creator)
 {
-    const auto * type = &keys_type;
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
+    auto * type = &keys_type;
+    if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
@@ -944,7 +944,7 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
     if (typeid(rhs) != typeid(*this))
         return false;
 
-    const auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
+    auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
 }
 
@@ -966,7 +966,7 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory)
 
 DataTypePtr removeLowCardinality(const DataTypePtr & type)
 {
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         return low_cardinality_type->getDictionaryType();
     return type;
 }

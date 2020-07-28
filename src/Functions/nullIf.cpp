@@ -25,7 +25,7 @@ public:
         return std::make_shared<FunctionNullIf>(context);
     }
 
-    explicit FunctionNullIf(const Context & context_) : context(context_) {}
+    FunctionNullIf(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {

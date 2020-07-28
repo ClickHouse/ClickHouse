@@ -5,10 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 
-#include <Parsers/ASTSetQuery.h>
-
-#include <Parsers/ParserSetQuery.h>
-
 namespace DB
 {
 
@@ -35,10 +31,8 @@ class ASTDictionaryLayout : public IAST
 public:
     /// flat, cache, hashed, etc.
     String layout_type;
-    /// parameters (size_in_cells, ...)
-    std::vector<KeyValue> parameters;
-    /// has brackets after layout type
-    bool has_brackets = true;
+    /// optional parameter (size_in_cells)
+    std::optional<KeyValue> parameter;
 
     String getID(char) const override { return "Dictionary layout"; }
 
@@ -64,18 +58,6 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-class ASTDictionarySettings : public IAST
-{
-public:
-    SettingsChanges changes;
-
-    String getID(char) const override { return "Dictionary settings"; }
-
-    ASTPtr clone() const override;
-
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-};
-
 
 /// AST contains all parts of external dictionary definition except attributes
 class ASTDictionary : public IAST
@@ -93,8 +75,6 @@ public:
     ASTDictionaryLayout * layout;
     /// Range for dictionary (only for range-hashed dictionaries)
     ASTDictionaryRange * range;
-    /// Settings for dictionary (optionally)
-    ASTDictionarySettings * dict_settings;
 
     String getID(char) const override { return "Dictionary definition"; }
 

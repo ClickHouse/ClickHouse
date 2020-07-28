@@ -95,7 +95,7 @@ std::string bin(const T & value, size_t bits = sizeof(T)*8)
     static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
-    return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
+    return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
             .to_string().substr(MAX_BITS - bits, bits);
 }
 
@@ -171,7 +171,7 @@ public:
         return current_value;
     }
 
-    size_t itemsLeft() const
+    size_t ItemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -182,9 +182,9 @@ public:
         return *this;
     }
 
-    explicit operator bool() const
+    operator bool() const
     {
-        return itemsLeft() > 0;
+        return ItemsLeft() > 0;
     }
 
 private:
@@ -220,7 +220,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 
     if (l_size != r_size)
     {
-        result = ::testing::AssertionFailure() << "size mismatch, expected: " << l_size << " got:" << r_size;
+        result = ::testing::AssertionFailure() << "size mismatch" << " expected: " << l_size << " got:" << r_size;
     }
     if (l_size == 0 || r_size == 0)
     {
@@ -230,7 +230,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
     auto l = AsSequenceOf<T>(left);
     auto r = AsSequenceOf<T>(right);
 
-    static constexpr auto MAX_MISMATCHING_ITEMS = 5;
+    const auto MAX_MISMATCHING_ITEMS = 5;
     int mismatching_items = 0;
     size_t i = 0;
 
@@ -403,6 +403,11 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = gen(static_cast<T>(i));
 
+//        if constexpr (debug_log_items)
+//        {
+//            std::cerr << "#" << i << " " << type_name<T>() << "(" << sizeof(T) << " bytes) : " << v << std::endl;
+//        }
+
         unalignedStore<T>(write_pos, v);
         write_pos += sizeof(v);
     }
@@ -457,7 +462,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0);
+    IParser::Pos token_iterator(tokens);
 
     Expected expected;
     ASTPtr codec_ast;
@@ -465,7 +470,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 
     parser.parse(token_iterator, codec_ast, expected);
 
-    return CompressionCodecFactory::instance().get(codec_ast, data_type, false);
+    return CompressionCodecFactory::instance().get(codec_ast, data_type);
 }
 
 template <typename Timer>
@@ -478,7 +483,6 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     timer.start();
 
-    assert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
     const UInt32 encoded_size = codec.compress(source_data.data(), source_data.size(), encoded.data());
     timer.report("encoding");
 
@@ -515,7 +519,7 @@ public:
         CODEC_WITHOUT_DATA_TYPE,
     };
 
-    static CompressionCodecPtr makeCodec(MakeCodecParam with_data_type)
+    CompressionCodecPtr makeCodec(MakeCodecParam with_data_type)
     {
         const auto & codec_string = std::get<0>(GetParam()).codec_statement;
         const auto & data_type = with_data_type == CODEC_WITH_DATA_TYPE ? std::get<1>(GetParam()).data_type : nullptr;
@@ -523,7 +527,7 @@ public:
         return ::makeCodec(codec_string, data_type);
     }
 
-    static void testTranscoding(ICompressionCodec & codec)
+    void testTranscoding(ICompressionCodec & codec)
     {
         NoOpTimer timer;
         ::testTranscoding(timer, codec, std::get<1>(GetParam()), std::get<0>(GetParam()).expected_compression_ratio);
@@ -546,7 +550,7 @@ TEST_P(CodecTest, TranscodingWithoutDataType)
 class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
 {};
 
-// Check that input sequence when encoded matches the encoded string binary.
+// Check that iput sequence when encoded matches the encoded string binary.
 TEST_P(CodecTestCompatibility, Encoding)
 {
     const auto & codec_spec = std::get<0>(GetParam());
@@ -603,7 +607,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
         }
     }
 
-    auto compute_mean_and_stddev = [](const auto & values)
+    auto computeMeanAndStdDev = [](const auto & values)
     {
         double mean{};
 
@@ -644,7 +648,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
     for (const auto & k : {"encoding", "decoding"})
     {
         const auto & values = results[k];
-        const auto & [mean, std_dev] = compute_mean_and_stddev(values);
+        const auto & [mean, std_dev] = computeMeanAndStdDev(values);
         // Ensure that Coefficient of variation is reasonably low, otherwise these numbers are meaningless
         EXPECT_GT(0.05, std_dev / mean);
         std::cerr << "\t" << std::fixed << std::setprecision(1) << mean / 1000.0;
@@ -702,9 +706,9 @@ typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distr
 
 
 template <typename T = Int32>
-struct MonotonicGenerator // NOLINT
+struct MonotonicGenerator
 {
-    explicit MonotonicGenerator(T stride_ = 1, T max_step = 10) // NOLINT
+    MonotonicGenerator(T stride_ = 1, T max_step = 10)
         : prev_value(0),
           stride(stride_),
           random_engine(0),
@@ -728,7 +732,7 @@ private:
 template <typename T>
 struct RandomGenerator
 {
-    explicit RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
+    RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
         : random_engine(seed),
           distribution(value_min, value_max)
     {
@@ -747,11 +751,7 @@ private:
 
 auto RandomishGenerator = [](auto i)
 {
-    using T = decltype(i);
-    double sin_value = sin(static_cast<double>(i * i)) * i;
-    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > std::numeric_limits<T>::max())
-        return T{};
-    return T(sin_value);
+    return static_cast<decltype(i)>(sin(static_cast<double>(i * i)) * i);
 };
 
 auto MinMaxGenerator = []()
@@ -796,8 +796,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     std::vector<CodecTestSequence> sequences;
     sequences.reserve(sequences_count);
 
-    // Don't test against sequence of size 0, since it causes a nullptr source buffer as codec input and produces an error.
-    // sequences.push_back(makeSeq<T>()); // sequence of size 0
+    sequences.push_back(makeSeq<T>()); // sequence of size 0
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
@@ -1129,7 +1128,7 @@ template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
-    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
+    auto ddGenerator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
         const auto curr = dd + prev + prev_delta;
         prev = curr;
@@ -1151,7 +1150,7 @@ auto DDCompatibilityTestSequence()
 
         // - 4 is to allow DD value to settle before transitioning through important point,
         // since DD depends on 2 previous values of data, + 2 is arbitrary.
-        ret.append(generateSeq<ValueType>(G(dd_generator), p - 4, p + 2));
+        ret.append(generateSeq<ValueType>(G(ddGenerator), p - 4, p + 2));
     }
 
     return ret;
@@ -1275,7 +1274,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 );
 
 // These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
-// also they require pretty big data to run against and generating this data slows down startup of unit test process.
+// also they require pretty big data to run agains and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 
 // Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.

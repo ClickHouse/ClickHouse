@@ -31,7 +31,8 @@ public:
     ConvertingTransform(
         Block source_header_,
         Block result_header_,
-        MatchColumnsMode mode_);
+        MatchColumnsMode mode_,
+        const Context & context_);
 
     String getName() const override { return "Converting"; }
 
@@ -39,6 +40,8 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
+    const Context & context;
+
     /// How to construct result block. Position in source block, where to get each column.
     ColumnNumbers conversion;
 };

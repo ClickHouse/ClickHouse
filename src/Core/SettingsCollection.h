@@ -91,7 +91,7 @@ struct SettingMaxThreads
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
-    static UInt64 getAutoValue();
+    UInt64 getAutoValue() const;
 };
 
 
@@ -225,14 +225,11 @@ enum class LoadBalancing
     /// a replica is selected among the replicas with the minimum number of errors
     /// with the minimum number of distinguished characters in the replica name and local hostname
     NEAREST_HOSTNAME,
-    // replicas with the same number of errors are accessed in the same order
-    // as they are specified in the configuration.
+    /// replicas are walked through strictly in order; the number of errors does not matter
     IN_ORDER,
     /// if first replica one has higher number of errors,
     ///   pick a random one from replicas with minimum number of errors
     FIRST_OR_RANDOM,
-    // round robin across replicas with the same number of errors.
-    ROUND_ROBIN,
 };
 using SettingLoadBalancing = SettingEnum<LoadBalancing>;
 
@@ -253,15 +250,6 @@ enum class JoinAlgorithm
     PREFER_PARTIAL_MERGE,
 };
 using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
-
-
-enum class SpecialSort
-{
-    NOT_SPECIFIED = 0,
-    OPENCL_BITONIC,
-};
-using SettingSpecialSort = SettingEnum<SpecialSort>;
-
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
@@ -302,7 +290,6 @@ using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputForm
 enum class LogsLevel
 {
     none = 0,    /// Disable
-    fatal,
     error,
     warning,
     information,
@@ -311,27 +298,10 @@ enum class LogsLevel
 };
 using SettingLogsLevel = SettingEnum<LogsLevel>;
 
-enum class DefaultDatabaseEngine
-{
-    Ordinary,
-    Atomic,
-};
-using SettingDefaultDatabaseEngine = SettingEnum<DefaultDatabaseEngine>;
-
-// Make it signed for compatibility with DataTypeEnum8
-enum QueryLogElementType : int8_t
-{
-    QUERY_START = 1,
-    QUERY_FINISH = 2,
-    EXCEPTION_BEFORE_START = 3,
-    EXCEPTION_WHILE_PROCESSING = 4,
-};
-using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
-
 
 enum class SettingsBinaryFormat
 {
-    OLD,     /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
+    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
     STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
     DEFAULT = STRINGS,
 };
@@ -375,7 +345,6 @@ private:
 
         StringRef name;
         StringRef description;
-        StringRef type;
         bool is_important;
         IsChangedFunction is_changed;
         GetStringFunction get_string;
@@ -422,7 +391,6 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
-        const StringRef & getType() const { return member->type; }
         bool isChanged() const { return member->is_changed(*collection); }
         Field getValue() const;
         String getValueAsString() const { return member->get_string(*collection); }
@@ -549,9 +517,6 @@ public:
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;
-
-    // A debugging aid.
-    std::string dumpChangesToString() const;
 
     /// Applies change to concrete setting.
     void applyChange(const SettingChange & change);

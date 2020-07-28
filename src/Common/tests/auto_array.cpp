@@ -2,7 +2,6 @@
 #include <iomanip>
 #include <map>
 
-#include <pcg_random.hpp>
 #include <Core/Field.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/AutoArray.h>
@@ -13,8 +12,6 @@
 
 int main(int argc, char ** argv)
 {
-    pcg64 rng;
-
     {
         size_t n = 10;
         using T = std::string;
@@ -46,7 +43,7 @@ int main(int argc, char ** argv)
 
         Arr arr2 = std::move(arr);
 
-        std::cerr << arr.size() << ", " << arr2.size() << std::endl;  // NOLINT
+        std::cerr << arr.size() << ", " << arr2.size() << std::endl;
 
         for (auto & elem : arr2)
             std::cerr << elem << std::endl;
@@ -66,7 +63,7 @@ int main(int argc, char ** argv)
         {
             Arr key(n);
             for (size_t j = 0; j < n; ++j)
-                key[j] = DB::toString(rng());
+                key[j] = DB::toString(rand());
 
             map[std::move(key)] = "Hello, world! " + DB::toString(i);
         }
@@ -110,7 +107,7 @@ int main(int argc, char ** argv)
         {
             Arr key(n);
             for (size_t j = 0; j < n; ++j)
-                key[j] = DB::toString(rng());
+                key[j] = DB::toString(rand());
 
             vec.push_back(std::move(key));
         }
@@ -155,7 +152,7 @@ int main(int argc, char ** argv)
             Map::LookupResult it;
             bool inserted;
 
-            map.emplace(rng(), it, inserted);
+            map.emplace(rand(), it, inserted);
             if (inserted)
             {
                 new (&it->getMapped()) Arr(n);
@@ -185,7 +182,7 @@ int main(int argc, char ** argv)
         }
 
         arr2 = std::move(arr1);
-        arr1.resize(n); // NOLINT
+        arr1.resize(n);
 
         std::cerr
             << "arr1.size(): " << arr1.size() << ", arr2.size(): " << arr2.size() << std::endl

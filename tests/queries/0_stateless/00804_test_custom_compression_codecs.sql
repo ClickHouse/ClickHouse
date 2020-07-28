@@ -1,5 +1,4 @@
-SET send_logs_level = 'fatal';
-SET allow_suspicious_codecs = 1;
+SET send_logs_level = 'none';
 
 DROP TABLE IF EXISTS compression_codec;
 

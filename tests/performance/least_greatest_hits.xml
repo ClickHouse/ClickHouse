@@ -1,9 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>test.hits</table_exists>
-    </preconditions>
-
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(least(URL, Referer))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(greatest(URL, Referer, Title))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(greatest(ClientIP, RemoteIP))</query>
-</test>

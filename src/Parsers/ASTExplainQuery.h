@@ -23,13 +23,7 @@ public:
 
     String getID(char delim) const override { return "Explain" + (delim + toString(kind)); }
     ExplainKind getKind() const { return kind; }
-    ASTPtr clone() const override
-    {
-        auto res = std::make_shared<ASTExplainQuery>(*this);
-        res->children.clear();
-        res->children.push_back(children[0]->clone());
-        return res;
-    }
+    ASTPtr clone() const override { return std::make_shared<ASTExplainQuery>(*this); }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

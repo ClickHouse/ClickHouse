@@ -78,11 +78,8 @@ private:
     std::string task_path;
     std::string log_level = "trace";
     bool is_safe_mode = false;
-    double copy_fault_probability = 0.0;
-    double move_fault_probability = 0.0;
+    double copy_fault_probability = 0;
     bool is_help = false;
-
-    bool experimental_use_sample_offset{false};
 
     std::string base_dir;
     std::string process_path;

@@ -1,12 +1,10 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
-#include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -19,18 +17,22 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, const Context & context)
-        : IDatabase(name_), log(&Poco::Logger::get(logger)), global_context(context.getGlobalContext())
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger)
+        : IDatabase(name_), log(&Logger::get(logger))
 {
 }
 
-bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, const Context &) const
+bool DatabaseWithOwnTablesBase::isTableExist(
+    const Context & /*context*/,
+    const String & table_name) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end();
+    return tables.find(table_name) != tables.end() || dictionaries.find(table_name) != dictionaries.end();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, const Context &) const
+StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
+    const Context & /*context*/,
+    const String & table_name) const
 {
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
@@ -39,7 +41,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, con
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
@@ -53,54 +55,35 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Con
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables));
 }
 
-bool DatabaseWithOwnTablesBase::empty() const
+bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 {
     std::lock_guard lock(mutex);
-    return tables.empty();
+    return tables.empty() && dictionaries.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 {
-    std::unique_lock lock(mutex);
-    return detachTableUnlocked(table_name, lock);
-}
-
-StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &)
-{
     StoragePtr res;
-
-    auto it = tables.find(table_name);
-    if (it == tables.end())
-        throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-    res = it->second;
-    tables.erase(it);
-
-    auto table_id = res->getStorageID();
-    if (table_id.hasUUID())
     {
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
-        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
+        std::lock_guard lock(mutex);
+        if (dictionaries.count(table_name))
+            throw Exception("Cannot detach dictionary " + database_name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
+
+        auto it = tables.find(table_name);
+        if (it == tables.end())
+            throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        res = it->second;
+        tables.erase(it);
     }
 
     return res;
 }
 
-void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table, const String &)
+void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
 {
-    std::unique_lock lock(mutex);
-    attachTableUnlocked(table_name, table, lock);
-}
-
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
-{
+    std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-    auto table_id = table->getStorageID();
-    if (table_id.hasUUID())
-    {
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
-        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
-    }
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -116,17 +99,12 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
-        auto table_id = kv.second->getStorageID();
         kv.second->shutdown();
-        if (table_id.hasUUID())
-        {
-            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
-            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-        }
     }
 
     std::lock_guard lock(mutex);
     tables.clear();
+    dictionaries.clear();
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
@@ -139,14 +117,6 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-}
-
-StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &) const
-{
-    auto it = tables.find(table_name);
-    if (it != tables.end())
-        return it->second;
-    throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 }

@@ -1,9 +1,6 @@
 #pragma once
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
 
 namespace DB
 {
@@ -42,8 +39,6 @@ void registerStorageJDBC(StorageFactory & factory);
 #if USE_MYSQL
 void registerStorageMySQL(StorageFactory & factory);
 #endif
-
-void registerStorageMongoDB(StorageFactory & factory);
 
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);

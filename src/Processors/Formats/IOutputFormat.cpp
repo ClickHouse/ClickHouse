@@ -69,23 +69,12 @@ void IOutputFormat::work()
             break;
     }
 
-    if (auto_flush)
-        flush();
-
     has_input = false;
 }
 
 void IOutputFormat::flush()
 {
     out.next();
-}
-
-void IOutputFormat::write(const Block & block)
-{
-    consume(Chunk(block.getColumns(), block.rows()));
-
-    if (auto_flush)
-        flush();
 }
 
 }

@@ -1,3 +1,4 @@
+#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/ExpressionActions.h>
@@ -18,12 +19,12 @@ namespace ErrorCodes
 
 
 CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
-    const StorageID & table_id_,
+    const String & table_,
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table_id(table_id_),
+    : table(table_),
     output(output_),
     header(header_),
     constraints(constraints_),
@@ -60,11 +61,10 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
                 std::stringstream exception_message;
 
-                auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
-                exception_message << "Constraint " << backQuote(constraint_ptr->name)
-                    << " for table " << table_id.getNameForLogs()
+                exception_message << "Constraint " << backQuote(constraints.constraints[i]->name)
+                    << " for table " << backQuote(table)
                     << " is violated at row " << (rows_written + row_idx + 1)
-                    << ". Expression: (" << serializeAST(*(constraint_ptr->expr), true) << ")"
+                    << ". Expression: (" << serializeAST(*(constraints.constraints[i]->expr), true) << ")"
                     << ". Column values";
 
                 bool first = true;

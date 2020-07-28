@@ -18,7 +18,7 @@ public:
     virtual int get() const = 0;
     virtual void set(int value) = 0;
 
-    static MutablePtr mutate(Ptr ptr) { return ptr->deepMutate(); }
+    MutablePtr mutate() const && { return deepMutate(); }
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -30,7 +30,7 @@ private:
     friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
-    explicit ConcreteColumn(int data_) : data(data_) {}
+    ConcreteColumn(int data_) : data(data_) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
 public:
@@ -45,14 +45,14 @@ private:
 
     ConcreteColumn::WrappedPtr wrapped;
 
-    explicit ColumnComposition(int data) : wrapped(ConcreteColumn::create(data)) {}
+    ColumnComposition(int data) : wrapped(ConcreteColumn::create(data)) {}
     ColumnComposition(const ColumnComposition &) = default;
 
     IColumn::MutablePtr deepMutate() const override
     {
         std::cerr << "Mutating\n";
         auto res = shallowMutate();
-        res->wrapped = IColumn::mutate(std::move(wrapped));
+        res->wrapped = std::move(*wrapped).mutate();
         return res;
     }
 
@@ -72,11 +72,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = IColumn::mutate(std::move(y));
+        MutableColumnPtr mut = std::move(*y).mutate();
         mut->set(2);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 
@@ -91,11 +91,11 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = IColumn::mutate(std::move(y));
+        MutableColumnPtr mut = std::move(*y).mutate();
         mut->set(3);
 
-        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
+        std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << y.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 

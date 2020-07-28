@@ -67,7 +67,7 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
 struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
     TestKeeperCreateRequest() = default;
-    explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -80,7 +80,7 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
-    explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -107,7 +107,7 @@ struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
-    explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -127,38 +127,38 @@ struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
-    explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
-    explicit TestKeeperMultiRequest(const Requests & generic_requests)
+    TestKeeperMultiRequest(const Requests & generic_requests)
     {
         requests.reserve(generic_requests.size());
 
         for (const auto & generic_request : generic_requests)
         {
-            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+            if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
                 auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
                 requests.push_back(create);
             }
-            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+            else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
-            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
+            else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
-            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
+            else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else
-                throw Exception("Illegal command as part of multi ZooKeeper request", Error::ZBADARGUMENTS);
+                throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
         }
     }
 
@@ -338,7 +338,7 @@ ResponsePtr TestKeeperListRequest::process(TestKeeper::Container & container, in
     {
         auto path_prefix = path;
         if (path_prefix.empty())
-            throw Exception("Logical error: path cannot be empty", Error::ZSESSIONEXPIRED);
+            throw Exception("Logical error: path cannot be empty", ZSESSIONEXPIRED);
 
         if (path_prefix.back() != '/')
             path_prefix += '/';
@@ -514,7 +514,7 @@ void TestKeeper::finalize()
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
+                response.error = ZSESSIONEXPIRED;
 
                 for (auto & callback : path_watch.second)
                 {
@@ -541,7 +541,7 @@ void TestKeeper::finalize()
             if (info.callback)
             {
                 ResponsePtr response = info.request->createResponse();
-                response->error = Error::ZSESSIONEXPIRED;
+                response->error = ZSESSIONEXPIRED;
                 try
                 {
                     info.callback(*response);
@@ -556,7 +556,7 @@ void TestKeeper::finalize()
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
+                response.error = ZSESSIONEXPIRED;
                 try
                 {
                     info.watch(response);
@@ -587,10 +587,10 @@ void TestKeeper::pushRequest(RequestInfo && request)
         std::lock_guard lock(push_request_mutex);
 
         if (expired)
-            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
+            throw Exception("Session expired", ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
-            throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
+            throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
     }
     catch (...)
     {

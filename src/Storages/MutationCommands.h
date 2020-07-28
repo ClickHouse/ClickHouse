@@ -31,8 +31,7 @@ struct MutationCommand
         READ_COLUMN,
         DROP_COLUMN,
         DROP_INDEX,
-        MATERIALIZE_TTL,
-        RENAME_COLUMN,
+        MATERIALIZE_TTL
     };
 
     Type type = EMPTY;
@@ -51,14 +50,8 @@ struct MutationCommand
     String column_name;
     DataTypePtr data_type; /// Maybe empty if we just want to drop column
 
-    /// We need just clear column, not drop from metadata.
-    bool clear = false;
-
-    /// Column rename_to
-    String rename_to;
-
-    /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
+    /// If from_zookeeper, than consider more Alter commands as mutation commands
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool from_zookeeper=false);
 };
 
 /// Multiple mutation commands, possible from different ALTER queries

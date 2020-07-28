@@ -28,7 +28,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 #define LIST_OF_MERGE_TREE_SETTINGS(M)                                 \
     M(SettingUInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
     \
-    /** Data storing format settings. */ \
+    /** Data storing format settigns. */ \
     M(SettingUInt64, min_bytes_for_wide_part, 0, "Minimal uncompressed size in bytes to create part in wide format instead of compact", 0) \
     M(SettingUInt64, min_rows_for_wide_part, 0, "Minimal number of rows to create part in wide format instead of compact", 0) \
     \
@@ -42,7 +42,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingUInt64, number_of_free_entries_in_pool_to_execute_mutation, 10, "When there is less than specified number of free entries in pool, do not execute part mutations. This is to leave free threads for regular merges and avoid \"Too many parts\"", 0) \
     M(SettingSeconds, old_parts_lifetime, 8 * 60, "How many seconds to keep obsolete parts.", 0) \
     M(SettingSeconds, temporary_directories_lifetime, 86400, "How many seconds to keep tmp_-directories.", 0) \
-    M(SettingSeconds, lock_acquire_timeout_for_background_operations, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, "For background operations like merges, mutations etc. How many seconds before failing to acquire table locks.", 0) \
+    M(SettingBool, disable_background_merges, false, "Disable background merges.", 0) \
     \
     /** Inserts settings. */ \
     M(SettingUInt64, parts_to_delay_insert, 150, "If table contains at least that many active parts in single partition, artificially slow down insert into table.", 0) \
@@ -57,7 +57,6 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingUInt64, min_replicated_logs_to_keep, 100, "Keep about this number of last records in ZooKeeper log, even if they are obsolete. It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning.", 0) \
     M(SettingSeconds, prefer_fetch_merged_part_time_threshold, 3600, "If time passed after replication log entry creation exceeds this threshold and sum size of parts is greater than \"prefer_fetch_merged_part_size_threshold\", prefer fetching merged part from replica instead of doing merge locally. To speed up very long merges.", 0) \
     M(SettingUInt64, prefer_fetch_merged_part_size_threshold, 10ULL * 1024 * 1024 * 1024, "If sum size of parts exceeds this threshold and time passed after replication log entry creation is greater than \"prefer_fetch_merged_part_time_threshold\", prefer fetching merged part from replica instead of doing merge locally. To speed up very long merges.", 0) \
-    M(SettingBool, always_fetch_merged_part, 0, "If true, replica never merge parts and always download merged parts from other replicas.", 0) \
     M(SettingUInt64, max_suspicious_broken_parts, 10, "Max broken parts, if more - deny automatic deletion.", 0) \
     M(SettingUInt64, max_files_to_modify_in_alter_columns, 75, "Not apply ALTER if number of files for modification(deletion, addition) more than this.", 0) \
     M(SettingUInt64, max_files_to_remove_in_alter_columns, 50, "Not apply ALTER, if number of files for deletion more than this.", 0) \
@@ -71,9 +70,10 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingSeconds, zookeeper_session_expiration_check_period, 60, "ZooKeeper session expiration check period, in seconds.", 0) \
     \
     /** Check delay of replicas settings. */ \
-    M(SettingUInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
+    M(SettingUInt64, check_delay_period, 60, "Period to check replication delay and compare with other replicas.", 0) \
     M(SettingUInt64, cleanup_delay_period, 30, "Period to clean old queue logs, blocks hashes and parts.", 0) \
     M(SettingUInt64, cleanup_delay_period_random_add, 10, "Add uniformly distributed value from 0 to x seconds to cleanup_delay_period to avoid thundering herd effect and subsequent DoS of ZooKeeper in case of very large number of tables.", 0) \
+    M(SettingUInt64, min_relative_delay_to_yield_leadership, 120, "Minimal delay from other replicas to yield leadership. Here and further 0 means unlimited.", 0) \
     M(SettingUInt64, min_relative_delay_to_close, 300, "Minimal delay from other replicas to close, stop serving requests and not return Ok during status check.", 0) \
     M(SettingUInt64, min_absolute_delay_to_close, 0, "Minimal absolute delay to close, stop serving requests and not return Ok during status check.", 0) \
     M(SettingUInt64, enable_vertical_merge_algorithm, 1, "Enable usage of Vertical merge algorithm.", 0) \
@@ -94,11 +94,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingMaxThreads, max_part_loading_threads, 0, "The number of threads to load data parts at startup.", 0) \
     M(SettingMaxThreads, max_part_removal_threads, 0, "The number of threads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
     M(SettingUInt64, concurrent_part_removal_threshold, 100, "Activate concurrent part removal (see 'max_part_removal_threads') only if the number of inactive data parts is at least this.", 0) \
-    M(SettingString, storage_policy, "default", "Name of storage disk policy", 0) \
-    \
-    /** Obsolete settings. Kept for backward compatibility only. */ \
-    M(SettingUInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
-    M(SettingUInt64, check_delay_period, 60, "Obsolete setting, does nothing.", 0) \
+    M(SettingString, storage_policy, "default", "Name of storage disk policy", 0)
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_MERGE_TREE_SETTINGS)
 

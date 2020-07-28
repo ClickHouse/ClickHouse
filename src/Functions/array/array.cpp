@@ -14,9 +14,14 @@ class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionArray>();
+        return std::make_shared<FunctionArray>(context);
+    }
+
+    FunctionArray(const Context & context_)
+        : context(context_)
+    {
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -62,7 +67,7 @@ public:
             ColumnPtr preprocessed_column = arg.column;
 
             if (!arg.type->equals(*elem_type))
-                preprocessed_column = castColumn(arg, elem_type);
+                preprocessed_column = castColumn(arg, elem_type, context);
 
             preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
 
@@ -99,6 +104,9 @@ private:
     }
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
+
+private:
+    const Context & context;
 };
 
 

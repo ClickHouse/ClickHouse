@@ -138,7 +138,6 @@ constexpr inline __int128 exp10_i128(int x)
 
 }
 
-
 /// intExp10 returning the type T.
 template <typename T>
 constexpr inline T intExp10OfSize(int x)

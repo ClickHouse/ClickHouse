@@ -10,14 +10,12 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <Core/Defines.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <Common/setThreadName.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-
 
 namespace ProfileEvents
 {
@@ -85,7 +83,7 @@ CacheDictionary::CacheDictionary(
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
     , query_wait_timeout_milliseconds(query_wait_timeout_milliseconds_)
     , max_threads_for_updates(max_threads_for_updates_)
-    , log(&Poco::Logger::get("ExternalDictionaries"))
+    , log(&Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
@@ -93,7 +91,7 @@ CacheDictionary::CacheDictionary(
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
 {
-    if (!this->source_ptr->supportsSelectiveLoad())
+    if (!source_ptr->supportsSelectiveLoad())
         throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
@@ -146,7 +144,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
-    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
+    while (true)
     {
         size_t out_idx = 0;
         size_t parents_idx = 0;
@@ -220,7 +218,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
     std::vector<Key> ancestors(1, child_id);
 
     /// Iteratively find all ancestors for child.
-    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
+    while (true)
     {
         toParent(child, parent);
 
@@ -461,8 +459,8 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
     {
 #define DISPATCH(TYPE) \
     case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
+        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
         bytes_allocated += size * sizeof(TYPE); \
         break;
         DISPATCH(UInt8)
@@ -619,7 +617,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
             const auto str_size = string.size();
             if (str_size != 0)
             {
-                auto * string_ptr = string_arena->alloc(str_size + 1);
+                auto string_ptr = string_arena->alloc(str_size + 1);
                 std::copy(string.data(), string.data() + str_size + 1, string_ptr);
                 string_ref = StringRef{string_ptr, str_size};
             }
@@ -768,7 +766,8 @@ void CacheDictionary::updateThreadFunction()
         const size_t current_queue_size = update_queue.size();
 
         if (current_queue_size > 0)
-            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with {} keys", current_queue_size + 1);
+            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
+                            << current_queue_size + 1 << " keys");
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
@@ -776,7 +775,7 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr current_unit_ptr;
 
-        while (update_request.size() < current_queue_size + 1 && update_queue.tryPop(current_unit_ptr))
+        while (!update_request.empty() && update_queue.tryPop(current_unit_ptr))
             update_request.emplace_back(std::move(current_unit_ptr));
 
         BunchUpdateUnit bunch_update_unit(update_request);
@@ -816,7 +815,7 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
     bool result = is_update_finished.wait_for(
             update_lock,
             std::chrono::milliseconds(timeout_for_wait),
-            [&] { return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
+            [&] {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (!result)
     {
@@ -860,42 +859,26 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
     const auto now = std::chrono::system_clock::now();
 
-    /// Non const because it will be unlocked.
-    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
     if (now > backoff_end_time.load())
     {
         try
         {
-            if (error_count)
-            {
-                /// Recover after error: we have to clone the source here because
-                /// it could keep connections which should be reset after error.
-                source_ptr = source_ptr->clone();
-            }
+            auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
 
-            /// To perform parallel loading.
-            BlockInputStreamPtr stream = nullptr;
-            {
-                ProfilingScopedWriteUnlocker unlocker(write_lock);
-                stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
-            }
-
+            BlockInputStreamPtr stream = current_source_ptr->loadIds(bunch_update_unit.getRequestedIds());
             stream->readPrefix();
+
 
             while (true)
             {
-                Block block;
-                {
-                    ProfilingScopedWriteUnlocker unlocker(write_lock);
-                    block = stream->read();
-                    if (!block)
-                        break;
-                }
+                Block block = stream->read();
+                if (!block)
+                    break;
 
-                const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+                const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
                     throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
 
@@ -907,6 +890,8 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
+                    /// Modifying cache with write lock
+                    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
                     const auto id = ids[i];
 
                     const auto find_result = findCellIdx(id, now);
@@ -935,6 +920,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
+
                     bunch_update_unit.informCallersAboutPresentId(id, cell_idx);
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
@@ -942,6 +928,9 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             }
 
             stream->readSuffix();
+
+            /// Lock just for last_exception safety
+            ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
             error_count = 0;
             last_exception = std::exception_ptr{};
@@ -951,6 +940,8 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         }
         catch (...)
         {
+            /// Lock just for last_exception safety
+            ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
             ++error_count;
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
@@ -960,6 +951,8 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         }
     }
 
+    /// Modifying cache state again with write lock
+    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
     size_t not_found_num = 0;
     size_t found_num = 0;
 

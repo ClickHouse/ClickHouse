@@ -46,7 +46,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(const Block & header_, Re
                                                        bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
-    const auto & sample = getPort().getHeader();
+    auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
 
     data_types.resize(num_columns);
@@ -67,7 +67,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(const Block & header_, Re
 
 void TabSeparatedRowInputFormat::setupAllColumnsByTableSchema()
 {
-    const auto & header = getPort().getHeader();
+    auto & header = getPort().getHeader();
     read_columns.assign(header.columns(), true);
     column_indexes_for_input_fields.resize(header.columns());
 
@@ -126,7 +126,7 @@ void TabSeparatedRowInputFormat::fillUnreadColumnsWithDefaults(MutableColumns & 
 
 void TabSeparatedRowInputFormat::readPrefix()
 {
-    if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
+    if (with_names || with_types)
     {
         /// In this format, we assume that column name or type cannot contain BOM,
         ///  so, if format has header,
@@ -238,7 +238,7 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
         if (column_indexes_for_input_fields[file_column].has_value())
         {
-            const auto & header = getPort().getHeader();
+            auto & header = getPort().getHeader();
             size_t col_idx = column_indexes_for_input_fields[file_column].value();
             if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
                                                         out, file_column))
@@ -340,15 +340,14 @@ void TabSeparatedRowInputFormat::syncAfterError()
 void TabSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
-    const auto & sample = getPort().getHeader();
-    read_columns.assign(sample.columns(), false);
     column_indexes_for_input_fields.clear();
+    read_columns.clear();
     columns_to_fill_with_default_values.clear();
 }
 
 void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 {
-    for (const auto * name : {"TabSeparated", "TSV"})
+    for (auto name : {"TabSeparated", "TSV"})
     {
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
@@ -360,7 +359,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
+    for (auto name : {"TabSeparatedWithNames", "TSVWithNames"})
     {
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
@@ -372,7 +371,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
+    for (auto name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
     {
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
@@ -419,7 +418,7 @@ static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<>
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     // We can use the same segmentation engine for TSKV.
-    for (const auto * name : {"TabSeparated", "TSV", "TSKV"})
+    for (auto name : {"TabSeparated", "TSV", "TSKV"})
     {
         factory.registerFileSegmentationEngine(name, &fileSegmentationEngineTabSeparatedImpl);
     }

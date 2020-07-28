@@ -46,7 +46,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << new_part_name;
             break;
 
-        /// NOTE: Deprecated.
         case CLEAR_COLUMN:
             out << "clear_column\n"
                 << escape << column_name
@@ -54,7 +53,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
-        /// NOTE: Deprecated.
         case CLEAR_INDEX:
             out << "clear_index\n"
                 << escape << index_name
@@ -157,12 +155,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         detach = type_str == "detach";
         in >> new_part_name;
     }
-    else if (type_str == "clear_column") /// NOTE: Deprecated.
+    else if (type_str == "clear_column")
     {
         type = CLEAR_COLUMN;
         in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
     }
-    else if (type_str == "clear_index") /// NOTE: Deprecated.
+    else if (type_str == "clear_index")
     {
         type = CLEAR_INDEX;
         in >> escape >> index_name >> "\nfrom\n" >> new_part_name;

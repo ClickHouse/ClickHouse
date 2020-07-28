@@ -54,12 +54,12 @@ struct NgramDistanceImpl
       */
     using NgramStats = UInt16[map_size];
 
-    static ALWAYS_INLINE UInt16 calculateASCIIHash(const CodePoint * code_points)
+    static ALWAYS_INLINE UInt16 ASCIIHash(const CodePoint * code_points)
     {
         return intHashCRC32(unalignedLoad<UInt32>(code_points)) & 0xFFFFu;
     }
 
-    static ALWAYS_INLINE UInt16 calculateUTF8Hash(const CodePoint * code_points)
+    static ALWAYS_INLINE UInt16 UTF8Hash(const CodePoint * code_points)
     {
         UInt64 combined = (static_cast<UInt64>(code_points[0]) << 32) | code_points[1];
 #ifdef __SSE4_2__
@@ -138,7 +138,7 @@ struct NgramDistanceImpl
 
             /// This is not a really true case insensitive utf8. We zero the 5-th bit of every byte.
             /// And first bit of first byte if there are two bytes.
-            /// For ASCII it works https://catonmat.net/ascii-case-conversion-trick. For most cyrillic letters also does.
+            /// For ASCII it works https://catonmat.net/ascii-case-conversion-trick. For most cyrrilic letters also does.
             /// For others, we don't care now. Lowering UTF is not a cheap operation.
             if constexpr (case_insensitive)
             {
@@ -249,12 +249,12 @@ struct NgramDistanceImpl
     static inline auto dispatchSearcher(Callback callback, Args &&... args)
     {
         if constexpr (!UTF8)
-            return callback(std::forward<Args>(args)..., readASCIICodePoints, calculateASCIIHash);
+            return callback(std::forward<Args>(args)..., readASCIICodePoints, ASCIIHash);
         else
-            return callback(std::forward<Args>(args)..., readUTF8CodePoints, calculateUTF8Hash);
+            return callback(std::forward<Args>(args)..., readUTF8CodePoints, UTF8Hash);
     }
 
-    static void constantConstant(std::string data, std::string needle, Float32 & res)
+    static void constant_constant(std::string data, std::string needle, Float32 & res)
     {
         NgramStats common_stats = {};
 
@@ -284,7 +284,7 @@ struct NgramDistanceImpl
         }
     }
 
-    static void vectorVector(
+    static void vector_vector(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
@@ -358,7 +358,7 @@ struct NgramDistanceImpl
         }
     }
 
-    static void constantVector(
+    static void constant_vector(
         std::string haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
@@ -367,7 +367,7 @@ struct NgramDistanceImpl
         /// For symmetric version it is better to use vector_constant
         if constexpr (symmetric)
         {
-            vectorConstant(needle_data, needle_offsets, std::move(haystack), res);
+            vector_constant(needle_data, needle_offsets, std::move(haystack), res);
         }
         else
         {
@@ -423,7 +423,7 @@ struct NgramDistanceImpl
         }
     }
 
-    static void vectorConstant(
+    static void vector_constant(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         std::string needle,

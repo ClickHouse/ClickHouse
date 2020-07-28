@@ -59,14 +59,14 @@ struct ReplicatedMergeTreeQuorumAddedParts
             assertChar('\n', in);
 
             if (version == 2)
-                added_parts = readV2(in);
+                added_parts = read_v2(in);
         }
         else
-            added_parts = readV1(in);
+            added_parts = read_v1(in);
     }
 
     /// Read added bloks when node in ZooKeeper supports only one partition.
-    PartitionIdToPartName readV1(ReadBuffer & in)
+    PartitionIdToPartName read_v1(ReadBuffer & in)
     {
         PartitionIdToPartName parts_in_quorum;
 
@@ -80,8 +80,8 @@ struct ReplicatedMergeTreeQuorumAddedParts
         return parts_in_quorum;
     }
 
-    /// Read blocks when node in ZooKeeper supports multiple partitions.
-    PartitionIdToPartName readV2(ReadBuffer & in)
+    /// Read blocks when node in ZooKeeper suppors multiple partitions.
+    PartitionIdToPartName read_v2(ReadBuffer & in)
     {
         assertString("parts count: ", in);
 

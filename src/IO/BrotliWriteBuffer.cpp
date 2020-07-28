@@ -1,10 +1,8 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
+#include <Common/config.h>
 #if USE_BROTLI
-#    include <IO/BrotliWriteBuffer.h>
-#    include <brotli/encode.h>
+
+#include <IO/BrotliWriteBuffer.h>
+#include <brotli/encode.h>
 
 namespace DB
 {
@@ -28,6 +26,7 @@ public:
         BrotliEncoderDestroyInstance(state);
     }
 
+public:
     BrotliEncoderState * state;
 };
 
