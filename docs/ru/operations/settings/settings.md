@@ -1218,7 +1218,7 @@ Default value: 0.
 
 ## validate\_polygons {#validate_polygons}
 
-Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/geographical-coordinates.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
 
 Допустимые значения:
 
