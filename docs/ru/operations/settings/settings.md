@@ -1153,4 +1153,17 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+
+Включает параллельную обработку запросов `INSERT` ... `SELECT`.
+
+Обе таблицы должны быть [реплицируемыми](../../engines/table-engines/mergetree-family/replication.md) или нереплицируемыми и использовать один кластер. Тогда запрос `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` выполняется в локальной таблице на каждом шарде. 
+
+Допустимые значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
