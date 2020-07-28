@@ -9,10 +9,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
 endif ()
 
 # TODO: move Functions/Regexps.h to some lib and use here
-if(USE_HYPERSCAN)
-    target_link_libraries(clickhouse_functions_url PRIVATE ${HYPERSCAN_LIBRARY})
-    target_include_directories(clickhouse_functions_url SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
-endif()
+target_link_libraries(clickhouse_functions_url PRIVATE hyperscan)
 
 if (USE_GPERF)
     # Only for regenerate

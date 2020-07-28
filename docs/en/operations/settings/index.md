@@ -4,9 +4,10 @@ toc_priority: 55
 toc_title: Introduction
 ---
 
-# Settings {#settings}
+# Settings {#session-settings-intro}
 
-There are multiple ways to make all the settings described below.
+There are multiple ways to make all the settings described in this section of documentation.
+
 Settings are configured in layers, so each subsequent layer redefines the previous settings.
 
 Ways to configure settings, in order of priority:

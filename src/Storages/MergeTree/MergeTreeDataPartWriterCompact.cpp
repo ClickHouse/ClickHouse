@@ -3,29 +3,25 @@
 
 namespace DB
 {
-
-
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
-    DiskPtr disk_,
-    const String & part_path_,
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-: IMergeTreeDataPartWriter(disk_, part_path_,
-    storage_, columns_list_,
-    indices_to_recalc_, marks_file_extension_,
-    default_codec_, settings_, index_granularity_)
+    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
+        indices_to_recalc_, marks_file_extension_,
+        default_codec_, settings_, index_granularity_)
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;
 
     stream = std::make_unique<Stream>(
         data_file_name,
-        disk_,
+        data_part->volume->getDisk(),
         part_path + data_file_name, DataPart::DATA_FILE_EXTENSION,
         part_path + data_file_name, marks_file_extension,
         default_codec,
@@ -103,14 +99,13 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
         for (const auto & column : columns_list)
         {
-            /// There could already be enough data to compress into the new block.
-            if (stream->compressed.offset() >= settings.min_compress_block_size)
-                stream->compressed.next();
-
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
 
             writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+
+            /// Write one compressed block per column in granule for more optimal reading.
+            stream->compressed.next();
         }
 
         ++from_mark;

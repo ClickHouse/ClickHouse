@@ -23,7 +23,6 @@ struct ConnectionParameters
     ConnectionTimeouts timeouts;
 
     ConnectionParameters() {}
-
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config);
 };
 

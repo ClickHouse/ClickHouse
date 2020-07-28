@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: "Agregaci\xF3nMergeTree"
 ---
@@ -11,11 +11,14 @@ El motor hereda de [Método de codificación de datos:](mergetree.md#table_engin
 
 Usted puede utilizar `AggregatingMergeTree` tablas para la agregación de datos incrementales, incluidas las vistas materializadas agregadas.
 
-El motor procesa todas las columnas con [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) tipo.
+El motor procesa todas las columnas con los siguientes tipos:
+
+-   [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
+-   [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 Es apropiado usar `AggregatingMergeTree` si reduce el número de filas por pedidos.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -63,7 +66,7 @@ Al seleccionar datos de `AggregatingMergeTree` mesa, uso `GROUP BY` cláusula y 
 
 En los resultados de `SELECT` consulta, los valores de `AggregateFunction` tipo tiene representación binaria específica de la implementación para todos los formatos de salida de ClickHouse. Si volcar datos en, por ejemplo, `TabSeparated` formato con `SELECT` consulta entonces este volcado se puede cargar de nuevo usando `INSERT` consulta.
 
-## Ejemplo De Una Vista Materializada Agregada {#example-of-an-aggregated-materialized-view}
+## Ejemplo de una vista materializada agregada {#example-of-an-aggregated-materialized-view}
 
 `AggregatingMergeTree` vista materializada que mira el `test.visits` tabla:
 

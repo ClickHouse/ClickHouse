@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: Aritmetik
 ---
@@ -43,7 +43,7 @@ Sayıların ürününü hesaplar.
 ## böl (a, b), A / B operatörü {#dividea-b-a-b-operator}
 
 Sayıların bölümünü hesaplar. Sonuç türü her zaman bir kayan nokta türüdür.
-Tam sayı bölümü değildir. Tamsayı bölümü için, ‘intDiv’ işlev.
+Tam sayı bölümü değildir. Tamsayı bölümü için, ‘intDiv’ İşlev.
 Sıfıra bölerek zaman olsun ‘inf’, ‘-inf’, veya ‘nan’.
 
 ## ıntdiv(a, b) {#intdiva-b}
@@ -72,7 +72,7 @@ Ters işareti ile bir sayı hesaplar. Sonuç her zaman imzalanır.
 
 ## abs (a) {#arithm_func-abs}
 
-\(A) sayısının mutlak değerini hesaplar. Yani, \< 0 ise,- A döndürür. imzasız türler için hiçbir şey yapmaz. İmzalı tamsayı türleri için imzasız bir sayı döndürür.
+\(A\) sayısının mutlak değerini hesaplar. Yani, \< 0 ise,- A döndürür. imzasız türler için hiçbir şey yapmaz. İmzalı tamsayı türleri için imzasız bir sayı döndürür.
 
 ## gcd (a, b) {#gcda-b}
 

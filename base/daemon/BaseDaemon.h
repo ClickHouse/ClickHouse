@@ -22,6 +22,7 @@
 #include <common/getThreadId.h>
 #include <daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/StatusFile.h>
 #include <loggers/Loggers.h>
 
 
@@ -58,7 +59,7 @@ public:
     void reloadConfiguration();
 
     /// Определяет параметр командной строки
-    void defineOptions(Poco::Util::OptionSet & _options) override;
+    void defineOptions(Poco::Util::OptionSet & new_options) override;
 
     /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
     void exitOnTaskError();
@@ -163,16 +164,7 @@ protected:
 
     std::unique_ptr<Poco::TaskManager> task_manager;
 
-    /// RAII wrapper for pid file.
-    struct PID
-    {
-        std::string file;
-
-        PID(const std::string & file_);
-        ~PID();
-    };
-
-    std::optional<PID> pid;
+    std::optional<DB::StatusFile> pid;
 
     std::atomic_bool is_cancelled{false};
 
@@ -198,6 +190,8 @@ protected:
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
+
+    String build_id_info;
 };
 
 

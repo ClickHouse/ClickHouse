@@ -1,2 +1,2 @@
-CREATE TABLE default.alter_ttl\n(\n    `i` Int32, \n    `s` String TTL toDate(\'2020-01-01\')\n)\nENGINE = MergeTree\nORDER BY i\nTTL toDate(\'2020-05-05\')\nSETTINGS index_granularity = 8192
-CREATE TABLE default.alter_ttl\n(\n    `d` Date, \n    `s` String TTL d + toIntervalDay(1)\n)\nENGINE = MergeTree\nORDER BY d\nTTL d + toIntervalMonth(1)\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_ttl\n(\n    `i` Int32,\n    `s` String TTL toDate(\'2020-01-01\')\n)\nENGINE = MergeTree\nORDER BY i\nTTL toDate(\'2020-05-05\')\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_ttl\n(\n    `d` Date,\n    `s` String TTL d + toIntervalDay(1)\n)\nENGINE = MergeTree\nORDER BY d\nTTL d + toIntervalMonth(1)\nSETTINGS index_granularity = 8192

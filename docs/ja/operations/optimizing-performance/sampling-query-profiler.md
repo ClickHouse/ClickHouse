@@ -1,47 +1,47 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "Query\u30D7\u30ED\u30D5\u30A1\u30A4\u30EA\u30F3\u30B0"
 ---
 
-# クエリプ {#sampling-query-profiler}
+# サンプリングクロファイラ {#sampling-query-profiler}
 
-ClickHouse運転サンプリングプロファイラでの分析クエリを実行します。 使用プロファイラでソースコードのルーチンを用いた最中に頻繁にクエリを実行します。 CPU時間とアイドル時間を含む壁時計の時間をトレースできます。
+ClickHouse運転サンプリングプロファイラでの分析クエリを実行します。 Profilerを使用すると、クエリの実行中に最も頻繁に使用されるソースコードルーチンを検索できます。 CPU時間とアイドル時間を含む壁時計時間をトレースできます。
 
-プロファイラを使用する:
+Profilerを使用するには:
 
--   この [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) サーバー設定のセクション。
+-   セットアップ [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) サーバー構成のセクション。
 
-    このセクションでは、 [trace\_log](../../operations/system-tables.md#system_tables-trace_log) プロファイラーの機能の結果を含むシステムテーブル。 デフォルトで設定されています。 このデータをこのテーブルのみ有効なオペレーティングシステムサーバーです。 後、サーバを再起動ClickHouseないクリーンのテーブルに格納された仮想メモリアドレスが無効になります。
+    このセクションでは、 [trace\_log](../../operations/system-tables.md#system_tables-trace_log) プロファイラ機能の結果を含むシステムテーブル。 これは既定で構成されています。 この表のデータは、実行中のサーバーに対してのみ有効です。 後、サーバを再起動ClickHouseないクリーンのテーブルに格納された仮想メモリアドレスが無効になります。
 
--   この [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) または [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) 設定。 両方の設定を同時に使用できます。
+-   セットアップ [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) または [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) 設定。 両方の設定を同時に使用できます。
 
-    これらの設定を許可する設定プロファイラータイマー. これらはセッション設定であるため、サーバー全体、個々のユーザーまたはユーザープロファイル、対話型セッション、および個々のクエリごとに異なるサンプリング
+    これらの設定を許可する設定プロファイラータイマー. これらはセッション設定であるため、サーバー全体、個々のユーザーまたはユーザープロファイル、対話式セッション、および個々のクエリごとに異なるサンプリング周波数
 
-デフォルトのサンプリング周波数はサンプルや、cpu、リアルタイマーが有効になっています。 この周波数により収集に関する情報を十分にclickhouse。 同時に、この頻度で作業しても、プロファイラーはclickhouseサーバーのパフォーマンスに影響しません。 が必要な場合にプロファイル毎に個別のクエリを利用するようにして高サンプリング周波数です。
+デフォルトのサンプリング周波数はサンプルや、CPU、リアルタイマーが有効になっています。 この頻度により、ClickHouse clusterに関する十分な情報を収集できます。 同時に、この頻度で作業すると、profilerはClickHouse serverのパフォーマンスには影響しません。 が必要な場合にプロファイル毎に個別のクエリを利用するようにして高サンプリング周波数です。
 
-分析するため `trace_log` システム表:
+分析するには `trace_log` システム表:
 
--   インストール `clickhouse-common-static-dbg` パッケージ。 見る [DEBパッケージからのイ](../../getting-started/install.md#install-from-deb-packages).
+-   インストール `clickhouse-common-static-dbg` パッケージ。 見る [DEBパッケージから](../../getting-started/install.md#install-from-deb-packages).
 
--   によってイントロスペクション機能を許可する [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) 設定。
+-   によるイントロスペクション関数を許可する。 [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) 設定。
 
-    セキュ
+    セキュリティ上の理由から、introspection関数は既定で無効になっています。
 
--   を使用 `addressToLine`, `addressToSymbol` と `demangle` [イントロスペクション関数](../../sql-reference/functions/introspection.md) ClickHouseコードで関数名とその位置を取得する。 いくつかのクエリのプロファイルを取得するには、 `trace_log` テーブル。 個々の関数またはスタックトレース全体でデータを集計できます。
+-   使用する `addressToLine`, `addressToSymbol` と `demangle` [内観関数](../../sql-reference/functions/introspection.md) ClickHouseコードで関数名とその位置を取得するには。 いくつかのクエリのプロファイルを取得するには、 `trace_log` テーブル。 個々の関数またはスタックトレース全体でデータを集計できます。
 
-あなたが視覚化する必要がある場合 `trace_log` 情報、試してみる [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) と [speedscope](https://github.com/laplab/clickhouse-speedscope).
+視覚化する必要がある場合 `trace_log` 情報、試して [フラメグラフ](../../interfaces/third-party/gui/#clickhouse-flamegraph) と [スピードスコープ](https://github.com/laplab/clickhouse-speedscope).
 
-## 例えば {#example}
+## 例 {#example}
 
 この例では、:
 
--   フィルタ `trace_log` クエリ識別子と現在の日付によるデータ。
+-   フィルタ処理 `trace_log` クエリ識別子と現在の日付によるデータ。
 
 -   スタックトレースによる集計。
 
--   イントロスペクション関数を使用して、我々のレポートを取得します:
+-   イントロスペクション関数を使用して、我々はのレポートを取得します:
 
     -   シンボルおよび対応するソースコード関数の名前。
     -   これらの関数のソースコードの場所。

@@ -34,9 +34,6 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
 {
     frame.need_parens = false;
 
-    if (!settings.one_line)
-        settings.ostr << settings.nl_or_ws << std::string(4 * frame.indent, ' ');
-
     settings.ostr << backQuote(name);
 
     if (type)

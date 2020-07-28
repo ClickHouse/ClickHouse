@@ -23,7 +23,7 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     : description(std::move(description_)), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
-    , log(&Logger::get("MergingSortedBlockInputStream"))
+    , log(&Poco::Logger::get("MergingSortedBlockInputStream"))
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
     header = children.at(0)->getHeader();
@@ -185,7 +185,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
                 throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
             for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i] = (*std::move(source_blocks[source_num].getByPosition(i).column)).mutate();
+                merged_columns[i] = IColumn::mutate(std::move(source_blocks[source_num].getByPosition(i).column));
 
 //            std::cerr << "copied columns\n";
 
@@ -198,7 +198,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
                 for (size_t i = 0; i < num_columns; ++i)
                 {
                     auto & column = merged_columns[i];
-                    column = (*column->cut(0, merged_rows)).mutate();
+                    column = IColumn::mutate(column->cut(0, merged_rows));
                 }
 
                 cancel(false);
@@ -263,17 +263,13 @@ void MergingSortedBlockInputStream::readSuffixImpl()
     const BlockStreamProfileInfo & profile_info = getProfileInfo();
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
 
-    std::stringstream message;
-    message << std::fixed << std::setprecision(2)
-        << "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
-        << " in " << seconds << " sec.";
-
-    if (seconds)
-        message << ", "
-        << profile_info.rows / seconds << " rows/sec., "
-        << profile_info.bytes / 1000000.0 / seconds << " MB/sec.";
-
-    LOG_DEBUG(log, message.str());
+    if (!seconds)
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", profile_info.blocks, profile_info.rows);
+    else
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
+            profile_info.blocks, profile_info.rows, seconds,
+            profile_info.rows / seconds,
+            ReadableSize(profile_info.bytes / seconds));
 }
 
 }

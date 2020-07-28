@@ -1,15 +1,13 @@
-#include "config_functions.h"
-#if USE_H3
-#    include <Functions/GatherUtils/GatherUtils.h>
-#    include <Functions/GatherUtils/Sources.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Columns/ColumnString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <Common/typeid_cast.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Sources.h>
+#include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 
-#    include <h3api.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -45,7 +43,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
@@ -99,4 +97,3 @@ void registerFunctionStringToH3(FunctionFactory & factory)
 }
 
 }
-#endif

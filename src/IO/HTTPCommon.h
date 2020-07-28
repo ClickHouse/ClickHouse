@@ -45,7 +45,7 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout);
 
 /// Create session object to perform requests and set required parameters.
-HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts);
+HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host = true);
 
 /// As previous method creates session, but tooks it from pool
 PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size);

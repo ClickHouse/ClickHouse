@@ -78,7 +78,7 @@ public:
         return out_return_type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         Columns array_offsets;
 
@@ -113,9 +113,14 @@ public:
 private:
     size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple) const
     {
-        if (const auto * index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
+        if (
+            checkAndGetColumnConst<ColumnUInt8>(index_column.get())
+                || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
+                || checkAndGetColumnConst<ColumnUInt32>(index_column.get())
+                || checkAndGetColumnConst<ColumnUInt64>(index_column.get())
+        )
         {
-            size_t index = index_col->getValue<UInt8>();
+            size_t index = index_column->getUInt(0);
 
             if (index == 0)
                 throw Exception("Indices in tuples are 1-based.", ErrorCodes::ILLEGAL_INDEX);
@@ -130,7 +135,7 @@ private:
             return tuple.getPositionByName(name_col->getValue<String>());
         }
         else
-            throw Exception("Second argument to " + getName() + " must be a constant UInt8 or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument to " + getName() + " must be a constant UInt or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 

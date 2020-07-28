@@ -26,6 +26,43 @@ public:
         , result_separator(result_separator_)
     {
     }
+
+    template <typename F>
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, IParser & separator_parser_, bool allow_empty_ = true)
+    {
+        Pos begin = pos;
+        if (!parse_element())
+        {
+            pos = begin;
+            return allow_empty_;
+        }
+
+        while (true)
+        {
+            begin = pos;
+            if (!separator_parser_.ignore(pos, expected) || !parse_element())
+            {
+                pos = begin;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    template <typename F>
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, TokenType separator, bool allow_empty_ = true)
+    {
+        ParserToken sep_parser{separator};
+        return parseUtil(pos, expected, parse_element, sep_parser, allow_empty_);
+    }
+
+    template <typename F>
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, bool allow_empty_ = true)
+    {
+        return parseUtil(pos, expected, parse_element, TokenType::Comma, allow_empty_);
+    }
+
 protected:
     const char * getName() const override { return "list of elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

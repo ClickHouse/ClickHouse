@@ -1,20 +1,22 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
-toc_title: "\uFF82\u3064\uFF68\uFF82\u59EA\"\uFF82\u3064\"\uFF82\u50B5\uFF82\u3065\
-  \uFF6D\uFF82\u3064\uFF79"
+toc_title: AggregatingMergeTree
 ---
 
-# ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ {#aggregatingmergetree}
+# Aggregatingmergetree {#aggregatingmergetree}
 
-エンジンは [MergeTree](mergetree.md#table_engines-mergetree)、データパーツのマージのロジックを変更する。 ClickHouseは、すべての行を同じ主キー（またはより正確には同じ）で置き換えます [ソートキー](mergetree.md)）集計関数の状態の組み合わせを格納する単一の行（一つのデータ部門内）。
+エンジンはから継承します [メルゲツリー](mergetree.md#table_engines-mergetree)、データ部分のマージのロジックを変更する。 ClickHouseは、すべての行を同じ主キー（またはより正確には同じキー）で置き換えます [ソートキー](mergetree.md)）集計関数の状態の組み合わせを格納する単一の行（一つのデータ部分内）を持つ。
 
-を使用することができ `AggregatingMergeTree` テーブルが増えた場合のデータ収集、集計を実現します。
+以下を使用できます `AggregatingMergeTree` 集計されたマテリアライズドビューを含む、増分データ集計用の表。
 
-エンジンプロセスの全てのカラム [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) タイプ。
+エンジンは、次の型のすべての列を処理します:
 
-使用するのが適切です `AggregatingMergeTree` 注文によって行数が減る場合。
+-   [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
+-   [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
+
+使用することは適切です `AggregatingMergeTree` 注文によって行数を減らす場合。
 
 ## テーブルの作成 {#creating-a-table}
 
@@ -36,11 +38,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **クエリ句**
 
-作成するとき `AggregatingMergeTree` テーブル同じ [句](mergetree.md) 作成するときと同じように、必須です。 `MergeTree` テーブル。
+を作成するとき `AggregatingMergeTree` 同じテーブル [句](mergetree.md) を作成するときのように必要です。 `MergeTree` テーブル。
 
 <details markdown="1">
 
-<summary>テーブルを作成する非推奨の方法</summary>
+<summary>推奨されていません法テーブルを作成する</summary>
 
 !!! attention "注意"
     可能であれば、古いプロジェクトを上記の方法に切り替えてください。
@@ -54,19 +56,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
-すべてのパラメーターの意味は、次のようになります `MergeTree`.
+すべてのパラメータは、inと同じ意味を持ちます `MergeTree`.
 </details>
 
-## 選択して挿入 {#select-and-insert}
+## 選択と挿入 {#select-and-insert}
 
-データを挿入するには [INSERT SELECT](../../../sql-reference/statements/insert-into.md) aggregate-State-functionsを使用したクエリ。
-データを選択するとき `AggregatingMergeTree` テーブル、使用 `GROUP BY` 句とデータを挿入するときと同じ集約関数が、 `-Merge` 接尾辞。
+データを挿入するには、 [INSERT SELECT](../../../sql-reference/statements/insert-into.md) aggregate-State-functionsを使用したクエリ。
+データを選択するとき `AggregatingMergeTree` テーブル、使用 `GROUP BY` データを挿入するときと同じ集計関数ですが、 `-Merge` 接尾辞。
 
-の結果で `SELECT` クエリ、値の `AggregateFunction` タイプは、すべてのClickHouse出力形式に対して実装固有のバイナリ表現を持ちます。 たとえば、データをダンプする場合, `TabSeparated` フォーマット `SELECT` このダンプは、次のようにロードされます `INSERT` クエリ。
+の結果 `SELECT` クエリ、の値 `AggregateFunction` typeは、すべてのClickHouse出力形式に対して実装固有のバイナリ表現を持ちます。 たとえば、データをダンプする場合, `TabSeparated` フォーマット `SELECT` 次に、このダンプを次のようにロードします `INSERT` クエリ。
 
 ## 集約マテリアライズドビューの例 {#example-of-an-aggregated-materialized-view}
 
-`AggregatingMergeTree` マテリアライズドビュー `test.visits` テーブル:
+`AggregatingMergeTree` これは、 `test.visits` テーブル:
 
 ``` sql
 CREATE MATERIALIZED VIEW test.basic
@@ -80,13 +82,13 @@ FROM test.visits
 GROUP BY CounterID, StartDate;
 ```
 
-データを挿入する `test.visits` テーブル。
+にデータを挿入する `test.visits` テーブル。
 
 ``` sql
 INSERT INTO test.visits ...
 ```
 
-データは、テーブルとビューの両方に挿入されます `test.basic` それは集約を実行します。
+データはテーブルとビューの両方に挿入されます `test.basic` それは集計を実行します。
 
 集計データを取得するには、次のようなクエリを実行する必要があります `SELECT ... GROUP BY ...` ビューから `test.basic`:
 

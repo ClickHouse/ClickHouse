@@ -171,6 +171,12 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    /// Truncate file to specified size.
+    virtual void truncateFile(const String & path, size_t size);
+
+    /// Return disk type - "local", "s3", etc.
+    virtual const String getType() const = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -206,8 +212,11 @@ public:
     /// Get reservation size.
     virtual UInt64 getSize() const = 0;
 
-    /// Get disk where reservation take place.
-    virtual DiskPtr getDisk() const = 0;
+    /// Get i-th disk where reservation take place.
+    virtual DiskPtr getDisk(size_t i = 0) const = 0;
+
+    /// Get all disks, used in reservation
+    virtual Disks getDisks() const = 0;
 
     /// Changes amount of reserved space.
     virtual void update(UInt64 new_size) = 0;

@@ -1,7 +1,9 @@
 [
     {
-        "system":       "ProLiant DL380 G7, 12Gb RAM, 2x Xeon X5675 3.07GHz, 8x300GB SAS soft RAID5",
+        "system":       "ProLiant DL380 G7 (2 CPU)",
+        "system_full":       "ProLiant DL380 G7, 12Gb RAM, 2x Xeon X5675 3.07GHz, 8x300GB SAS soft RAID5",
         "time":         "2020-02-18 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.041, 0.005, 0.005],
@@ -50,8 +52,10 @@
         ]
     },
     {
-        "system":       "ProLiant DL380 G7, 12Gb RAM, 1x Xeon X5675 3.07GHz, 8x300GB SAS Soft RAID5",
+        "system":       "ProLiant DL380 G7 (1 CPU)",
+        "system_full":       "ProLiant DL380 G7, 128Gb RAM, 1x Xeon X5675 3.07GHz, 8x300GB SAS Soft RAID5",
         "time":         "2020-02-18 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.048, 0.005, 0.005],

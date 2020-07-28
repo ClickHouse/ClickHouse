@@ -18,11 +18,11 @@ limitations under the License. */
 #include <Interpreters/IInterpreter.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
 
+class Context;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using StoragePtr = std::shared_ptr<IStorage>;

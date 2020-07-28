@@ -5,7 +5,7 @@ toc_title: hdfs
 
 # hdfs {#hdfs}
 
-Creates a table from files in HDFS. This table function is similar to [url](url.md) and [file](file.md) ones.
+Creates a table from files in HDFS. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) ones.
 
 ``` sql
 hdfs(URI, format, structure)

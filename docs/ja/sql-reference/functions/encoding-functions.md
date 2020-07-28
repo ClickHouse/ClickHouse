@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "\u30A8\u30F3\u30B3\u30FC\u30C9"
 ---
 
-# エンコード関数 {#encoding-functions}
+# エンコード機能 {#encoding-functions}
 
-## 文字 {#char}
+## char {#char}
 
-渡された引数の数として長さを持つ文字列を返し、各バイトは対応する引数の値を持ちます。 数値型の複数の引数を受け取ります。 引数の値がuint8データ型の範囲外である場合は、丸めとオーバーフローが可能な状態でuint8に変換されます。
+渡された引数の数として長さの文字列を返し、各バイトは対応する引数の値を持ちます。 数値型の複数の引数を受け取ります。 引数の値がUInt8データ型の範囲外である場合、丸めとオーバーフローの可能性があるUInt8に変換されます。
 
 **構文**
 
@@ -27,7 +27,7 @@ char(number_1, [number_2, ..., number_n]);
 
 タイプ: `String`.
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -43,7 +43,7 @@ SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
 └───────┘
 ```
 
-を構築できます文字列の任意のエンコードに対応するバイトまでとなります。 utf-8の例を次に示します:
+を構築できます文字列の任意のエンコードに対応するバイトまでとなります。 UTF-8の例を次に示します:
 
 クエリ:
 
@@ -73,7 +73,7 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 └───────┘
 ```
 
-## 六角 {#hex}
+## hex {#hex}
 
 引数の十六進表現を含む文字列を返します。
 
@@ -83,13 +83,13 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 hex(arg)
 ```
 
-この関数は大文字を使用しています `A-F` 接頭辞（など）を使用しないでください `0x` または接尾辞（のような `h`).
+関数は大文字を使用しています `A-F` そして、接頭辞を使用しない（のような `0x`）または接尾辞（のような `h`).
 
-整数引数の場合は、六角数字を出力します (“nibbles”)最も重要なものから最も重要なもの(ビッグエンディアンまたは “human readable” 順序）。 最も重要な非ゼロバイト（先行ゼロバイトは省略されています）で始まりますが、先行桁がゼロであっても常に各バイトの両方の桁を出力します。
+整数引数の場合は、六桁を出力します (“nibbles”)最上位から最下位へ(ビッグエンディアンまたは “human readable” 順序）。 これは、最上位の非ゼロバイト（先頭のゼロバイトは省略されます）で始まりますが、先頭の数字がゼロであっても、常にすべてのバイトの両方の桁を
 
-例えば:
+例:
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -103,15 +103,15 @@ SELECT hex(1);
 01
 ```
 
-タイプの値 `Date` と `DateTime` 対応する整数としてフォーマットされます(日付のエポックからの日数と、DateTimeのUnixタイムスタンプの値)。
+型の値 `Date` と `DateTime` 対応する整数(Dateの場合はエポックからの日数、DateTimeの場合はUnix Timestampの値)としてフォーマットされます。
 
-のために `String` と `FixedString` すべてのバイトは、単に二進数として符号化される。 ゼロバイトは省略されません。
+のために `String` と `FixedString`、すべてのバイトは単に二進数として符号化される。 ゼロバイトは省略されません。
 
-浮動小数点型と小数型の値は、メモリ内での表現としてエンコードされます。 支援においても少しエンディアン、建築、その符号化されたのでちょっとエンディアンです。※ ゼロ先行/末尾のバイトは省略されません。
+浮動小数点型とDecimal型の値は、メモリ内の表現としてエンコードされます。 支援においても少しエンディアン、建築、その符号化されたのでちょっとエンディアンです。※ 先頭/末尾のゼロバイトは省略されません。
 
 **パラメータ**
 
--   `arg` — A value to convert to hexadecimal. Types: [文字列](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [フロート](../../sql-reference/data-types/float.md), [小数](../../sql-reference/data-types/decimal.md), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — A value to convert to hexadecimal. Types: [文字列](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [フロート](../../sql-reference/data-types/float.md), [小数点](../../sql-reference/data-types/decimal.md), [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 
 **戻り値**
 
@@ -119,7 +119,7 @@ SELECT hex(1);
 
 タイプ: `String`.
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -151,25 +151,25 @@ SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
 └──────────────────┘
 ```
 
-## unhex(str)) {#unhexstr}
+## unhex(str) {#unhexstr}
 
-任意の数の進数を含む文字列を受け取り、対応するバイトを含む文字列を返します。 十六進数の数字は偶数である必要はありません。 奇数の場合、最後の桁は、00-0fバイトの最下位半分として解釈されます。 引数stringに十六進数以外の桁数が含まれている場合、実装定義の結果が返されます(例外はスローされません)。
-結果を数値に変換したい場合は、 ‘reverse’ と ‘reinterpretAsType’ 機能。
+任意の数の十六進数を含む文字列を受け取り、対応するバイトを含む文字列を返します。 大文字と小文字の両方をサポートしていますa-F進の桁数は偶数である必要はありません。 奇数の場合、最後の桁は00-0Fバイトの最下位半分として解釈されます。 引数文字列に十六進以外の桁数が含まれている場合、実装定義の結果が返されます(例外はスローされません)。
+結果を数値に変換する場合は、 ‘reverse’ と ‘reinterpretAsType’ 機能。
 
-## UUIDStringToNum(str)) {#uuidstringtonumstr}
+## UUIDStringToNum(str) {#uuidstringtonumstr}
 
-次の形式の36文字を含む文字列を受け取ります `123e4567-e89b-12d3-a456-426655440000`、およびFixedString(16)のバイトのセットとして返します。
+形式で36文字を含む文字列を受け入れます `123e4567-e89b-12d3-a456-426655440000` これをFixedString(16)内のバイトセットとして返す。
 
-## UUIDNumToString(str)) {#uuidnumtostringstr}
+## UUIDNumToString(str) {#uuidnumtostringstr}
 
-FixedString(16)値を受け取ります。 テキスト形式で36文字を含む文字列を返します。
+FixedString(16)値を受け取ります。 36文字を含む文字列をテキスト形式で返します。
 
 ## ビットマスクトリスト(num) {#bitmasktolistnum}
 
-整数を受け入れます。 合計されたときにソース番号を合計する二つの累乗のリストを含む文字列を返します。 これらは、昇順で、テキスト形式のスペースなしでコンマ区切りです。
+整数を受け取ります。 ソース番号を合計する二つの累乗のリストを含む文字列を返します。 これらは、テキスト形式のスペースなしで、昇順でコンマ区切りです。
 
-## ビットマスクアレール(num) {#bitmasktoarraynum}
+## ビットマスクトアレイ(num) {#bitmasktoarraynum}
 
-整数を受け入れます。 合計されたときにソース番号を合計する二つの累乗のリストを含むuint64数の配列を返します。 配列内の数字は昇順です。
+整数を受け取ります。 合計されたときにソース番号を合計する二つのべき乗のリストを含むUInt64数値の配列を返します。 配列内の数値は昇順です。
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->

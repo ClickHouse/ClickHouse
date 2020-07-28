@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: "\u0647\u0634"
 ---
@@ -235,7 +235,7 @@ A `Int32` نوع داده مقدار هش.
 
 **مثال**
 
-درست پرس و جو با utf-16le کد گذاری رشته است.
+درست پرس و جو با UTF-16LE کد گذاری رشته است.
 
 پرسوجو:
 
@@ -313,8 +313,8 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 ## مورد احترام {#jumpconsistenthash}
 
-محاسبه jumpconsistenthash فرم uint64.
-می پذیرد دو استدلال: یک کلید بین 64 نوع و تعداد سطل. بازده int32.
+محاسبه JumpConsistentHash فرم UInt64.
+می پذیرد دو استدلال: یک کلید بین 64 نوع و تعداد سطل. بازده Int32.
 برای کسب اطلاعات بیشتر به لینک مراجعه کنید: [مورد احترام](https://arxiv.org/pdf/1406.2294.pdf)
 
 ## سوفلش2\_32, سوفلشه2\_64 {#murmurhash2-32-murmurhash2-64}
@@ -345,6 +345,44 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 ┌──────────MurmurHash2─┬─type───┐
 │ 11832096901709403633 │ UInt64 │
 └──────────────────────┴────────┘
+```
+
+## اطلاعات دقیق {#gccmurmurhash}
+
+محاسبه 64 بیتی [زمزمه 2](https://github.com/aappleby/smhasher) مقدار هش با استفاده از همان دانه هش به عنوان [شورای همکاری خلیج فارس](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). این قابل حمل بین کلانگ و شورای همکاری خلیج فارس ایجاد شده است.
+
+**نحو**
+
+``` sql
+gccMurmurHash(par1, ...);
+```
+
+**پارامترها**
+
+-   `par1, ...` — A variable number of parameters that can be any of the [انواع داده های پشتیبانی شده](../../sql-reference/data-types/index.md#data_types).
+
+**مقدار بازگشتی**
+
+-   محاسبه مقدار هش.
+
+نوع: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**مثال**
+
+پرسوجو:
+
+``` sql
+SELECT
+    gccMurmurHash(1, 2, 3) AS res1,
+    gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
+```
+
+نتیجه:
+
+``` text
+┌─────────────────res1─┬────────────────res2─┐
+│ 12384823029245979431 │ 1188926775431157506 │
+└──────────────────────┴─────────────────────┘
 ```
 
 ## سوفلش3\_32, سوفلشه3\_64 {#murmurhash3-32-murmurhash3-64}

@@ -1,8 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 60
-toc_title: "\u0647\u06CC\u0686 \u0686\u06CC\u0632"
+toc_title: "\u0647\u06CC\u0686\u06CC"
 ---
 
 # هیچی {#nothing}

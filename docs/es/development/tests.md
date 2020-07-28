@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 69
 toc_title: "C\xF3mo ejecutar pruebas de ClickHouse"
 ---
 
-# Pruebas De ClickHouse {#clickhouse-testing}
+# Pruebas de ClickHouse {#clickhouse-testing}
 
-## Pruebas Funcionales {#functional-tests}
+## Pruebas funcionales {#functional-tests}
 
 Las pruebas funcionales son las más simples y cómodas de usar. La mayoría de las características de ClickHouse se pueden probar con pruebas funcionales y son obligatorias para cada cambio en el código de ClickHouse que se puede probar de esa manera.
 
@@ -38,7 +38,7 @@ deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
 
 Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `tests/queries/bugs` directorio. Estas pruebas se moverán a `tests/queries/0_stateless` cuando se corrigen errores.
 
-## Pruebas De integración {#integration-tests}
+## Pruebas de integración {#integration-tests}
 
 Las pruebas de integración permiten probar ClickHouse en la configuración agrupada y la interacción de ClickHouse con otros servidores como MySQL, Postgres, MongoDB. Son útiles para emular divisiones de red, caídas de paquetes, etc. Estas pruebas se ejecutan bajo Docker y crean múltiples contenedores con varios software.
 
@@ -46,27 +46,27 @@ Ver `tests/integration/README.md` sobre cómo ejecutar estas pruebas.
 
 Tenga en cuenta que la integración de ClickHouse con controladores de terceros no se ha probado. Además, actualmente no tenemos pruebas de integración con nuestros controladores JDBC y ODBC.
 
-## Pruebas Unitarias {#unit-tests}
+## Pruebas unitarias {#unit-tests}
 
 Las pruebas unitarias son útiles cuando desea probar no ClickHouse como un todo, sino una sola biblioteca o clase aislada. Puede habilitar o deshabilitar la compilación de pruebas con `ENABLE_TESTS` Opción CMake. Las pruebas unitarias (y otros programas de prueba) se encuentran en `tests` subdirectorios en todo el código. Para ejecutar pruebas unitarias, escriba `ninja test`. Algunas pruebas usan `gtest`, pero algunos son solo programas que devuelven un código de salida distinto de cero en caso de fallo de prueba.
 
 No es necesariamente tener pruebas unitarias si el código ya está cubierto por pruebas funcionales (y las pruebas funcionales suelen ser mucho más simples de usar).
 
-## Pruebas De Rendimiento {#performance-tests}
+## Pruebas de rendimiento {#performance-tests}
 
 Las pruebas de rendimiento permiten medir y comparar el rendimiento de alguna parte aislada de ClickHouse en consultas sintéticas. Las pruebas se encuentran en `tests/performance`. Cada prueba está representada por `.xml` archivo con la descripción del caso de prueba. Las pruebas se ejecutan con `clickhouse performance-test` herramienta (que está incrustada en `clickhouse` binario). Ver `--help` para la invocación.
 
-Cada prueba ejecuta una o múltiples consultas (posiblemente con combinaciones de parámetros) en un bucle con algunas condiciones para stop (como “maximum execution speed is not changing in three seconds”) y medir algunas métricas sobre el rendimiento de las consultas (como “maximum execution speed”). Algunas pruebas pueden contener condiciones previas en el conjunto de datos de pruebas precargado.
+Cada prueba ejecuta una o varias consultas (posiblemente con combinaciones de parámetros) en un bucle con algunas condiciones para detener (como “maximum execution speed is not changing in three seconds”) y medir algunas métricas sobre el rendimiento de las consultas (como “maximum execution speed”). Algunas pruebas pueden contener condiciones previas en el conjunto de datos de pruebas precargado.
 
 Si desea mejorar el rendimiento de ClickHouse en algún escenario, y si se pueden observar mejoras en consultas simples, se recomienda encarecidamente escribir una prueba de rendimiento. Siempre tiene sentido usar `perf top` u otras herramientas de perf durante sus pruebas.
 
-## Herramientas De Prueba y Secuencias De Comandos {#test-tools-and-scripts}
+## Herramientas de prueba y secuencias de comandos {#test-tools-and-scripts}
 
-Algunos programas en `tests` directorio no son pruebas preparadas, pero son herramientas de prueba. Por ejemplo, para `Lexer` hay una herramienta `dbms/Parsers/tests/lexer` que solo hacen la tokenización de stdin y escriben el resultado coloreado en stdout. Puede usar este tipo de herramientas como ejemplos de código y para exploración y pruebas manuales.
+Algunos programas en `tests` directorio no son pruebas preparadas, pero son herramientas de prueba. Por ejemplo, para `Lexer` hay una herramienta `src/Parsers/tests/lexer` que solo hacen la tokenización de stdin y escriben el resultado coloreado en stdout. Puede usar este tipo de herramientas como ejemplos de código y para exploración y pruebas manuales.
 
 También puede colocar un par de archivos `.sh` y `.reference` junto con la herramienta para ejecutarlo en alguna entrada predefinida, entonces el resultado del script se puede comparar con `.reference` file. Este tipo de pruebas no están automatizadas.
 
-## Miscellanous Pruebas {#miscellanous-tests}
+## Pruebas diversas {#miscellaneous-tests}
 
 Hay pruebas para diccionarios externos ubicados en `tests/external_dictionaries` y para modelos aprendidos a máquina en `tests/external_models`. Estas pruebas no se actualizan y deben transferirse a pruebas de integración.
 
@@ -74,7 +74,7 @@ Hay una prueba separada para inserciones de quórum. Esta prueba ejecuta el clú
 
 La prueba de quórum fue escrita por un equipo separado antes de que ClickHouse fuera de código abierto. Este equipo ya no trabaja con ClickHouse. La prueba fue escrita accidentalmente en Java. Por estas razones, la prueba de quórum debe reescribirse y trasladarse a pruebas de integración.
 
-## Pruebas Manuales {#manual-testing}
+## Pruebas manuales {#manual-testing}
 
 Cuando desarrolla una nueva característica, es razonable probarla también manualmente. Puede hacerlo con los siguientes pasos:
 
@@ -109,7 +109,7 @@ Si el servidor de clickhouse del sistema ya se está ejecutando y no desea deten
 
 `clickhouse` binary casi no tiene dependencias y funciona en una amplia gama de distribuciones de Linux. Para probar rápidamente y sucio sus cambios en un servidor, simplemente puede `scp` su fresco construido `clickhouse` binario a su servidor y luego ejecútelo como en los ejemplos anteriores.
 
-## Entorno De Prueba {#testing-environment}
+## Entorno de prueba {#testing-environment}
 
 Antes de publicar la versión como estable, la implementamos en el entorno de prueba. El entorno de prueba es un clúster que procesa 1/39 parte de [El Yandex.Métrica](https://metrica.yandex.com/) datos. Compartimos nuestro entorno de pruebas con Yandex.Equipo de Metrica. ClickHouse se actualiza sin tiempo de inactividad sobre los datos existentes. Nos fijamos en un primer momento que los datos se procesan con éxito sin retraso de tiempo real, la replicación continúan trabajando y no hay problemas visibles para Yandex.Equipo de Metrica. La primera comprobación se puede hacer de la siguiente manera:
 
@@ -119,7 +119,7 @@ SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count(
 
 En algunos casos también implementamos en el entorno de prueba de nuestros equipos de amigos en Yandex: Market, Cloud, etc. También tenemos algunos servidores de hardware que se utilizan con fines de desarrollo.
 
-## Pruebas De Carga {#load-testing}
+## Pruebas de carga {#load-testing}
 
 Después de implementar en el entorno de prueba, ejecutamos pruebas de carga con consultas del clúster de producción. Esto se hace manualmente.
 
@@ -147,7 +147,7 @@ Usted debe comprobar que `clickhouse-server` no se bloquea, la huella de memoria
 
 Los tiempos de ejecución de consultas precisos no se registran y no se comparan debido a la alta variabilidad de las consultas y el entorno.
 
-## Pruebas De construcción {#build-tests}
+## Pruebas de construcción {#build-tests}
 
 Las pruebas de compilación permiten verificar que la compilación no esté rota en varias configuraciones alternativas y en algunos sistemas extranjeros. Las pruebas se encuentran en `ci` directorio. Ejecutan compilación desde la fuente dentro de Docker, Vagrant y, a veces, con `qemu-user-static` dentro de Docker. Estas pruebas están en desarrollo y las ejecuciones de pruebas no están automatizadas.
 
@@ -165,11 +165,11 @@ Por ejemplo, construir con paquetes del sistema es una mala práctica, porque no
 
 Aunque no podemos ejecutar todas las pruebas en todas las variantes de compilaciones, queremos verificar al menos que varias variantes de compilación no estén rotas. Para este propósito utilizamos pruebas de construcción.
 
-## Pruebas De Compatibilidad De Protocolos {#testing-for-protocol-compatibility}
+## Pruebas de Compatibilidad de protocolos {#testing-for-protocol-compatibility}
 
 Cuando ampliamos el protocolo de red ClickHouse, probamos manualmente que el antiguo clickhouse-client funciona con el nuevo clickhouse-server y el nuevo clickhouse-client funciona con el antiguo clickhouse-server (simplemente ejecutando binarios de los paquetes correspondientes).
 
-## Ayuda Del Compilador {#help-from-the-compiler}
+## Ayuda del compilador {#help-from-the-compiler}
 
 Código principal de ClickHouse (que se encuentra en `dbms` directorio) se construye con `-Wall -Wextra -Werror` y con algunas advertencias habilitadas adicionales. Aunque estas opciones no están habilitadas para bibliotecas de terceros.
 
@@ -199,13 +199,23 @@ Versión de depuración de `jemalloc` se utiliza para la compilación de depurac
 
 ## Fuzzing {#fuzzing}
 
-Usamos una prueba de fuzz simple para generar consultas SQL aleatorias y verificar que el servidor no muera. Las pruebas de pelusa se realizan con el desinfectante Address. Lo puedes encontrar en `00746_sql_fuzzy.pl`. Esta prueba debe ejecutarse de forma continua (de la noche a la mañana y más).
+ClickHouse fuzzing se implementa tanto usando [LibFuzzer](https://llvm.org/docs/LibFuzzer.html) y consultas SQL aleatorias.
+Todas las pruebas de fuzz deben realizarse con desinfectantes (Dirección y Undefined).
 
-A partir de diciembre de 2018, todavía no usamos pruebas de fuzz aisladas del código de la biblioteca.
+LibFuzzer se usa para pruebas de fuzz aisladas del código de la biblioteca. Fuzzers se implementan como parte del código de prueba y tienen “\_fuzzer” nombre postfixes.
+El ejemplo de Fuzzer se puede encontrar en `src/Parsers/tests/lexer_fuzzer.cpp`. Las configuraciones, diccionarios y corpus específicos de LibFuzzer se almacenan en `tests/fuzz`.
+Le recomendamos que escriba pruebas fuzz para cada funcionalidad que maneje la entrada del usuario.
 
-## Auditoría De Seguridad {#security-audit}
+Fuzzers no se construyen de forma predeterminada. Para construir fuzzers ambos `-DENABLE_FUZZING=1` y `-DENABLE_TESTS=1` se deben establecer opciones.
+Recomendamos deshabilitar Jemalloc mientras se construyen fuzzers. Configuración utilizada para integrar
+Google OSS-Fuzz se puede encontrar en `docker/fuzz`.
 
-La gente del departamento de Yandex Cloud hace una visión general básica de las capacidades de ClickHouse desde el punto de vista de la seguridad.
+También usamos una prueba de fuzz simple para generar consultas SQL aleatorias y verificar que el servidor no muera al ejecutarlas.
+Lo puedes encontrar en `00746_sql_fuzzy.pl`. Esta prueba debe ejecutarse de forma continua (de la noche a la mañana y más).
+
+## Auditoría de seguridad {#security-audit}
+
+La gente de Yandex Security Team hace una visión general básica de las capacidades de ClickHouse desde el punto de vista de la seguridad.
 
 ## Analizadores estáticos {#static-analyzers}
 
@@ -217,7 +227,7 @@ Si usted usa `CLion` como IDE, puede aprovechar algunos `clang-tidy` comprueba f
 
 `FORTIFY_SOURCE` se utiliza de forma predeterminada. Es casi inútil, pero todavía tiene sentido en casos raros y no lo desactivamos.
 
-## Estilo De código {#code-style}
+## Estilo de código {#code-style}
 
 Se describen las reglas de estilo de código [aqui](https://clickhouse.tech/docs/en/development/style/).
 
@@ -235,11 +245,11 @@ Cada lanzamiento de ClickHouse se prueba con los motores Yandex Metrica y AppMet
 
 Estas pruebas son automatizadas por un equipo separado. Debido a la gran cantidad de piezas móviles, las pruebas fallan la mayor parte del tiempo por razones completamente no relacionadas, que son muy difíciles de descubrir. Lo más probable es que estas pruebas tengan un valor negativo para nosotros. Sin embargo, se demostró que estas pruebas son útiles en aproximadamente una o dos veces de cada cientos.
 
-## Cobertura De Prueba {#test-coverage}
+## Cobertura de prueba {#test-coverage}
 
 A partir de julio de 2018, no realizamos un seguimiento de la cobertura de las pruebas.
 
-## Automatización De Pruebas {#test-automation}
+## Automatización de pruebas {#test-automation}
 
 Realizamos pruebas con el CI interno de Yandex y el sistema de automatización de trabajos llamado “Sandbox”.
 
@@ -249,4 +259,3 @@ No usamos Travis CI debido al límite de tiempo y potencia computacional.
 No usamos Jenkins. Se usó antes y ahora estamos felices de no estar usando Jenkins.
 
 [Artículo Original](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
-pruebas/) <!--hide-->

@@ -34,6 +34,8 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     {
         if (i != 0)
             writeCString("   ", out);
+        else
+            writeChar(' ', out);
 
         const ColumnWithTypeAndName & col = header.getByPosition(i);
 
@@ -67,7 +69,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
         for (size_t column = 0; column < num_columns; ++column)
         {
             if (column != 0)
-                writeCString("   ", out);
+                writeCString(" ", out);
 
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];

@@ -225,6 +225,15 @@ ASTPtr tryParseQuery(
         || token_iterator->type == TokenType::Semicolon)
     {
         out_error_message = "Empty query";
+        // Token iterator skips over comments, so we'll get this error for queries
+        // like this:
+        // "
+        // -- just a comment
+        // ;
+        //"
+        // Advance the position, so that we can use this parser for stream parsing
+        // even in presence of such queries.
+        pos = token_iterator->begin;
         return nullptr;
     }
 

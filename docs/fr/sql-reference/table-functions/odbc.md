@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: ODBC
 ---
@@ -21,17 +21,17 @@ Paramètre:
 
 Pour implémenter en toute sécurité les connexions ODBC, ClickHouse utilise un programme distinct `clickhouse-odbc-bridge`. Si le pilote ODBC est chargé directement depuis `clickhouse-server`, les problèmes de pilote peuvent planter le serveur ClickHouse. Clickhouse démarre automatiquement `clickhouse-odbc-bridge` lorsque cela est nécessaire. Le programme ODBC bridge est installé à partir du même package que `clickhouse-server`.
 
-Les champs avec l’ `NULL` les valeurs de la table externe sont converties en valeurs par défaut pour le type de données de base. Par exemple, si un champ de table MySQL distant a `INT NULL` type il est converti en 0 (la valeur par défaut pour ClickHouse `Int32` type de données).
+Les champs avec l' `NULL` les valeurs de la table externe sont converties en valeurs par défaut pour le type de données de base. Par exemple, si un champ de table MySQL distant a `INT NULL` type il est converti en 0 (la valeur par défaut pour ClickHouse `Int32` type de données).
 
-## Exemple d’utilisation {#usage-example}
+## Exemple D'Utilisation {#usage-example}
 
-**Obtenir des données de L’installation MySQL locale via ODBC**
+**Obtenir des données de L'installation MySQL locale via ODBC**
 
 Cet exemple est vérifié pour Ubuntu Linux 18.04 et MySQL server 5.7.
 
 Assurez-vous que unixODBC et MySQL Connector sont installés.
 
-Par défaut (si installé à partir de paquets), ClickHouse démarre en tant qu’utilisateur `clickhouse`. Ainsi, vous devez créer et configurer cet utilisateur dans le serveur MySQL.
+Par défaut (si installé à partir de paquets), ClickHouse démarre en tant qu'utilisateur `clickhouse`. Ainsi, vous devez créer et configurer cet utilisateur dans le serveur MySQL.
 
 ``` bash
 $ sudo mysql
@@ -55,7 +55,7 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-Vous pouvez vérifier la connexion en utilisant le `isql` utilitaire de l’installation unixODBC.
+Vous pouvez vérifier la connexion en utilisant le `isql` utilitaire de l'installation unixODBC.
 
 ``` bash
 $ isql -v mysqlconn

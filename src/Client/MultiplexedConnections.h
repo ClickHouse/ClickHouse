@@ -36,10 +36,10 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const String & query_id = "",
-        UInt64 stage = QueryProcessingStage::Complete,
-        const ClientInfo * client_info = nullptr,
-        bool with_pending_data = false);
+        const String & query_id,
+        UInt64 stage,
+        const ClientInfo & client_info,
+        bool with_pending_data);
 
     /// Get packet from any replica.
     Packet receivePacket();
