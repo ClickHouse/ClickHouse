@@ -1,11 +1,11 @@
 #pragma once
 
-#include <common/types.h>
-#include <Common/StackTrace.h>
-
-#include <Poco/Util/LayeredConfiguration.h>
-
 #include <string>
+
+
+namespace Poco { namespace Util { class LayeredConfiguration; }}
+class StackTrace;
+
 
 /// \brief Sends crash reports to ClickHouse core developer team via https://sentry.io
 ///
@@ -14,20 +14,16 @@
 ///
 /// It is possible to send those reports to your own sentry account or account of consulting company you hired
 /// by overriding "send_crash_reports.endpoint" setting. "send_crash_reports.debug" setting will allow to do that for
-class SentryWriter
+namespace SentryWriter
 {
-public:
-    SentryWriter() = delete;
-
-    static void initialize(Poco::Util::LayeredConfiguration & config);
-    static void shutdown();
+    void initialize(Poco::Util::LayeredConfiguration & config);
+    void shutdown();
 
     /// Not signal safe and can't be called from a signal handler
-    static void onFault(
+    void onFault(
         int sig,
-        const siginfo_t & info,
-        const ucontext_t & context,
+        const std::string & error_message,
         const StackTrace & stack_trace,
-        const String & build_id_hex
+        const std::string & build_id_hex
     );
 };

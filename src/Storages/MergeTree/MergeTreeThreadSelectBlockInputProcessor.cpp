@@ -61,7 +61,7 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         return false;
     }
 
-    const std::string path = task->data_part->getFullRelativePath();
+    const std::string part_name = task->data_part->name;
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
@@ -86,7 +86,7 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
     else
     {
         /// in other case we can reuse readers, anyway they will be "seeked" to required mark
-        if (path != last_readed_part_path)
+        if (part_name != last_readed_part_name)
         {
             auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
@@ -101,7 +101,7 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         }
     }
 
-    last_readed_part_path = path;
+    last_readed_part_name = part_name;
 
     return true;
 }

@@ -55,9 +55,14 @@ private:
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
+    void finalizePartOnDisk(
+            const MergeTreeData::MutableDataPartPtr & new_part,
+            NamesAndTypesList & part_columns,
+            MergeTreeData::DataPart::Checksums & checksums);
+
 private:
     NamesAndTypesList columns_list;
-
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
 };
 

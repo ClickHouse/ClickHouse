@@ -49,7 +49,7 @@
 	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = https://github.com/powturbo/Turbo-Base64.git
+	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/apache/arrow

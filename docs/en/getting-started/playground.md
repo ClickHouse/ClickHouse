@@ -37,6 +37,7 @@ The queries are executed as a read-only user. It implies some limitations:
 -   INSERT queries are not allowed
 
 The following settings are also enforced:
+
 - [max\_result\_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
 - [max\_result\_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
 - [result\_overflow\_mode=break](../operations/settings/query_complexity/#result-overflow-mode)

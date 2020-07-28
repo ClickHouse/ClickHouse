@@ -38,7 +38,7 @@ public:
         return removeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const ColumnPtr & col = block.getByPosition(arguments[0]).column;
         ColumnPtr & res_col = block.getByPosition(result).column;

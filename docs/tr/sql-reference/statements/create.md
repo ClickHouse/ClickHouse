@@ -155,7 +155,7 @@ Bir codec bileşeni belirtilmişse, varsayılan codec bileşeni geçerli değild
 Sıkıştırma Aşağıdaki tablo motorları için desteklenir:
 
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) aile. Sütun sıkıştırma kodeklerini destekler ve varsayılan sıkıştırma yöntemini seçerek [sıkıştırma](../../operations/server-configuration-parameters/settings.md#server-settings-compression) ayarlar.
--   [Günlük](../../engines/table-engines/log-family/log-family.md) aile. Kullanır `lz4` sıkıştırma yöntemi varsayılan olarak ve sütun sıkıştırma codec destekler.
+-   [Günlük](../../engines/table-engines/log-family/index.md) aile. Kullanır `lz4` sıkıştırma yöntemi varsayılan olarak ve sütun sıkıştırma codec destekler.
 -   [Koymak](../../engines/table-engines/special/set.md). Yalnızca varsayılan sıkıştırmayı destekledi.
 -   [Katmak](../../engines/table-engines/special/join.md). Yalnızca varsayılan sıkıştırmayı destekledi.
 

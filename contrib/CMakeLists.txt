@@ -102,7 +102,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
-if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
+if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
@@ -222,6 +222,7 @@ if (USE_INTERNAL_AVRO_LIBRARY)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
+    set(GOOGLETEST_VERSION 1.10.0) # master
     # Google Test from sources
     add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
@@ -290,12 +291,13 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+if (USE_AMQPCPP OR USE_CASSANDRA)
+    add_subdirectory (libuv)
+endif()
 if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
-
 if (USE_CASSANDRA)
-    add_subdirectory (libuv)
     add_subdirectory (cassandra)
 endif()
 

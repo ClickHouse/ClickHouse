@@ -156,12 +156,6 @@ public:
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
 
-    /// Will be called if isVariadic returns true. You need to check if function can have specified number of arguments.
-    virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
-    {
-        throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -201,8 +195,8 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const = 0;
+    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         executeImpl(block, arguments, result, input_rows_count);
     }
@@ -288,11 +282,6 @@ public:
     }
 
     virtual bool isVariadic() const { return false; }
-
-    virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
-    {
-        throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {

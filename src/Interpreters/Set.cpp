@@ -473,17 +473,8 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     size_t tuple_size = indexes_mapping.size();
     ordered_set.resize(tuple_size);
 
-    /// Create columns for points here to avoid extra allocations at 'checkInRange'.
-    left_point.reserve(tuple_size);
-    right_point.reserve(tuple_size);
-
     for (size_t i = 0; i < tuple_size; ++i)
-    {
         ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
-
-        left_point.emplace_back(ordered_set[i]->cloneEmpty());
-        right_point.emplace_back(ordered_set[i]->cloneEmpty());
-    }
 
     Block block_to_sort;
     SortDescription sort_description;
@@ -504,9 +495,20 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
 {
     size_t tuple_size = indexes_mapping.size();
+
+    ColumnsWithInfinity left_point;
+    ColumnsWithInfinity right_point;
+    left_point.reserve(tuple_size);
+    right_point.reserve(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        left_point.emplace_back(ordered_set[i]->cloneEmpty());
+        right_point.emplace_back(ordered_set[i]->cloneEmpty());
+    }
 
     bool invert_left_infinities = false;
     bool invert_right_infinities = false;
