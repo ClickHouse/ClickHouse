@@ -3851,14 +3851,16 @@ void StorageReplicatedMergeTree::alter(
     }
 }
 
-void StorageReplicatedMergeTree::alterPartition(
+Pipes StorageReplicatedMergeTree::alterPartition(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
     const Context & query_context)
 {
+    PartitionCommandsResultInfo result;
     for (const PartitionCommand & command : commands)
     {
+        PartitionCommandsResultInfo current_command_results;
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
@@ -3871,7 +3873,7 @@ void StorageReplicatedMergeTree::alterPartition(
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                attachPartition(command.partition, metadata_snapshot, command.part, query_context);
+                current_command_results = attachPartition(command.partition, metadata_snapshot, command.part, query_context);
                 break;
             case PartitionCommand::MOVE_PARTITION:
             {
@@ -3911,18 +3913,31 @@ void StorageReplicatedMergeTree::alterPartition(
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
+                current_command_results = freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
-                freezeAll(command.with_name, metadata_snapshot, query_context, lock);
+                current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
         }
+        for (auto & command_result : current_command_results)
+            command_result.command_type = command.typeToString();
+        result.insert(result.end(), current_command_results.begin(), current_command_results.end());
     }
+
+    if (query_context.getSettingsRef().alter_partition_verbose_result)
+    {
+        auto source = convertCommandsResultToSource(result);
+        Pipes pipes;
+        pipes.emplace_back(Pipe(source));
+        return pipes;
+    }
+
+    return {};
 }
 
 
@@ -4028,12 +4043,15 @@ void StorageReplicatedMergeTree::truncate(
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool attach_part, const Context & query_context)
+PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
+    const ASTPtr & partition,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool attach_part,
+    const Context & query_context)
 {
-    // TODO: should get some locks to prevent race with 'alter … modify column'
-
     assertNotReadonly();
 
+    PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
@@ -4044,7 +4062,13 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, const
         output.writeExistingPart(loaded_parts[i]);
         renamed_parts.old_and_new_names[i].first.clear();
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
+        results.push_back(PartitionCommandResultInfo{
+            .partition_id = loaded_parts[i]->info.partition_id,
+            .part_name = loaded_parts[i]->name,
+            .old_part_name = old_name,
+        });
     }
+    return results;
 }
 
 

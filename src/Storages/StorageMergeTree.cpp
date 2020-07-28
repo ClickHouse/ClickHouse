@@ -1007,24 +1007,29 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-void StorageMergeTree::alterPartition(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
+Pipes StorageMergeTree::alterPartition(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const PartitionCommands & commands,
+    const Context & query_context)
 {
+    PartitionCommandsResultInfo result;
     for (const PartitionCommand & command : commands)
     {
+        PartitionCommandsResultInfo current_command_results;
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
                 checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, context);
+                dropPartition(command.partition, command.detach, query_context);
                 break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
-                dropDetached(command.partition, command.part, context);
+                dropDetached(command.partition, command.part, query_context);
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                attachPartition(command.partition, command.part, context);
+                current_command_results = attachPartition(command.partition, command.part, query_context);
                 break;
 
             case PartitionCommand::MOVE_PARTITION:
@@ -1032,18 +1037,18 @@ void StorageMergeTree::alterPartition(
                 switch (*command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, context);
+                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
                         break;
 
                     case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, context);
+                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
                         break;
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
-                        String dest_database = context.resolveDatabase(command.to_database);
-                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, context);
-                        movePartitionToTable(dest_storage, command.partition, context);
+                        String dest_database = query_context.resolveDatabase(command.to_database);
+                        auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+                        movePartitionToTable(dest_storage, command.partition, query_context);
                         break;
                 }
 
@@ -1053,30 +1058,44 @@ void StorageMergeTree::alterPartition(
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = context.resolveDatabase(command.from_database);
-                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, context);
-                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+                String from_database = query_context.resolveDatabase(command.from_database);
+                auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+                replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-                freezePartition(command.partition, metadata_snapshot, command.with_name, context, lock);
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-                freezeAll(command.with_name, metadata_snapshot, context, lock);
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
 
             default:
-                IStorage::alterPartition(query, metadata_snapshot, commands, context); // should throw an exception.
+                IStorage::alterPartition(query, metadata_snapshot, commands, query_context); // should throw an exception.
         }
+
+        for (auto & command_result : current_command_results)
+            command_result.command_type = command.typeToString();
+        result.insert(result.end(), current_command_results.begin(), current_command_results.end());
     }
+
+    if (query_context.getSettingsRef().alter_partition_verbose_result)
+    {
+        auto source = convertCommandsResultToSource(result);
+        Pipes pipes;
+        pipes.emplace_back(Pipe(source));
+        return pipes;
+    }
+
+    return { };
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
@@ -1114,24 +1133,32 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
-void StorageMergeTree::attachPartition(
+PartitionCommandsResultInfo  StorageMergeTree::attachPartition(
     const ASTPtr & partition, bool attach_part, const Context & context)
 {
-    // TODO: should get some locks to prevent race with 'alter … modify column'
-
+    PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].second);
+        String old_name = renamed_parts.old_and_new_names[i].first;
         renameTempPartAndAdd(loaded_parts[i], &increment);
         renamed_parts.old_and_new_names[i].first.clear();
+
+        results.push_back(PartitionCommandResultInfo{
+            .partition_id = loaded_parts[i]->info.partition_id,
+            .part_name = loaded_parts[i]->name,
+            .old_part_name = old_name,
+        });
+
         LOG_INFO(log, "Finished attaching part");
     }
 
     /// New parts with other data may appear in place of deleted parts.
     context.dropCaches();
+    return results;
 }
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
