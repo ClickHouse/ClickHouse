@@ -2,11 +2,13 @@
 #include <IO/Operators.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -32,6 +34,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = DELETE;
         res.predicate = command->predicate;
+        res.partition = command->partition;
         return res;
     }
     else if (command->type == ASTAlterCommand::UPDATE)
@@ -40,6 +43,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = UPDATE;
         res.predicate = command->predicate;
+        res.partition = command->partition;
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
@@ -113,6 +117,23 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         return res;
     }
     return {};
+}
+
+
+ASTPtr && MutationCommand::getPartitionAndPredicate() const
+{
+    ASTPtr result;
+    static const auto partition_id = std::make_shared<ASTLiteral>(Field{"_partition_id"});
+    if (partition)
+        result = makeASTFunction("equals", partition_id->clone(), partition->clone());
+    if (predicate)
+    {
+        if (!result)
+            result = predicate->clone();
+        else
+            result = makeASTFunction("and", std::move(result), predicate->clone());
+    }
+    return std::move(result);
 }
 
 
