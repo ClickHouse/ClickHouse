@@ -59,11 +59,7 @@ ConvertingTransform::ConvertingTransform(
                 break;
 
             case MatchColumnsMode::Name:
-                /// It may seem strange, but sometimes block may have columns with the same name.
-                /// For this specific case, try to get column from the same position if it has correct name first.
-                if (result_col_num < source.columns() && source.getByPosition(result_col_num).name == res_elem.name)
-                    conversion[result_col_num] = result_col_num;
-                else if (source.has(res_elem.name))
+                if (source.has(res_elem.name))
                     conversion[result_col_num] = source.getPositionByName(res_elem.name);
                 else
                     throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",

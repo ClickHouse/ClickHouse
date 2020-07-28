@@ -8,6 +8,7 @@
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/readDecimalText.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>

@@ -11,9 +11,8 @@ namespace DB
 class ParserQueryWithOutput : public IParserBase
 {
 public:
-    /// enable_debug_queries flag enables queries 'AST SELECT' and 'ANALYZE SELECT'
-    explicit ParserQueryWithOutput(bool enable_debug_queries_ = false)
-        : enable_debug_queries(enable_debug_queries_)
+    ParserQueryWithOutput(bool enable_explain_ = false)
+        : enable_explain(enable_explain_)
     {}
 
 protected:
@@ -22,7 +21,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
-    bool enable_debug_queries;
+    bool enable_explain;
 };
 
 }

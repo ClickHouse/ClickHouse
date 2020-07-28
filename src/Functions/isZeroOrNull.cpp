@@ -43,12 +43,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (!isNumber(removeNullable(types.at(0))))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+            throw Exception("The argument of function " + getName() + " must have simple numeric type, possibly Nullable", ErrorCodes::BAD_ARGUMENTS);
 
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr & input_column = block.getByPosition(arguments[0]).column;
 
@@ -69,7 +69,7 @@ public:
                     return true;
                 }))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+                throw Exception("The argument of function " + getName() + " must have simple numeric type, possibly Nullable", ErrorCodes::ILLEGAL_COLUMN);
             }
         }
         else
@@ -86,14 +86,14 @@ public:
                     return true;
                 }))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+                throw Exception("The argument of function " + getName() + " must have simple numeric type, possibly Nullable", ErrorCodes::ILLEGAL_COLUMN);
             }
         }
     }
 
 private:
     template <typename InputData>
-    void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count) const
+    void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count)
     {
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = !input_data[i];
@@ -101,7 +101,7 @@ private:
 
     template <typename InputData>
     void processNullable(const InputData & input_data, const NullMap & input_null_map,
-        ColumnUInt8::Container & result_data, size_t input_rows_count) const
+        ColumnUInt8::Container & result_data, size_t input_rows_count)
     {
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = input_null_map[i] || !input_data[i];
@@ -115,4 +115,3 @@ void registerFunctionIsZeroOrNull(FunctionFactory & factory)
 }
 
 }
-

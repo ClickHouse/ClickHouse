@@ -1,8 +1,5 @@
 #include <DataStreams/CheckSortedBlockInputStream.h>
-#include <Common/FieldVisitors.h>
-#include <Common/quoteString.h>
 #include <Core/SortDescription.h>
-
 
 namespace DB
 {
@@ -38,16 +35,17 @@ CheckSortedBlockInputStream::addPositionsToSortDescriptions(const SortDescriptio
     return result;
 }
 
-
-Block CheckSortedBlockInputStream::readImpl()
+/// Compares values in columns. Columns must have equal types.
+struct SortingLessOrEqualComparator
 {
-    Block block = children.back()->read();
-    if (!block || block.rows() == 0)
-        return block;
+    const SortDescriptionsWithPositions & sort_description;
 
-    auto check = [this](const Columns & left, size_t left_index, const Columns & right, size_t right_index)
+    explicit SortingLessOrEqualComparator(const SortDescriptionsWithPositions & sort_description_)
+        : sort_description(sort_description_) {}
+
+    bool operator()(const Columns & left, size_t left_index, const Columns & right, size_t right_index) const
     {
-        for (const auto & elem : sort_description_map)
+        for (const auto & elem : sort_description)
         {
             size_t column_number = elem.column_number;
 
@@ -56,27 +54,30 @@ Block CheckSortedBlockInputStream::readImpl()
 
             int res = elem.direction * left_col->compareAt(left_index, right_index, *right_col, elem.nulls_direction);
             if (res < 0)
-            {
-                return;
-            }
+                return true;
             else if (res > 0)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Sort order of blocks violated for column number {}, left: {}, right: {}.",
-                    column_number,
-                    applyVisitor(FieldVisitorDump(), (*left_col)[left_index]),
-                    applyVisitor(FieldVisitorDump(), (*right_col)[right_index]));
-            }
+                return false;
         }
-    };
+        return true;
+    }
+};
+
+Block CheckSortedBlockInputStream::readImpl()
+{
+    Block block = children.back()->read();
+    if (!block || block.rows() == 0)
+        return block;
+
+    SortingLessOrEqualComparator less(sort_description_map);
 
     auto block_columns = block.getColumns();
-    if (!last_row.empty())
-        check(last_row, 0, block_columns, 0);
+    if (!last_row.empty() && !less(last_row, 0, block_columns, 0))
+        throw Exception("Sort order of blocks violated", ErrorCodes::LOGICAL_ERROR);
 
     size_t rows = block.rows();
     for (size_t i = 1; i < rows; ++i)
-        check(block_columns, i - 1, block_columns, i);
+        if (!less(block_columns, i - 1, block_columns, i))
+            throw Exception("Sort order of blocks violated", ErrorCodes::LOGICAL_ERROR);
 
     last_row.clear();
     for (size_t i = 0; i < block.columns(); ++i)

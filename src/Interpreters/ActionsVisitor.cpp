@@ -32,7 +32,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -472,7 +471,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }
-        else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
+        else if (identifier && node.name == "joinGet" && arg == 0)
         {
             auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
             table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
@@ -481,7 +480,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                data.getUniqueName("__" + node.name));
+                data.getUniqueName("__joinGet"));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
@@ -671,7 +670,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (identifier)
         {
             auto table_id = data.context.resolveStorageID(right_in_operand);
-            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.context);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
             if (table)
             {
@@ -707,7 +706,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
 
             /** Why is LazyBlockInputStream used?
               *
