@@ -118,7 +118,7 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what)
+std::ostream & operator<<(std::ostream & stream, const TreeRewriterResult & what)
 {
     stream << "SyntaxAnalyzerResult{";
     stream << "storage=" << what.storage << "; ";

@@ -329,9 +329,11 @@ void DiskAccessStorage::initialize(const String & directory_path_, Notifications
         throw Exception("Storage " + getStorageName() + " already initialized with another directory", ErrorCodes::LOGICAL_ERROR);
     }
 
-    std::filesystem::create_directories(canonical_directory_path);
-    if (!std::filesystem::exists(canonical_directory_path) || !std::filesystem::is_directory(canonical_directory_path))
-        throw Exception("Couldn't create directory " + canonical_directory_path.string(), ErrorCodes::DIRECTORY_DOESNT_EXIST);
+    std::error_code create_dir_error_code;
+    std::filesystem::create_directories(canonical_directory_path, create_dir_error_code);
+
+    if (!std::filesystem::exists(canonical_directory_path) || !std::filesystem::is_directory(canonical_directory_path) || create_dir_error_code)
+        throw Exception("Couldn't create directory " + canonical_directory_path.string() + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     directory_path = canonical_directory_path;
     initialized = true;

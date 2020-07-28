@@ -15,7 +15,7 @@ FROM <left_table>
 
 ## Поддерживаемые типы соединения {#select-join-types}
 
-Весе типы из стандартого [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) поддерживаются:
+Все типы из стандартого [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) поддерживаются:
 
 -   `INNER JOIN`, возвращаются только совпадающие строки.
 -   `LEFT OUTER JOIN`, не совпадающие строки из левой таблицы возвращаются в дополнение к совпадающим строкам.
