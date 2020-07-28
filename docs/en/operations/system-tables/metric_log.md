@@ -50,6 +50,6 @@ CurrentMetric_ReplicatedChecks:                             0
 **See also**
 
 -   [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
--   [system.events](../../operations/system-tables/events.md) — Contains a number of events that occurred.
+-   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
 -   [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
