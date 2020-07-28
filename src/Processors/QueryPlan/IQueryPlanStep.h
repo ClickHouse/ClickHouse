@@ -37,8 +37,8 @@ public:
     };
 
     /// It is not guaranteed that header has columns from sort_description.
-    SortDescription sort_description;
-    SortMode sort_mode;
+    SortDescription sort_description = {};
+    SortMode sort_mode = SortMode::Chunk;
 
     /// Things which may be added:
     /// * limit
