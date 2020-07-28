@@ -6,7 +6,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <common/types.h>
+#include <common/Types.h>
 
 
 namespace detail

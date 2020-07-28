@@ -19,7 +19,7 @@ class FunctionIfNull : public IFunction
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(const Context & context_) : context(context_) {}
+    FunctionIfNull(const Context & context_) : context(context_) {}
 
     static FunctionPtr create(const Context & context)
     {
@@ -47,7 +47,7 @@ public:
         return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Always null.
         if (block.getByPosition(arguments[0]).type->onlyNull())

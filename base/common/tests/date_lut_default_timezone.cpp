@@ -2,7 +2,7 @@
 #include <common/DateLUT.h>
 #include <Poco/Exception.h>
 
-int main(int, char **)
+int main(int argc, char ** argv)
 {
     try
     {

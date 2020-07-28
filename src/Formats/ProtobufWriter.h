@@ -3,17 +3,17 @@
 #include <Core/UUID.h>
 #include <Common/UInt128.h>
 #include <common/DayNum.h>
+
+#include "config_formats.h"
+
 #include <memory>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
-
 #if USE_PROTOBUF
-#    include <IO/WriteBufferFromString.h>
-#    include <boost/noncopyable.hpp>
-#    include <Common/PODArray.h>
-#    include "ProtobufColumnMatcher.h"
+
+#include "ProtobufColumnMatcher.h"
+#include <IO/WriteBufferFromString.h>
+#include <boost/noncopyable.hpp>
+#include <Common/PODArray.h>
 
 
 namespace google
@@ -233,8 +233,6 @@ private:
 }
 
 #else
-#    include <common/StringRef.h>
-
 
 namespace DB
 {

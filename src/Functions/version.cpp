@@ -1,11 +1,9 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/config_version.h>
 #include <Core/Field.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
 
 namespace DB
 {
@@ -36,7 +34,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
     }

@@ -38,7 +38,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
 
-class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
+class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
@@ -49,11 +49,15 @@ public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     bool isView() const override { return true; }
-    String getBlocksTableName() const
+    StorageID getSelectTableID() const { return select_table_id; }
+    StorageID getBlocksStorageID() const
     {
-        return getStorageID().table_name + "_blocks";
+        return StorageID("", getStorageID().table_name + "_blocks");
     }
-    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id, global_context); }
+    StoragePtr getParentStorage() const { return global_context.getTable(select_table_id); }
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
@@ -67,8 +71,6 @@ public:
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
-
-    NamesAndTypesList getVirtuals() const override;
 
     bool isTemporary() { return is_temporary; }
 
@@ -118,7 +120,7 @@ public:
     }
 
     void checkTableCanBeDropped() const override;
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
     void startup() override;
     void shutdown() override;
 
@@ -126,7 +128,6 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -166,7 +167,6 @@ public:
         const Context & context);
 
 private:
-    /// TODO move to common struct SelectQueryDescription
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any

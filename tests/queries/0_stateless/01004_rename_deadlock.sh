@@ -55,7 +55,6 @@ timeout $TIMEOUT bash -c thread2 2> /dev/null &
 timeout $TIMEOUT bash -c thread3 2> /dev/null &
 
 wait
-sleep 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE test2"

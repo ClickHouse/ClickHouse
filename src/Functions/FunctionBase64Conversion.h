@@ -1,16 +1,13 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
+#include "config_functions.h"
 #if USE_BASE64
-#    include <Columns/ColumnConst.h>
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/FunctionHelpers.h>
-#    include <Functions/GatherUtils/Algorithms.h>
-#    include <IO/WriteHelpers.h>
-#    include <turbob64.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/GatherUtils/Algorithms.h>
+#include <IO/WriteHelpers.h>
+#include <turbob64.h>
 
 
 namespace DB
@@ -89,7 +86,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());

@@ -27,7 +27,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_column("DROP COLUMN");
     ParserKeyword s_clear_column("CLEAR COLUMN");
     ParserKeyword s_modify_column("MODIFY COLUMN");
-    ParserKeyword s_rename_column("RENAME COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
@@ -63,7 +62,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_freeze("FREEZE");
     ParserKeyword s_partition("PARTITION");
 
-    ParserKeyword s_first("FIRST");
     ParserKeyword s_after("AFTER");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_if_exists("IF EXISTS");
@@ -79,7 +77,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_delete_where("DELETE WHERE");
     ParserKeyword s_update("UPDATE");
     ParserKeyword s_where("WHERE");
-    ParserKeyword s_to("TO");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -116,31 +113,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_col_decl.parse(pos, command->col_decl, expected))
                 return false;
 
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
+            if (s_after.ignore(pos, expected))
             {
                 if (!parser_name.parse(pos, command->column, expected))
                     return false;
             }
 
             command->type = ASTAlterCommand::ADD_COLUMN;
-        }
-        else if (s_rename_column.ignore(pos, expected))
-        {
-            if (s_if_exists.ignore(pos, expected))
-                command->if_exists = true;
-
-            if (!parser_name.parse(pos, command->column, expected))
-                return false;
-
-            if (!s_to.ignore(pos, expected))
-                return false;
-
-            if (!parser_name.parse(pos, command->rename_to, expected))
-                return false;
-
-            command->type = ASTAlterCommand::RENAME_COLUMN;
         }
         else if (s_drop_partition.ignore(pos, expected))
         {
@@ -263,19 +242,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->part = true;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = DataDestinationType::DISK;
+                command->move_destination_type = PartDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = DataDestinationType::VOLUME;
+                command->move_destination_type = PartDestinationType::VOLUME;
             else if (s_to_table.ignore(pos))
             {
                 if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                     return false;
-                command->move_destination_type = DataDestinationType::TABLE;
+                command->move_destination_type = PartDestinationType::TABLE;
             }
             else
                 return false;
 
-            if (command->move_destination_type != DataDestinationType::TABLE)
+            if (command->move_destination_type != PartDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -292,19 +271,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->type = ASTAlterCommand::MOVE_PARTITION;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = DataDestinationType::DISK;
+                command->move_destination_type = PartDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = DataDestinationType::VOLUME;
+                command->move_destination_type = PartDestinationType::VOLUME;
             else if (s_to_table.ignore(pos))
             {
                 if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                     return false;
-                command->move_destination_type = DataDestinationType::TABLE;
+                command->move_destination_type = PartDestinationType::TABLE;
             }
             else
                 return false;
 
-            if (command->move_destination_type != DataDestinationType::TABLE)
+            if (command->move_destination_type != PartDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -432,14 +411,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
                 return false;
 
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
-            {
-                if (!parser_name.parse(pos, command->column, expected))
-                    return false;
-            }
-
             command->type = ASTAlterCommand::MODIFY_COLUMN;
         }
         else if (s_modify_order_by.ignore(pos, expected))
@@ -491,12 +462,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else if (s_materialize_ttl.ignore(pos, expected))
         {
             command->type = ASTAlterCommand::MATERIALIZE_TTL;
-
-            if (s_in_partition.ignore(pos, expected))
-            {
-                if (!parser_partition.parse(pos, command->partition, expected))
-                    return false;
-            }
         }
         else if (s_modify_setting.ignore(pos, expected))
         {

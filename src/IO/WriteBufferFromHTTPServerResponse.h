@@ -13,10 +13,7 @@
 #include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace Poco
@@ -44,7 +41,7 @@ namespace DB
 /// Also this class write and flush special X-ClickHouse-Progress HTTP headers
 ///  if no data was sent at the time of progress notification.
 /// This allows to implement progress bar in HTTP clients.
-class WriteBufferFromHTTPServerResponse final : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     Poco::Net::HTTPServerRequest & request;

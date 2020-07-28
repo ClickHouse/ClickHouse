@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -14,19 +13,20 @@ namespace
 }
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
-    const MergeTreeData::DataPartPtr & data_part_,
+    DiskPtr disk_,
+    const String & part_path_,
+    const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
-           indices_to_recalc_, marks_file_extension_,
-           default_codec_, settings_, index_granularity_)
+    : IMergeTreeDataPartWriter(disk_, part_path_,
+        storage_, columns_list_, indices_to_recalc_,
+        marks_file_extension_, default_codec_, settings_, index_granularity_)
 {
-    const auto & columns = metadata_snapshot->getColumns();
+    const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
         addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), settings.estimated_size);
 }
@@ -39,6 +39,9 @@ void MergeTreeDataPartWriterWide::addStreams(
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
+        if (settings.skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+            return;
+
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
@@ -46,7 +49,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
-            data_part->volume->getDisk(),
+            disk,
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
             effective_codec,
@@ -66,6 +69,8 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     return [&, this] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+        if (is_offsets && settings.skip_offsets)
+            return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -133,6 +138,8 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
      type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+         if (is_offsets && settings.skip_offsets)
+             return;
 
          String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -173,6 +180,8 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+        if (is_offsets && settings.skip_offsets)
+            return;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -265,7 +274,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     next_index_offset = current_row - total_rows;
 }
 
-void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -295,6 +304,8 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     for (auto & stream : column_streams)
     {
         stream.second->finalize();
+        if (sync)
+            stream.second->sync();
         stream.second->addToChecksums(checksums);
     }
 

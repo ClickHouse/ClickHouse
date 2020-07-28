@@ -9,6 +9,7 @@
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
+#include <common/likely.h>
 
 namespace DB
 {
@@ -31,7 +32,6 @@ public:
     struct UpdateInfo
     {
         using UpdateList = std::vector<void *>;
-
         UpdateList * update_list = nullptr;
         void * id = nullptr;
         UInt64 version = 0;

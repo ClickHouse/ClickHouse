@@ -60,6 +60,8 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
         remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
+    context.checkAccess(getRequiredAccessType());
+
     /* Infer external table structure */
     /// Have to const_cast, because bridges store their commands inside context
     BridgeHelperPtr helper = createBridgeHelper(const_cast<Context &>(context), context.getSettingsRef().http_receive_timeout.value, connection_string);

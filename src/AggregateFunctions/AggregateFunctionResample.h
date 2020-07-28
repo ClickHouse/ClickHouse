@@ -173,15 +173,14 @@ public:
     }
 
     void insertResultInto(
-        AggregateDataPtr place,
-        IColumn & to,
-        Arena * arena) const override
+        ConstAggregateDataPtr place,
+        IColumn & to) const override
     {
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+            nested_function->insertResultInto(place + i * size_of_data, col.getData());
 
         col_offsets.getData().push_back(col.getData().size());
     }

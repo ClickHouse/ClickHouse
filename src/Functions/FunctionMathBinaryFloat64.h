@@ -8,16 +8,27 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.
   * Disabled due to license compatibility limitations.
   * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
   * Then rebuild with -DENABLE_VECTORCLASS=1
   */
+
+#if USE_VECTORCLASS
+    #ifdef __clang__
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wshift-negative-value"
+    #endif
+
+    #include <vectorf128.h>
+    #include <vectormath_exp.h>
+
+    #ifdef __clang__
+        #pragma clang diagnostic pop
+    #endif
+#endif
 
 
 namespace DB
@@ -61,7 +72,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg) const
+    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -100,7 +111,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
+    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -172,7 +183,7 @@ private:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnWithTypeAndName & col_left = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & col_right = block.getByPosition(arguments[1]);
@@ -230,6 +241,26 @@ struct BinaryFunctionPlain
     }
 };
 
+#if USE_VECTORCLASS
+
+template <typename Name, Vec2d(Function)(const Vec2d &, const Vec2d &)>
+struct BinaryFunctionVectorized
+{
+    static constexpr auto name = Name::name;
+    static constexpr auto rows_per_iteration = 2;
+
+    template <typename T1, typename T2>
+    static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
+    {
+        const auto result = Function(Vec2d(src_left[0], src_left[1]), Vec2d(src_right[0], src_right[1]));
+        result.store(dst);
+    }
+};
+
+#else
+
 #define BinaryFunctionVectorized BinaryFunctionPlain
+
+#endif
 
 }

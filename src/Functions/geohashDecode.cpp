@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoHash.h>
+#include <Functions/GeoUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnString.h>
@@ -47,7 +47,7 @@ public:
     }
 
     template <typename ColumnTypeEncoded>
-    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column) const
+    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column)
     {
         const auto * encoded = checkAndGetColumn<ColumnTypeEncoded>(encoded_column);
         if (!encoded)
@@ -64,7 +64,7 @@ public:
         for (size_t i = 0; i < count; ++i)
         {
             StringRef encoded_string = encoded->getDataAt(i);
-            geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
+            GeoUtils::geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
         }
 
         MutableColumns result;
@@ -75,7 +75,7 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
         ColumnPtr & res_column = block.getByPosition(result).column;

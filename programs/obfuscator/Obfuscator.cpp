@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
@@ -30,6 +31,7 @@
 #include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
+#include <optional>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
@@ -179,7 +181,7 @@ private:
     UInt64 seed;
 
 public:
-    explicit UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -220,7 +222,7 @@ private:
     UInt64 seed;
 
 public:
-    explicit SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -269,7 +271,7 @@ private:
     Float res_prev_value = 0;
 
 public:
-    explicit FloatModel(UInt64 seed_) : seed(seed_) {}
+    FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -370,7 +372,7 @@ private:
     UInt64 seed;
 
 public:
-    explicit FixedStringModel(UInt64 seed_) : seed(seed_) {}
+    FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -412,7 +414,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -527,13 +529,13 @@ private:
     static constexpr CodePoint END = -2;
 
 
-    static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
+    NGramHash hashContext(const CodePoint * begin, const CodePoint * end) const
     {
         return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
-    static CodePoint readCodePoint(const char *& pos, const char * end)
+    CodePoint readCodePoint(const char *& pos, const char * end)
     {
         size_t length = UTF8::seqLength(*pos);
 
@@ -548,7 +550,7 @@ private:
         return res;
     }
 
-    static bool writeCodePoint(CodePoint code, char *& pos, const char * end)
+    bool writeCodePoint(CodePoint code, char *& pos, const char * end)
     {
         size_t length
             = (code & 0xFF000000) ? 4
@@ -565,7 +567,7 @@ private:
     }
 
 public:
-    explicit MarkovModel(MarkovModelParameters params_)
+    MarkovModel(MarkovModelParameters params_)
         : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
@@ -675,7 +677,7 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = double(histogram.total) / histogram.buckets.size();
+                double average = histogram.total / histogram.buckets.size();
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
@@ -834,7 +836,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    explicit ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
+    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
@@ -856,7 +858,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnArray::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_array.getOffsetsPtr())));
+        return ColumnArray::create((*std::move(new_nested_column)).mutate(), (*std::move(column_array.getOffsetsPtr())).mutate());
     }
 
     void updateSeed() override
@@ -872,7 +874,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    explicit NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
+    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
@@ -894,7 +896,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnNullable::create(IColumn::mutate(std::move(new_nested_column)), IColumn::mutate(std::move(column_nullable.getNullMapColumnPtr())));
+        return ColumnNullable::create((*std::move(new_nested_column)).mutate(), (*std::move(column_nullable.getNullMapColumnPtr())).mutate());
     }
 
     void updateSeed() override
@@ -935,10 +937,10 @@ public:
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
 
-        if (const auto * type = typeid_cast<const DataTypeArray *>(&data_type))
+        if (auto type = typeid_cast<const DataTypeArray *>(&data_type))
             return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        if (const auto * type = typeid_cast<const DataTypeNullable *>(&data_type))
+        if (auto type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
         throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);
@@ -1078,8 +1080,7 @@ try
         header.insert(std::move(column));
     }
 
-    SharedContextHolder shared_context = Context::createShared();
-    Context context = Context::createGlobal(shared_context.get());
+    Context context = Context::createGlobal();
     context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);

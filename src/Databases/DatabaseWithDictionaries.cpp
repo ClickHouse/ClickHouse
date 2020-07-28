@@ -1,23 +1,14 @@
 #include <Databases/DatabaseWithDictionaries.h>
-#include <Common/StatusInfo.h>
-#include <Common/ExternalLoaderStatus.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageDictionary.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Poco/File.h>
-#include <boost/smart_ptr/make_shared_object.hpp>
+#include <ext/scope_guard.h>
 
-
-namespace CurrentStatusInfo
-{
-    extern const Status DictionaryStatus;
-}
 
 namespace DB
 {
@@ -26,82 +17,42 @@ namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int UNKNOWN_DICTIONARY;
+    extern const int UNKNOWN_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
-void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, const DictionaryAttachInfo & attach_info)
+void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, const Context & context)
 {
     String full_name = getDatabaseName() + "." + dictionary_name;
     {
-        std::unique_lock lock(mutex);
-        auto [it, inserted] = dictionaries.emplace(dictionary_name, attach_info);
-        if (!inserted)
+        std::lock_guard lock(mutex);
+        if (!dictionaries.emplace(dictionary_name).second)
             throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
-
-        /// Attach the dictionary as table too.
-        try
-        {
-            attachTableUnlocked(
-                dictionary_name,
-                StorageDictionary::create(
-                    StorageID(getDatabaseName(), dictionary_name),
-                    full_name,
-                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config),
-                    StorageDictionary::Location::SameDatabaseAndNameAsDictionary),
-                lock);
-        }
-        catch (...)
-        {
-            dictionaries.erase(it);
-            throw;
-        }
     }
 
-    CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, full_name, static_cast<Int8>(ExternalLoaderStatus::NOT_LOADED));
-
-    /// We want ExternalLoader::reloadConfig() to find out that the dictionary's config
-    /// has been added and in case `dictionaries_lazy_load == false` to load the dictionary.
-    reloadDictionaryConfig(full_name);
+    /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been added
+    /// and in case `dictionaries_lazy_load == false` it will load the dictionary.
+    const auto & external_loader = context.getExternalDictionariesLoader();
+    external_loader.reloadConfig(getDatabaseName(), full_name);
 }
 
-void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name)
-{
-    DictionaryAttachInfo attach_info;
-    detachDictionaryImpl(dictionary_name, attach_info);
-}
-
-void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info)
+void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name, const Context & context)
 {
     String full_name = getDatabaseName() + "." + dictionary_name;
-
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it == dictionaries.end())
-            throw Exception("Dictionary " + full_name + " doesn't exist.", ErrorCodes::UNKNOWN_DICTIONARY);
-        attach_info = std::move(it->second);
+            throw Exception("Dictionary " + full_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         dictionaries.erase(it);
-
-        /// Detach the dictionary as table too.
-        try
-        {
-            detachTableUnlocked(dictionary_name, lock);
-        }
-        catch (...)
-        {
-            dictionaries.emplace(dictionary_name, std::move(attach_info));
-            throw;
-        }
     }
 
-    CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, full_name);
+    /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been removed
+    /// and therefore it will unload the dictionary.
+    const auto & external_loader = context.getExternalDictionariesLoader();
+    external_loader.reloadConfig(getDatabaseName(), full_name);
 
-    /// We want ExternalLoader::reloadConfig() to find out that the dictionary's config
-    /// has been removed and to unload the dictionary.
-    reloadDictionaryConfig(full_name);
 }
 
 void DatabaseWithDictionaries::createDictionary(const Context & context, const String & dictionary_name, const ASTPtr & query)
@@ -118,17 +69,18 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
 
     /// A race condition would be possible if a dictionary with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-    if (isDictionaryExist(dictionary_name))
+    if (isDictionaryExist(context, dictionary_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
     /// A dictionary with the same full name could be defined in *.xml config files.
     String full_name = getDatabaseName() + "." + dictionary_name;
+    const auto & external_loader = context.getExternalDictionariesLoader();
     if (external_loader.getCurrentStatus(full_name) != ExternalLoader::Status::NOT_EXIST)
         throw Exception(
                 "Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
                 ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(dictionary_name, global_context))
+    if (isTableExist(context, dictionary_name))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
 
@@ -154,8 +106,10 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
 
     /// Add a temporary repository containing the dictionary.
     /// We need this temp repository to try loading the dictionary before actually attaching it to the database.
-    auto temp_repository = external_loader.addConfigRepository(std::make_unique<ExternalLoaderTempConfigRepository>(
-        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>())));
+    auto temp_repository
+        = const_cast<ExternalDictionariesLoader &>(external_loader) /// the change of ExternalDictionariesLoader is temporary
+              .addConfigRepository(std::make_unique<ExternalLoaderTempConfigRepository>(
+                  getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>())));
 
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
@@ -165,11 +119,10 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
         external_loader.load(full_name);
     }
 
-    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>());
-    attachDictionary(dictionary_name, DictionaryAttachInfo{query, config, time(nullptr)});
+    attachDictionary(dictionary_name, context);
     SCOPE_EXIT({
         if (!succeeded)
-            detachDictionary(dictionary_name);
+            detachDictionary(dictionary_name, context);
     });
 
     /// If it was ATTACH query and file with dictionary metadata already exist
@@ -177,153 +130,142 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
 
     /// ExternalDictionariesLoader doesn't know we renamed the metadata path.
-    /// That's why we have to call ExternalLoader::reloadConfig() here.
-    reloadDictionaryConfig(full_name);
+    /// So we have to manually call reloadConfig() here.
+    external_loader.reloadConfig(getDatabaseName(), full_name);
 
     /// Everything's ok.
     succeeded = true;
 }
 
-void DatabaseWithDictionaries::removeDictionary(const Context &, const String & dictionary_name)
+void DatabaseWithDictionaries::removeDictionary(const Context & context, const String & dictionary_name)
 {
-    DictionaryAttachInfo attach_info;
-    detachDictionaryImpl(dictionary_name, attach_info);
+    detachDictionary(dictionary_name, context);
+
+    String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
 
     try
     {
-        String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
         Poco::File(dictionary_metadata_path).remove();
-        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, getDatabaseName() + "." + dictionary_name);
     }
     catch (...)
     {
         /// If remove was not possible for some reason
-        attachDictionary(dictionary_name, attach_info);
+        attachDictionary(dictionary_name, context);
         throw;
     }
 }
 
-DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)
+StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const String & table_name) const
+{
+    if (auto table_ptr = DatabaseWithOwnTablesBase::tryGetTable(context, table_name))
+        return table_ptr;
+
+    if (isDictionaryExist(context, table_name))
+        /// We don't need lock database here, because database doesn't store dictionary itself
+        /// just metadata
+        return getDictionaryStorage(context, table_name);
+
+    return {};
+}
+
+DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(
+    const Context & context, const FilterByNameFunction & filter_by_dictionary_name)
+{
+    /// NOTE: it's not atomic
+    auto tables_it = getTablesIterator(context, filter_by_dictionary_name);
+    auto dictionaries_it = getDictionariesIterator(context, filter_by_dictionary_name);
+
+    Tables result;
+    while (tables_it && tables_it->isValid())
+    {
+        result.emplace(tables_it->name(), tables_it->table());
+        tables_it->next();
+    }
+
+    while (dictionaries_it && dictionaries_it->isValid())
+    {
+        auto table_name = dictionaries_it->name();
+        auto table_ptr = getDictionaryStorage(context, table_name);
+        if (table_ptr)
+            result.emplace(table_name, table_ptr);
+        dictionaries_it->next();
+    }
+
+    return std::make_unique<DatabaseTablesSnapshotIterator>(result);
+}
+
+DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_dictionary_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_dictionary_name)
         return std::make_unique<DatabaseDictionariesSnapshotIterator>(dictionaries);
 
     Dictionaries filtered_dictionaries;
-    for (const auto & dictionary_name : dictionaries | boost::adaptors::map_keys)
+    for (const auto & dictionary_name : dictionaries)
         if (filter_by_dictionary_name(dictionary_name))
-            filtered_dictionaries.emplace_back(dictionary_name);
+            filtered_dictionaries.emplace(dictionary_name);
     return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries));
 }
 
-bool DatabaseWithDictionaries::isDictionaryExist(const String & dictionary_name) const
+bool DatabaseWithDictionaries::isDictionaryExist(const Context & /*context*/, const String & dictionary_name) const
 {
     std::lock_guard lock(mutex);
     return dictionaries.find(dictionary_name) != dictionaries.end();
 }
 
-ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
-        const String & dictionary_name,
-        bool throw_on_error) const
+StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const Context & context, const String & table_name) const
 {
+    auto dict_name = database_name + "." + table_name;
+    const auto & external_loader = context.getExternalDictionariesLoader();
+    auto dict_ptr = external_loader.tryGetDictionary(dict_name);
+    if (dict_ptr)
     {
-        /// Try to get create query ifg for an attached dictionary.
-        std::lock_guard lock{mutex};
-        auto it = dictionaries.find(dictionary_name);
-        if (it != dictionaries.end())
-        {
-            ASTPtr ast = it->second.create_query->clone();
-            auto & create_query = ast->as<ASTCreateQuery &>();
-            create_query.attach = false;
-            create_query.database = getDatabaseName();
-            return ast;
-        }
+        const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
+        auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
+        return StorageDictionary::create(StorageID(database_name, table_name), ColumnsDescription{columns}, context, true, dict_name);
     }
-
-    /// Try to get create query for non-attached dictionary.
-    ASTPtr ast;
-    try
-    {
-        auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-        ast = getCreateQueryFromMetadata(dictionary_metadata_path, throw_on_error);
-    }
-    catch (const Exception & e)
-    {
-        if (throw_on_error && (e.code() != ErrorCodes::FILE_DOESNT_EXIST))
-            throw;
-    }
-
-    if (ast)
-    {
-        const auto * create_query = ast->as<const ASTCreateQuery>();
-        if (create_query && create_query->is_dictionary)
-            return ast;
-    }
-    if (throw_on_error)
-        throw Exception{"Dictionary " + backQuote(dictionary_name) + " doesn't exist",
-                        ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY};
     return nullptr;
 }
 
-Poco::AutoPtr<Poco::Util::AbstractConfiguration> DatabaseWithDictionaries::getDictionaryConfiguration(const String & dictionary_name) const
+ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
+        const Context & context,
+        const String & dictionary_name,
+        bool throw_on_error) const
 {
-    std::lock_guard lock(mutex);
-    auto it = dictionaries.find(dictionary_name);
-    if (it != dictionaries.end())
-        return it->second.config;
-    throw Exception("Dictionary " + backQuote(dictionary_name) + " doesn't exist", ErrorCodes::UNKNOWN_DICTIONARY);
-}
+    ASTPtr ast;
 
-time_t DatabaseWithDictionaries::getObjectMetadataModificationTime(const String & object_name) const
-{
+    auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
+    ast = getCreateQueryFromMetadata(context, dictionary_metadata_path, throw_on_error);
+    if (!ast && throw_on_error)
     {
-        std::lock_guard lock(mutex);
-        auto it = dictionaries.find(object_name);
-        if (it != dictionaries.end())
-            return it->second.modification_time;
+        /// Handle system.* tables for which there are no table.sql files.
+        bool has_dictionary = isDictionaryExist(context, dictionary_name);
+
+        auto msg = has_dictionary ? "There is no CREATE DICTIONARY query for table " : "There is no metadata file for dictionary ";
+
+        throw Exception(msg + backQuote(dictionary_name), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
     }
-    return DatabaseOnDisk::getObjectMetadataModificationTime(object_name);
+
+    return ast;
 }
-
-
-bool DatabaseWithDictionaries::empty() const
-{
-    std::lock_guard lock{mutex};
-    return tables.empty() && dictionaries.empty();
-}
-
-void DatabaseWithDictionaries::reloadDictionaryConfig(const String & full_name)
-{
-    /// Ensure that this database is attached to ExternalLoader as a config repository.
-    if (!database_as_config_repo_for_external_loader.load())
-        database_as_config_repo_for_external_loader = boost::make_shared<ext::scope_guard>(
-            external_loader.addConfigRepository(std::make_unique<ExternalLoaderDatabaseConfigRepository>(*this)));
-
-    external_loader.reloadConfig(getDatabaseName(), full_name);
-}
-
 
 void DatabaseWithDictionaries::shutdown()
 {
-    {
-        std::lock_guard lock(mutex);
-        dictionaries.clear();
-    }
-
-    /// Invoke removing the database from ExternalLoader.
-    database_as_config_repo_for_external_loader = nullptr;
-
+    detachFromExternalDictionariesLoader();
     DatabaseOnDisk::shutdown();
 }
 
+DatabaseWithDictionaries::~DatabaseWithDictionaries() = default;
 
-DatabaseWithDictionaries::DatabaseWithDictionaries(
-    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
-    : DatabaseOnDisk(name, metadata_path_, data_path_, logger, context)
-    , external_loader(context.getExternalDictionariesLoader())
+void DatabaseWithDictionaries::attachToExternalDictionariesLoader(Context & context)
 {
+    database_as_config_repo_for_external_loader = context.getExternalDictionariesLoader().addConfigRepository(
+        std::make_unique<ExternalLoaderDatabaseConfigRepository>(*this, context));
 }
 
-DatabaseWithDictionaries::~DatabaseWithDictionaries() = default;
+void DatabaseWithDictionaries::detachFromExternalDictionariesLoader()
+{
+    database_as_config_repo_for_external_loader = {};
+}
 
 }
