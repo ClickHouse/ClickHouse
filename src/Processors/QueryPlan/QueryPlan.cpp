@@ -153,8 +153,8 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
             bool limit_max_threads = frame.pipelines.empty();
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines));
 
-            if (limit_max_threads)
-                last_pipeline->setMaxThreads(max_threads);
+            if (limit_max_threads && max_threads)
+                last_pipeline->limitMaxThreads(max_threads);
 
             stack.pop();
         }
