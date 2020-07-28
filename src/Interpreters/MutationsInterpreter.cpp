@@ -764,4 +764,23 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     return sort_description;
 }
 
+bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
+{
+    /// is subset
+    for (const auto & storage_column : storage_columns)
+        if (!output_columns.count(storage_column))
+            return false;
+
+    return true;
+}
+
+bool MutationsInterpreter::isAffectingAllColumns() const
+{
+    auto storage_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    if (stages.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
+
+    return stages.back().isAffectingAllColumns(storage_columns);
+}
+
 }
