@@ -99,6 +99,9 @@
     "docker/test/integration/resolver": {
         "name": "yandex/clickhouse-python-bottle",
         "dependent": []
+    },
+    "docker/test/integration/helper_container": {
+        "name": "yandex/clickhouse-integration-helper",
+        "dependent": []
     }
-
 }
