@@ -3,7 +3,7 @@ toc_priority: 37
 toc_title: SYSTEM
 ---
 
-# SYSTEM Statements {#query-language-system}
+# SYSTEM Queries {#query-language-system}
 
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
@@ -12,7 +12,6 @@ toc_title: SYSTEM
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
 -   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
--   [DROP REPLICA](#query_language-system-drop-replica)
 -   [FLUSH LOGS](#query_language-system-flush_logs)
 -   [RELOAD CONFIG](#query_language-system-reload-config)
 -   [SHUTDOWN](#query_language-system-shutdown)
@@ -68,24 +67,6 @@ For more convenient (automatic) cache management, see disable\_internal\_dns\_ca
 
 Resets the mark cache. Used in development of ClickHouse and performance tests.
 
-## DROP REPLICA {#query_language-system-drop-replica}
-
-Dead replicas can be dropped using following syntax:
-
-``` sql
-SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
-SYSTEM DROP REPLICA 'replica_name' FROM DATABASE database;
-SYSTEM DROP REPLICA 'replica_name';
-SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
-```
-
-Queries will remove the replica path in ZooKeeper. It’s useful when replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it can’t drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
-
-The first one removes metadata of `'replica_name'` replica of `database.table` table.
-The second one does the same for all replicated tables in the database.
-The third one does the same for all replicated tables on local server.
-The forth one is useful to remove metadata of dead replica when all other replicas of a table were dropped. It requires the table path to be specified explicitly. It must be the same path as was passed to the first argument of `ReplicatedMergeTree` engine on table creation.
-
 ## DROP UNCOMPRESSED CACHE {#query_language-system-drop-uncompressed-cache}
 
 Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
@@ -115,7 +96,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables {#query-language-system-distributed}
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the [insert_distributed_sync](../../operations/settings/settings.md#insert_distributed_sync) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the `insert_distributed_sync` setting.
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 

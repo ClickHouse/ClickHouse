@@ -566,7 +566,7 @@ private:
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
-    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
+    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -595,7 +595,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped) const
+    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -621,7 +621,7 @@ private:
     }
 
     template <typename T0>
-    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
+    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
@@ -667,7 +667,7 @@ private:
         return false;
     }
 
-    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
+    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         TypeIndex left_number = col_left.type->getTypeId();
         TypeIndex right_number = col_right.type->getTypeId();
@@ -690,7 +690,7 @@ private:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
+    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -816,7 +816,7 @@ private:
 
     bool executeWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
+        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count)
     {
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
@@ -860,7 +860,7 @@ private:
     }
 
     void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
-                          size_t input_rows_count) const
+                          size_t input_rows_count)
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -917,7 +917,7 @@ private:
 
     void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                               const ColumnsWithTypeAndName & y, size_t tuple_size,
-                              size_t input_rows_count) const;
+                              size_t input_rows_count);
 
     void executeTupleEqualityImpl(
         std::shared_ptr<IFunctionOverloadResolver> func_compare,
@@ -927,7 +927,7 @@ private:
         const ColumnsWithTypeAndName & x,
         const ColumnsWithTypeAndName & y,
         size_t tuple_size,
-        size_t input_rows_count) const
+        size_t input_rows_count)
     {
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
@@ -979,7 +979,7 @@ private:
         const ColumnsWithTypeAndName & x,
         const ColumnsWithTypeAndName & y,
         size_t tuple_size,
-        size_t input_rows_count) const
+        size_t input_rows_count)
     {
         Block tmp_block;
 
@@ -1051,7 +1051,7 @@ private:
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
     }
 
-    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
+    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
@@ -1079,7 +1079,7 @@ private:
         }
     }
 
-    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
+    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
     {
         DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
 
@@ -1109,7 +1109,7 @@ public:
         bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
         bool has_date = left.isDate() || right.isDate();
 
-        if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
+        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
@@ -1153,7 +1153,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);

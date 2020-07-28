@@ -35,8 +35,6 @@ public:
 
     String getName() const override { return "Converting"; }
 
-    const ColumnNumbers & getConversion() const { return conversion; }
-
 protected:
     void transform(Chunk & chunk) override;
 

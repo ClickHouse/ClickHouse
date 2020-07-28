@@ -1,8 +1,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <cassert>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -35,7 +33,6 @@ namespace ErrorCodes
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
-    extern const int CANNOT_FSTAT;
 }
 
 
@@ -131,16 +128,6 @@ void WriteBufferFromFileDescriptor::truncate(off_t length)
     int res = ftruncate(fd, length);
     if (-1 == res)
         throwFromErrnoWithPath("Cannot truncate file " + getFileName(), getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
-}
-
-
-off_t WriteBufferFromFileDescriptor::size()
-{
-    struct stat buf;
-    int res = fstat(fd, &buf);
-    if (-1 == res)
-        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
-    return buf.st_size;
 }
 
 }

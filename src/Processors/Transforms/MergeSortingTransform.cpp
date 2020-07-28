@@ -231,8 +231,9 @@ void MergeSortingTransform::generate()
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
             LOG_INFO(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
 
-            processors.emplace_back(std::make_shared<MergeSorterSource>(
-                    header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
+            if (!chunks.empty())
+                processors.emplace_back(std::make_shared<MergeSorterSource>(
+                        header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
         }
 
         generated_prefix = true;

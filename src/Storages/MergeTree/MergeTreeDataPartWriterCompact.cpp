@@ -3,16 +3,17 @@
 
 namespace DB
 {
+
+
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
-    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
+    : IMergeTreeDataPartWriter(data_part_, columns_list_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
 {

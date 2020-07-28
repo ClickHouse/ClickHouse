@@ -18,7 +18,6 @@ SRCS(
     ActionsVisitor.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
-    AggregateDescription.cpp
     Aggregator.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArithmeticOperationsInAgrFuncOptimize.h
@@ -60,7 +59,6 @@ SRCS(
     HashJoin.cpp
     IdentifierSemantic.cpp
     IExternalLoadable.cpp
-    RemoveInjectiveFunctionsVisitor.cpp
     InJoinSubqueriesPreprocessor.cpp
     inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp
@@ -134,6 +132,7 @@ SRCS(
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
+    SyntaxAnalyzer.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -141,8 +140,6 @@ SRCS(
     ThreadStatusExt.cpp
     TraceLog.cpp
     TranslateQualifiedNamesVisitor.cpp
-    TreeOptimizer.cpp
-    TreeRewriter.cpp
 )
 
 END()

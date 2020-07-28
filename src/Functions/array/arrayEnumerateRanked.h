@@ -115,7 +115,7 @@ public:
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -125,7 +125,7 @@ private:
         const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
         const ArraysDepths & arrays_depths,
-        ColumnUInt32::Container & res_values) const;
+        ColumnUInt32::Container & res_values);
 };
 
 
@@ -149,7 +149,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
@@ -302,7 +302,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
     const ArraysDepths & arrays_depths,
-    ColumnUInt32::Container & res_values) const
+    ColumnUInt32::Container & res_values)
 {
     /// Offsets at the depth we want to look.
     const size_t depth_to_look = arrays_depths.max_array_depth;

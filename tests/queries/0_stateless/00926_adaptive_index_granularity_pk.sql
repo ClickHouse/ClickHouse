@@ -1,4 +1,4 @@
-SET send_logs_level = 'fatal';
+SET send_logs_level = 'none';
 SELECT '----00489----';
 DROP TABLE IF EXISTS pk;
 

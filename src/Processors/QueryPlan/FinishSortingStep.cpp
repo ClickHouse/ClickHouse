@@ -4,7 +4,6 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -13,9 +12,7 @@ static ITransformingStep::DataStreamTraits getTraits()
 {
     return ITransformingStep::DataStreamTraits
     {
-            .preserves_distinct_columns = true,
-            .returns_single_stream = true,
-            .preserves_number_of_streams = false,
+            .preserves_distinct_columns = true
     };
 }
 
@@ -31,6 +28,9 @@ FinishSortingStep::FinishSortingStep(
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
+    /// Streams are merged together, only global distinct keys remain distinct.
+    /// Note: we can not clear it if know that there will be only one stream in pipeline. Should we add info about it?
+    output_stream->local_distinct_columns.clear();
 }
 
 void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
@@ -67,22 +67,6 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
                 header, prefix_description, result_description, max_block_size, limit);
         });
     }
-}
-
-void FinishSortingStep::describeActions(FormatSettings & settings) const
-{
-    String prefix(settings.offset, ' ');
-
-    settings.out << prefix << "Prefix sort description: ";
-    dumpSortDescription(prefix_description, input_streams.front().header, settings.out);
-    settings.out << '\n';
-
-    settings.out << prefix << "Result sort description: ";
-    dumpSortDescription(result_description, input_streams.front().header, settings.out);
-    settings.out << '\n';
-
-    if (limit)
-        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

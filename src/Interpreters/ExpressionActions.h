@@ -139,8 +139,13 @@ private:
     void executeOnTotals(Block & block) const;
 
     /// Executes action on block (modify it). Block could be splitted in case of JOIN. Then not_processed block is created.
-    void execute(Block & block, ExtraBlockPtr & not_processed) const;
-    void execute(Block & block, bool dry_run) const;
+    void execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const;
+
+    void execute(Block & block, bool dry_run) const
+    {
+        ExtraBlockPtr extra;
+        execute(block, dry_run, extra);
+    }
 };
 
 
@@ -206,8 +211,8 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
-    /// Execute the expression on the block with continuation. This method in only supported for single JOIN.
-    void execute(Block & block, ExtraBlockPtr & not_processed) const;
+    /// Execute the expression on the block with continuation.
+    void execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const;
 
     bool hasJoinOrArrayJoin() const;
 
@@ -320,14 +325,10 @@ struct ExpressionActionsChain
         steps.clear();
     }
 
-    ExpressionActionsPtr getLastActions(bool allow_empty = false)
+    ExpressionActionsPtr getLastActions()
     {
         if (steps.empty())
-        {
-            if (allow_empty)
-                return {};
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
-        }
 
         return steps.back().actions;
     }
@@ -337,13 +338,6 @@ struct ExpressionActionsChain
         if (steps.empty())
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-        return steps.back();
-    }
-
-    Step & lastStep(const NamesAndTypesList & columns)
-    {
-        if (steps.empty())
-            steps.emplace_back(std::make_shared<ExpressionActions>(columns, context));
         return steps.back();
     }
 

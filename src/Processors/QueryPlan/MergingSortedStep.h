@@ -7,7 +7,6 @@
 namespace DB
 {
 
-/// Merge streams of data into single sorted stream.
 class MergingSortedStep : public ITransformingStep
 {
 public:
@@ -20,8 +19,6 @@ public:
     String getName() const override { return "MergingSorted"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
-
-    void describeActions(FormatSettings & settings) const override;
 
 private:
     SortDescription sort_description;

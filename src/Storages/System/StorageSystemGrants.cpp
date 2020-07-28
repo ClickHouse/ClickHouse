@@ -8,7 +8,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessRightsElement.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
@@ -18,7 +17,7 @@
 namespace DB
 {
 using EntityType = IAccessEntity::Type;
-using Kind = AccessRightsElementWithOptions::Kind;
+
 
 NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 {
@@ -64,7 +63,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
                        const String * database,
                        const String * table,
                        const String * column,
-                       Kind kind,
+                       bool is_partial_revoke,
                        bool grant_option)
     {
         if (grantee_type == EntityType::USER)
@@ -119,13 +118,15 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
             column_column_null_map.push_back(true);
         }
 
-        column_is_partial_revoke.push_back(kind == Kind::REVOKE);
+        column_is_partial_revoke.push_back(is_partial_revoke);
         column_grant_option.push_back(grant_option);
     };
 
     auto add_rows = [&](const String & grantee_name,
                         IAccessEntity::Type grantee_type,
-                        const AccessRightsElementsWithOptions & elements)
+                        const AccessRightsElements & elements,
+                        bool is_partial_revoke,
+                        bool grant_option)
     {
         for (const auto & element : elements)
         {
@@ -139,13 +140,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
             if (element.any_column)
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.kind, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, is_partial_revoke, grant_option);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, database, table, &column, element.kind, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, database, table, &column, is_partial_revoke, grant_option);
             }
         }
     };
@@ -156,7 +157,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
         if (!entity)
             continue;
 
-        const AccessRights * access = nullptr;
+        const GrantedAccess * access = nullptr;
         if (auto role = typeid_cast<RolePtr>(entity))
             access = &role->access;
         else if (auto user = typeid_cast<UserPtr>(entity))
@@ -166,8 +167,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context &
 
         const String & grantee_name = entity->getName();
         const auto grantee_type = entity->getType();
-        auto elements = access->getElements();
-        add_rows(grantee_name, grantee_type, elements);
+        auto grants_and_revokes = access->access.getGrantsAndPartialRevokes();
+        auto grants_and_revokes_with_grant_option = access->access_with_grant_option.getGrantsAndPartialRevokes();
+
+        add_rows(grantee_name, grantee_type, grants_and_revokes.grants, /* is_partial_revoke = */ false, /* grant_option = */ false);
+        add_rows(grantee_name, grantee_type, grants_and_revokes.revokes, /* is_partial_revoke = */ true, /* grant_option = */ false);
+        add_rows(grantee_name, grantee_type, grants_and_revokes_with_grant_option.grants, /* is_partial_revoke = */ false, /* grant_option = */ true);
+        add_rows(grantee_name, grantee_type, grants_and_revokes_with_grant_option.revokes, /* is_partial_revoke = */ true, /* grant_option = */ true);
     }
 }
 
