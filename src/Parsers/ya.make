@@ -21,15 +21,14 @@ SRCS(
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
+    ASTExtendedRoleSet.cpp
     ASTFunction.cpp
     ASTFunctionWithKeyValueArguments.cpp
     ASTGrantQuery.cpp
     ASTIdentifier.cpp
-    ASTIndexDeclaration.cpp
     ASTInsertQuery.cpp
     ASTKillQueryQuery.cpp
     ASTLiteral.cpp
-    ASTNameTypePair.cpp
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp
@@ -38,23 +37,20 @@ SRCS(
     ASTQueryWithOnCluster.cpp
     ASTQueryWithOutput.cpp
     ASTQueryWithTableAndOutput.cpp
-    ASTRolesOrUsersSet.cpp
-    ASTRowPolicyName.cpp
     ASTSampleRatio.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
     ASTSetRoleQuery.cpp
     ASTSettingsProfileElement.cpp
-    ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
-    ASTShowPrivilegesQuery.cpp
+    ASTShowQuotasQuery.cpp
+    ASTShowRowPoliciesQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
     ASTTablesInSelectQuery.cpp
     ASTTTLElement.cpp
-    ASTUserNameWithHost.cpp
     ASTWithAlias.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
@@ -79,11 +75,11 @@ SRCS(
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDescribeTableQuery.cpp
-    ParserDataType.cpp
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
+    ParserExtendedRoleSet.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp
@@ -92,25 +88,22 @@ SRCS(
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
-    ParserRolesOrUsersSet.cpp
-    ParserRowPolicyName.cpp
     ParserSampleRatio.cpp
     ParserSelectQuery.cpp
     ParserSelectWithUnionQuery.cpp
     ParserSetQuery.cpp
     ParserSetRoleQuery.cpp
     ParserSettingsProfileElement.cpp
-    ParserShowAccessEntitiesQuery.cpp
     ParserShowCreateAccessEntityQuery.cpp
     ParserShowGrantsQuery.cpp
-    ParserShowPrivilegesQuery.cpp
+    ParserShowQuotasQuery.cpp
+    ParserShowRowPoliciesQuery.cpp
     ParserShowTablesQuery.cpp
     ParserSystemQuery.cpp
     ParserTablePropertiesQuery.cpp
     ParserTablesInSelectQuery.cpp
     ParserUnionQueryElement.cpp
     ParserUseQuery.cpp
-    ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
     parseUserName.cpp
     queryToString.cpp

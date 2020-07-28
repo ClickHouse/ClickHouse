@@ -38,8 +38,8 @@
 #include <Common/Throttler.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Common/clearPasswordFromCommandLine.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -76,11 +76,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
-#include <Common/UTF8Helpers.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -103,7 +98,6 @@ namespace ErrorCodes
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int DEADLOCK_AVOIDED;
-    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 
@@ -124,7 +118,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool has_received_logs = false;      /// We have received some logs, do not use previous cursor position, to avoid overlaps with logs
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -133,12 +127,7 @@ private:
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
-    String full_query; /// Current query as it was given to the client.
-
-    // Current query as it will be sent to the server. It may differ from the
-    // full query for INSERT queries, for which the data that follows the query
-    // is stripped and sent separately.
-    String query_to_send;
+    String query;                        /// Current query.
 
     String format;                       /// Query results output format.
     bool is_default_format = true;       /// false, if format is set in the config or command line.
@@ -183,10 +172,10 @@ private:
     ASTPtr parsed_query;
 
     /// The last exception that was received from the server. Is used for the return code in batch mode.
-    std::unique_ptr<Exception> last_exception_received_from_server;
+    std::unique_ptr<Exception> last_exception;
 
     /// If the last query resulted in exception.
-    bool received_exception_from_server = false;
+    bool got_exception = false;
     int expected_server_error = 0;
     int expected_client_error = 0;
     int actual_server_error = 0;
@@ -365,79 +354,6 @@ private:
         return false;
     }
 
-#if USE_REPLXX
-    static void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
-    {
-        using namespace replxx;
-
-        static const std::unordered_map<TokenType, Replxx::Color> token_to_color =
-        {
-            { TokenType::Whitespace, Replxx::Color::DEFAULT },
-            { TokenType::Comment, Replxx::Color::GRAY },
-            { TokenType::BareWord, Replxx::Color::DEFAULT },
-            { TokenType::Number, Replxx::Color::GREEN },
-            { TokenType::StringLiteral, Replxx::Color::CYAN },
-            { TokenType::QuotedIdentifier, Replxx::Color::MAGENTA },
-            { TokenType::OpeningRoundBracket, Replxx::Color::BROWN },
-            { TokenType::ClosingRoundBracket, Replxx::Color::BROWN },
-            { TokenType::OpeningSquareBracket, Replxx::Color::BROWN },
-            { TokenType::ClosingSquareBracket, Replxx::Color::BROWN },
-            { TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE },
-            { TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE },
-
-            { TokenType::Comma, Replxx::Color::INTENSE },
-            { TokenType::Semicolon, Replxx::Color::INTENSE },
-            { TokenType::Dot, Replxx::Color::INTENSE },
-            { TokenType::Asterisk, Replxx::Color::INTENSE },
-            { TokenType::Plus, Replxx::Color::INTENSE },
-            { TokenType::Minus, Replxx::Color::INTENSE },
-            { TokenType::Slash, Replxx::Color::INTENSE },
-            { TokenType::Percent, Replxx::Color::INTENSE },
-            { TokenType::Arrow, Replxx::Color::INTENSE },
-            { TokenType::QuestionMark, Replxx::Color::INTENSE },
-            { TokenType::Colon, Replxx::Color::INTENSE },
-            { TokenType::Equals, Replxx::Color::INTENSE },
-            { TokenType::NotEquals, Replxx::Color::INTENSE },
-            { TokenType::Less, Replxx::Color::INTENSE },
-            { TokenType::Greater, Replxx::Color::INTENSE },
-            { TokenType::LessOrEquals, Replxx::Color::INTENSE },
-            { TokenType::GreaterOrEquals, Replxx::Color::INTENSE },
-            { TokenType::Concatenation, Replxx::Color::INTENSE },
-            { TokenType::At, Replxx::Color::INTENSE },
-            { TokenType::DoubleAt, Replxx::Color::MAGENTA },
-
-            { TokenType::EndOfStream, Replxx::Color::DEFAULT },
-
-            { TokenType::Error, Replxx::Color::RED },
-            { TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED },
-            { TokenType::ErrorSinglePipeMark, Replxx::Color::RED },
-            { TokenType::ErrorWrongNumber, Replxx::Color::RED },
-            { TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }
-        };
-
-        const Replxx::Color unknown_token_color = Replxx::Color::RED;
-
-        Lexer lexer(query.data(), query.data() + query.size());
-        size_t pos = 0;
-
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
-            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
-            {
-                if (token_to_color.find(token.type) != token_to_color.end())
-                    colors[pos + code_point_index] = token_to_color.at(token.type);
-                else
-                    colors[pos + code_point_index] = unknown_token_color;
-            }
-
-            pos += utf8_len;
-        }
-    }
-#endif
-
     int mainImpl()
     {
         UseSSL use_ssl;
@@ -481,10 +397,6 @@ private:
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
-
-        ClientInfo & client_info = context.getClientInfo();
-        client_info.setInitialQuery();
-        client_info.quota_key = config().getString("quota_key", "");
 
         connect();
 
@@ -569,7 +481,7 @@ private:
                 history_file = config().getString("history_file");
             else
             {
-                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
                 if (history_file_from_env)
                     history_file = history_file_from_env;
                 else if (!home_path.empty())
@@ -583,18 +495,7 @@ private:
             LineReader::Patterns query_delimiters = {";", "\\G"};
 
 #if USE_REPLXX
-            replxx::Replxx::highlighter_callback_t highlight_callback{};
-            if (config().getBool("highlight"))
-                highlight_callback = highlight;
-
-            ReplxxLineReader lr(
-                Suggest::instance(),
-                history_file,
-                config().has("multiline"),
-                query_extenders,
-                query_delimiters,
-                highlight_callback);
-
+            ReplxxLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
@@ -622,7 +523,7 @@ private:
 
                 try
                 {
-                    if (!processQueryText(input))
+                    if (!process(input))
                         break;
                 }
                 catch (const Exception & e)
@@ -663,8 +564,8 @@ private:
             nonInteractive();
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
-            if (last_exception_received_from_server)
-                return last_exception_received_from_server->code() != 0 ? last_exception_received_from_server->code() : -1;
+            if (last_exception)
+                return last_exception->code() != 0 ? last_exception->code() : -1;
 
             return 0;
         }
@@ -708,7 +609,9 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
+        if (
+            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+            server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -720,19 +623,11 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
-
-            if (client_version_tuple < server_version_tuple)
+            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
+                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
-                    << std::endl << std::endl;
-            }
-            else if (client_version_tuple > server_version_tuple)
-            {
-                std::cout << "ClickHouse server version is older than ClickHouse client. "
-                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -759,163 +654,135 @@ private:
             readStringUntilEOF(text, in);
         }
 
-        processQueryText(text);
+        process(text);
     }
 
-    bool processQueryText(const String & text)
+
+    bool process(const String & text)
     {
         if (exit_strings.end() != exit_strings.find(trim(text, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
             return false;
 
-        if (!config().has("multiquery"))
-        {
-            processTextAsSingleQuery(text);
-            return true;
-        }
-
-        return processMultiQuery(text);
-    }
-
-    bool processMultiQuery(const String & text)
-    {
         const bool test_mode = config().has("testmode");
-
-        {   /// disable logs if expects errors
-            TestHint test_hint(test_mode, text);
-            if (test_hint.clientError() || test_hint.serverError())
-                processTextAsSingleQuery("SET send_logs_level = 'none'");
-        }
-
-        /// Several queries separated by ';'.
-        /// INSERT data is ended by the end of line, not ';'.
-
-        const char * begin = text.data();
-        const char * end = begin + text.size();
-
-        while (begin < end)
+        if (config().has("multiquery"))
         {
-            const char * pos = begin;
-            ASTPtr orig_ast = parseQuery(pos, end, true);
+            {   /// disable logs if expects errors
+                TestHint test_hint(test_mode, text);
+                if (test_hint.clientError() || test_hint.serverError())
+                    process("SET send_logs_level = 'none'");
+            }
 
-            if (!orig_ast)
+            /// Several queries separated by ';'.
+            /// INSERT data is ended by the end of line, not ';'.
+
+            const char * begin = text.data();
+            const char * end = begin + text.size();
+
+            while (begin < end)
             {
-                if (ignore_error)
+                const char * pos = begin;
+                ASTPtr ast = parseQuery(pos, end, true);
+
+                if (!ast)
                 {
-                    Tokens tokens(begin, end);
-                    IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
-                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                        ++token_iterator;
-                    begin = token_iterator->end;
+                    if (ignore_error)
+                    {
+                        Tokens tokens(begin, end);
+                        IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
+                        while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                            ++token_iterator;
+                        begin = token_iterator->end;
 
-                    continue;
+                        continue;
+                    }
+                    return true;
                 }
-                return true;
-            }
 
-            auto * insert = orig_ast->as<ASTInsertQuery>();
+                auto * insert = ast->as<ASTInsertQuery>();
 
-            if (insert && insert->data)
-            {
-                pos = find_first_symbols<'\n'>(insert->data, end);
-                insert->end = pos;
-            }
-
-            String str = text.substr(begin - text.data(), pos - begin);
-
-            begin = pos;
-            while (isWhitespaceASCII(*begin) || *begin == ';')
-                ++begin;
-
-            TestHint test_hint(test_mode, str);
-            expected_client_error = test_hint.clientError();
-            expected_server_error = test_hint.serverError();
-
-            try
-            {
-                auto ast_to_process = orig_ast;
                 if (insert && insert->data)
                 {
-                    ast_to_process = nullptr;
-                    processTextAsSingleQuery(str);
+                    pos = find_first_symbols<'\n'>(insert->data, end);
+                    insert->end = pos;
                 }
-                else
+
+                String str = text.substr(begin - text.data(), pos - begin);
+
+                begin = pos;
+                while (isWhitespaceASCII(*begin) || *begin == ';')
+                    ++begin;
+
+                TestHint test_hint(test_mode, str);
+                expected_client_error = test_hint.clientError();
+                expected_server_error = test_hint.serverError();
+
+                try
                 {
-                    parsed_query = ast_to_process;
-                    full_query = str;
-                    query_to_send = str;
-                    processParsedSingleQuery();
+                    auto ast_to_process = ast;
+                    if (insert && insert->data)
+                        ast_to_process = nullptr;
+
+                    if (!processSingleQuery(str, ast_to_process) && !ignore_error)
+                        return false;
+                }
+                catch (...)
+                {
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                        std::cerr << "Error on processing query: " << str << std::endl << last_exception->message();
+                    got_exception = true;
+                }
+
+                if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
+                    connection->forceConnected(connection_parameters.timeouts);
+
+                if (got_exception && !ignore_error)
+                {
+                    if (is_interactive)
+                        break;
+                    else
+                        return false;
                 }
             }
-            catch (...)
-            {
-                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                actual_client_error = last_exception_received_from_server->code();
-                if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << str << std::endl << last_exception_received_from_server->message();
-                received_exception_from_server = true;
-            }
 
-            if (!test_hint.checkActual(actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
-                connection->forceConnected(connection_parameters.timeouts);
-
-            if (received_exception_from_server && !ignore_error)
-            {
-                if (is_interactive)
-                    break;
-                else
-                    return false;
-            }
-        }
-
-        return true;
-    }
-
-
-    void processTextAsSingleQuery(const String & text_)
-    {
-        full_query = text_;
-
-        /// Some parts of a query (result output and formatting) are executed
-        /// client-side. Thus we need to parse the query.
-        const char * begin = full_query.data();
-        parsed_query = parseQuery(begin, begin + full_query.size(), false);
-
-        if (!parsed_query)
-            return;
-
-        // An INSERT query may have the data that follow query text. Remove the
-        /// Send part of query without data, because data will be sent separately.
-        auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->data)
-        {
-            query_to_send = full_query.substr(0, insert->data - full_query.data());
+            return true;
         }
         else
         {
-            query_to_send = full_query;
+            return processSingleQuery(text);
         }
-
-        processParsedSingleQuery();
     }
 
-    // Parameters are in global variables:
-    // 'parsed_query' -- the query AST,
-    // 'query_to_send' -- the query text that is sent to server,
-    // 'full_query' -- for INSERT queries, contains the query and the data that
-    // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery()
+
+    bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
     {
         resetOutput();
-        received_exception_from_server = false;
+        got_exception = false;
 
         if (echo_queries)
         {
-            writeString(full_query, std_out);
+            writeString(line, std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
 
         watch.restart();
+
+        query = line;
+
+        /// Some parts of a query (result output and formatting) are executed client-side.
+        /// Thus we need to parse the query.
+        parsed_query = parsed_query_;
+        if (!parsed_query)
+        {
+            const char * begin = query.data();
+            parsed_query = parseQuery(begin, begin + query.size(), false);
+        }
+
+        if (!parsed_query)
+            return true;
+
         processed_rows = 0;
         progress.reset();
         show_progress_bar = false;
@@ -942,12 +809,14 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
+
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function) && !insert->watch)
+            if (insert && (!insert->select || input_function))
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -958,7 +827,7 @@ private:
         }
 
         /// Do not change context (current DB, settings) in case of an exception.
-        if (!received_exception_from_server)
+        if (!got_exception)
         {
             if (const auto * set_query = parsed_query->as<ASTSetQuery>())
             {
@@ -996,6 +865,8 @@ private:
         {
             std::cerr << watch.elapsedSeconds() << "\n";
         }
+
+        return true;
     }
 
 
@@ -1017,33 +888,28 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
-        /// Rewrite query only when we have query parameters.
-        /// Note that if query is rewritten, comments in query are lost.
-        /// But the user often wants to see comments in server logs, query log, processlist, etc.
-        if (!query_parameters.empty())
+        /// We will always rewrite query (even if there are no query_parameters) because it will help to find errors in query formatter.
         {
             /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
             ReplaceQueryParameterVisitor visitor(query_parameters);
             visitor.visit(parsed_query);
 
             /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
-            query_to_send = serializeAST(*parsed_query);
+            query = serializeAST(*parsed_query);
         }
 
-        int retries_left = 10;
-        for (;;)
+        static constexpr size_t max_retries = 10;
+        for (size_t retry = 0; retry < max_retries; ++retry)
         {
-            assert(retries_left > 0);
-
             try
             {
                 connection->sendQuery(
                     connection_parameters.timeouts,
-                    query_to_send,
+                    query,
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    &context.getClientInfo(),
+                    nullptr,
                     true);
 
                 sendExternalTables();
@@ -1053,19 +919,11 @@ private:
             }
             catch (const Exception & e)
             {
-                /// Retry when the server said "Client should retry" and no rows
-                /// has been received yet.
-                if (processed_rows == 0
-                    && e.code() == ErrorCodes::DEADLOCK_AVOIDED
-                    && --retries_left)
-                {
-                    std::cerr << "Got a transient error from the server, will"
-                        << " retry (" << retries_left << " retries left)";
-                }
-                else
-                {
-                    throw;
-                }
+                /// Retry when the server said "Client should retry" and no rows has been received yet.
+                if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && retry + 1 < max_retries)
+                    continue;
+
+                throw;
             }
         }
     }
@@ -1074,19 +932,16 @@ private:
     /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
-        const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+        /// Send part of query without data, because data will be sent separately.
+        const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+        String query_without_data = parsed_insert_query.data
+            ? query.substr(0, parsed_insert_query.data - query.data())
+            : query;
+
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query_to_send,
-            query_id,
-            QueryProcessingStage::Complete,
-            &context.getSettingsRef(),
-            &context.getClientInfo(),
-            true);
-
+        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1302,10 +1157,10 @@ private:
                 /// Poll for changes after a cancellation check, otherwise it never reached
                 /// because of progress updates from server.
                 if (connection->poll(poll_interval))
-                    break;
+                  break;
             }
 
-            if (!receiveAndProcessPacket(cancelled))
+            if (!receiveAndProcessPacket())
                 break;
         }
 
@@ -1316,16 +1171,14 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    /// Output of result is suppressed if query was cancelled.
-    bool receiveAndProcessPacket(bool cancelled)
+    bool receiveAndProcessPacket()
     {
         Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                if (!cancelled)
-                    onData(packet.block);
+                onData(packet.block);
                 return true;
 
             case Protocol::Server::Progress:
@@ -1337,18 +1190,16 @@ private:
                 return true;
 
             case Protocol::Server::Totals:
-                if (!cancelled)
-                    onTotals(packet.block);
+                onTotals(packet.block);
                 return true;
 
             case Protocol::Server::Extremes:
-                if (!cancelled)
-                    onExtremes(packet.block);
+                onExtremes(packet.block);
                 return true;
 
             case Protocol::Server::Exception:
-                onReceiveExceptionFromServer(*packet.exception);
-                last_exception_received_from_server = std::move(packet.exception);
+                onException(*packet.exception);
+                last_exception = std::move(packet.exception);
                 return false;
 
             case Protocol::Server::Log:
@@ -1379,8 +1230,8 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
                     return false;
 
                 case Protocol::Server::Log:
@@ -1413,8 +1264,8 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
                     return false;
 
                 case Protocol::Server::Log:
@@ -1435,7 +1286,7 @@ private:
 
         while (packet_type && *packet_type == Protocol::Server::Log)
         {
-            receiveAndProcessPacket(false);
+            receiveAndProcessPacket();
             packet_type = connection->checkPacket();
         }
     }
@@ -1554,7 +1405,6 @@ private:
 
     void onLogData(Block & block)
     {
-        has_received_logs = true;
         initLogsOutputStream();
         logs_out_stream->write(block);
         logs_out_stream->flush();
@@ -1590,7 +1440,7 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        if (!has_received_logs)
+        if (!send_logs)
             std::cerr << "\r" CLEAR_TO_END_OF_LINE;
     }
 
@@ -1616,9 +1466,9 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        const char * indicator = indicators[increment % 8];
+        auto indicator = indicators[increment % 8];
 
-        if (!has_received_logs && written_progress_chars)
+        if (!send_logs && written_progress_chars)
             message << '\r';
 
         size_t prefix_size = message.count();
@@ -1672,7 +1522,7 @@ private:
 
         message << CLEAR_TO_END_OF_LINE;
 
-        if (has_received_logs)
+        if (send_logs)
             message << '\n';
 
         ++increment;
@@ -1697,10 +1547,10 @@ private:
     }
 
 
-    void onReceiveExceptionFromServer(const Exception & e)
+    void onException(const Exception & e)
     {
         resetOutput();
-        received_exception_from_server = true;
+        got_exception = true;
 
         actual_server_error = e.code();
         if (expected_server_error)
@@ -1870,7 +1720,6 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
-            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -1892,7 +1741,6 @@ public:
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
-            ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
@@ -1912,12 +1760,6 @@ public:
 
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
-        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-        // unrecognized_options[0] is "", I don't understand why we need "" as the first argument which unused
-        if (unrecognized_options.size() > 1)
-        {
-            throw Exception("Unrecognized option '" + unrecognized_options[1] + "'", ErrorCodes::UNRECOGNIZED_ARGUMENTS);
-        }
         po::variables_map options;
         po::store(parsed, options);
         po::notify(options);
@@ -2017,8 +1859,6 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
-        if (options.count("quota_key"))
-            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))
@@ -2049,12 +1889,9 @@ public:
             config().setBool("disable_suggestion", true);
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-        if (options.count("highlight"))
-            config().setBool("highlight", options["highlight"].as<bool>());
 
         argsToConfig(common_arguments, config(), 100);
 
-        clearPasswordFromCommandLine(argc, argv);
     }
 };
 
@@ -2074,12 +1911,6 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 1;
-    }
-    catch (const DB::Exception & e)
-    {
-        std::string text = e.displayText();
-        std::cerr << "Code: " << e.code() << ". " << text << std::endl;
         return 1;
     }
     catch (...)

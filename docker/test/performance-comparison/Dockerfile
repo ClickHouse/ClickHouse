@@ -12,8 +12,6 @@ RUN apt-get update \
             g++ \
             gdb \
             git \
-            gnuplot \
-            imagemagick \
             libc6-dbg \
             moreutils \
             ncdu \

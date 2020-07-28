@@ -21,7 +21,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         ("hilite", "add syntax highlight with ANSI terminal escape sequences")
         ("oneline", "format in single line")
         ("quiet,q", "just check syntax, no output on success")
-        ("multiquery,n", "allow multiple queries in the same file")
     ;
 
     boost::program_options::variables_map options;
@@ -39,7 +38,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool hilite = options.count("hilite");
         bool oneline = options.count("oneline");
         bool quiet = options.count("quiet");
-        bool multiple = options.count("multiquery");
 
         if (quiet && (hilite || oneline))
         {
@@ -55,17 +53,13 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         const char * end = pos + query.size();
 
         ParserQuery parser(end);
-        do
+        ASTPtr res = parseQuery(parser, pos, end, "query", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        if (!quiet)
         {
-            ASTPtr res = parseQueryAndMovePosition(parser, pos, end, "query", multiple, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-            if (!quiet)
-            {
-                formatAST(*res, std::cout, hilite, oneline);
-                if (multiple)
-                    std::cout << "\n;\n";
-                std::cout << std::endl;
-            }
-        } while (multiple && pos != end);
+            formatAST(*res, std::cout, hilite, oneline);
+            std::cout << std::endl;
+        }
     }
     catch (...)
     {

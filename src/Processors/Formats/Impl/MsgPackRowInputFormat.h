@@ -37,8 +37,6 @@ public:
 
     void insert_integer(UInt64 value);
 
-    void reset();
-
 private:
     /// Stack is needed to process nested arrays
     std::stack<Info> info_stack;
@@ -51,15 +49,13 @@ public:
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "MagPackRowInputFormat"; }
-    void resetParser() override;
-
 private:
     bool readObject();
 
     PeekableReadBuffer buf;
     MsgPackVisitor visitor;
     msgpack::detail::parse_helper<MsgPackVisitor> parser;
-    const DataTypes data_types;
+    DataTypes data_types;
 };
 
 }

@@ -249,10 +249,6 @@ private:
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-    std::chrono::time_point<std::chrono::system_clock> creation_time;
-
-    std::exception_ptr creation_exception;
-
     Poco::Logger * logger;
 };
 

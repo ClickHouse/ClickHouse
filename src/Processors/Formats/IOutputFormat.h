@@ -70,15 +70,24 @@ public:
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 
+public:
     /// Compatible to IBlockOutputStream interface
 
-    void write(const Block & block);
+    void write(const Block & block) { consume(Chunk(block.getColumns(), block.rows())); }
 
     virtual void doWritePrefix() {}
     virtual void doWriteSuffix() { finalize(); }
 
     void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
     void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
+
+    size_t getResultRows() const { return result_rows; }
+    size_t getResultBytes() const { return result_bytes; }
+
+private:
+    /// Counters for consumed chunks. Are used for QueryLog.
+    size_t result_rows = 0;
+    size_t result_bytes = 0;
 };
 }
 

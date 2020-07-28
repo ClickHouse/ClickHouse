@@ -432,8 +432,7 @@ private:
         const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
         size_t rows = cond_data.size();
 
-        if ((col_then_fixed || col_then_const_fixed)
-            && (col_else_fixed || col_else_const_fixed))
+        if (isFixedString(block.getByPosition(result).type))
         {
             /// The result is FixedString.
 
@@ -448,16 +447,19 @@ private:
             else if (col_then_const_fixed && col_else_fixed)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
             else if (col_then_const_fixed && col_else_const_fixed)
-                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed),
+                            ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+            else
+                return false;
 
             block.getByPosition(result).column = std::move(col_res_untyped);
             return true;
         }
 
-        if ((col_then || col_then_const || col_then_fixed || col_then_const_fixed)
-            && (col_else || col_else_const || col_else_fixed || col_else_const_fixed))
+        if (isString(block.getByPosition(result).type))
         {
             /// The result is String.
+
             auto col_res = ColumnString::create();
             auto sink = StringSink(*col_res, rows);
 
@@ -485,6 +487,17 @@ private:
                 conditional(ConstSource<StringSource>(*col_then_const), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
             else if (col_then_const_fixed && col_else_const)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<StringSource>(*col_else_const), sink, cond_data);
+            else if (col_then_fixed && col_else_fixed)
+                conditional(FixedStringSource(*col_then_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
+            else if (col_then_fixed && col_else_const_fixed)
+                conditional(FixedStringSource(*col_then_fixed), ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+            else if (col_then_const_fixed && col_else_fixed)
+                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), FixedStringSource(*col_else_fixed), sink, cond_data);
+            else if (col_then_const_fixed && col_else_const_fixed)
+                conditional(ConstSource<FixedStringSource>(*col_then_const_fixed),
+                            ConstSource<FixedStringSource>(*col_else_const_fixed), sink, cond_data);
+            else
+                return false;
 
             block.getByPosition(result).column = std::move(col_res);
             return true;
@@ -590,7 +603,8 @@ private:
         return true;
     }
 
-    static void executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    static void executeGeneric(
+        const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
 
@@ -752,12 +766,11 @@ private:
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        auto materialized = materializeColumnIfConst(column);
+        if (isColumnNullable(*column))
+            return column;
 
-        if (isColumnNullable(*materialized))
-            return materialized;
-
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
+        return ColumnNullable::create(
+            materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
     }
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
@@ -876,7 +889,7 @@ private:
                 if (isColumnNullable(*arg_else.column))
                 {
                     auto arg_else_column = arg_else.column;
-                    auto result_column = IColumn::mutate(std::move(arg_else_column));
+                    auto result_column = (*std::move(arg_else_column)).mutate();
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -918,7 +931,7 @@ private:
                 if (isColumnNullable(*arg_then.column))
                 {
                     auto arg_then_column = arg_then.column;
-                    auto result_column = IColumn::mutate(std::move(arg_then_column));
+                    auto result_column = (*std::move(arg_then_column)).mutate();
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }

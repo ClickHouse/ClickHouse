@@ -59,6 +59,8 @@ void IOutputFormat::work()
     switch (current_block_kind)
     {
         case Main:
+            result_rows += current_chunk.getNumRows();
+            result_bytes += current_chunk.allocatedBytes();
             consume(std::move(current_chunk));
             break;
         case Totals:
@@ -78,14 +80,6 @@ void IOutputFormat::work()
 void IOutputFormat::flush()
 {
     out.next();
-}
-
-void IOutputFormat::write(const Block & block)
-{
-    consume(Chunk(block.getColumns(), block.rows()));
-
-    if (auto_flush)
-        flush();
 }
 
 }

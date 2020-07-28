@@ -166,10 +166,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
             auto & first_path = paths[0];
             Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-
-            StorageInMemoryMetadata storage_metadata;
-            storage_metadata.setColumns(ColumnsDescription(header.getNamesAndTypesList()));
-            setInMemoryMetadata(storage_metadata);
+            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
         }
     }
 }
@@ -186,17 +183,22 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage(args.table_id)
+    : IStorage(args.table_id,
+               ColumnsDescription({
+                                      {"_path", std::make_shared<DataTypeString>()},
+                                      {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
     , format_name(args.format_name)
     , compression_method(args.compression_method)
     , base_path(args.context.getPath())
 {
-    StorageInMemoryMetadata storage_metadata;
     if (args.format_name != "Distributed")
-        storage_metadata.setColumns(args.columns);
+        setColumns(args.columns);
 
-    storage_metadata.setConstraints(args.constraints);
-    setInMemoryMetadata(storage_metadata);
+    setConstraints(args.constraints);
 }
 
 class StorageFileSource : public SourceWithProgress
@@ -214,9 +216,9 @@ public:
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
 
-    static Block getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
+    static Block getHeader(StorageFile & storage, bool need_path_column, bool need_file_column)
     {
-        auto header = metadata_snapshot->getSampleBlock();
+        auto header = storage.getSampleBlock();
 
         /// Note: AddingDefaultsBlockInputStream doesn't change header.
 
@@ -230,14 +232,12 @@ public:
 
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
         const Context & context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnDefaults column_defaults_)
-        : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
+        : SourceWithProgress(getHeader(*storage_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
-        , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
         , column_defaults(std::move(column_defaults_))
         , context(context_)
@@ -312,7 +312,7 @@ public:
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
                 reader = FormatFactory::instance().getInput(
-                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
+                        storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
 
                 if (!column_defaults.empty())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
@@ -359,7 +359,6 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
-    StorageMetadataPtr metadata_snapshot;
     FilesInfoPtr files_info;
     String current_path;
     Block sample_block;
@@ -380,7 +379,6 @@ private:
 
 Pipes StorageFile::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -417,7 +415,7 @@ Pipes StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
+            this_ptr, context, max_block_size, files_info, getColumns().getDefaults()));
 
     return pipes;
 }
@@ -426,15 +424,12 @@ Pipes StorageFile::read(
 class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageFileBlockOutputStream(
-        StorageFile & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+    explicit StorageFileBlockOutputStream(StorageFile & storage_,
         const CompressionMethod compression_method,
         const Context & context)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , lock(storage.rwlock)
+        : storage(storage_), lock(storage.rwlock)
     {
+        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
             /** NOTE: Using real file binded to FD may be misleading:
@@ -442,21 +437,25 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 3);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-                compression_method, 3);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
-        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, metadata_snapshot->getSampleBlock(), context);
+        /// In case of CSVWithNames we have already written prefix.
+        if (naked_buffer->size())
+            prefix_written = true;
+
+        write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
+
+        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -465,7 +464,9 @@ public:
 
     void writePrefix() override
     {
-        writer->writePrefix();
+        if (!prefix_written)
+            writer->writePrefix();
+        prefix_written = true;
     }
 
     void writeSuffix() override
@@ -480,21 +481,20 @@ public:
 
 private:
     StorageFile & storage;
-    StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool prefix_written{false};
 };
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const StorageMetadataPtr & metadata_snapshot,
     const Context & context)
 {
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
-    return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
+    return std::make_shared<StorageFileBlockOutputStream>(*this,
         chooseCompressionMethod(paths[0], compression_method), context);
 }
 
@@ -523,11 +523,7 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     renameInMemory(new_table_id);
 }
 
-void StorageFile::truncate(
-    const ASTPtr & /*query*/,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    const Context & /* context */,
-    TableExclusiveLockHolder &)
+void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
 {
     if (paths.size() != 1)
         throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -618,12 +614,5 @@ void registerStorageFile(StorageFactory & factory)
         {
             .source_access_type = AccessType::FILE,
         });
-}
-NamesAndTypesList StorageFile::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
 }
 }

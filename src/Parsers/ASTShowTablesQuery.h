@@ -9,17 +9,14 @@ namespace DB
 {
 
 
-/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS
+/** Query SHOW TABLES or SHOW DATABASES
   */
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
     bool databases{false};
-    bool clusters{false};
-    bool cluster{false};
     bool dictionaries{false};
     bool temporary{false};
-    String cluster_str;
     String from;
     String like;
     bool not_like{false};

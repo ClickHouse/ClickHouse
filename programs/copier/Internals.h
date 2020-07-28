@@ -66,7 +66,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Databases/DatabaseMemory.h>
-#include <Common/StatusFile.h>
 
 #include "Aliases.h"
 
