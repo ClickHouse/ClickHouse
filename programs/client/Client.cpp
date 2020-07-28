@@ -928,14 +928,41 @@ private:
 
         while (this_query_begin < all_queries_end)
         {
-            // Skip leading whitespace and semicolons.
-            if (isWhitespaceASCII(*this_query_begin) || *this_query_begin == ';')
+            // Use the token iterator to skip any whitespace, semicolons and
+            // comments at the beginning of the query. An example from regression
+            // tests:
+            //      insert into table t values ('invalid'); -- { serverError 469 }
+            //      select 1
+            // Here the test hint comment gets parsed as a part of second query.
+            // We parse the `INSERT VALUES` up to the semicolon, and the rest
+            // looks like a two-line query:
+            //      -- { serverError 469 }
+            //      select 1
+            // and we expect it to fail with error 469, but this hint is actually
+            // for the previous query. Test hints should go after the query, so
+            // we can fix this by skipping leading comments. Token iterator skips
+            // comments and whitespace by itself, so we only have to check for
+            // semicolons.
+            // The code block is to limit visibility of `tokens` because we have
+            // another such variable further down the code, and get warnings for
+            // that.
             {
-                ++this_query_begin;
-                continue;
+                Tokens tokens(this_query_begin, all_queries_end);
+                IParser::Pos token_iterator(tokens,
+                    context.getSettingsRef().max_parser_depth);
+                while (token_iterator->type == TokenType::Semicolon
+                        && token_iterator.isValid())
+                {
+                    ++token_iterator;
+                }
+                this_query_begin = token_iterator->begin;
+                if (this_query_begin >= all_queries_end)
+                {
+                    break;
+                }
             }
 
-            // Try to parse query.
+            // Try to parse the query.
             const char * this_query_end = this_query_begin;
             parsed_query = parseQuery(this_query_end, all_queries_end, true);
 
@@ -953,10 +980,6 @@ private:
                 }
                 return true;
             }
-
-            full_query = all_queries_text.substr(
-                this_query_begin - all_queries_text.data(),
-                this_query_end - this_query_begin);
 
             // INSERT queries may have the inserted data in the query text
             // that follow the query itself, e.g. "insert into t format CSV 1;2".
@@ -981,6 +1004,11 @@ private:
                     this_query_begin - all_queries_text.data(),
                     this_query_end - this_query_begin);
             }
+
+            // full_query is the query + inline INSERT data.
+            full_query = all_queries_text.substr(
+                this_query_begin - all_queries_text.data(),
+                this_query_end - this_query_begin);
 
             // Look for the hint in the text of query + insert data, if any.
             // e.g. insert into t format CSV 'a' -- { serverError 123 }.
