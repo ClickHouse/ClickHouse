@@ -19,11 +19,8 @@ set -e
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/clickhouse
-export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-base-config
+export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-config
 export CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH=/clickhouse-odbc-bridge
-
-#backward compatibility with older stables
-ln -s /clickhouse-base-config /clickhouse-config
 
 cd /ClickHouse/tests/integration
 exec "$@"
