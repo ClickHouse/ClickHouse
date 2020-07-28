@@ -48,6 +48,10 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             min_value = Settings::castValueUtil(setting_name, min_value);
         if (!max_value.isNull())
             max_value = Settings::castValueUtil(setting_name, max_value);
+
+        /// Optionally check if a setting with that name is allowed.
+        if (manager)
+            manager->checkSettingNameIsAllowed(setting_name);
     }
 }
 
@@ -149,9 +153,9 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     return res;
 }
 
-SettingsConstraints SettingsProfileElements::toSettingsConstraints() const
+SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControlManager & manager) const
 {
-    SettingsConstraints res;
+    SettingsConstraints res{manager};
     for (const auto & elem : *this)
     {
         if (!elem.setting_name.empty())

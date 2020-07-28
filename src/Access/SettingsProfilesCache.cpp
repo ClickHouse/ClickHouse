@@ -103,6 +103,7 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
     default_profile_id = it->second;
 }
 
+
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
@@ -143,9 +144,10 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
     substituteProfiles(merged_settings);
 
+    auto settings = merged_settings.toSettings();
+    auto constraints = merged_settings.toSettingsConstraints(manager);
     enabled.setSettingsAndConstraints(
-                std::make_shared<Settings>(merged_settings.toSettings()),
-                std::make_shared<SettingsConstraints>(merged_settings.toSettingsConstraints()));
+        std::make_shared<Settings>(std::move(settings)), std::make_shared<SettingsConstraints>(std::move(constraints)));
 }
 
 
