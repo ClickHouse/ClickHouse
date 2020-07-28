@@ -39,9 +39,7 @@ Pipes StorageSystemDisks::read(
     MutableColumnPtr col_total = ColumnUInt64::create();
     MutableColumnPtr col_keep = ColumnUInt64::create();
 
-    const auto & disk_selector = context.getDiskSelector();
-
-    for (const auto & [disk_name, disk_ptr] : disk_selector->getDisksMap())
+    for (const auto & [disk_name, disk_ptr] : context.getDisksMap())
     {
         col_name->insert(disk_name);
         col_path->insert(disk_ptr->getPath());
