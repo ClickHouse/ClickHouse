@@ -464,7 +464,7 @@ struct ArrayIndexStringImpl
 };
 
 /// Catch-all implementation for arrays of arbitrary type.
-/// To compare with a constant value, create a non-constant column with a single element and pass 
+/// To compare with a constant value, create a non-constant column with a single element and pass
 /// #is_value_has_single_element_to_compare = true.
 template <class ConcreteAction, bool is_value_has_single_element_to_compare>
 struct ArrayIndexGenericImpl
@@ -660,37 +660,81 @@ struct ArrayIndexGenericNullImpl
     }
 };
 
-inline DataTypePtr extractType(const DataTypePtr& type)
-{
-    /**
-     * Possible cases for #arg and #array_inner_type:
-     * 1. T
-     * 2. LC(T)
-     * 3. N(T)
-     * 4. LC(N(T))
-     *
-     * The variant N(LC(T)) is considered wrong as the DataTypeLowCardinality::canBeInsideNullable() returns false.
-     *
-     * All other variants are considered wrong (Like N(N(N(T)))).
-     * recursiveRemoveLowCardinality works only if the given type is LC(V).
-     */
-    return
-        removeNullable(                    /// remove outer Nullable, case 3
-            recursiveRemoveLowCardinality( /// remove LC, cases 2 and 4
-                removeNullable(            /// remove inner Nullable, case 4
-                    type)));
-}
-
-/**
- * Check types extracted from Nullable() and LowCardinality()
- */
 inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
 {
-    const DataTypePtr array_extracted = extractType(array_inner_type);
-    const DataTypePtr arg_extracted = extractType(arg);
+    if (allowNested(array_inner_type, arg))
+        return true;
 
-    return ((isNativeNumber(array_extracted) || isEnum(array_extracted)) && isNativeNumber(arg_extracted))
-        || array_extracted->equals(*arg_extracted);
+    /// Nullable
+
+    const bool array_is_nullable = array_inner_type->isNullable();
+    const bool arg_is_nullable = arg->isNullable();
+
+    const DataTypePtr arg_or_arg_nullable_nested = arg_is_nullable
+        ? checkAndGetDataType<DataTypeNullable>(arg.get())->getNestedType()
+        : arg;
+
+    if (array_is_nullable) // comparing Array(Nullable(T)) elem and U
+    {
+        const DataTypePtr array_nullable_nested =
+            checkAndGetDataType<DataTypeNullable>(array_inner_type.get())->getNestedType();
+
+        return allowNested(
+                array_nullable_nested,
+                arg_or_arg_nullable_nested);
+    }
+    else if (arg_is_nullable) // cannot compare Array(T) elem (namely, T) and Nullable(T)
+        return false;
+
+    /// LowCardinality
+
+    const auto * const array_lc_ptr = checkAndGetDataType<DataTypeLowCardinality>(array_inner_type.get());
+    const auto * const arg_lc_ptr = checkAndGetDataType<DataTypeLowCardinality>(arg.get());
+
+    const DataTypePtr array_lc_inner_type = recursiveRemoveLowCardinality(array_inner_type);
+    const DataTypePtr arg_lc_inner_type = recursiveRemoveLowCardinality(arg);
+
+    const bool array_is_lc = nullptr != array_lc_ptr;
+    const bool arg_is_lc = nullptr != arg_lc_ptr;
+
+    const bool array_lc_inner_type_is_nullable = array_is_lc && array_lc_inner_type->isNullable();
+    const bool arg_lc_inner_type_is_nullable = arg_is_lc && arg_lc_inner_type->isNullable();
+
+    if (array_is_lc) // comparing LC(T) and U
+    {
+        const DataTypePtr array_lc_nested_or_lc_nullable_nested = array_lc_inner_type_is_nullable
+            ? checkAndGetDataType<DataTypeNullable>(array_lc_inner_type.get())->getNestedType()
+            : array_lc_inner_type;
+
+        if (arg_is_lc) // comparing LC(T) and LC(U)
+        {
+            const DataTypePtr arg_lc_nested_or_lc_nullable_nested = arg_lc_inner_type_is_nullable
+                ? checkAndGetDataType<DataTypeNullable>(arg_lc_inner_type.get())->getNestedType()
+                : arg_lc_inner_type;
+
+            return allowNested(
+                    array_lc_nested_or_lc_nullable_nested,
+                    arg_lc_nested_or_lc_nullable_nested);
+        }
+        else if (arg_is_nullable) // Comparing LC(T) and Nullable(U)
+        {
+            if (!array_lc_inner_type_is_nullable)
+                return false; // Can't compare Array(LC(U)) elem and Nullable(T);
+
+            return allowNested(
+                    array_lc_nested_or_lc_nullable_nested,
+                    arg_or_arg_nullable_nested);
+        }
+        else // Comparing LC(T) and U (U neither Nullable nor LC)
+            return allowNested(array_lc_nested_or_lc_nullable_nested, arg);
+    }
+
+    return false;
+}
+
+inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
+{
+    return ((isNativeNumber(left) || isEnum(left)) && isNativeNumber(right)) || left->equals(*right);
 }
 
 template <class ConcreteAction, class Name>
@@ -752,8 +796,8 @@ private:
     }
 
     /**
-     * The internal data type of the first argument (target array), if it's integral, like UInt8, may differ from the 
-     * second argument, namely, the @e value, so it's possible to invoke the <tt>has(Array(Int8), UInt64)</tt> e.g. 
+     * The internal data type of the first argument (target array), if it's integral, like UInt8, may differ from the
+     * second argument, namely, the @e value, so it's possible to invoke the <tt>has(Array(Int8), UInt64)</tt> e.g.
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
     template <typename Initial, typename Resulting>
@@ -1161,7 +1205,7 @@ public:
         else
         {
             /**
-             * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new block 
+             * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new block
              * and operate on it. The block structure follows:
              * {0, 1, 2, 3, 4}
              * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
