@@ -196,6 +196,12 @@ if args.report == 'main':
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
 
+    unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
+    error_tests += len(unmarked_short_rows)
+    printSimpleTable('Short queries not marked as short',
+        ['New client time, s', 'Test', '#', 'Query'],
+        unmarked_short_rows)
+
     def print_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
         if not rows:

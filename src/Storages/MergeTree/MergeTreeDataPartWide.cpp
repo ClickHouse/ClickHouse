@@ -229,7 +229,7 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
     return filename;
 }
 
-void MergeTreeDataPartWide::calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
     for (const NameAndTypePair & column : columns)

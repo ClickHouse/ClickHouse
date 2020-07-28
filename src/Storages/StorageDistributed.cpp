@@ -39,7 +39,7 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -185,7 +185,7 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
+    auto syntax_result = TreeRewriter(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
@@ -235,7 +235,7 @@ void replaceConstantExpressions(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot)
 {
-    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage, metadata_snapshot);
+    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, metadata_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
@@ -618,6 +618,26 @@ void StorageDistributed::shutdown()
     std::lock_guard lock(cluster_nodes_mutex);
     cluster_nodes_data.clear();
 }
+void StorageDistributed::drop()
+{
+    // shutdown() should be already called
+    // and by the same reason we cannot use truncate() here, since
+    // cluster_nodes_data already cleaned
+    if (!cluster_nodes_data.empty())
+        throw Exception("drop called before shutdown", ErrorCodes::LOGICAL_ERROR);
+
+    // Distributed table w/o sharding_key does not allows INSERTs
+    if (relative_data_path.empty())
+        return;
+
+    LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
+
+    auto disks = volume->getDisks();
+    for (const auto & disk : disks)
+        disk->removeRecursive(relative_data_path);
+
+    LOG_DEBUG(log, "Removed");
+}
 
 Strings StorageDistributed::getDataPaths() const
 {
@@ -636,11 +656,15 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, co
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
+    LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");
+
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
         it->second.shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const

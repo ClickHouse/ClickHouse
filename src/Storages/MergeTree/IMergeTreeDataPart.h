@@ -37,6 +37,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
+class UncompressedCache;
+
 
 namespace ErrorCodes
 {
@@ -302,15 +304,15 @@ public:
     /// Returns full path to part dir
     String getFullPath() const;
 
-    /// Makes checks and move part to new directory
-    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
-
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix) const;
 
+    /// Makes checks and move part to new directory
+    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
+
     /// Makes clone of a part in detached/ directory via hard links
-    void makeCloneInDetached(const String & prefix) const;
+    virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in detached/ on another disk
     void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
@@ -325,6 +327,8 @@ public:
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
     void calculateColumnsSizesOnDisk();
+
+    String getRelativePathForPrefix(const String & prefix) const;
 
 protected:
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -343,12 +347,14 @@ protected:
 
     void removeIfNeeded();
 
-    virtual void checkConsistency(bool require_part_metadata) const = 0;
+    virtual void checkConsistency(bool require_part_metadata) const;
     void checkConsistencyBase() const;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+
+    String getRelativePathForDetachedPart(const String & prefix) const;
 
 private:
     /// In compact parts order of columns is necessary
@@ -374,15 +380,14 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
-
-    /// Generate unique path to detach part
-    String getRelativePathForDetachedPart(const String & prefix) const;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 
 }

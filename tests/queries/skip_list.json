@@ -55,7 +55,8 @@
         "01200_mutations_memory_consumption",
         "01103_check_cpu_instructions_at_startup",
         "01037_polygon_dicts_",
-        "hyperscan"
+        "hyperscan",
+        "00992_system_parts_race_condition_zookeeper"
     ],
     "unbundled-build": [
         "00429",
@@ -104,7 +105,11 @@
         "00180_attach_materialized_view",
         "00116_storage_set",
         "00816_long_concurrent_alter_column",
-        "00992_system_parts_race_condition_zookeeper"
+        "00992_system_parts_race_condition_zookeeper",
+        "01320_create_sync_race_condition",
+        "01305_replica_create_drop_zookeeper",
+        "01193_metadata_loading",
+        "01130_in_memory_parts_partitons"
     ],
     "polymorphic-parts": [
         "avx",
@@ -126,6 +131,8 @@
         "01055_compact_parts",
         "01039_mergetree_exec_time",
         "00933_ttl_simple",
-        "00753_system_columns_and_system_tables"
+        "00753_system_columns_and_system_tables",
+        "01343_min_bytes_to_use_mmap_io",
+        "01344_min_bytes_to_use_mmap_io_index"
     ]
 }

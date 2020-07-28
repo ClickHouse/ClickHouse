@@ -129,7 +129,7 @@ Default value: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) query and by the [url](../../sql-reference/table-functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create/table.md) query and by the [url](../../sql-reference/table-functions/url.md) table function.
 
 Possible values:
 
@@ -471,7 +471,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
 
 ## temporary\_files\_codec {#temporary_files_codec}
 
@@ -584,6 +584,31 @@ Possible values:
 -   Positive integer.
 
 Default value: 0.
+
+## network_compression_method {#network_compression_method}
+
+Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+
+Possible values:
+
+-   `LZ4` — sets LZ4 compression method.
+-   `ZSTD` — sets ZSTD compression method.
+
+Default value: `LZ4`.
+
+**See Also**
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
+
+Possible values:
+
+-   Positive integer from 1 to 15.
+
+Default value: `1`.
 
 ## log\_queries {#settings-log-queries}
 
@@ -733,8 +758,8 @@ Limits maximum recursion depth in the recursive descent parser. Allows to contro
 
 Possible values:
 
-- Positive integer.
-- 0 — Recursion depth is unlimited.
+-   Positive integer.
+-   0 — Recursion depth is unlimited.
 
 Default value: 1000.
 
@@ -783,6 +808,17 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 50.
 
+## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
+
+The wait time in milliseconds for a connection when the connection pool is full.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 0.
+
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 The maximum number of connection attempts with each replica for the Distributed table engine.
@@ -793,6 +829,21 @@ Default value: 3.
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section “Extreme values”.
+
+## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
+
+The wait time in milliseconds for reading messages from [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) before retry.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 5000.
+
+See also:
+
+-   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -811,6 +862,17 @@ If a query from the same user with the same ‘query\_id’ already exists at th
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+
+## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
+
+The wait time for running query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+
+Possible values:
+
+- Positive integer.
+- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the  same `query_id`.
+
+Default value: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -1397,6 +1459,23 @@ Possible values:
 
 Default value: 16.
 
+## insert_distributed_sync {#insert_distributed_sync}
+
+Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true). 
+
+Possible values:
+
+-   0 — Data is inserted in asynchronous mode.
+-   1 — Data is inserted in synchronous mode.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
+-   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
@@ -1427,20 +1506,20 @@ Possible values:
 
 Default value: 16.
 
-## always_fetch_merged_part {#always_fetch_merged_part}
+## always\_fetch\_merged\_part {#always_fetch_merged_part}
 
-Prohibits data parts merging in [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
+Prohibits data parts merging in [Replicated\*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
 
 When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
 
 Possible values:
 
 -   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
--   1 — `Replicated*MergeTree`-engine tables don't merge data parts at the replica. The tables download merged data parts from other replicas.
+-   1 — `Replicated*MergeTree`-engine tables don’t merge data parts at the replica. The tables download merged data parts from other replicas.
 
 Default value: 0.
 
-**See Also** 
+**See Also**
 
 -   [Data Replication](../../engines/table-engines/mergetree-family/replication.md)
 
@@ -1454,11 +1533,22 @@ Possible values:
 
 Default value: 16.
 
-## transform_null_in {#transform_null_in}
+## validate\_polygons {#validate_polygons}
+
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+
+Possible values:
+
+- 0 — Throwing an exception is disabled. `pointInPolygon` accepts invalid polygons and returns possibly incorrect results for them.
+- 1 — Throwing an exception is enabled.
+
+Default value: 1.
+
+## transform\_null\_in {#transform_null_in}
 
 Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
 
-By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
+By default, `NULL` values can’t be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
 
 Possible values:
 
@@ -1467,11 +1557,11 @@ Possible values:
 
 Default value: 0.
 
-**Example** 
+**Example**
 
 Consider the `null_in` table:
 
-```text
+``` text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -1481,13 +1571,13 @@ Consider the `null_in` table:
 
 Query:
 
-```sql
+``` sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-```text
+``` text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -1495,23 +1585,22 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-```text
+``` text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
 └──────┴───────┘
 ```
 
-**See Also** 
+**See Also**
 
 -   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
-
 
 ## low\_cardinality\_max\_dictionary\_size {#low_cardinality_max_dictionary_size}
 
@@ -1570,9 +1659,9 @@ Possible values:
 
 Default value: 0.
 
-## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
+## min\_insert\_block\_size\_rows\_for\_materialized\_views {#min-insert-block-size-rows-for-materialized-views}
 
-Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1583,11 +1672,11 @@ Default value: 1048576.
 
 **See Also**
 
--   [min_insert_block_size_rows](#min-insert-block-size-rows)
+-   [min\_insert\_block\_size\_rows](#min-insert-block-size-rows)
 
-## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
+## min\_insert\_block\_size\_bytes\_for\_materialized\_views {#min-insert-block-size-bytes-for-materialized-views}
 
-Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1598,6 +1687,26 @@ Default value: 268435456.
 
 **See also**
 
--   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+-   [min\_insert\_block\_size\_bytes](#min-insert-block-size-bytes)
+
+## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
+
+Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
+
+**Example**
+
+``` text
+SET output_format_pretty_grid_charset = 'UTF-8';
+SELECT * FROM a;
+┌─a─┐
+│ 1 │
+└───┘
+
+SET output_format_pretty_grid_charset = 'ASCII';
+SELECT * FROM a;
++-a-+
+| 1 |
++---+
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

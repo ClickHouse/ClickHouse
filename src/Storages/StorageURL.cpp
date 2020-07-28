@@ -131,6 +131,25 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
     writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
 }
 
+
+void StorageURLBlockOutputStream::write(const Block & block)
+{
+    writer->write(block);
+}
+
+void StorageURLBlockOutputStream::writePrefix()
+{
+    writer->writePrefix();
+}
+
+void StorageURLBlockOutputStream::writeSuffix()
+{
+    writer->writeSuffix();
+    writer->flush();
+    write_buf->finalize();
+}
+
+
 std::string IStorageURLBase::getReadMethod() const
 {
     return Poco::Net::HTTPRequest::HTTP_GET;

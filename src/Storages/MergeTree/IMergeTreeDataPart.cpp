@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/localBackup.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <common/JSON.h>
@@ -386,8 +387,6 @@ String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize(const StorageM
 
 String IMergeTreeDataPart::getFullPath() const
 {
-    assertOnDisk();
-
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
@@ -396,8 +395,6 @@ String IMergeTreeDataPart::getFullPath() const
 
 String IMergeTreeDataPart::getFullRelativePath() const
 {
-    assertOnDisk();
-
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
@@ -525,7 +522,18 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         if (require)
             throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        bytes_on_disk = calculateTotalSizeOnDisk(volume->getDisk(), getFullRelativePath());
+        /// If the checksums file is not present, calculate the checksums and write them to disk.
+        /// Check the data while we are at it.
+        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+        checksums = checkDataPart(shared_from_this(), false);
+        {
+            auto out = volume->getDisk()->writeFile(getFullRelativePath() + "checksums.txt.tmp", 4096);
+            checksums.write(*out);
+        }
+
+        volume->getDisk()->moveFile(getFullRelativePath() + "checksums.txt.tmp", getFullRelativePath() + "checksums.txt");
+
+        bytes_on_disk = checksums.getTotalSizeOnDisk();
     }
 }
 
@@ -778,12 +786,8 @@ void IMergeTreeDataPart::remove() const
     }
 }
 
-
-String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
+String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
 {
-    /// Do not allow underscores in the prefix because they are used as separators.
-
-    assert(prefix.find_first_of('_') == String::npos);
     String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
@@ -793,7 +797,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
         */
     for (int try_no = 0; try_no < 10; try_no++)
     {
-        res = "detached/" + (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
+        res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!volume->getDisk()->exists(getFullRelativePath() + res))
             return res;
@@ -804,17 +808,20 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     return res;
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix) const
+String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
-    assertOnDisk();
-    renameTo(getRelativePathForDetachedPart(prefix));
+    /// Do not allow underscores in the prefix because they are used as separators.
+    assert(prefix.find_first_of('_') == String::npos);
+    return "detached/" + getRelativePathForPrefix(prefix);
 }
 
-void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
+void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
-    assertOnDisk();
-    LOG_INFO(storage.log, "Detaching {}", relative_path);
+    renameTo(getRelativePathForDetachedPart(prefix), true);
+}
 
+void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
+{
     String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
 
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
@@ -897,13 +904,18 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     }
 }
 
+void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
+{
+    throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception("Cannot calculate columns sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    calculateEachColumnSizesOnDisk(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size);
 }
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & /* type */) const
@@ -930,6 +942,11 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 bool isWidePart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::WIDE);
+}
+
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
+{
+    return (data_part && data_part->getType() == MergeTreeDataPartType::IN_MEMORY);
 }
 
 }
