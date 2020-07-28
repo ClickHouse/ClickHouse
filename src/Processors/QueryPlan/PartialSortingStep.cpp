@@ -76,6 +76,9 @@ void PartialSortingStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Sort description: ";
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
+
+    if (limit)
+        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }
