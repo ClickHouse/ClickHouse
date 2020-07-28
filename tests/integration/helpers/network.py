@@ -13,7 +13,7 @@ class PartitionManager:
 
     Can act as a context manager:
 
-    with PartitionManager() as pm:
+    with pm as PartitionManager():
         pm.partition_instances(instance1, instance2)
         ...
         # At exit all partitions are removed automatically.

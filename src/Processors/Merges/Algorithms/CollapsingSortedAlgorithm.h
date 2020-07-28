@@ -31,11 +31,10 @@ public:
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,
-        bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_,
         bool use_average_block_sizes,
-        Poco::Logger * log_);
+        Logger * log_);
 
     Status merge() override;
 
@@ -43,7 +42,6 @@ private:
     MergedData merged_data;
 
     const size_t sign_column_number;
-    const bool only_positive_sign;
 
     static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;
@@ -62,7 +60,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
-    Poco::Logger * log;
+    Logger * log;
 
     void reportIncorrectData();
     void insertRow(RowRef & row);

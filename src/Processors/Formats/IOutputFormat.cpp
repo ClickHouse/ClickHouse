@@ -82,13 +82,5 @@ void IOutputFormat::flush()
     out.next();
 }
 
-void IOutputFormat::write(const Block & block)
-{
-    consume(Chunk(block.getColumns(), block.rows()));
-
-    if (auto_flush)
-        flush();
-}
-
 }
 

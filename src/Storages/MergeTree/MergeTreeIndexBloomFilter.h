@@ -12,9 +12,8 @@ class MergeTreeIndexBloomFilter : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(
-        const IndexDescription & index_,
-        size_t bits_per_row_,
-        size_t hash_functions_);
+        const String & name_, const ExpressionActionsPtr & expr_, const Names & columns_, const DataTypes & data_types_,
+        const Block & header_, size_t granularity_, size_t bits_per_row_, size_t hash_functions_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 

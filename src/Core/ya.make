@@ -16,11 +16,9 @@ SRCS(
     Field.cpp
     iostream_debug_helpers.cpp
     MySQLProtocol.cpp
-    PostgreSQLProtocol.cpp
     NamesAndTypes.cpp
     Settings.cpp
     SettingsCollection.cpp
-    SortDescription.cpp
 )
 
 END()

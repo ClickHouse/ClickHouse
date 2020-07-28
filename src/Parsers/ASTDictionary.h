@@ -35,8 +35,8 @@ class ASTDictionaryLayout : public IAST
 public:
     /// flat, cache, hashed, etc.
     String layout_type;
-    /// parameters (size_in_cells, ...)
-    std::vector<KeyValue> parameters;
+    /// optional parameter (size_in_cells)
+    std::optional<KeyValue> parameter;
     /// has brackets after layout type
     bool has_brackets = true;
 

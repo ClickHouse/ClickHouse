@@ -7,8 +7,6 @@
   */
 
 #include <Common/SettingsChanges.h>
-#include <Common/FieldVisitors.h>
-
 
 namespace DB
 {
@@ -93,16 +91,7 @@ Field SettingsCollection<Derived>::const_reference::getValue() const
 template <class Derived>
 Field SettingsCollection<Derived>::valueToCorrespondingType(size_t index, const Field & value)
 {
-    try
-    {
-        return members()[index].value_to_corresponding_type(value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("in attempt to set the value of setting to {}",
-                                 applyVisitor(FieldVisitorToString(), value)));
-        throw;
-    }
+    return members()[index].value_to_corresponding_type(value);
 }
 
 
@@ -216,19 +205,6 @@ SettingsChanges SettingsCollection<Derived>::changes() const
             found_changes.push_back({member.name.toString(), member.get_field(castToDerived())});
     }
     return found_changes;
-}
-
-
-template <class Derived>
-std::string SettingsCollection<Derived>::dumpChangesToString() const
-{
-    std::stringstream ss;
-    for (const auto & c : changes())
-    {
-        ss << c.name << " = "
-            << applyVisitor(FieldVisitorToString(), c.value) << "\n";
-    }
-    return ss.str();
 }
 
 
