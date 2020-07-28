@@ -303,4 +303,27 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
+
+String SettingFieldCustom::toString() const
+{
+    return value.dump();
+}
+
+void SettingFieldCustom::parseFromString(const String & str)
+{
+    *this = Field::restoreFromDump(str);
+}
+
+void SettingFieldCustom::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(toString(), out);
+}
+
+void SettingFieldCustom::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    parseFromString(str);
+}
+
 }

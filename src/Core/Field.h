@@ -95,7 +95,7 @@ template <typename T>
 class DecimalField
 {
 public:
-    DecimalField(T value, UInt32 scale_)
+    DecimalField(T value = 0, UInt32 scale_ = 0)
     :   dec(value),
         scale(scale_)
     {}
@@ -564,6 +564,8 @@ public:
         return f(null);
     }
 
+    String dump() const;
+    static Field restoreFromDump(const std::string_view & dump_);
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -856,6 +858,9 @@ void readBinary(Tuple & x, ReadBuffer & buf);
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
+
+template <typename T>
+void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
 

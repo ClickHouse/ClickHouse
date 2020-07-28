@@ -861,6 +861,13 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
     assertChar('\'', buf);
 }
 
+inline void readQuoted(UUID & x, ReadBuffer & buf)
+{
+    assertChar('\'', buf);
+    readUUIDText(x, buf);
+    assertChar('\'', buf);
+}
+
 
 /// Same as above, but in double quotes.
 template <typename T>

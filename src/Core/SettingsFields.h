@@ -327,4 +327,23 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         msg += "]"; \
         throw Exception(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
     }
+
+
+/// Can keep a value of any type. Used for user-defined settings.
+struct SettingFieldCustom
+{
+    Field value;
+    bool changed = false;
+
+    explicit SettingFieldCustom(const Field & f = {}) : value(f) {}
+    SettingFieldCustom & operator =(const Field & f) { value = f; changed = true; return *this; }
+    explicit operator Field() const { return value; }
+
+    String toString() const;
+    void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+};
+
 }
