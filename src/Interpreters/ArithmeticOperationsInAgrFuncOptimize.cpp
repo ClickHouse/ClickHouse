@@ -318,10 +318,9 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTPtr & current_ast, Dat
 
 bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
-    if (!child)
-        throw Exception("AST item should not have nullptr in children", ErrorCodes::LOGICAL_ERROR);
-
-    return !(node->as<ASTTableExpression>() || node->as<ASTArrayJoin>());
+    return !node->as<ASTSubquery>() &&
+        !node->as<ASTTableExpression>() &&
+        !node->as<ASTArrayJoin>();
 }
 
 }
