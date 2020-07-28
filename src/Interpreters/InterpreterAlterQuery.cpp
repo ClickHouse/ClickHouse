@@ -34,6 +34,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Co
 
 BlockIO InterpreterAlterQuery::execute()
 {
+    BlockIO res;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
     if (!alter.cluster.empty())
@@ -86,7 +87,13 @@ BlockIO InterpreterAlterQuery::execute()
     if (!partition_commands.empty())
     {
         table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
-        table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
+        auto partition_commands_pipes = table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
+        if (!partition_commands_pipes.empty())
+        {
+            QueryPipeline pipeline;
+            pipeline.init(std::move(partition_commands_pipes));
+            res.pipeline = std::move(pipeline);
+        }
     }
 
     if (!live_view_commands.empty())
@@ -113,7 +120,7 @@ BlockIO InterpreterAlterQuery::execute()
         table->alter(alter_commands, context, alter_lock);
     }
 
-    return {};
+    return res;
 }
 
 
