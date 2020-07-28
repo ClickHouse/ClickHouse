@@ -21,6 +21,10 @@ target_sources(${CYRUS_SASL_LIBRARY} PRIVATE
 )
 
 target_include_directories(${CYRUS_SASL_LIBRARY} PUBLIC
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+target_include_directories(${CYRUS_SASL_LIBRARY} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  # for config.h
     ${CYRUS_SASL_SOURCE_DIR}/plugins
     ${CYRUS_SASL_SOURCE_DIR}
@@ -46,6 +50,18 @@ target_compile_definitions(${CYRUS_SASL_LIBRARY} PUBLIC
     CONFIGDIR=""
     OBSOLETE_DIGEST_ATTR=1
     LIBSASL_EXPORTS=1
+)
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/sasl)
+
+file(COPY
+    ${CYRUS_SASL_SOURCE_DIR}/include/sasl.h
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/sasl
+)
+
+file(COPY
+    ${CYRUS_SASL_SOURCE_DIR}/include/prop.h
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(${CYRUS_SASL_LIBRARY}
