@@ -61,7 +61,7 @@ public:
 
     Settings toSettings() const;
     SettingsChanges toSettingsChanges() const;
-    SettingsConstraints toSettingsConstraints() const;
+    SettingsConstraints toSettingsConstraints(const AccessControlManager & manager) const;
 };
 
 }

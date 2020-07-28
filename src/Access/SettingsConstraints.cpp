@@ -1,4 +1,5 @@
 #include <Access/SettingsConstraints.h>
+#include <Access/AccessControlManager.h>
 #include <Core/Settings.h>
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -16,7 +17,11 @@ namespace ErrorCodes
     extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
-SettingsConstraints::SettingsConstraints() = default;
+
+SettingsConstraints::SettingsConstraints(const AccessControlManager & manager_) : manager(&manager_)
+{
+}
+
 SettingsConstraints::SettingsConstraints(const SettingsConstraints & src) = default;
 SettingsConstraints & SettingsConstraints::operator=(const SettingsConstraints & src) = default;
 SettingsConstraints::SettingsConstraints(SettingsConstraints && src) = default;
@@ -191,6 +196,11 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
     };
 
+    if (reaction == THROW_ON_VIOLATION)
+        manager->checkSettingNameIsAllowed(setting_name);
+    else if (!manager->isSettingNameAllowed(setting_name))
+        return false;
+
     Field current_value, new_value;
     if (current_settings.tryGet(setting_name, current_value))
     {
@@ -316,9 +326,8 @@ bool SettingsConstraints::Constraint::operator==(const Constraint & other) const
         && (*setting_name == *other.setting_name);
 }
 
-
 bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right)
 {
-    return left.constraints == right.constraints;
+    return (left.constraints == right.constraints);
 }
 }
