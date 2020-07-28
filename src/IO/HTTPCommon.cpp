@@ -1,5 +1,6 @@
 #include <IO/HTTPCommon.h>
 
+#include <Common/config.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/PoolBase.h>
@@ -8,18 +9,14 @@
 
 #include <Poco/Version.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
-#if USE_SSL
-#    include <Poco/Net/AcceptCertificateHandler.h>
-#    include <Poco/Net/Context.h>
-#    include <Poco/Net/HTTPSClientSession.h>
-#    include <Poco/Net/InvalidCertificateHandler.h>
-#    include <Poco/Net/PrivateKeyPassphraseHandler.h>
-#    include <Poco/Net/RejectCertificateHandler.h>
-#    include <Poco/Net/SSLManager.h>
+#if USE_POCO_NETSSL
+#include <Poco/Net/AcceptCertificateHandler.h>
+#include <Poco/Net/Context.h>
+#include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/InvalidCertificateHandler.h>
+#include <Poco/Net/PrivateKeyPassphraseHandler.h>
+#include <Poco/Net/RejectCertificateHandler.h>
+#include <Poco/Net/SSLManager.h>
 #endif
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -68,12 +65,12 @@ namespace
             throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host=true)
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive)
     {
         HTTPSessionPtr session;
 
         if (https)
-#if USE_SSL
+#if USE_POCO_NETSSL
             session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
@@ -83,10 +80,7 @@ namespace
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
-        if (resolve_host)
-            session->setHost(DNSResolver::instance().resolveHost(host).toString());
-        else
-            session->setHost(host);
+        session->setHost(DNSResolver::instance().resolveHost(host).toString());
         session->setPort(port);
 
         /// doesn't work properly without patch
@@ -170,13 +164,13 @@ namespace
 
             /// We store exception messages in session data.
             /// Poco HTTPSession also stores exception, but it can be removed at any time.
-            const auto & session_data = session->sessionData();
-            if (!session_data.empty())
+            const auto & sessionData = session->sessionData();
+            if (!sessionData.empty())
             {
-                auto msg = Poco::AnyCast<std::string>(session_data);
+                auto msg = Poco::AnyCast<std::string>(sessionData);
                 if (!msg.empty())
                 {
-                    LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
+                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");
                     /// Host can change IP
                     const auto ip = DNSResolver::instance().resolveHost(host).toString();
                     if (ip != session->getHost())
@@ -205,13 +199,13 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host)
+HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
 {
     const std::string & host = uri.getHost();
     UInt16 port = uri.getPort();
     bool https = isHTTPS(uri);
 
-    auto session = makeHTTPSessionImpl(host, port, https, false, resolve_host);
+    auto session = makeHTTPSessionImpl(host, port, https, false);
     setTimeouts(*session, timeouts);
     return session;
 }

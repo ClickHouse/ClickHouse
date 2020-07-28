@@ -17,11 +17,11 @@ namespace ErrorCodes
 }
 
 
-static ColumnPtr castColumnWithDiagnostic(const ColumnWithTypeAndName & src_elem, const ColumnWithTypeAndName & res_elem)
+static ColumnPtr castColumnWithDiagnostic(const ColumnWithTypeAndName & src_elem, const ColumnWithTypeAndName & res_elem, const Context & context)
 {
     try
     {
-        return castColumn(src_elem, res_elem.type);
+        return castColumn(src_elem, res_elem.type, context);
     }
     catch (Exception & e)
     {
@@ -32,10 +32,11 @@ static ColumnPtr castColumnWithDiagnostic(const ColumnWithTypeAndName & src_elem
 
 
 ConvertingBlockInputStream::ConvertingBlockInputStream(
+    const Context & context_,
     const BlockInputStreamPtr & input,
     const Block & result_header,
     MatchColumnsMode mode)
-    : header(result_header), conversion(header.columns())
+    : context(context_), header(result_header), conversion(header.columns())
 {
     children.emplace_back(input);
 
@@ -84,7 +85,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
 
         /// Check conversion by dry run CAST function.
 
-        castColumnWithDiagnostic(src_elem, res_elem);
+        castColumnWithDiagnostic(src_elem, res_elem, context);
     }
 }
 
@@ -106,7 +107,7 @@ Block ConvertingBlockInputStream::readImpl()
         const auto & src_elem = src.getByPosition(conversion[res_pos]);
         auto & res_elem = res.getByPosition(res_pos);
 
-        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem);
+        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
         if (isColumnConst(*src_elem.column) && !isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();

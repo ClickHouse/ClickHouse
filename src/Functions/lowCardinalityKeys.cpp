@@ -30,7 +30,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
+        auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
         if (!type)
             throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got"
                             + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -38,7 +38,7 @@ public:
         return type->getDictionaryType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         auto arg_num = arguments[0];
         const auto & arg = block.getByPosition(arg_num);

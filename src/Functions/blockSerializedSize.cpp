@@ -28,7 +28,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         UInt64 size = 0;
 
@@ -39,7 +39,7 @@ public:
             input_rows_count, size)->convertToFullColumnIfConst();
     }
 
-    static UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem)
+    UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem) const
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 

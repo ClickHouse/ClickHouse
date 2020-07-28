@@ -1,10 +1,10 @@
+#include "config_core.h"
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -14,10 +14,6 @@
 #include <optional>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
 
 
 namespace ProfileEvents
@@ -151,7 +147,7 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join)
 {
     ExpressionAction a;
     a.type = JOIN;
@@ -323,20 +319,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
     }
 }
 
-void ExpressionAction::execute(Block & block, ExtraBlockPtr & not_processed) const
-{
-    switch (type)
-    {
-        case JOIN:
-            join->joinBlock(block, not_processed);
-            break;
 
-        default:
-            throw Exception("Unexpected expression call", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-void ExpressionAction::execute(Block & block, bool dry_run) const
+void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const
 {
     size_t input_rows_count = block.rows();
 
@@ -374,7 +358,10 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
         }
 
         case JOIN:
-            throw Exception("Unexpected JOIN expression call", ErrorCodes::LOGICAL_ERROR);
+        {
+            join->joinBlock(block, not_processed);
+            break;
+        }
 
         case PROJECT:
         {
@@ -514,33 +501,6 @@ std::string ExpressionAction::toString() const
 
     return ss.str();
 }
-
-ExpressionActions::ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
-    : input_columns(input_columns_), settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns)
-        sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
-
-#if USE_EMBEDDED_COMPILER
-compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-/// For constant columns the columns themselves can be contained in `input_columns_`.
-ExpressionActions::ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
-    : settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns_)
-    {
-        input_columns.emplace_back(input_elem.name, input_elem.type);
-        sample_block.insert(input_elem);
-    }
-#if USE_EMBEDDED_COMPILER
-    compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-ExpressionActions::~ExpressionActions() = default;
 
 void ExpressionActions::checkLimits(Block & block) const
 {
@@ -685,22 +645,19 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
-void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed) const
+/// @warning It's a tricky method that allows to continue ONLY ONE action in reason of one-to-many ALL JOIN logic.
+void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const
 {
-    if (actions.size() != 1)
-        throw Exception("Continuation over multiple expressions is not supported", ErrorCodes::LOGICAL_ERROR);
+    size_t i = start_action;
+    start_action = 0;
+    for (; i < actions.size(); ++i)
+    {
+        actions[i].execute(block, false, not_processed);
+        checkLimits(block);
 
-    actions[0].execute(block, not_processed);
-    checkLimits(block);
-}
-
-bool ExpressionActions::hasJoinOrArrayJoin() const
-{
-    for (const auto & action : actions)
-        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
-            return true;
-
-    return false;
+        if (not_processed)
+            start_action = i;
+    }
 }
 
 bool ExpressionActions::hasTotalsInJoin() const
@@ -997,8 +954,8 @@ std::string ExpressionActions::dumpActions() const
 
 void ExpressionActions::optimizeArrayJoin()
 {
-    const size_t none = actions.size();
-    size_t first_array_join = none;
+    const size_t NONE = actions.size();
+    size_t first_array_join = NONE;
 
     /// Columns that need to be evaluated for arrayJoin.
     /// Actions for adding them can not be moved to the left of the arrayJoin.
@@ -1024,7 +981,7 @@ void ExpressionActions::optimizeArrayJoin()
         }
         else
         {
-            if (first_array_join == none)
+            if (first_array_join == NONE)
                 continue;
 
             needed = actions[i].getNeededColumns();
@@ -1041,7 +998,7 @@ void ExpressionActions::optimizeArrayJoin()
 
         if (depends_on_array_join)
         {
-            if (first_array_join == none)
+            if (first_array_join == NONE)
                 first_array_join = i;
 
             if (!actions[i].result_name.empty())
@@ -1091,7 +1048,7 @@ bool ExpressionActions::resultIsAlwaysEmpty() const
 {
     /// Check that has join which returns empty result.
 
-    for (const auto & action : actions)
+    for (auto & action : actions)
     {
         if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
             return true;
@@ -1108,7 +1065,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
-        const auto & action = *it;
+        auto & action = *it;
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
@@ -1124,12 +1081,12 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     if (!set_to_check.empty())
     {
-        for (const auto & action : actions)
+        for (auto & action : actions)
         {
             if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
             {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
+                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
                 {
                     if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;
@@ -1245,7 +1202,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && result_name == other.result_name
         && argument_names == other.argument_names
         && same_array_join
-        && TableJoin::sameJoin(table_join.get(), other.table_join.get())
+        && AnalyzedJoin::sameJoin(table_join.get(), other.table_join.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
 }

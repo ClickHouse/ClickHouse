@@ -3,25 +3,31 @@
 
 namespace DB
 {
+
+
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
-    const MergeTreeData::DataPartPtr & data_part_,
+    DiskPtr disk_,
+    const String & part_path_,
+    const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
-        indices_to_recalc_, marks_file_extension_,
-        default_codec_, settings_, index_granularity_)
+: IMergeTreeDataPartWriter(disk_, part_path_,
+    storage_, columns_list_,
+    indices_to_recalc_, marks_file_extension_,
+    default_codec_, settings_, index_granularity_)
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;
+    if (settings.is_writing_temp_files)
+        data_file_name += DataPart::TEMP_FILE_SUFFIX;
 
     stream = std::make_unique<Stream>(
         data_file_name,
-        data_part->volume->getDisk(),
+        disk_,
         part_path + data_file_name, DataPart::DATA_FILE_EXTENSION,
         part_path + data_file_name, marks_file_extension,
         default_codec,
@@ -141,7 +147,7 @@ void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTy
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
-void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     if (columns_buffer.size() != 0)
         writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
@@ -157,6 +163,8 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     }
 
     stream->finalize();
+    if (sync)
+        stream->sync();
     stream->addToChecksums(checksums);
     stream.reset();
 }

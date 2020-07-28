@@ -39,7 +39,7 @@ public:
         throw Exception("Cannot reinterpret " + type.getName() + " as String because it is not contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    static void executeToString(const IColumn & src, ColumnString & dst)
+    void executeToString(const IColumn & src, ColumnString & dst)
     {
         size_t rows = src.size();
         ColumnString::Chars & data_to = dst.getChars();
@@ -66,7 +66,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn & src = *block.getByPosition(arguments[0]).column;
         MutableColumnPtr dst = block.getByPosition(result).type->createColumn();

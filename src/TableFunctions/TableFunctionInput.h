@@ -1,13 +1,11 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
-class Context;
-
 /* input(structure) - allows to make INSERT SELECT from incoming stream of data
  */
 class TableFunctionInput : public ITableFunction
@@ -18,7 +16,5 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
-    const char * getStorageTypeName() const override { return "Input"; }
 };
-
 }

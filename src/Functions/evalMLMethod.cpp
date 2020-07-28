@@ -35,7 +35,7 @@ public:
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
+    FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override
@@ -65,7 +65,7 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);

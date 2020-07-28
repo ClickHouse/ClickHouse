@@ -1,7 +1,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/ProcessList.h>
-#include <Access/EnabledQuota.h>
+#include <Access/QuotaContext.h>
 
 namespace DB
 {
@@ -10,11 +10,6 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
-}
-
-SourceWithProgress::SourceWithProgress(Block header, bool enable_auto_progress)
-    : ISourceWithProgress(header), auto_progress(enable_auto_progress)
-{
 }
 
 void SourceWithProgress::work()
@@ -29,7 +24,7 @@ void SourceWithProgress::work()
 
         ISourceWithProgress::work();
 
-        if (auto_progress && !was_progress_called && has_input)
+        if (!was_progress_called && has_input)
             progress({ current_chunk.chunk.getNumRows(), current_chunk.chunk.bytes() });
     }
 }

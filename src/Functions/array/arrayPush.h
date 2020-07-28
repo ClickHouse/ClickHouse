@@ -21,8 +21,8 @@ namespace ErrorCodes
 class FunctionArrayPush : public IFunction
 {
 public:
-    FunctionArrayPush(bool push_front_, const char * name_)
-        : push_front(push_front_), name(name_) {}
+    FunctionArrayPush(const Context & context_, bool push_front_, const char * name_)
+        : context(context_), push_front(push_front_), name(name_) {}
 
     String getName() const override { return name; }
 
@@ -46,7 +46,7 @@ public:
         return std::make_shared<DataTypeArray>(getLeastSupertype(types));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & return_type = block.getByPosition(result).type;
 
@@ -62,11 +62,11 @@ public:
         auto appended_column = block.getByPosition(arguments[1]).column;
 
         if (!block.getByPosition(arguments[0]).type->equals(*return_type))
-            array_column = castColumn(block.getByPosition(arguments[0]), return_type);
+            array_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
 
         const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
         if (!block.getByPosition(arguments[1]).type->equals(*return_nested_type))
-            appended_column = castColumn(block.getByPosition(arguments[1]), return_nested_type);
+            appended_column = castColumn(block.getByPosition(arguments[1]), return_nested_type, context);
 
         std::unique_ptr<GatherUtils::IArraySource> array_source;
         std::unique_ptr<GatherUtils::IValueSource> value_source;
@@ -106,6 +106,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
 private:
+    const Context & context;
     bool push_front;
     const char * name;
 };

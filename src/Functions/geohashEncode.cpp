@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoHash.h>
+#include <Functions/GeoUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnString.h>
@@ -56,7 +56,7 @@ public:
     }
 
     template <typename LonType, typename LatType>
-    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result) const
+    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result)
     {
         const ColumnVector<LonType> * longitude = checkAndGetColumn<ColumnVector<LonType>>(lon_column);
         const ColumnVector<LatType> * latitude = checkAndGetColumn<ColumnVector<LatType>>(lat_column);
@@ -80,7 +80,7 @@ public:
             const Float64 longitude_value = longitude->getElement(i);
             const Float64 latitude_value = latitude->getElement(i);
 
-            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
+            const size_t encoded_size = GeoUtils::geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
             pos += encoded_size;
             *pos = '\0';
@@ -97,7 +97,7 @@ public:
 
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn * longitude = block.getByPosition(arguments[0]).column.get();
         const IColumn * latitude = block.getByPosition(arguments[1]).column.get();

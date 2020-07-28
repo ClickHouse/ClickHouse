@@ -10,14 +10,12 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <Core/Defines.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <Common/setThreadName.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-
 
 namespace ProfileEvents
 {
@@ -85,7 +83,7 @@ CacheDictionary::CacheDictionary(
     , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
     , query_wait_timeout_milliseconds(query_wait_timeout_milliseconds_)
     , max_threads_for_updates(max_threads_for_updates_)
-    , log(&Poco::Logger::get("ExternalDictionaries"))
+    , log(&Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
@@ -146,7 +144,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
-    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
+    while (true)
     {
         size_t out_idx = 0;
         size_t parents_idx = 0;
@@ -220,7 +218,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
     std::vector<Key> ancestors(1, child_id);
 
     /// Iteratively find all ancestors for child.
-    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
+    while (true)
     {
         toParent(child, parent);
 
@@ -461,8 +459,8 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
     {
 #define DISPATCH(TYPE) \
     case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
+        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
         bytes_allocated += size * sizeof(TYPE); \
         break;
         DISPATCH(UInt8)
@@ -619,7 +617,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
             const auto str_size = string.size();
             if (str_size != 0)
             {
-                auto * string_ptr = string_arena->alloc(str_size + 1);
+                auto string_ptr = string_arena->alloc(str_size + 1);
                 std::copy(string.data(), string.data() + str_size + 1, string_ptr);
                 string_ref = StringRef{string_ptr, str_size};
             }
@@ -768,7 +766,8 @@ void CacheDictionary::updateThreadFunction()
         const size_t current_queue_size = update_queue.size();
 
         if (current_queue_size > 0)
-            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with {} keys", current_queue_size + 1);
+            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
+                            << current_queue_size + 1 << " keys");
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
@@ -776,7 +775,7 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr current_unit_ptr;
 
-        while (update_request.size() < current_queue_size + 1 && update_queue.tryPop(current_unit_ptr))
+        while (!update_request.empty() && update_queue.tryPop(current_unit_ptr))
             update_request.emplace_back(std::move(current_unit_ptr));
 
         BunchUpdateUnit bunch_update_unit(update_request);
@@ -816,7 +815,7 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
     bool result = is_update_finished.wait_for(
             update_lock,
             std::chrono::milliseconds(timeout_for_wait),
-            [&] { return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
+            [&] {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (!result)
     {
@@ -879,7 +878,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                 if (!block)
                     break;
 
-                const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+                const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
                     throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
 
@@ -920,6 +919,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                     }
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
+
 
                     bunch_update_unit.informCallersAboutPresentId(id, cell_idx);
                     /// mark corresponding id as found

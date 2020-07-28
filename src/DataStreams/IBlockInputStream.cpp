@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Access/EnabledQuota.h>
+#include <Access/QuotaContext.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 
@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
@@ -25,6 +26,10 @@ namespace ErrorCodes
     extern const int TOO_DEEP_PIPELINE;
 }
 
+const SortDescription & IBlockInputStream::getSortDescription() const
+{
+    throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
+}
 
 /// It's safe to access children without mutex as long as these methods are called before first call to `read()` or `readPrefix()`.
 
@@ -69,7 +74,7 @@ Block IBlockInputStream::read()
     }
     else
     {
-        /** If the stream is over, then we will ask all children to abort the execution.
+        /** If the thread is over, then we will ask all children to abort the execution.
           * This makes sense when running a query with LIMIT
           * - there is a situation when all the necessary data has already been read,
           *   but children sources are still working,
@@ -197,7 +202,7 @@ void IBlockInputStream::updateExtremes(Block & block)
 }
 
 
-bool IBlockInputStream::checkTimeLimit() const
+bool IBlockInputStream::checkTimeLimit()
 {
     return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
 }

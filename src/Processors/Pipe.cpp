@@ -104,11 +104,6 @@ Pipe::Pipe(OutputPort * port) : output_port(port)
 {
 }
 
-void Pipe::addProcessors(const Processors & processors_)
-{
-    processors.insert(processors.end(), processors_.begin(), processors_.end());
-}
-
 void Pipe::addSimpleTransform(ProcessorPtr transform)
 {
     checkSimpleTransform(*transform);
@@ -126,7 +121,7 @@ void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
     }
 }
 
-void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
+void Pipe::setQuota(const QuotaContextPtr & quota)
 {
     for (auto & processor : processors)
     {

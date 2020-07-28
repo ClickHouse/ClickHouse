@@ -1,5 +1,10 @@
 <test>
     
+    <stop_conditions>
+        <any_of>
+            <iterations>100</iterations>
+        </any_of>
+    </stop_conditions>
 
     <create_query>
         CREATE TABLE jit_test (
@@ -52,7 +57,7 @@
             NOT ignore(a / b + c / d + e / f + g / h + i / j)
         SETTINGS
             compile_expressions = 1,
-            min_count_to_compile_expression = 1
+            min_count_to_compile = 1
     </query>
     <drop_query>DROP TABLE IF EXISTS jit_test</drop_query>
 </test>

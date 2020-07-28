@@ -25,7 +25,7 @@ public:
         return std::make_shared<FunctionNullIf>(context);
     }
 
-    explicit FunctionNullIf(const Context & context_) : context(context_) {}
+    FunctionNullIf(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -41,7 +41,7 @@ public:
         return makeNullable(arguments[0]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 

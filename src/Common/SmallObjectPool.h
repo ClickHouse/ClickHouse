@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Arena.h>
+#include <common/likely.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <ext/bit_cast.h>

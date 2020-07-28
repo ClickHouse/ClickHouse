@@ -12,7 +12,7 @@ class Context;
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables final : public ext::shared_ptr_helper<StorageSystemTables>, public IStorage
+class StorageSystemTables : public ext::shared_ptr_helper<StorageSystemTables>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageSystemTables>;
 public:
@@ -20,7 +20,6 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
