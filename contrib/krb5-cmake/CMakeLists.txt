@@ -410,12 +410,6 @@ set(ALL_SRCS
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccselect_realm.c
     # ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ser_cc.c
 
-    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cc.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cccol.c
-    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cccol.py
-    ${KRB5_SOURCE_DIR}/lib/krb5/ccache/t_cccursor.c
-
-
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccdefops.c
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/cc_retr.c
     ${KRB5_SOURCE_DIR}/lib/krb5/ccache/ccselect_k5identity.c
