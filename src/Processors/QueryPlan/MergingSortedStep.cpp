@@ -37,6 +37,15 @@ MergingSortedStep::MergingSortedStep(
     output_stream->sort_mode = DataStream::SortMode::Stream;
 }
 
+void MergingSortedStep::updateLimit(size_t limit_)
+{
+    if (limit_ && (limit == 0 || limit_ < limit))
+    {
+        limit = limit_;
+        transform_traits.preserves_number_of_rows = limit == 0;
+    }
+}
+
 void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
 {
     /// If there are several streams, then we merge them into one

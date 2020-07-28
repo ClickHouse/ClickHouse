@@ -62,13 +62,14 @@ public:
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 
-private:
     /// Tree node. Step and it's children.
     struct Node
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
     };
+
+private:
 
     using Nodes = std::list<Node>;
     Nodes nodes;
