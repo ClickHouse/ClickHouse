@@ -41,6 +41,11 @@ public:
       */
     ReadBuffer(Position ptr, size_t size, size_t offset) : BufferBase(ptr, size, offset) {}
 
+    // Copying the read buffers can be dangerous because they can hold a lot of
+    // memory or open files, so better to disable the copy constructor to prevent
+    // accidental copying.
+    ReadBuffer(const ReadBuffer &) = delete;
+
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
@@ -52,10 +57,16 @@ public:
         bytes += offset();
         bool res = nextImpl();
         if (!res)
-            working_buffer.resize(0);
-
-        pos = working_buffer.begin() + working_buffer_offset;
-        working_buffer_offset = 0;
+        {
+            pos = working_buffer.end();
+            Buffer empty_buffer(pos, pos);
+            working_buffer.swap(empty_buffer);
+        }
+        else
+        {
+            pos = working_buffer.begin() + working_buffer_offset;
+            working_buffer_offset = 0;
+        }
         return res;
     }
 
