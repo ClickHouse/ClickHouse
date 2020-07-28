@@ -64,7 +64,7 @@ private:
     ChannelPtr producer_channel;
 
     ConcurrentBoundedQueue<String> payloads;
-    UInt64 delivery_tag = 0, current = 0;
+    UInt64 delivery_tag = 0;
     std::atomic<bool> wait_all = true;
     std::atomic<UInt64> wait_num = 0, last_processed = 0;
 
