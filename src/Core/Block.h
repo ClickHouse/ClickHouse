@@ -163,8 +163,6 @@ using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 struct ExtraBlock
 {
     Block block;
-
-    bool empty() const { return !block; }
 };
 
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;

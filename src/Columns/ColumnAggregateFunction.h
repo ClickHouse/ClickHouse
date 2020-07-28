@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
@@ -79,9 +74,6 @@ private:
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container data;
 
-    /// Name of the type to distinguish different aggregation states.
-    String type_string;
-
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
@@ -92,17 +84,29 @@ private:
     ///  but ownership of different elements cannot be mixed by different columns.
     void ensureOwnership();
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_)
+        : func(func_)
+    {
+    }
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_,
-                            const ConstArenas & arenas_);
+                            const ConstArenas & arenas_)
+        : foreign_arenas(arenas_), func(func_)
+    {
+    }
+
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
+
+    String getTypeString() const;
 
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_);
+    void set(const AggregateFunctionPtr & func_)
+    {
+        func = func_;
+    }
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
@@ -117,7 +121,6 @@ public:
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
-    TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
     MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
 
@@ -159,8 +162,6 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
-    void updateHashFast(SipHash & hash) const override;
-
     size_t byteSize() const override;
 
     size_t allocatedBytes() const override;
@@ -191,13 +192,7 @@ public:
         return 0;
     }
 
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
 
     /** More efficient manipulation methods */
     Container & getData()

@@ -17,7 +17,7 @@ def start_cluster():
             node.query("CREATE DATABASE IF NOT EXISTS ztest")
             node.query("CREATE TABLE test.source(x UInt64, y UInt64) ENGINE=Log")
             node.query("INSERT INTO test.source VALUES (5,6)")
-            
+
             node.query("CREATE DICTIONARY test.dict(x UInt64, y UInt64) PRIMARY KEY x "\
                         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'source' DB 'test')) "\
                         "LAYOUT(FLAT()) LIFETIME(0)")
@@ -51,11 +51,11 @@ def test_dependency_via_implicit_table(node):
         node.query("CREATE DICTIONARY {}(x UInt64, y UInt64) PRIMARY KEY x "\
                    "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict' DB 'test')) "\
                    "LAYOUT(FLAT()) LIFETIME(0)".format(d_name))
-    
+
     def check():
         for d_name in d_names:
-            assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
-    
+            assert node.query("SELECT dictGet('{}', 'y', toUInt64(5))".format(d_name)) == "6\n"
+
     check()
 
     # Restart must not break anything.
@@ -75,11 +75,11 @@ def test_dependency_via_explicit_table(node):
         node.query("CREATE DICTIONARY {}(x UInt64, y UInt64) PRIMARY KEY x "\
                    "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE '{}' DB '{}')) "\
                    "LAYOUT(FLAT()) LIFETIME(0)".format(d_name, tbl_shortname, tbl_database))
-    
+
     def check():
         for d_name in d_names:
-            assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
-    
+            assert node.query("SELECT dictGet('{}', 'y', toUInt64(5))".format(d_name)) == "6\n"
+
     check()
 
     # Restart must not break anything.
@@ -96,11 +96,11 @@ def test_dependency_via_dictionary_database(node):
         node.query("CREATE DICTIONARY {}(x UInt64, y UInt64) PRIMARY KEY x "\
                    "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'test.dict' DB 'dict_db')) "\
                    "LAYOUT(FLAT()) LIFETIME(0)".format(d_name))
-    
+
     def check():
         for d_name in d_names:
-            assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
-    
+            assert node.query("SELECT dictGet('{}', 'y', toUInt64(5))".format(d_name)) == "6\n"
+
     check()
 
     # Restart must not break anything.
