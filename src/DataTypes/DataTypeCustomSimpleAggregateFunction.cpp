@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 static const std::vector<String> supported_functions{"any", "anyLast", "min",
     "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
-    "sumMap", "groupArrayArray", "groupUniqArrayArray"};
+    "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray"};
 
 
 String DataTypeCustomSimpleAggregateFunction::getName() const
