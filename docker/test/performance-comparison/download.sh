@@ -6,7 +6,6 @@ trap 'kill $(jobs -pr) ||:' EXIT
 
 mkdir db0 ||:
 mkdir left ||:
-mkdir right ||:
 
 left_pr=$1
 left_sha=$2
@@ -24,7 +23,7 @@ dataset_paths["values"]="https://clickhouse-datasets.s3.yandex.net/values_with_e
 
 function download
 {
-    # Historically there were various path for the performance test package.
+    # Historically there were various paths for the performance test package.
     # Test all of them.
     for path in "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/"{,clickhouse_build_check/}"performance/performance.tgz"
     do
@@ -34,22 +33,13 @@ function download
         fi
     done
 
-    for path in "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/"{,clickhouse_build_check/}"performance/performance.tgz"
-    do
-        if curl --fail --head "$path"
-        then
-            right_path="$path"
-        fi
-    done
-
-    # might have the same version on left and right
-    if ! [ "$left_path" = "$right_path" ]
+    # Might have the same version on left and right (for testing).
+    if ! [ "$left_sha" = "$right_sha" ]
     then
         wget -nv -nd -c "$left_path" -O- | tar -C left --strip-components=1 -zxv  &
-        wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv &
     else
-        mkdir right ||:
-        wget -nv -nd -c "$left_path" -O- | tar -C left --strip-components=1 -zxv && cp -a left/* right &
+        mkdir left ||:
+        cp -a right/* left &
     fi
 
     for dataset_name in $datasets

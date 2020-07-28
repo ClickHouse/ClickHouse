@@ -221,11 +221,6 @@ class DefaultOverloadResolver : public IFunctionOverloadResolverImpl
 public:
     explicit DefaultOverloadResolver(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
-    void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override
-    {
-        return function->checkNumberOfArgumentsIfVariadic(number_of_arguments);
-    }
-
     bool isDeterministic() const override { return function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
     bool isInjective(const Block &block) const override { return function->isInjective(block); }

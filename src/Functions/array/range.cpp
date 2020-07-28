@@ -57,7 +57,7 @@ private:
     }
 
     template <typename T>
-    bool executeInternal(Block & block, const IColumn * arg, const size_t result)
+    bool executeInternal(Block & block, const IColumn * arg, const size_t result) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
         {
@@ -102,7 +102,7 @@ private:
     }
 
     template <typename T>
-    bool executeConstStartStep(Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result)
+    bool executeConstStartStep(Block & block, const IColumn * end_arg, const T start, const T step, const size_t input_rows_count, const size_t result) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         if (!end_column)
@@ -155,7 +155,7 @@ private:
     }
 
     template <typename T>
-    bool executeConstStep(Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result)
+    bool executeConstStep(Block & block, const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_arg);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
@@ -210,7 +210,7 @@ private:
     }
 
     template <typename T>
-    bool executeConstStart(Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result)
+    bool executeConstStart(Block & block, const IColumn * end_arg, const IColumn * step_arg, const T start, const size_t input_rows_count, const size_t result) const
     {
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_arg);
         auto step_column = checkAndGetColumn<ColumnVector<T>>(step_arg);
@@ -265,7 +265,7 @@ private:
     }
 
     template <typename T>
-    bool executeGeneric(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result)
+    bool executeGeneric(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result) const
     {
         auto start_column = checkAndGetColumn<ColumnVector<T>>(start_col);
         auto end_column = checkAndGetColumn<ColumnVector<T>>(end_col);
@@ -322,7 +322,7 @@ private:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (arguments.size() == 1)
         {

@@ -153,7 +153,9 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(ASTPtr & ast, Data & data)
 
 bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>() && !node->as<ASTTableExpression>();
+    return !node->as<ASTSubquery>() &&
+        !node->as<ASTTableExpression>() &&
+        !node->as<ASTArrayJoin>();
 }
 
 }

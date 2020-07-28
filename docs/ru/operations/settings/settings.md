@@ -1278,6 +1278,19 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+
+Включает параллельную обработку распределённых запросов `INSERT ... SELECT`.
+
+Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде. 
+
+Допустимые значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
 ## insert_distributed_sync {#insert_distributed_sync}
 
 Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
@@ -1297,7 +1310,7 @@ Default value: 0.
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## validate\_polygons {#validate_polygons}
 
-Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
 
 Допустимые значения:
 
