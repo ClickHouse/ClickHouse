@@ -1092,7 +1092,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
-    if (!isWidePart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
+    if (!isWidePart(source_part) || (interpreter && interpreter->isAffectingAllColumns()))
     {
         auto part_indices = getIndicesForNewDataPart(metadata_snapshot->getSecondaryIndices(), for_file_renames);
         mutateAllPartColumns(
@@ -1478,13 +1478,14 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         return updated_header.getNamesAndTypesList();
 
     NameSet removed_columns;
-    NameToNameMap renamed_columns;
+    NameToNameMap renamed_columns_to_from;
+    /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
         if (command.type == MutationCommand::RENAME_COLUMN)
-            renamed_columns.emplace(command.rename_to, command.column_name);
+            renamed_columns_to_from.emplace(command.rename_to, command.column_name);
     }
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
@@ -1497,17 +1498,49 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
                 it->type = updated_type;
             ++it;
         }
-        else if (source_columns_name_set.count(it->name) && !removed_columns.count(it->name))
-        {
-            ++it;
-        }
-        else if (renamed_columns.count(it->name) && source_columns_name_set.count(renamed_columns[it->name]))
-        {
-            ++it;
-        }
         else
         {
-            it = storage_columns.erase(it);
+            if (!source_columns_name_set.count(it->name))
+            {
+                /// Source part doesn't have column but some other column
+                /// was renamed to it's name.
+                auto renamed_it = renamed_columns_to_from.find(it->name);
+                if (renamed_it != renamed_columns_to_from.end()
+                    && source_columns_name_set.count(renamed_it->second))
+                    ++it;
+                else
+                    it = storage_columns.erase(it);
+            }
+            else
+            {
+                bool was_renamed = false;
+                bool was_removed = removed_columns.count(it->name);
+
+                /// Check that this column was renamed to some other name
+                for (const auto & [rename_to, rename_from] : renamed_columns_to_from)
+                {
+                    if (rename_from == it->name)
+                    {
+                        was_renamed = true;
+                        break;
+                    }
+                }
+
+                /// If we want to rename this column to some other name, than it
+                /// should it's previous version should be dropped or removed
+                if (renamed_columns_to_from.count(it->name) && !was_renamed && !was_removed)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
+
+
+                /// Column was renamed and no other column renamed to it's name
+                /// or column is dropped.
+                if (!renamed_columns_to_from.count(it->name) && (was_renamed || was_removed))
+                    it = storage_columns.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
