@@ -37,7 +37,6 @@ class EnabledSettings;
 class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
-class ExternalAuthenticators;
 struct Settings;
 
 
@@ -49,7 +48,6 @@ public:
     ~AccessControlManager();
 
     void setLocalDirectory(const String & directory);
-    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
     void setDefaultProfileName(const String & default_profile_name);
 
@@ -87,8 +85,6 @@ public:
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
 
-    const ExternalAuthenticators & getExternalAuthenticators() const;
-
 private:
     class ContextAccessCache;
     std::unique_ptr<ContextAccessCache> context_access_cache;
@@ -96,7 +92,6 @@ private:
     std::unique_ptr<RowPolicyCache> row_policy_cache;
     std::unique_ptr<QuotaCache> quota_cache;
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
-    std::unique_ptr<ExternalAuthenticators> external_authenticators;
 };
 
 }

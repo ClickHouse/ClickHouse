@@ -116,7 +116,6 @@ SRCS(
     parseUserName.cpp
     queryToString.cpp
     TokenIterator.cpp
-    QueryWithOutputSettingsPushDownVisitor.cpp
 )
 
 END()

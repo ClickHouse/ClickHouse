@@ -896,8 +896,6 @@ private:
     WriteAheadLogPtr write_ahead_log;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
-
-    bool allow_nullable_key{};
 };
 
 }

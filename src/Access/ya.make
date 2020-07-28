@@ -17,11 +17,9 @@ SRCS(
     EnabledRolesInfo.cpp
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
-    ExternalAuthenticators.cpp
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
-    LDAPClient.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp
     Quota.cpp
