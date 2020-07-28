@@ -150,7 +150,7 @@ void WriteBufferToRabbitMQProducer::countRow()
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
     String payload;
-    current = 0;
+    UInt64 message_id = 0;
 
     auto returned_callback = [&](const AMQP::Message & message, int16_t /* code */, const std::string & /* description */)
     {
@@ -164,7 +164,10 @@ void WriteBufferToRabbitMQProducer::writingFunc()
         {
             payloads.pop(payload);
             AMQP::Envelope envelope(payload.data(), payload.size());
-            current = wait_num ? ++current % wait_num : ++current;
+
+            ++message_id;
+            if (wait_num)
+                message_id %= wait_num;
 
             /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse.
             if (persistent)
@@ -172,7 +175,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
             if (exchange_type == AMQP::ExchangeType::consistent_hash)
             {
-                producer_channel->publish(exchange_name, std::to_string(current), envelope).onReturned(returned_callback);
+                producer_channel->publish(exchange_name, std::to_string(message_id), envelope).onReturned(returned_callback);
             }
             else if (exchange_type == AMQP::ExchangeType::headers)
             {
@@ -184,7 +187,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
                 producer_channel->publish(exchange_name, routing_keys[0], envelope).onReturned(returned_callback);
             }
 
-            if (current % BATCH == 0)
+            if (message_id % BATCH == 0)
                 iterateEventLoop();
         }
 
