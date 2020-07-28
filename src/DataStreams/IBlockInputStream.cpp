@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
-    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
@@ -26,10 +25,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_PIPELINE;
 }
 
-const SortDescription & IBlockInputStream::getSortDescription() const
-{
-    throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
-}
 
 /// It's safe to access children without mutex as long as these methods are called before first call to `read()` or `readPrefix()`.
 

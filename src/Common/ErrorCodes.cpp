@@ -338,7 +338,6 @@ namespace ErrorCodes
     extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED = 362;
     extern const int CANNOT_CREATE_IO_BUFFER = 363;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS = 364;
-    extern const int OUTPUT_IS_NOT_SORTED = 365;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT = 366;
     extern const int TOO_MANY_FETCHES = 367;
     extern const int BAD_CAST = 368;

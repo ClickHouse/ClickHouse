@@ -9,8 +9,8 @@ namespace ErrorCodes
 }
 
 DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(
-    const BlockInputStreamPtr & input, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
-    : description(input->getSortDescription())
+    const BlockInputStreamPtr & input, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
+    : description(std::move(sort_description))
     , columns_names(columns)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
