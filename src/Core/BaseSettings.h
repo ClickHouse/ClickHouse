@@ -4,6 +4,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/FieldVisitors.h>
 #include <ext/range.h>
+#include <boost/blank.hpp>
 #include <unordered_map>
 
 
@@ -18,6 +19,8 @@ enum class SettingsWriteFormat
     STRINGS_WITH_FLAGS, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
     DEFAULT = STRINGS_WITH_FLAGS,
 };
+
+using SettingFieldCustom = SettingFieldString;
 
 
 /** Template class to define collections of settings.
@@ -41,6 +44,7 @@ enum class SettingsWriteFormat
 template <class Traits_>
 class BaseSettings : public Traits_::Data
 {
+    using CustomSettingMap = std::unordered_map<std::string_view, std::pair<std::shared_ptr<const String>, SettingFieldCustom>>;
 public:
     using Traits = Traits_;
 
@@ -62,9 +66,12 @@ public:
     /// Resets all the settings to their default values.
     void resetToDefault();
 
-    static bool has(const std::string_view & name);
-    static const char * getTypeName(const std::string_view & name);
-    static const char * getDescription(const std::string_view & name);
+    bool has(const std::string_view & name) const { return hasBuiltin(name) || hasCustom(name); }
+    static bool hasBuiltin(const std::string_view & name);
+    bool hasCustom(const std::string_view & name) const;
+
+    const char * getTypeName(const std::string_view & name) const;
+    const char * getDescription(const std::string_view & name) const;
 
     /// Checks if it's possible to assign a field to a specified value and throws an exception if not.
     /// This function doesn't change the fields, it performs check only.
@@ -92,6 +99,7 @@ public:
         bool isValueChanged() const;
         const char * getTypeName() const;
         const char * getDescription() const;
+        bool isCustom() const;
 
         bool operator==(const SettingFieldRef & other) const { return (getName() == other.getName()) && (getValue() == other.getValue()); }
         bool operator!=(const SettingFieldRef & other) const { return !(*this == other); }
@@ -99,10 +107,12 @@ public:
     private:
         friend class BaseSettings;
         SettingFieldRef(const typename Traits::Data & data_, const typename Traits::Accessor & accessor_, size_t index_) : data(&data_), accessor(&accessor_), index(index_) {}
+        SettingFieldRef(const CustomSettingMap::mapped_type & custom_setting_);
 
         const typename Traits::Data * data = nullptr;
         const typename Traits::Accessor * accessor = nullptr;
         size_t index = 0;
+        std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting = {};
     };
 
     enum SkipFlags
@@ -110,7 +120,9 @@ public:
         SKIP_NONE = 0,
         SKIP_CHANGED = 0x01,
         SKIP_UNCHANGED = 0x02,
-        SKIP_ALL = SKIP_CHANGED | SKIP_UNCHANGED,
+        SKIP_BUILTIN = 0x04,
+        SKIP_CUSTOM = 0x08,
+        SKIP_ALL = SKIP_CHANGED | SKIP_UNCHANGED | SKIP_CUSTOM | SKIP_BUILTIN,
     };
 
     class Iterator
@@ -131,6 +143,7 @@ public:
         const BaseSettings * settings = nullptr;
         const typename Traits::Accessor * accessor = nullptr;
         size_t index;
+        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::const_iterator, boost::blank> custom_settings_iterator;
         SkipFlags skip_flags;
     };
 
@@ -150,9 +163,18 @@ public:
     Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{*this, skip_flags}; }
     Range allChanged() const { return all(SKIP_UNCHANGED); }
     Range allUnchanged() const { return all(SKIP_CHANGED); }
+    Range allBuiltin() const { return all(SKIP_CUSTOM); }
+    Range allCustom() const { return all(SKIP_BUILTIN); }
 
     Iterator begin() const { return allChanged().begin(); }
     Iterator end() const { return allChanged().end(); }
+
+private:
+    SettingFieldCustom & getCustomSetting(const std::string_view & name);
+    const SettingFieldCustom & getCustomSetting(const std::string_view & name) const;
+    const SettingFieldCustom * tryGetCustomSetting(const std::string_view & name) const;
+
+    std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
 };
 
 struct BaseSettingsHelpers
@@ -166,6 +188,7 @@ struct BaseSettingsHelpers
     enum Flags : UInt64
     {
         IMPORTANT = 0x01,
+        CUSTOM = 0x02,
     };
     static void writeFlags(Flags flags, WriteBuffer & out);
     static Flags readFlags(ReadBuffer & in);
@@ -178,7 +201,7 @@ void BaseSettings<Traits_>::set(const std::string_view & name, const Field & val
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValue(*this, index, value);
     else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+        getCustomSetting(name) = value;
 }
 
 template <typename Traits_>
@@ -188,7 +211,7 @@ Field BaseSettings<Traits_>::get(const std::string_view & name) const
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
     else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+        return static_cast<Field>(getCustomSetting(name));
 }
 
 template <typename Traits_>
@@ -198,7 +221,7 @@ void BaseSettings<Traits_>::setString(const std::string_view & name, const Strin
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValueString(*this, index, value);
     else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+        getCustomSetting(name).parseFromString(value);
 }
 
 template <typename Traits_>
@@ -208,7 +231,7 @@ String BaseSettings<Traits_>::getString(const std::string_view & name) const
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValueString(*this, index);
     else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+        return getCustomSetting(name).toString();
 }
 
 template <typename Traits_>
@@ -218,6 +241,11 @@ bool BaseSettings<Traits_>::tryGet(const std::string_view & name, Field & value)
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
         value = accessor.getValue(*this, index);
+        return true;
+    }
+    if (const auto * custom_setting = tryGetCustomSetting(name))
+    {
+        value = static_cast<Field>(*custom_setting);
         return true;
     }
     return false;
@@ -232,6 +260,11 @@ bool BaseSettings<Traits_>::tryGetString(const std::string_view & name, String &
         value = accessor.getValueString(*this, index);
         return true;
     }
+    if (const auto * custom_setting = tryGetCustomSetting(name))
+    {
+        value = custom_setting->toString();
+        return true;
+    }
     return false;
 }
 
@@ -241,7 +274,7 @@ bool BaseSettings<Traits_>::isChanged(const std::string_view & name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.isValueChanged(*this, index);
-    return false;
+    return tryGetCustomSetting(name) != nullptr;
 }
 
 template <typename Traits_>
@@ -282,32 +315,44 @@ void BaseSettings<Traits_>::resetToDefault()
         if (accessor.isValueChanged(*this, i))
             accessor.resetValueToDefault(*this, i);
     }
+
+    if constexpr (Traits::allow_custom_settings)
+        custom_settings_map.clear();
 }
 
 template <typename Traits_>
-bool BaseSettings<Traits_>::has(const std::string_view & name)
+bool BaseSettings<Traits_>::hasBuiltin(const std::string_view & name)
 {
     const auto & accessor = Traits::Accessor::instance();
     return (accessor.find(name) != static_cast<size_t>(-1));
 }
 
+template <typename Traits_>
+bool BaseSettings<Traits_>::hasCustom(const std::string_view & name) const
+{
+    return tryGetCustomSetting(name);
+}
 
 template <typename Traits_>
-const char * BaseSettings<Traits_>::getTypeName(const std::string_view & name)
+const char * BaseSettings<Traits_>::getTypeName(const std::string_view & name) const
 {
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
+    else if (tryGetCustomSetting(name))
+        return "String";
     else
         BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename Traits_>
-const char * BaseSettings<Traits_>::getDescription(const std::string_view & name)
+const char * BaseSettings<Traits_>::getDescription(const std::string_view & name) const
 {
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
+    else if (tryGetCustomSetting(name))
+        return "Custom";
     else
         BaseSettingsHelpers::throwSettingNotFound(name);
 }
@@ -330,6 +375,11 @@ Field BaseSettings<Traits_>::castValueUtil(const std::string_view & name, const 
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.castValueUtil(index, value);
+    if constexpr (Traits::allow_custom_settings)
+    {
+        value.safeGet<String>();
+        return value;
+    }
     else
         BaseSettingsHelpers::throwSettingNotFound(name);
 }
@@ -340,6 +390,8 @@ String BaseSettings<Traits_>::valueToStringUtil(const std::string_view & name, c
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.valueToStringUtil(index, value);
+    if constexpr (Traits::allow_custom_settings)
+        return value.safeGet<String>();
     else
         BaseSettingsHelpers::throwSettingNotFound(name);
 }
@@ -350,6 +402,8 @@ Field BaseSettings<Traits_>::stringToValueUtil(const std::string_view & name, co
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.stringToValueUtil(index, str);
+    if constexpr (Traits::allow_custom_settings)
+        return Field{str};
     else
         BaseSettingsHelpers::throwSettingNotFound(name);
 }
@@ -361,15 +415,18 @@ void BaseSettings<Traits_>::write(WriteBuffer & out, SettingsWriteFormat format)
 
     for (auto field : *this)
     {
-        bool is_important = accessor.isImportant(field.index);
+        bool is_custom = field.isCustom();
+        bool is_important = !is_custom && accessor.isImportant(field.index);
 
         BaseSettingsHelpers::writeString(field.getName(), out);
 
-        if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS))
+        if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS) || is_custom)
         {
             using Flags = BaseSettingsHelpers::Flags;
             Flags flags{0};
-            if (is_important)
+            if (is_custom)
+                flags = static_cast<Flags>(flags | Flags::CUSTOM);
+            else if (is_important)
                 flags = static_cast<Flags>(flags | Flags::IMPORTANT);
             BaseSettingsHelpers::writeFlags(flags, out);
 
@@ -400,13 +457,24 @@ void BaseSettings<Traits_>::read(ReadBuffer & in, SettingsWriteFormat format)
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
+        bool is_custom = (flags & Flags::CUSTOM);
 
         if (index != static_cast<size_t>(-1))
         {
-            if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
+            if (is_custom)
+            {
+                SettingFieldCustom temp;
+                temp.parseFromString(BaseSettingsHelpers::readString(in));
+                accessor.setValue(*this, index, static_cast<Field>(temp));
+            }
+            else if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
                 accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
             else
                 accessor.readBinary(*this, index, in);
+        }
+        else if (is_custom && Traits::allow_custom_settings)
+        {
+            getCustomSetting(name).parseFromString(BaseSettingsHelpers::readString(in));
         }
         else if (is_important)
         {
@@ -453,13 +521,76 @@ bool operator!=(const BaseSettings<Traits_> & left, const BaseSettings<Traits_> 
 }
 
 template <typename Traits_>
+SettingFieldCustom & BaseSettings<Traits_>::getCustomSetting(const std::string_view & name)
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        auto it = custom_settings_map.find(name);
+        if (it == custom_settings_map.end())
+        {
+            auto new_name = std::make_shared<String>(name);
+            it = custom_settings_map.emplace(*new_name, std::make_pair(new_name, SettingFieldCustom{})).first;
+        }
+        return it->second.second;
+    }
+    BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename Traits_>
+const SettingFieldCustom & BaseSettings<Traits_>::getCustomSetting(const std::string_view & name) const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        auto it = custom_settings_map.find(name);
+        if (it != custom_settings_map.end())
+            return it->second.second;
+    }
+    BaseSettingsHelpers::throwSettingNotFound(name);
+}
+
+template <typename Traits_>
+const SettingFieldCustom * BaseSettings<Traits_>::tryGetCustomSetting(const std::string_view & name) const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        auto it = custom_settings_map.find(name);
+        if (it != custom_settings_map.end())
+            return &it->second.second;
+    }
+    return nullptr;
+}
+
+template <typename Traits_>
 BaseSettings<Traits_>::Iterator::Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
     : settings(&settings_), accessor(&accessor_), skip_flags(skip_flags_)
 {
     if (skip_flags == SKIP_ALL)
+    {
+        index = accessor->size();
+        if constexpr (Traits::allow_custom_settings)
+            custom_settings_iterator = settings->custom_settings_map.end();
+        return;
+    }
+
+    if (skip_flags & SKIP_CHANGED)
+    {
+        skip_flags = static_cast<SkipFlags>(skip_flags | SKIP_CUSTOM);
+        if (skip_flags & SKIP_UNCHANGED)
+            skip_flags = static_cast<SkipFlags>(skip_flags | SKIP_BUILTIN);
+    }
+
+    if (skip_flags & SKIP_BUILTIN)
         index = accessor->size();
     else
         index = 0;
+
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (skip_flags & SKIP_CUSTOM)
+            custom_settings_iterator = settings->custom_settings_map.end();
+        else
+            custom_settings_iterator = settings->custom_settings_map.begin();
+    }
 
     doSkip();
 }
@@ -469,6 +600,11 @@ typename BaseSettings<Traits_>::Iterator & BaseSettings<Traits_>::Iterator::oper
 {
     if (index != accessor->size())
         ++index;
+    else
+    {
+        if constexpr (Traits::allow_custom_settings)
+            ++custom_settings_iterator;
+    }
     doSkip();
     return *this;
 }
@@ -484,6 +620,11 @@ typename BaseSettings<Traits_>::Iterator BaseSettings<Traits_>::Iterator::operat
 template <typename Traits_>
 typename BaseSettings<Traits_>::SettingFieldRef BaseSettings<Traits_>::Iterator::operator*() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (index == accessor->size())
+            return {custom_settings_iterator->second};
+    }
     return {*settings, *accessor, index};
 }
 
@@ -505,46 +646,103 @@ void BaseSettings<Traits_>::Iterator::doSkip()
 template <typename Traits_>
 bool BaseSettings<Traits_>::Iterator::operator ==(const typename BaseSettings<Traits_>::Iterator & other) const
 {
+    if constexpr (Traits_::allow_custom_settings)
+    {
+        if (custom_settings_iterator != other.custom_settings_iterator)
+            return false;
+    }
     return ((index == other.index) && (settings == other.settings));
+}
+
+template <typename Traits_>
+BaseSettings<Traits_>::SettingFieldRef::SettingFieldRef(const CustomSettingMap::mapped_type & custom_setting_)
+{
+    if constexpr (Traits_::allow_custom_settings)
+        custom_setting = &custom_setting_;
 }
 
 template <typename Traits_>
 const String & BaseSettings<Traits_>::SettingFieldRef::getName() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return *custom_setting->first;
+    }
     return accessor->getName(index);
 }
 
 template <typename Traits_>
 Field BaseSettings<Traits_>::SettingFieldRef::getValue() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return static_cast<Field>(custom_setting->second);
+    }
     return accessor->getValue(*data, index);
 }
 
 template <typename Traits_>
 String BaseSettings<Traits_>::SettingFieldRef::getValueString() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return custom_setting->second.toString();
+    }
     return accessor->getValueString(*data, index);
 }
 
 template <typename Traits_>
 bool BaseSettings<Traits_>::SettingFieldRef::isValueChanged() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return true;
+    }
     return accessor->isValueChanged(*data, index);
 }
 
 template <typename Traits_>
 const char * BaseSettings<Traits_>::SettingFieldRef::getTypeName() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return "String";
+    }
     return accessor->getTypeName(index);
 }
 
 template <typename Traits_>
 const char * BaseSettings<Traits_>::SettingFieldRef::getDescription() const
 {
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return "Custom";
+    }
     return accessor->getDescription(index);
 }
 
+template <typename Traits_>
+bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
+{
+    if constexpr (Traits::allow_custom_settings)
+        return custom_setting != nullptr;
+    else
+        return false;
+}
+
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0)
+
+#define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 1)
+
+#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, ALLOW_CUSTOM_SETTINGS) \
     struct SETTINGS_TRAITS_NAME \
     { \
         struct Data \
@@ -597,6 +795,7 @@ const char * BaseSettings<Traits_>::SettingFieldRef::getDescription() const
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
         }; \
+        static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
     };
 
 #define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \

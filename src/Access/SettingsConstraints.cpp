@@ -150,6 +150,7 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
     const String & setting_name = change.name;
+
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field
     {
@@ -190,19 +191,23 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
     };
 
-    Field current_value;
-    if (reaction == THROW_ON_VIOLATION)
-        current_value = current_settings.get(setting_name);
-    else if (!current_settings.tryGet(setting_name, current_value))
-        return false;
+    Field current_value, new_value;
+    if (current_settings.tryGet(setting_name, current_value))
+    {
+        /// Setting isn't checked if value has not changed.
+        if (change.value == current_value)
+            return false;
 
-    /// Setting isn't checked if value has not changed.
-    if (change.value == current_value)
-        return false;
-
-    Field new_value = cast_value(change.value);
-    if ((new_value == current_value) || cannot_cast)
-        return false;
+        new_value = cast_value(change.value);
+        if ((new_value == current_value) || cannot_cast)
+            return false;
+    }
+    else
+    {
+        new_value = cast_value(change.value);
+        if (cannot_cast)
+            return false;
+    }
 
     if (!current_settings.allow_ddl && setting_name == "allow_ddl")
     {
