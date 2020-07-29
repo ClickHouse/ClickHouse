@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &, const Box &, bool is_last_covered_):
 polygon_ids(polygon_ids_)
 {
@@ -62,7 +67,7 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
 
 SlabsPolygonIndex::SlabsPolygonIndex(
     const std::vector<Polygon> & polygons)
-    : log(&Logger::get("SlabsPolygonIndex")),
+    : log(&Poco::Logger::get("SlabsPolygonIndex")),
       sorted_x(uniqueX(polygons))
 {
     indexBuild(polygons);
@@ -100,7 +105,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     }
 
     /** Sorting edges of (left_point, right_point, polygon_id) in that order */
-    std::sort(all_edges.begin(), all_edges.end(), Edge::compare1);
+    std::sort(all_edges.begin(), all_edges.end(), Edge::compareByLeftPoint);
     for (size_t i = 0; i != all_edges.size(); ++i)
         all_edges[i].edge_id = i;
 
@@ -112,7 +117,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     /** Using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
     {
-        return Edge::compare2(a, b);
+        return Edge::compareByRightPoint(a, b);
     };
     std::set<Edge, decltype(cmp)> interesting_edges(cmp);
 
@@ -155,9 +160,9 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         size_t r = edge_right[i];
         if (l == n || sorted_x[l] != all_edges[i].l.x() || sorted_x[r] != all_edges[i].r.x())
         {
-            LOG_ERROR(log, "Error occured while building polygon index. Edge {}  is [{}, {}] but found [{}, {}]. l = {}, r = {}",
-                    i, all_edges[i].l.x(), all_edges[i].r.x(), sorted_x[l], sorted_x[r], l, r);
-            throw Poco::Exception("polygon index build error");
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Error occured while building polygon index. Edge {}  is [{}, {}] but found [{}, {}]. l = {}, r = {}",
+                i, all_edges[i].l.x(), all_edges[i].r.x(), sorted_x[l], sorted_x[r], l, r);
         }
 
         /** Adding [l, r) to the segment tree */
@@ -221,7 +226,7 @@ SlabsPolygonIndex::Edge::Edge(
     b = l.y() - k * l.x();
 }
 
-bool SlabsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
+bool SlabsPolygonIndex::Edge::compareByLeftPoint(const Edge & a, const Edge & b)
 {
     /** Comparing left point */
     if (a.l.x() != b.l.x())
@@ -238,7 +243,7 @@ bool SlabsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
     return a.polygon_id < b.polygon_id;
 }
 
-bool SlabsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
+bool SlabsPolygonIndex::Edge::compareByRightPoint(const Edge & a, const Edge & b)
 {
     /** Comparing right point */
     if (a.r.x() != b.r.x())
@@ -256,18 +261,6 @@ bool SlabsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
         return a.polygon_id < b.polygon_id;
 
     return a.edge_id < b.edge_id;
-}
-
-namespace
-{
-    inline void update_result(bool & found, size_t & id, const size_t & new_id)
-    {
-        if (!found || new_id < id)
-        {
-            found = true;
-            id = new_id;
-        }
-    }
 }
 
 bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
@@ -315,7 +308,8 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
     {
         if (i + 1 == intersections.size() || intersections[i] != intersections[i + 1])
         {
-            update_result(found, id, intersections[i]);
+            found = true;
+            id = intersections[i];
             break;
         }
     }

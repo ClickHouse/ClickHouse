@@ -244,9 +244,12 @@ DictionaryPtr createLayout(const std::string & ,
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-    factory.registerLayout("polygon", createLayout<PolygonDictionarySimple>, true);
+    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true);
     factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true);
     factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true);
+
+    /// Alias to the most performant dictionary type - polygon_index_cell
+    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true);
 }
 
 }
