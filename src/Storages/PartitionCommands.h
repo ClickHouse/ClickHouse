@@ -4,7 +4,6 @@
 #include <Core/Types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <optional>
 #include <vector>
@@ -14,6 +13,9 @@ namespace DB
 {
 
 class ASTAlterCommand;
+
+class Pipe;
+using Pipes = std::vector<Pipe>;
 
 struct PartitionCommand
 {
@@ -100,6 +102,6 @@ using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;
 /// used to print info to the user. Tries to create narrowest table for given
 /// results. For example, if all commands were FREEZE commands, than
 /// old_part_name column will be absent.
-std::shared_ptr<SourceFromSingleChunk> convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
+Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
 
 }

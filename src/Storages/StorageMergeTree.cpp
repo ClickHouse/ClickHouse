@@ -1088,12 +1088,7 @@ Pipes StorageMergeTree::alterPartition(
     }
 
     if (query_context.getSettingsRef().alter_partition_verbose_result)
-    {
-        auto source = convertCommandsResultToSource(result);
-        Pipes pipes;
-        pipes.emplace_back(Pipe(source));
-        return pipes;
-    }
+        return convertCommandsResultToSource(result);
 
     return { };
 }
