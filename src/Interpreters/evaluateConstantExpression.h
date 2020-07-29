@@ -44,7 +44,7 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, cons
 ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Context & context);
 
 /** Try to fold condition to countable set of constant values.
-  * @param condition a condition that we try to fold.
+  * @param node a condition that we try to fold.
   * @param target_expr expression evaluated over a set of constants.
   * @return optional blocks each with a single row and a single column for target expression,
   *         or empty blocks if condition is always false,

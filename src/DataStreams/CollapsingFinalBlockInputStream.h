@@ -32,9 +32,6 @@ public:
 
     String getName() const override { return "CollapsingFinal"; }
 
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
-
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:

@@ -40,9 +40,6 @@ public:
 
     String getName() const override { return "MergeSortingBlocks"; }
 
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
-
     Block getHeader() const override { return header; }
 
 protected:
@@ -83,9 +80,6 @@ public:
         size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSorting"; }
-
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
 
     Block getHeader() const override { return header; }
 

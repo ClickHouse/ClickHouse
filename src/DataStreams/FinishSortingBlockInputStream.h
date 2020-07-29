@@ -21,9 +21,6 @@ public:
 
     String getName() const override { return "FinishSorting"; }
 
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description_to_sort; }
-
     Block getHeader() const override { return header; }
 
 protected:

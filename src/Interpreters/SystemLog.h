@@ -150,6 +150,8 @@ private:
     uint64_t requested_flush_before = 0;
     // Flushed log up to this index, exclusive
     uint64_t flushed_before = 0;
+    // Logged overflow message at this queue front index
+    uint64_t logged_queue_full_at_index = -1;
 
     void savingThreadFunction();
 
@@ -197,8 +199,6 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
         if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
         {
-            queue_is_half_full = true;
-
             // The queue more than half full, time to flush.
             // We only check for strict equality, because messages are added one
             // by one, under exclusive lock, so we will see each message count.
