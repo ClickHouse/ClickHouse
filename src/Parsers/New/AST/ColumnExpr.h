@@ -80,6 +80,8 @@ class ColumnExpr : public INode
         static PtrTo<ColumnExpr> createFunction(PtrTo<ColumnFunctionExpr> expr);
         static PtrTo<ColumnExpr> createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {

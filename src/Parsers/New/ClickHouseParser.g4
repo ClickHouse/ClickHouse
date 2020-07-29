@@ -72,7 +72,7 @@ orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
 ratioExpr: NUMBER_LITERAL (SLASH NUMBER_LITERAL); // TODO: not complete!
 settingExprList: settingExpr (COMMA settingExpr)*;
-settingExpr: identifier EQ_SINGLE LITERAL;
+settingExpr: identifier EQ_SINGLE literal;
 
 // INSERT statement
 
@@ -84,7 +84,7 @@ insertStmt:
 
 columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
-    : LITERAL                                                                     # ColumnExprLiteral
+    : literal                                                                     # ColumnExprLiteral
     | ASTERISK                                                                    # ColumnExprAsterisk
     | columnIdentifier                                                            # ColumnExprIdentifier
     | LPAREN columnExpr RPAREN                                                    # ColumnExprParens
@@ -105,7 +105,7 @@ columnExpr
     | columnExpr AS identifier                                                    # ColumnExprAlias
     ;
 columnFunctionExpr
-    : identifier (LPAREN (LITERAL (COMMA LITERAL)*)? RPAREN)? LPAREN columnArgList? RPAREN
+    : identifier (LPAREN (literal (COMMA literal)*)? RPAREN)? LPAREN columnArgList? RPAREN
     // TODO: do we really need this misc parsing rules?
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN
     | CAST LPAREN columnExpr AS identifier RPAREN
@@ -133,7 +133,7 @@ tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : LITERAL
+    : literal
     | tableIdentifier
     ;
 
@@ -143,6 +143,11 @@ databaseIdentifier: identifier;
 
 // Basics
 
+literal
+    : NUMBER_LITERAL  # LiteralNumber
+    | STRING_LITERAL  # LiteralString
+    | NULL_SQL        # LiteralNull
+    ;
 identifier: IDENTIFIER; // TODO: not complete!
 unaryOp: DASH | NOT;
 binaryOp

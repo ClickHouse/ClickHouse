@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/TypePromotion.h>
+#include "Parsers/ASTExpressionList.h"
 #include <Parsers/IAST_fwd.h>
 
 #include <memory>
@@ -33,6 +34,13 @@ class List : public INode {
 
         auto begin() const { return children.cbegin(); }
         auto end() const { return children.cend(); }
+
+        ASTPtr convertToOld() const override
+        {
+            auto list = std::make_shared<ASTExpressionList>();
+            for (const auto & child : *this) list->children.emplace_back(child->convertToOld());
+            return list;
+        }
 };
 
 }

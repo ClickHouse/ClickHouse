@@ -11,20 +11,24 @@ namespace DB::AST
 class Literal : public INode
 {
     public:
-        explicit Literal(const antlr4::tree::TerminalNode * literal);
+        static PtrTo<Literal> createNull(const antlr4::tree::TerminalNode * literal);
+        static PtrTo<Literal> createNumber(const antlr4::tree::TerminalNode * literal);
+        static PtrTo<Literal> createString(const antlr4::tree::TerminalNode * literal);
+
+        ASTPtr convertToOld() const override;
 
     private:
+        enum class LiteralType
+        {
+            NULL_LITERAL,
+            NUMBER,
+            STRING,
+        };
+
+        LiteralType type;
         const antlr4::tree::TerminalNode * token;
-};
 
-class NumberLiteral : public Literal
-{
-
-};
-
-class StringLiteral : public Literal
-{
-
+        Literal(LiteralType type, const antlr4::tree::TerminalNode * literal);
 };
 
 }

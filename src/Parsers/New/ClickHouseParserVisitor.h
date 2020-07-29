@@ -148,6 +148,12 @@ public:
 
     virtual antlrcpp::Any visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *context) = 0;
 
+    virtual antlrcpp::Any visitLiteralNumber(ClickHouseParser::LiteralNumberContext *context) = 0;
+
+    virtual antlrcpp::Any visitLiteralString(ClickHouseParser::LiteralStringContext *context) = 0;
+
+    virtual antlrcpp::Any visitLiteralNull(ClickHouseParser::LiteralNullContext *context) = 0;
+
     virtual antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *context) = 0;
 
     virtual antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *context) = 0;

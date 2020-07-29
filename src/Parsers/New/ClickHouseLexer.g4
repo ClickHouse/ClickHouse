@@ -77,12 +77,12 @@ WITH: W I T H;
 YEAR: Y E A R;
 
 // Interval types
+
 INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 
 // Tokens
 
 IDENTIFIER: (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DIGIT)*;
-LITERAL: NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
 NUMBER_LITERAL: DIGIT+; // Unsigned natural integer with meaningless leading zeroes. TODO: don't forget exponential repr.
 STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) )* QUOTE_SINGLE;
 

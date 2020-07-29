@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include <Parsers/New/AST/ColumnExpr.h>
 
 #include <Parsers/New/ClickHouseParser.h>
@@ -16,6 +17,17 @@ PtrTo<ColumnExpr> ColumnExpr::createLiteral(PtrTo<Literal> literal)
 ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, std::vector<Ptr> exprs) : expr_type(type)
 {
     children = exprs;
+}
+
+ASTPtr ColumnExpr::convertToOld() const
+{
+    switch (expr_type)
+    {
+        case ExprType::LITERAL:
+            return children[LITERAL]->convertToOld();
+        default:
+            throw std::logic_error("Unsupported type of column expression");
+    }
 }
 
 }

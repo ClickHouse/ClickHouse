@@ -19,13 +19,13 @@ public:
     EXTRACT = 21, FINAL = 22, FIRST = 23, FORMAT = 24, FROM = 25, FULL = 26, 
     GLOBAL = 27, GROUP = 28, HAVING = 29, HOUR = 30, IN = 31, INNER = 32, 
     INSERT = 33, INTERVAL = 34, INTO = 35, IS = 36, JOIN = 37, LAST = 38, 
-    LEADING = 39, LEFT = 40, LIKE = 41, LIMIT = 42, MINUTE = 43, MONTH = 44, 
-    NOT = 45, NULL_SQL = 46, NULLS = 47, OFFSET = 48, ON = 49, OR = 50, 
-    ORDER = 51, OUTER = 52, OUTFILE = 53, PREWHERE = 54, QUARTER = 55, RIGHT = 56, 
-    SAMPLE = 57, SECOND = 58, SELECT = 59, SEMI = 60, SETTINGS = 61, THEN = 62, 
-    TOTALS = 63, TRAILING = 64, TRIM = 65, UNION = 66, USING = 67, WEEK = 68, 
-    WHEN = 69, WHERE = 70, WITH = 71, YEAR = 72, INTERVAL_TYPE = 73, IDENTIFIER = 74, 
-    LITERAL = 75, NUMBER_LITERAL = 76, STRING_LITERAL = 77, ARROW = 78, 
+    LEADING = 39, LEFT = 40, LIKE = 41, LIMIT = 42, LOCAL = 43, MINUTE = 44, 
+    MONTH = 45, NOT = 46, NULL_SQL = 47, NULLS = 48, OFFSET = 49, ON = 50, 
+    OR = 51, ORDER = 52, OUTER = 53, OUTFILE = 54, PREWHERE = 55, QUARTER = 56, 
+    RIGHT = 57, SAMPLE = 58, SECOND = 59, SELECT = 60, SEMI = 61, SETTINGS = 62, 
+    THEN = 63, TOTALS = 64, TRAILING = 65, TRIM = 66, UNION = 67, USING = 68, 
+    WEEK = 69, WHEN = 70, WHERE = 71, WITH = 72, YEAR = 73, INTERVAL_TYPE = 74, 
+    IDENTIFIER = 75, NUMBER_LITERAL = 76, STRING_LITERAL = 77, ARROW = 78, 
     ASTERISK = 79, BACKQUOTE = 80, BACKSLASH = 81, COLON = 82, COMMA = 83, 
     CONCAT = 84, DASH = 85, DOT = 86, EQ = 87, EQ_DOUBLE = 88, EQ_SINGLE = 89, 
     GE = 90, GT = 91, LBRACKET = 92, LE = 93, LPAREN = 94, LT = 95, NOT_EQ = 96, 
@@ -47,7 +47,7 @@ public:
     RuleColumnArgExpr = 31, RuleColumnLambdaExpr = 32, RuleColumnIdentifier = 33, 
     RuleTableExpr = 34, RuleTableIdentifier = 35, RuleTableFunctionExpr = 36, 
     RuleTableArgList = 37, RuleTableArgExpr = 38, RuleDatabaseIdentifier = 39, 
-    RuleIdentifier = 40, RuleUnaryOp = 41, RuleBinaryOp = 42
+    RuleLiteral = 40, RuleIdentifier = 41, RuleUnaryOp = 42, RuleBinaryOp = 43
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -100,6 +100,7 @@ public:
   class TableArgListContext;
   class TableArgExprContext;
   class DatabaseIdentifierContext;
+  class LiteralContext;
   class IdentifierContext;
   class UnaryOpContext;
   class BinaryOpContext; 
@@ -386,6 +387,7 @@ public:
     antlr4::tree::TerminalNode *JOIN();
     JoinConstraintClauseContext *joinConstraintClause();
     antlr4::tree::TerminalNode *GLOBAL();
+    antlr4::tree::TerminalNode *LOCAL();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -498,6 +500,7 @@ public:
     antlr4::tree::TerminalNode *CROSS();
     antlr4::tree::TerminalNode *JOIN();
     antlr4::tree::TerminalNode *GLOBAL();
+    antlr4::tree::TerminalNode *LOCAL();
     antlr4::tree::TerminalNode *COMMA();
 
 
@@ -596,7 +599,7 @@ public:
     virtual size_t getRuleIndex() const override;
     IdentifierContext *identifier();
     antlr4::tree::TerminalNode *EQ_SINGLE();
-    antlr4::tree::TerminalNode *LITERAL();
+    LiteralContext *literal();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -675,7 +678,7 @@ public:
   public:
     ColumnExprLiteralContext(ColumnExprContext *ctx);
 
-    antlr4::tree::TerminalNode *LITERAL();
+    LiteralContext *literal();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -849,8 +852,8 @@ public:
     std::vector<antlr4::tree::TerminalNode *> RPAREN();
     antlr4::tree::TerminalNode* RPAREN(size_t i);
     ColumnArgListContext *columnArgList();
-    std::vector<antlr4::tree::TerminalNode *> LITERAL();
-    antlr4::tree::TerminalNode* LITERAL(size_t i);
+    std::vector<LiteralContext *> literal();
+    LiteralContext* literal(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
     antlr4::tree::TerminalNode *EXTRACT();
@@ -1043,7 +1046,7 @@ public:
   public:
     TableArgExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *LITERAL();
+    LiteralContext *literal();
     TableIdentifierContext *tableIdentifier();
 
 
@@ -1065,6 +1068,48 @@ public:
   };
 
   DatabaseIdentifierContext* databaseIdentifier();
+
+  class  LiteralContext : public antlr4::ParserRuleContext {
+  public:
+    LiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+   
+    LiteralContext() = default;
+    void copyFrom(LiteralContext *context);
+    using antlr4::ParserRuleContext::copyFrom;
+
+    virtual size_t getRuleIndex() const override;
+
+   
+  };
+
+  class  LiteralStringContext : public LiteralContext {
+  public:
+    LiteralStringContext(LiteralContext *ctx);
+
+    antlr4::tree::TerminalNode *STRING_LITERAL();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  LiteralNullContext : public LiteralContext {
+  public:
+    LiteralNullContext(LiteralContext *ctx);
+
+    antlr4::tree::TerminalNode *NULL_SQL();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  LiteralNumberContext : public LiteralContext {
+  public:
+    LiteralNumberContext(LiteralContext *ctx);
+
+    antlr4::tree::TerminalNode *NUMBER_LITERAL();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  LiteralContext* literal();
 
   class  IdentifierContext : public antlr4::ParserRuleContext {
   public:
