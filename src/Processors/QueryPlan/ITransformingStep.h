@@ -61,6 +61,12 @@ protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
     static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);
 
+    /// Create output stream from header and traits.
+    static DataStream createOutputStream(
+            const DataStream & input_stream,
+            Block output_header,
+            const DataStreamTraits & stream_traits);
+
     TransformTraits transform_traits;
 
 private:

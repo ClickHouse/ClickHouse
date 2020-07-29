@@ -357,9 +357,13 @@ bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_node)
 {
     auto & child = child_node->step;
-    const auto * limit = typeid_cast<const LimitStep *>(parent.get());
+    auto * limit = typeid_cast<LimitStep *>(parent.get());
 
     if (!limit)
+        return;
+
+    /// Skip LIMIT WITH TIES by now.
+    if (limit->withTies())
         return;
 
     const auto * transforming = dynamic_cast<const ITransformingStep *>(child.get());
@@ -384,6 +388,14 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_
     /// Cannot push down if data was sorted exactly by child stream.
     if (!child->getOutputStream().sort_description.empty() && !data_stream_traits.preserves_sorting)
         return;
+
+    /// Now we push down limit only if it doesn't change any stream properties.
+    /// TODO: some of them may be changed and, probably, not important for following streams. We may add such info.
+    if (!limit->getOutputStream().hasEqualPropertiesWith(transforming->getOutputStream()))
+        return;
+
+    /// Input stream for Limit have changed.
+    limit->updateInputStream(transforming->getInputStreams().front());
 
     parent.swap(child);
 }

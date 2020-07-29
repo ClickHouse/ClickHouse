@@ -9,22 +9,32 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
     , collect_processors(collect_processors_)
     , data_stream_traits(std::move(traits.data_stream_traits))
 {
-    output_stream = DataStream{.header = std::move(output_header)};
+    input_streams.emplace_back(std::move(input_stream));
+    output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
+}
 
-    if (data_stream_traits.preserves_distinct_columns)
-        output_stream->distinct_columns = input_stream.distinct_columns;
+DataStream ITransformingStep::createOutputStream(
+    const DataStream & input_stream,
+    Block output_header,
+    const DataStreamTraits & stream_traits)
+{
+    DataStream output_stream{.header = std::move(output_header)};
 
-    output_stream->has_single_port = data_stream_traits.returns_single_stream
-                                     || (input_stream.has_single_port && data_stream_traits.preserves_number_of_streams);
+    if (stream_traits.preserves_distinct_columns)
+        output_stream.distinct_columns = input_stream.distinct_columns;
 
-    if (data_stream_traits.preserves_sorting)
+    output_stream.has_single_port = stream_traits.returns_single_stream
+                                     || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
+
+    if (stream_traits.preserves_sorting)
     {
-        output_stream->sort_description = input_stream.sort_description;
-        output_stream->sort_mode = input_stream.sort_mode;
+        output_stream.sort_description = input_stream.sort_description;
+        output_stream.sort_mode = input_stream.sort_mode;
     }
 
-    input_streams.emplace_back(std::move(input_stream));
+    return output_stream;
 }
+
 
 QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines)
 {
