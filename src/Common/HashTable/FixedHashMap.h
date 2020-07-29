@@ -16,7 +16,7 @@ struct FixedHashMapCell
     bool full;
     Mapped mapped;
 
-    FixedHashMapCell() {}
+    FixedHashMapCell() {} /// Not default to avoid unnecessary zero-initialization.
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
 
@@ -61,7 +61,7 @@ struct FixedHashMapImplicitZeroCell
 
     Mapped mapped;
 
-    FixedHashMapImplicitZeroCell() {}
+    FixedHashMapImplicitZeroCell() {} /// Not default to avoid unnecessary zero-initialization.
     FixedHashMapImplicitZeroCell(const Key &, const State &) {}
     FixedHashMapImplicitZeroCell(const value_type & value_, const State &) : mapped(value_.second) {}
 
@@ -98,12 +98,11 @@ template <
     typename Key,
     typename Mapped,
     typename Cell = FixedHashMapCell<Key, Mapped>,
-    typename Size = FixedHashTableStoredSize<Cell>,
-    typename Allocator = HashTableAllocator>
-class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator>
+    typename Size = FixedHashTableStoredSize<Cell>>
+class FixedHashMap : public FixedHashTable<Key, Cell, Size>
 {
 public:
-    using Base = FixedHashTable<Key, Cell, Size, Allocator>;
+    using Base = FixedHashTable<Key, Cell, Size>;
     using Self = FixedHashMap;
     using LookupResult = typename Base::LookupResult;
 
@@ -160,10 +159,9 @@ public:
     }
 };
 
-template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
+template <typename Key, typename Mapped>
 using FixedImplicitZeroHashMapWithCalculatedSize = FixedHashMap<
     Key,
     Mapped,
     FixedHashMapImplicitZeroCell<Key, Mapped>,
-    FixedHashTableCalculatedSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
-    Allocator>;
+    FixedHashTableCalculatedSize<FixedHashMapImplicitZeroCell<Key, Mapped>>>;
