@@ -38,7 +38,7 @@
 #include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
-#include <Dictionaries/PolygonDictionary.h>
+#include <Dictionaries/PolygonDictionaryImplementations.h>
 #include <Dictionaries/DirectDictionary.h>
 
 #include <ext/range.h>
@@ -194,7 +194,9 @@ private:
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -350,7 +352,9 @@ private:
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -534,7 +538,9 @@ private:
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -874,7 +880,9 @@ private:
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -1135,7 +1143,9 @@ private:
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
