@@ -100,12 +100,6 @@ function fuzz
         sleep 1
     done
     killall -9 clickhouse-server ||:
-
-    if [ "$fuzzer_exit_code" == "143" ]
-    then
-        # Killed by watchdog, meaning, no errors.
-        fuzzer_exit_code=0
-    fi
 }
 
 case "$stage" in
@@ -154,19 +148,30 @@ case "$stage" in
     pstree -aspgT
 
     # Make files with status and description we'll show for this check on Github
-    if [ "$fuzzer_exit_code" == 0 ]
+    task_exit_code=$fuzzer_exit_code
+    if [ "$fuzzer_exit_code" == 143 ]
     then
+        # SIGTERM -- the fuzzer was killed by timeout, which means a normal run.
         echo "OK" > description.txt
         echo "success" > status.txt
-    else
+        task_exit_code=0
+    elif [ "$fuzzer_exit_code" == 210 ]
+        # Lost connection to the server. This probably means that the server died
+        # with abort.
         echo "failure" > status.txt
         if ! grep -a "Received signal \|Logical error" server.log > description.txt
         then
-            echo "Fuzzer exit code $fuzzer_exit_code. See the logs" > description.txt
+            echo "Exit code $fuzzer_exit_code. See the logs" > description.txt
         fi
+    else
+        # Something different -- maybe the fuzzer itself died? Don't grep the
+        # server log in this case, because we will find a message about normal
+        # server termination (Received signal 15), which is confusing.
+        echo "failure" > status.txt
+        echo "Exit code $fuzzer_exit_code. See the logs" > description.txt
     fi
 
-    exit $fuzzer_exit_code
+    exit $task_exit_code
     ;&
 esac
 
