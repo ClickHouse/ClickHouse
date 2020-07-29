@@ -527,11 +527,14 @@ void PipelineExecutor::finalizeExecution()
 
     bool all_processors_finished = true;
 
-    for (auto & node : graph) {
-	    if (node.status != ExecStatus::Finished)  { /// Single thread, do not hold mutex
-		    all_processors_finished = false;
-		    break;
-	    }
+    for (auto & node : graph)
+    {
+        if (node.status != ExecStatus::Finished)
+        {
+            /// Single thread, do not hold mutex
+            all_processors_finished = false;
+    	    break;
+        }
     }
 
     if (!all_processors_finished)
