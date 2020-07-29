@@ -13,11 +13,11 @@ services:
       - "389"
       - "636"
     healthcheck:
-      test: echo 1
+      test: ldapsearch -x -H ldap://localhost -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin
       interval: 3s
-      timeout: 2s
+      timeout: 10s
       retries: 5
-      start_period: 2s
+      start_period: 30s
     security_opt:
       - label:disable
 
