@@ -47,6 +47,47 @@ struct FixedHashTableCell
 };
 
 
+/// How to obtain the size of the table.
+
+template <typename Cell>
+struct FixedHashTableStoredSize
+{
+    size_t m_size = 0;
+
+    size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
+    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size != 0; }
+
+    void increaseSize() { ++m_size; }
+    void clearSize() { m_size = 0; }
+    void setSize(size_t to) { m_size = to; }
+};
+
+template <typename Cell>
+struct FixedHashTableCalculatedSize
+{
+    size_t getSize(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
+    {
+        size_t res = 0;
+        for (const Cell * end = buf + num_cells; buf != end; ++buf)
+            if (!buf->isZero(state))
+                ++res;
+        return res;
+    }
+
+    bool isEmpty(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
+    {
+        for (const Cell * end = buf + num_cells; buf != end; ++buf)
+            if (!buf->isZero(state))
+                return false;
+        return true;
+    }
+
+    void increaseSize() {}
+    void clearSize() {}
+    void setSize(size_t) {}
+};
+
+
 /** Used as a lookup table for small keys such as UInt8, UInt16. It's different
   *  than a HashTable in that keys are not stored in the Cell buf, but inferred
   *  inside each iterator. There are a bunch of to make it faster than using
@@ -63,8 +104,8 @@ struct FixedHashTableCell
   *  transfer, key updates (f.g. StringRef) and serde. This will allow
   *  TwoLevelHashSet(Map) to contain different type of sets(maps).
   */
-template <typename Key, typename Cell, typename Allocator>
-class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State
+template <typename Key, typename Cell, typename Size, typename Allocator>
+class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
 
@@ -75,7 +116,6 @@ protected:
 
     using Self = FixedHashTable;
 
-    size_t m_size = 0; /// Amount of elements
     Cell * buf; /// A piece of memory for all elements.
 
     void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
@@ -178,7 +218,7 @@ public:
         free();
 
         std::swap(buf, rhs.buf);
-        std::swap(m_size, rhs.m_size);
+        this->setSize(rhs.size());
 
         Allocator::operator=(std::move(rhs));
         Cell::State::operator=(std::move(rhs));
@@ -305,7 +345,7 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
-        ++m_size;
+        this->increaseSize();
     }
 
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
@@ -335,7 +375,7 @@ public:
     void write(DB::WriteBuffer & wb) const
     {
         Cell::State::write(wb);
-        DB::writeVarUInt(m_size, wb);
+        DB::writeVarUInt(size(), wb);
 
         if (!buf)
             return;
@@ -353,7 +393,7 @@ public:
     void writeText(DB::WriteBuffer & wb) const
     {
         Cell::State::writeText(wb);
-        DB::writeText(m_size, wb);
+        DB::writeText(size(), wb);
 
         if (!buf)
             return;
@@ -374,7 +414,9 @@ public:
     {
         Cell::State::read(rb);
         destroyElements();
+        size_t m_size;
         DB::readVarUInt(m_size, rb);
+        this->setSize(m_size);
         free();
         alloc();
 
@@ -392,7 +434,9 @@ public:
     {
         Cell::State::readText(rb);
         destroyElements();
+        size_t m_size;
         DB::readText(m_size, rb);
+        this->setSize(m_size);
         free();
         alloc();
 
@@ -408,14 +452,13 @@ public:
         }
     }
 
-    size_t size() const { return m_size; }
-
-    bool empty() const { return 0 == m_size; }
+    size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
+    bool empty() const { return this->isEmpty(buf, *this, NUM_CELLS); }
 
     void clear()
     {
         destroyElements();
-        m_size = 0;
+        this->clearSize();
 
         memset(static_cast<void *>(buf), 0, NUM_CELLS * sizeof(*buf));
     }
@@ -425,7 +468,7 @@ public:
     void clearAndShrink()
     {
         destroyElements();
-        m_size = 0;
+        this->clearSize();
         free();
     }
 
