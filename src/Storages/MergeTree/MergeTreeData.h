@@ -515,7 +515,7 @@ public:
         TableLockHolder & table_lock_holder);
 
     /// Freezes all parts.
-    void freezeAll(
+    PartitionCommandsResultInfo freezeAll(
         const String & with_name,
         const StorageMetadataPtr & metadata_snapshot,
         const Context & context,
@@ -541,7 +541,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
 
 public:
@@ -836,7 +836,7 @@ protected:
 
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
-    void freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
+    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
