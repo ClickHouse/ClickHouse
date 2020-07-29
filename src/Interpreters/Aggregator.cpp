@@ -521,6 +521,26 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions) const
 {
+    if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    {
+        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        {
+            inst->batch_that->addBatchLookupTable8(
+                rows,
+                reinterpret_cast<AggregateDataPtr *>(method.data.data()),
+                inst->state_offset,
+                [&](AggregateDataPtr & aggregate_data)
+                {
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                    createAggregateStates(aggregate_data);
+                },
+                state.getKeyData(),
+                inst->batch_arguments,
+                aggregates_pool);
+        }
+        return;
+    }
+
     PODArray<AggregateDataPtr> places(rows);
 
     /// For all rows.
