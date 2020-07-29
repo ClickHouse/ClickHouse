@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TMP_DIR="/tmp"
 
-declare -a SearchTypes=("POLYGON" "POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
+declare -a SearchTypes=("POLYGON" "POLYGON_SIMPLE" "POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
 tar -xf ${CURDIR}/01037_test_data_search.tar.gz -C ${CURDIR}
 

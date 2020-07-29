@@ -58,8 +58,8 @@ public:
 
         Edge(const Point & l, const Point & r, size_t polygon_id, size_t edge_id);
 
-        static bool compare1(const Edge & a, const Edge & b);
-        static bool compare2(const Edge & a, const Edge & b);
+        static bool compareByLeftPoint(const Edge & a, const Edge & b);
+        static bool compareByRightPoint(const Edge & a, const Edge & b);
     };
 
     /** EdgeLine is optimized version of Edge. */
