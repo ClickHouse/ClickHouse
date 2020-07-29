@@ -11,8 +11,6 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 
-#include <fmt/format.h>
-
 #include <random>
 #include <bitset>
 #include <cmath>

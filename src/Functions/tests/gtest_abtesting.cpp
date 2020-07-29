@@ -62,59 +62,38 @@ Variants test_bayesab(std::string dist, PODArray<Float64> xs, PODArray<Float64> 
     return variants;
 }
 
-TEST(BayesAB, test_1)
+
+TEST(BayesAB, beta)
 {
     size_t max = 0, min = 0;
+
     auto variants = test_bayesab("beta", {10000, 1000, 900}, {600, 110, 90}, max, min);
-
     ASSERT_EQ(1, max);
-}
 
-TEST(BayesAB, test_2)
-{
-    size_t max = 0, min = 0;
-    auto variants = test_bayesab("beta", {3000, 3000, 3000}, {600, 100, 90}, max, min);
+    variants = test_bayesab("beta", {3000, 3000, 3000}, {600, 100, 90}, max, min);
     ASSERT_EQ(0, max);
-}
 
-TEST(BayesAB, test_3)
-{
-    size_t max = 0, min = 0;
-    auto variants = test_bayesab("beta", {3000, 3000, 3000}, {100, 90, 110}, max, min);
+    variants = test_bayesab("beta", {3000, 3000, 3000}, {100, 90, 110}, max, min);
     ASSERT_EQ(2, max);
-}
 
-TEST(BayesAB, test_4)
-{
-    size_t max = 0, min = 0;
-    auto variants = test_bayesab("beta", {3000, 3000, 3000}, {110, 90, 100}, max, min);
+    variants = test_bayesab("beta", {3000, 3000, 3000}, {110, 90, 100}, max, min);
     ASSERT_EQ(0, max);
 }
+
     
-TEST(BayesAB, test_5)
+TEST(BayesAB, gamma)
 {
     size_t max = 0, min = 0;
     auto variants = test_bayesab("gamma", {10000, 1000, 900}, {600, 110, 90}, max, min);
     ASSERT_EQ(1, max);
-}
-   
-TEST(BayesAB, test_6)
-{
-    size_t max = 0, min = 0;
-    auto variants = test_bayesab("gamma", {3000, 3000, 3000}, {600, 100, 90}, max, min);
+
+    variants = test_bayesab("gamma", {3000, 3000, 3000}, {600, 100, 90}, max, min);
     ASSERT_EQ(0, max);
-}
-   
-TEST(BayesAB, test_7)
-{
-    size_t max = 0, min = 0;
-    auto variants = test_bayesab("gamma", {3000, 3000, 3000}, {100, 90, 110}, max, min);
+
+    variants = test_bayesab("gamma", {3000, 3000, 3000}, {100, 90, 110}, max, min);
     ASSERT_EQ(2, max);
+
+    variants = test_bayesab("gamma", {3000, 3000, 3000}, {110, 90, 100}, max, min);
+    ASSERT_EQ(0, max);
 }
 
-TEST(BayesAB, test_8)
-{
-    size_t max = 0, min = 0;
-    auto variants = test_bayesab("gamma", {3000, 3000, 3000}, {110, 90, 100}, max, min);
-    ASSERT_EQ(0, max);
-}
