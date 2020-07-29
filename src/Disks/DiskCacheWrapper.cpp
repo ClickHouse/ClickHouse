@@ -20,11 +20,14 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
     if (it != file_downloads.end() && !it->second.expired())
         return it->second.lock();
 
-    std::shared_ptr<FileDownloadMetadata> metadata(new FileDownloadMetadata, [this, path](FileDownloadMetadata * p) {
-        std::unique_lock<std::mutex> erase_lock{mutex};
-        file_downloads.erase(path);
-        delete p;
-    });
+    std::shared_ptr<FileDownloadMetadata> metadata(
+        new FileDownloadMetadata,
+        [this, path] (FileDownloadMetadata * p)
+        {
+            std::unique_lock<std::mutex> erase_lock{mutex};
+            file_downloads.erase(path);
+            delete p;
+        });
 
     file_downloads.emplace(path, metadata);
 
@@ -35,7 +38,13 @@ std::unique_ptr<ReadBufferFromFileBase>
 DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
 {
     if (!cache_file_predicate(path))
+    {
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Skip reading file from cache {}", backQuote(path));
+
         return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Try to read file from cache {}", backQuote(path));
 
     if (cache_disk->exists(path))
         return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
@@ -71,8 +80,6 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
                 auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
                 auto dst_buffer = cache_disk->writeFile(path, buf_size, WriteMode::Rewrite, estimated_size, aio_threshold);
                 copyData(*src_buffer, *dst_buffer);
-                dst_buffer->finalize();
-                dst_buffer->sync();
 
                 LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File downloaded to cache {}", backQuote(path));
             }
@@ -127,7 +134,7 @@ CompletionAwareWriteBuffer::~CompletionAwareWriteBuffer()
 {
     try
     {
-        finalize();
+        CompletionAwareWriteBuffer::finalize();
     }
     catch (...)
     {
@@ -155,13 +162,12 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
 
     return std::make_unique<CompletionAwareWriteBuffer>(
         cache_disk->writeFile(path, buf_size, mode, estimated_size, aio_threshold),
-        [this, path, buf_size, mode, estimated_size, aio_threshold]() {
+        [this, path, buf_size, mode, estimated_size, aio_threshold] ()
+        {
             /// Copy file from cache to actual disk when cached buffer is finalized.
             auto src_buffer = cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, 0);
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
             copyData(*src_buffer, *dst_buffer);
-            dst_buffer->finalize();
-            dst_buffer->sync();
         },
         buf_size);
 }
@@ -220,6 +226,34 @@ void DiskCacheWrapper::createHardLink(const String & src_path, const String & ds
     if (cache_disk->exists(src_path))
         cache_disk->createHardLink(src_path, dst_path);
     DiskDecorator::createHardLink(src_path, dst_path);
+}
+
+/// TODO: Current reservation mechanism leaks abstraction details.
+/// This hack is needed to return proper disk pointer (wrapper instead of implementation) from reservation object.
+class ReservationDelegate : public IReservation
+{
+public:
+    ReservationDelegate(ReservationPtr delegate_, DiskPtr wrapper_)
+        : delegate(std::move(delegate_)), wrapper(wrapper_) { }
+    UInt64 getSize() const override { return delegate->getSize(); }
+    DiskPtr getDisk(size_t) const override { return wrapper; }
+    Disks getDisks() const override { return {wrapper}; }
+    void update(UInt64 new_size) override { delegate->update(new_size); }
+
+private:
+    ReservationPtr delegate;
+    DiskPtr wrapper;
+};
+
+ReservationPtr DiskCacheWrapper::reserve(UInt64 bytes)
+{
+    auto ptr = DiskDecorator::reserve(bytes);
+    if (ptr)
+    {
+        auto disk_ptr = std::static_pointer_cast<DiskCacheWrapper>(shared_from_this());
+        return std::make_unique<ReservationDelegate>(std::move(ptr), disk_ptr);
+    }
+    return ptr;
 }
 
 }

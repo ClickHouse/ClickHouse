@@ -7,7 +7,7 @@ namespace DB
 class DiskDecorator : public IDisk
 {
 public:
-    DiskDecorator(const DiskPtr & delegate_);
+    explicit DiskDecorator(const DiskPtr & delegate_);
     const String & getName() const override;
     ReservationPtr reserve(UInt64 bytes) override;
     ~DiskDecorator() override = default;
