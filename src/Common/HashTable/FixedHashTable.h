@@ -55,7 +55,7 @@ struct FixedHashTableStoredSize
     size_t m_size = 0;
 
     size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
-    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size != 0; }
+    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size == 0; }
 
     void increaseSize() { ++m_size; }
     void clearSize() { m_size = 0; }
