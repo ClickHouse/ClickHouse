@@ -39,7 +39,6 @@ SRCS(
     readFloatText.cpp
     ReadHelpers.cpp
     ReadWriteBufferFromHTTP.cpp
-    SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
     WriteBufferAIO.cpp
     WriteBufferFromFile.cpp

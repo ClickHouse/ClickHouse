@@ -25,11 +25,13 @@
 
 #include "includes.h"
 
+#ifndef HAVE_READPASSPHRASE
+
 #include <termios.h>
 #include <signal.h>
 #include <ctype.h>
 #include <fcntl.h>
-#include "readpassphrase.h"
+#include <readpassphrase.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -191,7 +193,19 @@ restart:
 }
 //DEF_WEAK(readpassphrase);
 
+#if 0
+char *
+getpass(const char *prompt)
+{
+    static char buf[_PASSWORD_LEN + 1];
+
+    return(readpassphrase(prompt, buf, sizeof(buf), RPP_ECHO_OFF));
+}
+#endif
+
 static void handler(int s)
 {
+
     signo[s] = 1;
 }
+#endif /* HAVE_READPASSPHRASE */

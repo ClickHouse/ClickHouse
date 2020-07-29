@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 bool IDisk::isDirectoryEmpty(const String & path)
 {
     return !iterateDirectory(path)->isValid();
@@ -20,7 +15,9 @@ bool IDisk::isDirectoryEmpty(const String & path)
 
 void copyFile(IDisk & from_disk, const String & from_path, IDisk & to_disk, const String & to_path)
 {
-    LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} {} to {} {}.", from_disk.getName(), from_path, to_disk.getName(), to_path);
+    LOG_DEBUG(
+        &Poco::Logger::get("IDisk"),
+        "Copying from " << from_disk.getName() << " " << from_path << " to " << to_disk.getName() << " " << to_path);
 
     auto in = from_disk.readFile(from_path);
     auto out = to_disk.writeFile(to_path);
@@ -45,11 +42,6 @@ void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_dis
             copy(it->path(), to_disk, dest);
         }
     }
-}
-
-void IDisk::truncateFile(const String &, size_t)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
 }
 
 }

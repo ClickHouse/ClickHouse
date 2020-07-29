@@ -71,7 +71,7 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
@@ -92,24 +92,19 @@ public:
     }
 
 private:
-    struct Cache
-    {
-        std::mutex mutex;
-        Arena arena;
-        using Map = HashMap<uintptr_t, StringRef>;
-        Map map;
-        std::unordered_map<std::string, Dwarf> dwarfs;
-    };
+    std::mutex mutex;
+    Arena arena;
+    using Map = HashMap<uintptr_t, StringRef>;
+    Map map;
+    std::unordered_map<std::string, Dwarf> dwarfs;
 
-    mutable Cache cache;
-
-    StringRef impl(uintptr_t addr) const
+    StringRef impl(uintptr_t addr)
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
-            auto dwarf_it = cache.dwarfs.try_emplace(object->name, *object->elf).first;
+            auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
 
@@ -117,13 +112,15 @@ private:
             if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST))
             {
                 const char * arena_begin = nullptr;
-                WriteBufferFromArena out(cache.arena, arena_begin);
+                WriteBufferFromArena out(arena, arena_begin);
 
                 writeString(location.file.toString(), out);
                 writeChar(':', out);
                 writeIntText(location.line, out);
 
-                return out.finish();
+                StringRef out_str = out.finish();
+                out_str.data = arena.insert(out_str.data, out_str.size);
+                return out_str;
             }
             else
             {
@@ -134,12 +131,12 @@ private:
             return {};
     }
 
-    StringRef implCached(uintptr_t addr) const
+    StringRef implCached(uintptr_t addr)
     {
-        Cache::Map::LookupResult it;
+        Map::LookupResult it;
         bool inserted;
-        std::lock_guard lock(cache.mutex);
-        cache.map.emplace(addr, it, inserted);
+        std::lock_guard lock(mutex);
+        map.emplace(addr, it, inserted);
         if (inserted)
             it->getMapped() = impl(addr);
         return it->getMapped();

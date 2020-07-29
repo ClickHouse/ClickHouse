@@ -1,12 +1,11 @@
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunctionImpl.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <Functions/TargetSpecific.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
+
 
 namespace DB
 {
@@ -28,13 +27,15 @@ struct NameEndsWith
     static constexpr auto name = "endsWith";
 };
 
-DECLARE_MULTITARGET_CODE(
-
 template <typename Name>
 class FunctionStartsEndsWith : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionStartsEndsWith>();
+    }
 
     String getName() const override
     {
@@ -62,7 +63,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IColumn * haystack_column = block.getByPosition(arguments[0]).column.get();
         const IColumn * needle_column = block.getByPosition(arguments[1]).column.get();
@@ -133,43 +134,6 @@ private:
             ++row_num;
         }
     }
-};
-
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Name>
-class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
-{
-public:
-    explicit FunctionStartsEndsWith(const Context & context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::SSE42,
-            TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX,
-            TargetSpecific::AVX::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>();
-    #endif
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
-    {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
-    }
-
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<FunctionStartsEndsWith<Name>>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 }

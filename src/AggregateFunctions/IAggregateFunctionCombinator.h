@@ -59,7 +59,6 @@ public:
       */
     virtual AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
         const Array & params) const = 0;
 

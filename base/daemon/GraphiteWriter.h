@@ -52,7 +52,8 @@ private:
         }
         catch (const Poco::Exception & e)
         {
-            LOG_WARNING(&Poco::Util::Application::instance().logger(), "Fail to write to Graphite {}:{}. e.what() = {}, e.message() = {}", host, port, e.what(), e.message());
+            LOG_WARNING(&Poco::Util::Application::instance().logger(),
+                        "Fail to write to Graphite " << host << ":" << port << ". e.what() = " << e.what() << ", e.message() = " << e.message());
         }
     }
 

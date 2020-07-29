@@ -1,8 +1,5 @@
-#include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
-
-#if USE_MSGPACK
-
 #include <cstdlib>
+#include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 
@@ -29,13 +26,6 @@ namespace ErrorCodes
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
     : IRowInputFormat(header_, in_, std::move(params_)), buf(in), parser(visitor), data_types(header_.getDataTypes())  {}
 
-void MsgPackRowInputFormat::resetParser()
-{
-    IRowInputFormat::resetParser();
-    buf.reset();
-    visitor.reset();
-}
-
 void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type) // NOLINT
 {
     while (!info_stack.empty())
@@ -43,11 +33,6 @@ void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type) // NOLINT
         info_stack.pop();
     }
     info_stack.push(Info{column, type});
-}
-
-void MsgPackVisitor::reset()
-{
-    info_stack = {};
 }
 
 void MsgPackVisitor::insert_integer(UInt64 value) // NOLINT
@@ -212,15 +197,3 @@ void registerInputFormatProcessorMsgPack(FormatFactory & factory)
 }
 
 }
-
-#else
-
-namespace DB
-{
-class FormatFactory;
-void registerInputFormatProcessorMsgPack(FormatFactory &)
-{
-}
-}
-
-#endif

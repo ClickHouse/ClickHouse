@@ -21,7 +21,6 @@ namespace DB
   *  queryString
   *  fragment
   *  queryStringAndFragment
-  *  netloc
   *
   * Functions, removing parts from URL.
   * If URL has nothing like, then it is returned unchanged.
