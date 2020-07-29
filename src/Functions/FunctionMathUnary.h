@@ -74,7 +74,7 @@ private:
             {
                 PODArray<Float64> tmp_vec(size);
                 for (size_t i = 0; i < size; ++i)
-                    tmp_vec[i] = src_data[i];
+                    tmp_vec[i] = static_cast<Float64>(src_data[i]);
 
                 Impl::execute(tmp_vec.data(), size, dst_data);
             }
@@ -94,13 +94,27 @@ private:
             if (rows_remaining != 0)
             {
                 T src_remaining[Impl::rows_per_iteration];
-                memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
-                memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        src_remaining[i] = src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        src_remaining[i] = 0;
+                }
+                else
+                {
+                    memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
+                    memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                }
                 ReturnType dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(src_remaining, dst_remaining);
 
-                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(ReturnType));
+                if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        dst_data[rows_size + i] = dst_remaining[i];
+                else
+                    memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(ReturnType));
             }
         }
     }

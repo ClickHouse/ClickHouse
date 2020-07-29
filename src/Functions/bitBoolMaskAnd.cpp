@@ -21,7 +21,7 @@ namespace DB
         static const constexpr bool allow_fixed_string = false;
 
         template <typename Result = ResultType>
-        static inline Result apply(A left, B right)
+        static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
         {
             // Should be a logical error, but this function is callable from SQL.
             // Need to investigate this.
@@ -34,7 +34,6 @@ namespace DB
 
 #if USE_EMBEDDED_COMPILER
         static constexpr bool compilable = false;
-
 #endif
     };
 
@@ -45,5 +44,4 @@ namespace DB
     {
         factory.registerFunction<FunctionBitBoolMaskAnd>();
     }
-
 }

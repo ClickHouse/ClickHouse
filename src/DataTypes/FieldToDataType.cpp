@@ -77,6 +77,11 @@ DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal128> & x) con
     return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
 }
 
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal256> & x) const
+{
+    using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
 
 DataTypePtr FieldToDataType::operator() (const Array & x) const
 {
@@ -108,6 +113,26 @@ DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) c
 {
     const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
     return DataTypeFactory::instance().get(name);
+}
+
+DataTypePtr FieldToDataType::operator() (const bUInt128 &) const
+{
+    throw Exception("There are no UInt128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bInt128 &) const
+{
+    throw Exception("There are no Int128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bUInt256 &) const
+{
+    throw Exception("There are no UInt256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bInt256 &) const
+{
+    throw Exception("There are no Int256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

@@ -20,7 +20,7 @@ namespace ErrorCodes
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
 {
-    x = 0;
+    x = T(0);
     exponent = 0;
     uint32_t max_digits = digits;
     digits = 0;

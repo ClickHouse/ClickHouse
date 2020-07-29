@@ -149,7 +149,20 @@ struct ConvertImpl
                         throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                {
+                    if constexpr (is_big_int_v<ToFieldType> && std::is_same_v<FromFieldType, UInt8>)
+                        vec_to[i] = static_cast<ToFieldType>(static_cast<UInt16>(vec_from[i]));
+                    else if constexpr (std::is_same_v<ToFieldType, UInt8> && is_big_int_v<FromFieldType>)
+                        vec_to[i] = static_cast<UInt16>(vec_from[i]);
+                    else if constexpr (std::is_same_v<ToFieldType, UInt128> && is_big_int_v<FromFieldType>)
+                    {
+                        // This should probably be removed after final big int integration
+                        static constexpr FromFieldType mask64 = (1ull << 63) + ((1ull << 63) - 1);
+                        vec_to[i] = UInt128(static_cast<UInt64>(vec_from[i] & mask64), static_cast<UInt64>((vec_from[i] >> 64) & mask64));
+                    }
+                    else
+                        vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                }
             }
 
             block.getByPosition(result).column = std::move(col_to);
@@ -734,7 +747,7 @@ struct ConvertThroughParsing
                 parsed = parsed && isAllRead(read_buffer);
 
                 if (!parsed)
-                    vec_to[i] = 0;
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
 
                 if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
                     (*vec_null_map_to)[i] = !parsed;
@@ -879,6 +892,7 @@ struct NameToString { static constexpr auto name = "toString"; };
 struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
 struct NameToDecimal64 { static constexpr auto name = "toDecimal64"; };
 struct NameToDecimal128 { static constexpr auto name = "toDecimal128"; };
+struct NameToDecimal256 { static constexpr auto name = "toDecimal256"; };
 
 
 #define DEFINE_NAME_TO_INTERVAL(INTERVAL_KIND) \
@@ -908,7 +922,8 @@ public:
 
     static constexpr auto name = Name::name;
     static constexpr bool to_decimal =
-        std::is_same_v<Name, NameToDecimal32> || std::is_same_v<Name, NameToDecimal64> || std::is_same_v<Name, NameToDecimal128>;
+        std::is_same_v<Name, NameToDecimal32> || std::is_same_v<Name, NameToDecimal64>
+         || std::is_same_v<Name, NameToDecimal128> || std::is_same_v<Name, NameToDecimal256>;
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
@@ -966,6 +981,8 @@ public:
                 return createDecimal<DataTypeDecimal>(18, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
                 return createDecimal<DataTypeDecimal>(38, scale);
+            else if constexpr (std::is_same_v<Name, NameToDecimal256>)
+                return createDecimal<DataTypeDecimal>(77, scale);
 
             throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
@@ -1117,7 +1134,8 @@ public:
     static constexpr bool to_decimal =
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>;
+        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
+        std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>;
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
@@ -1209,6 +1227,8 @@ public:
                     res = createDecimal<DataTypeDecimal>(18, scale);
                 else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
                     res = createDecimal<DataTypeDecimal>(38, scale);
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
+                    res = createDecimal<DataTypeDecimal>(77, scale);
 
                 if (!res)
                     throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
@@ -1329,8 +1349,10 @@ struct ToNumberMonotonicity
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
-            if (left_float >= std::numeric_limits<T>::min() && left_float <= std::numeric_limits<T>::max()
-                && right_float >= std::numeric_limits<T>::min() && right_float <= std::numeric_limits<T>::max())
+            if (left_float >= static_cast<double>(std::numeric_limits<T>::min())
+                && left_float <= static_cast<double>(std::numeric_limits<T>::max())
+                && right_float >= static_cast<double>(std::numeric_limits<T>::min())
+                && right_float <= static_cast<double>(std::numeric_limits<T>::max()))
                 return { true };
 
             return {};
@@ -1460,10 +1482,14 @@ struct NameToUInt8 { static constexpr auto name = "toUInt8"; };
 struct NameToUInt16 { static constexpr auto name = "toUInt16"; };
 struct NameToUInt32 { static constexpr auto name = "toUInt32"; };
 struct NameToUInt64 { static constexpr auto name = "toUInt64"; };
+struct NameToUInt128 { static constexpr auto name = "toUInt128"; };
+struct NameToUInt256 { static constexpr auto name = "toUInt256"; };
 struct NameToInt8 { static constexpr auto name = "toInt8"; };
 struct NameToInt16 { static constexpr auto name = "toInt16"; };
 struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
+struct NameToInt128 { static constexpr auto name = "toInt128"; };
+struct NameToInt256 { static constexpr auto name = "toInt256"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
@@ -1472,10 +1498,14 @@ using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMono
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
 using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicity<UInt32>>;
 using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
+using FunctionToUInt128 = FunctionConvert<DataTypeUInt128, NameToUInt128, ToNumberMonotonicity<bUInt128>>;
+using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<bUInt256>>;
 using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
 using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
 using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
+using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<bInt128>>;
+using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<bInt256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToNumberMonotonicity<UInt16>>;
@@ -1487,6 +1517,7 @@ using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimest
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
+using FunctionToDecimal256 = FunctionConvert<DataTypeDecimal<Decimal256>, NameToDecimal256, UnknownMonotonicity>;
 
 
 template <typename DataType> struct FunctionTo;
@@ -1495,10 +1526,14 @@ template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
 template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
 template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
 template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionTo<DataTypeUInt128> { using Type = FunctionToUInt128; };
+template <> struct FunctionTo<DataTypeUInt256> { using Type = FunctionToUInt256; };
 template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
 template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
 template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
 template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; };
+template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
@@ -1510,6 +1545,7 @@ template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixe
 template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal32; };
 template <> struct FunctionTo<DataTypeDecimal<Decimal64>> { using Type = FunctionToDecimal64; };
 template <> struct FunctionTo<DataTypeDecimal<Decimal128>> { using Type = FunctionToDecimal128; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal256>> { using Type = FunctionToDecimal256; };
 
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
     : FunctionTo<DataTypeNumber<FieldType>>
@@ -1520,10 +1556,14 @@ struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; };
 struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; };
 struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; };
 struct NameToUInt64OrZero { static constexpr auto name = "toUInt64OrZero"; };
+struct NameToUInt128OrZero { static constexpr auto name = "toUInt128OrZero"; };
+struct NameToUInt256OrZero { static constexpr auto name = "toUInt256OrZero"; };
 struct NameToInt8OrZero { static constexpr auto name = "toInt8OrZero"; };
 struct NameToInt16OrZero { static constexpr auto name = "toInt16OrZero"; };
 struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
+struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
+struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
@@ -1532,15 +1572,20 @@ struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero
 struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; };
 struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; };
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
+struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
 
 using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt32OrZero = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt64OrZero = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt128OrZero = FunctionConvertFromString<DataTypeUInt128, NameToUInt128OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt256OrZero = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt8OrZero = FunctionConvertFromString<DataTypeInt8, NameToInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt16OrZero = FunctionConvertFromString<DataTypeInt16, NameToInt16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToInt128OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
@@ -1549,15 +1594,20 @@ using FunctionToDateTime64OrZero = FunctionConvertFromString<DataTypeDateTime64,
 using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
 struct NameToUInt32OrNull { static constexpr auto name = "toUInt32OrNull"; };
 struct NameToUInt64OrNull { static constexpr auto name = "toUInt64OrNull"; };
+struct NameToUInt128OrNull { static constexpr auto name = "toUInt128OrNull"; };
+struct NameToUInt256OrNull { static constexpr auto name = "toUInt256OrNull"; };
 struct NameToInt8OrNull { static constexpr auto name = "toInt8OrNull"; };
 struct NameToInt16OrNull { static constexpr auto name = "toInt16OrNull"; };
 struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
 struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
+struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
+struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
@@ -1566,15 +1616,20 @@ struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull
 struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; };
 struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; };
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
+struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
 
 using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt32OrNull = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt64OrNull = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt128OrNull = FunctionConvertFromString<DataTypeUInt128, NameToUInt128OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt256OrNull = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt8OrNull = FunctionConvertFromString<DataTypeInt8, NameToInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt16OrNull = FunctionConvertFromString<DataTypeInt16, NameToInt16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToInt128OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
@@ -1583,6 +1638,7 @@ using FunctionToDateTime64OrNull = FunctionConvertFromString<DataTypeDateTime64,
 using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
@@ -2227,10 +2283,14 @@ private:
                 std::is_same_v<ToDataType, DataTypeUInt16> ||
                 std::is_same_v<ToDataType, DataTypeUInt32> ||
                 std::is_same_v<ToDataType, DataTypeUInt64> ||
+                std::is_same_v<ToDataType, DataTypeUInt128> ||
+                std::is_same_v<ToDataType, DataTypeUInt256> ||
                 std::is_same_v<ToDataType, DataTypeInt8> ||
                 std::is_same_v<ToDataType, DataTypeInt16> ||
                 std::is_same_v<ToDataType, DataTypeInt32> ||
                 std::is_same_v<ToDataType, DataTypeInt64> ||
+                std::is_same_v<ToDataType, DataTypeInt128> ||
+                std::is_same_v<ToDataType, DataTypeInt256> ||
                 std::is_same_v<ToDataType, DataTypeFloat32> ||
                 std::is_same_v<ToDataType, DataTypeFloat64> ||
                 std::is_same_v<ToDataType, DataTypeDate> ||
@@ -2250,6 +2310,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
+                std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>> ||
                 std::is_same_v<ToDataType, DataTypeDateTime64>)
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
@@ -2368,6 +2429,10 @@ private:
             return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
             return monotonicityForType(type);
+        if (const auto type = checkAndGetDataType<DataTypeUInt128>(to_type))
+            return monotonicityForType(type);
+        if (const auto type = checkAndGetDataType<DataTypeUInt256>(to_type))
+            return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
             return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
@@ -2375,6 +2440,10 @@ private:
         if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
+            return monotonicityForType(type);
+        if (const auto type = checkAndGetDataType<DataTypeInt128>(to_type))
+            return monotonicityForType(type);
+        if (const auto type = checkAndGetDataType<DataTypeInt256>(to_type))
             return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);

@@ -179,7 +179,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                events_timestamp[0] = timestamp;
+                events_timestamp[0] = static_cast<Int64>(timestamp);
                 first_event = true;
             }
             else if (strict && events_timestamp[event_idx] >= 0)

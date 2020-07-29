@@ -18,7 +18,7 @@ namespace DB
         using ResultType = UInt8;
         static constexpr const bool allow_fixed_string = false;
 
-        static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+        static inline ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
         {
             if constexpr (!std::is_same_v<A, ResultType>)
                 // Should be a logical error, but this function is callable from SQL.
@@ -59,5 +59,4 @@ namespace DB
     {
         factory.registerFunction<FunctionBitSwapLastTwo>();
     }
-
 }

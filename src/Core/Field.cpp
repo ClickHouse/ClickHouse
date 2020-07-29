@@ -83,6 +83,34 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::bUInt128:
+                {
+                    bUInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    bInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    bUInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    bInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
             }
         }
     }
@@ -140,6 +168,26 @@ namespace DB
                 {
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().name, buf);
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().data, buf);
+                    break;
+                }
+                case Field::Types::bUInt128:
+                {
+                    DB::writeBinary(get<bUInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    DB::writeBinary(get<bInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    DB::writeBinary(get<bUInt256>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    DB::writeBinary(get<bInt256>(elem), buf);
                     break;
                 }
             }
@@ -226,6 +274,34 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::bUInt128:
+                {
+                    bUInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    bInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    bUInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    bInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
             }
         }
     }
@@ -284,6 +360,26 @@ namespace DB
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
+                case Field::Types::bUInt128:
+                {
+                    DB::writeBinary(get<bUInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    DB::writeBinary(get<bInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    DB::writeBinary(get<bUInt256>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    DB::writeBinary(get<bInt256>(elem), buf);
+                    break;
+                }
             }
         }
     }
@@ -332,4 +428,8 @@ namespace DB
     template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
     template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
     template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
+
+    template <> bool decimalEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decEqual(x, y, x_scale, y_scale); }
+    template <> bool decimalLess(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
+    template <> bool decimalLessOrEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 }

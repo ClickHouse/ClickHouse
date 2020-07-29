@@ -49,6 +49,12 @@ template <typename A, typename B>
 inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
+
+    if constexpr (is_big_int_v<B> && std::is_same_v<A, UInt8>)
+        return B(Int16(a)) / b;
+    else if constexpr (is_big_int_v<A> && std::is_same_v<B, UInt8>)
+        return a / A(Int16(b));
+
     return a / b;
 }
 
@@ -69,8 +75,7 @@ struct DivideIntegralImpl
         if constexpr (is_integral_v<A> && is_integral_v<B> && (is_signed_v<A> || is_signed_v<B>))
             return checkedDivision(std::make_signed_t<A>(a),
                 sizeof(A) > sizeof(B) ? std::make_signed_t<A>(b) : std::make_signed_t<B>(b));
-        else
-            return checkedDivision(a, b);
+        return checkedDivision(a, b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -83,6 +88,8 @@ struct ModuloImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool is_special = is_big_int_v<typename NumberTraits::ToInteger<A>::Type>
+                                             || is_big_int_v<typename NumberTraits::ToInteger<B>::Type>;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -95,6 +102,10 @@ struct ModuloImpl
         else
         {
             throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+
+            if constexpr (is_special)
+                return applyBigIntModulo<Result>(
+                    typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
             return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
         }
     }
@@ -102,6 +113,20 @@ struct ModuloImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
 #endif
+
+private:
+    template <typename Result, typename A, typename B>
+    static inline Result applyBigIntModulo(A a, B b)
+    {
+        if constexpr (std::is_same_v<A, UInt8>)
+            return UInt16(a) % b;
+        else if constexpr (std::is_same_v<B, UInt8>)
+            return a % UInt16(b);
+        else if constexpr (sizeof(A) > sizeof(B))
+            return a % A(b);
+        else
+            return B(a) % b;
+    }
 };
 
 }

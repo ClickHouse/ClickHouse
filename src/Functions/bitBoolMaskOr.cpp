@@ -21,7 +21,7 @@ namespace DB
         static const constexpr bool allow_fixed_string = false;
 
         template <typename Result = ResultType>
-        static inline Result apply(A left, B right)
+        static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
         {
             if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
                 // Should be a logical error, but this function is callable from SQL.
@@ -34,7 +34,6 @@ namespace DB
 
 #if USE_EMBEDDED_COMPILER
         static constexpr bool compilable = false;
-
 #endif
     };
 
@@ -45,5 +44,4 @@ namespace DB
     {
         factory.registerFunction<FunctionBitBoolMaskOr>();
     }
-
 }

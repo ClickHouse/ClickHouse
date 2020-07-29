@@ -22,19 +22,28 @@ struct AggregateFunctionAvgData
     using NumeratorType = T;
     using DenominatorType = Denominator;
 
-    T numerator = 0;
-    Denominator denominator = 0;
+    T numerator{0};
+    Denominator denominator{0};
 
     template <typename ResultT>
     ResultT NO_SANITIZE_UNDEFINED result() const
     {
         if constexpr (std::is_floating_point_v<ResultT>)
             if constexpr (std::numeric_limits<ResultT>::is_iec559)
-                return static_cast<ResultT>(numerator) / denominator; /// allow division by zero
+            {
+                if constexpr (is_big_int_v<Denominator>)
+                    return static_cast<ResultT>(numerator) / static_cast<ResultT>(denominator);
+                else
+                    return static_cast<ResultT>(numerator) / denominator; /// allow division by zero
+            }
 
-        if (denominator == 0)
+        if (denominator == static_cast<Denominator>(0))
             return static_cast<ResultT>(0);
-        return static_cast<ResultT>(numerator / denominator);
+
+        if constexpr (std::is_same_v<T, Decimal256>)
+            return static_cast<ResultT>(numerator / static_cast<T>(denominator));
+        else
+            return static_cast<ResultT>(numerator / denominator);
     }
 };
 

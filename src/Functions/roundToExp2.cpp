@@ -34,6 +34,14 @@ roundDownToPowerOfTwo(T x)
     return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
 }
 
+template <typename T>
+inline std::enable_if_t<is_big_int_v<T>, T>
+roundDownToPowerOfTwo(T x)
+{
+    // extention from boost/multiprecision/number.hpp
+    return T(1) << msb(x);
+}
+
 /** For integer data types:
   * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(100) = 64, roundToExp2(64) = 64);
   * - otherwise, return 0.

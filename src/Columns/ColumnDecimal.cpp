@@ -27,6 +27,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+StringRef serializeBigIntIntoArena(const bInt256 & x, Arena & arena, char const *& begin)
+{
+    static constexpr size_t bytesize = 32;
+    char * pos = arena.allocContinue(bytesize + 1, begin);
+    if (x < 0)
+        *pos = 1;
+    export_bits(x, pos + 1, 8, false);
+    return StringRef(pos, bytesize + 1);
+}
+
+bInt256 deserializeBigInt(const char * pos)
+{
+    static constexpr size_t bytesize = 32;
+
+    bInt256 x{};
+    char is_negative = *pos;
+    import_bits(x, pos + 1, pos + 1 + bytesize, false);
+    return is_negative ? -x : x;
+}
+}
+
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
@@ -51,24 +74,40 @@ void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    auto * pos = arena.allocContinue(sizeof(T), begin);
-    memcpy(pos, &data[n], sizeof(T));
-    return StringRef(pos, sizeof(T));
+    if constexpr (IsPODValue)
+    {
+        auto * pos = arena.allocContinue(sizeof(T), begin);
+        memcpy(pos, &data[n], sizeof(T));
+        return StringRef(pos, sizeof(T));
+    }
+    else
+    {
+        return serializeBigIntIntoArena(data[n], arena, begin);
+    }
 }
 
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    if constexpr (IsPODValue)
+    {
+        data.push_back(unalignedLoad<T>(pos));
+        return pos + sizeof(T);
+    }
+    else
+    {
+        data.push_back(deserializeBigInt(pos));
+        return pos + 32 + 1;
+    }
 }
 
 template <typename T>
-UInt64 ColumnDecimal<T>::get64(size_t n) const
+UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
         throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
-    return static_cast<typename T::NativeType>(data[n]);
+    else
+        return static_cast<typename T::NativeType>(data[n]);
 }
 
 template <typename T>
@@ -220,12 +259,24 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
-
-        if (size > count)
+        if constexpr (IsPODValue)
         {
-            void * tail = &new_col.data[count];
-            memset(tail, 0, (size - count) * sizeof(T));
+            memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
+
+            if (size > count)
+            {
+                void * tail = &new_col.data[count];
+                memset(tail, 0, (size - count) * sizeof(T));
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < count; i++)
+                new_col.data[i] = data[i];
+
+            if (size > count)
+                for (size_t i = count; i < size; i++)
+                    new_col.data[i] = T{};
         }
     }
 
@@ -235,9 +286,16 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 template <typename T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    T tmp;
-    memcpy(&tmp, src, sizeof(T));
-    data.emplace_back(tmp);
+    if constexpr (IsPODValue)
+    {
+        T tmp;
+        memcpy(&tmp, src, sizeof(T));
+        data.emplace_back(tmp);
+    }
+    else
+    {
+        data.push_back(deserializeBigInt(src));
+    }
 }
 
 template <typename T>
@@ -252,7 +310,13 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+    if constexpr (IsPODValue)
+        memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+    else
+    {
+        for (size_t i = 0; i < length; i++)
+            data[old_size + i] = src_vec.data[start + i];
+    }
 }
 
 template <typename T>
@@ -328,8 +392,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.empty())
     {
-        min = NearestFieldType<T>(0, scale);
-        max = NearestFieldType<T>(0, scale);
+        min = NearestFieldType<T>(T(0), scale);
+        max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
@@ -351,4 +415,5 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
+template class ColumnDecimal<Decimal256>;
 }

@@ -130,7 +130,7 @@ namespace detail
   */
 template <typename T> struct AggregateFunctionUniqTraits
 {
-    static UInt64 hash(T x) { return x; }
+    static UInt64 hash(T x) { return static_cast<UInt64>(x); }
 };
 
 template <> struct AggregateFunctionUniqTraits<UInt128>

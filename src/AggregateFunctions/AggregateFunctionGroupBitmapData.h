@@ -35,7 +35,7 @@ private:
         rb = roaring_bitmap_create();
 
         for (const auto & x : small)
-            roaring_bitmap_add(rb, x.getValue());
+            roaring_bitmap_add(rb, static_cast<UInt32>(x.getValue()));
     }
 
 public:
@@ -60,12 +60,12 @@ public:
                 else
                 {
                     toLarge();
-                    roaring_bitmap_add(rb, value);
+                    roaring_bitmap_add(rb, static_cast<UInt32>(value)); // this does not seem right
                 }
             }
         }
         else
-            roaring_bitmap_add(rb, value);
+            roaring_bitmap_add(rb, static_cast<UInt32>(value)); // this does not seem right
     }
 
     UInt64 size() const
@@ -102,7 +102,7 @@ public:
             readStringBinary(s,in);
             rb = roaring_bitmap_portable_deserialize(s.c_str());
             for (const auto & x : small) // merge from small
-                roaring_bitmap_add(rb, x.getValue());
+                roaring_bitmap_add(rb, static_cast<UInt32>(x.getValue())); // this does not seem right
         }
         else
             small.read(in);
@@ -135,7 +135,7 @@ public:
     {
         roaring_bitmap_t * smallRb = roaring_bitmap_create();
         for (const auto & x : small)
-            roaring_bitmap_add(smallRb, x.getValue());
+            roaring_bitmap_add(smallRb, static_cast<UInt32>(x.getValue()));
         return smallRb;
     }
 
@@ -163,7 +163,7 @@ public:
         else if (isSmall() && r1.isLarge())
         {
             for (const auto & x : small)
-                if (roaring_bitmap_contains(r1.rb, x.getValue()))
+                if (roaring_bitmap_contains(r1.rb, static_cast<UInt32>(x.getValue())))
                     buffer.push_back(x.getValue());
 
             // Clear out the original values
