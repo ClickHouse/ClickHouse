@@ -25,6 +25,7 @@ public:
 private:
     const bool enable_optimize_predicate_expression;
     const bool enable_optimize_predicate_expression_to_final_subquery;
+    const bool allow_push_predicate_when_subquery_contains_with;
     const Context & context;
     const TablesWithColumns & tables_with_columns;
 

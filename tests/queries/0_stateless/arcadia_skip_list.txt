@@ -133,3 +133,4 @@
 01376_GROUP_BY_injective_elimination_dictGet
 01391_join_on_dict_crash
 01401_FORMAT_SETTINGS
+01411_bayesian_ab_testing
