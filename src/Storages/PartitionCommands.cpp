@@ -5,6 +5,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
+#include <Processors/Chunk.h>
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -132,7 +135,7 @@ std::string PartitionCommand::typeToString() const
     __builtin_unreachable();
 }
 
-std::shared_ptr<SourceFromSingleChunk> convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
+Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
 {
     Block header {
          ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "command_type"),
@@ -178,7 +181,10 @@ std::shared_ptr<SourceFromSingleChunk> convertCommandsResultToSource(const Parti
 
     Chunk chunk(std::move(res_columns), commands_result.size());
 
-    return std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    Pipes result;
+    result.emplace_back(std::move(pipe));
+    return result;
 }
 
 }
