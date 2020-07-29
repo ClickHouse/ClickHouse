@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
 #include <DataTypes/NumberTraits.h>
@@ -86,8 +87,16 @@ struct ModuloImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
+        if constexpr (std::is_floating_point_v<ResultType>)
+        {
+            /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
+            return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
+        }
+        else
+        {
+            throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+            return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

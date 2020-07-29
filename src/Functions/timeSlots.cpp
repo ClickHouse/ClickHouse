@@ -143,7 +143,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const auto * starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
         const auto * const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
