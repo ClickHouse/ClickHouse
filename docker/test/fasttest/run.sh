@@ -110,19 +110,25 @@ kill_clickhouse () {
     done
 }
 
-kill_clickhouse
-
-clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
-
-until clickhouse-client --query "SELECT 1"
-do
-    sleep 0.1
-done
 
 FAILED_TESTS=`grep 'FAIL\|TIMEOUT\|ERROR' /test_output/test_log.txt | awk 'BEGIN { ORS=" " }; { print substr($3, 1, length($3)-1) }'`
 
-echo "Going to run again: $FAILED_TESTS"
 
-clickhouse-test --no-long --testname --shard --zookeeper $FAILED_TESTS 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/test_log.txt
+if [[ ! -z "$FAILED_TESTS" ]]; then
+    kill_clickhouse
+
+    clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+
+    until clickhouse-client --query "SELECT 1"
+    do
+        sleep 0.1
+    done
+
+    echo "Going to run again: $FAILED_TESTS"
+
+    clickhouse-test --no-long --testname --shard --zookeeper $FAILED_TESTS 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/test_log.txt
+else
+    echo "No failed tests"
+fi
 
 mv /var/log/clickhouse-server/* /test_output
