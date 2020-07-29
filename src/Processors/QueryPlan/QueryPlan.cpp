@@ -9,6 +9,7 @@
 #include "FinishSortingStep.h"
 #include "MergeSortingStep.h"
 #include "PartialSortingStep.h"
+#include "TotalsHavingStep.h"
 
 namespace DB
 {
@@ -374,6 +375,10 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_
 
     /// Special cases for sorting steps.
     if (tryUpdateLimitForSortingSteps(child_node, limit->limitPlusOffset()))
+        return;
+
+    /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
+    if (typeid_cast<const TotalsHavingStep *>(child.get()))
         return;
 
     /// Now we should decide if pushing down limit possible for this step.
