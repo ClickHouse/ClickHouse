@@ -13,7 +13,7 @@ services:
       - "389"
       - "636"
     healthcheck:
-      test: ldapsearch -x -H ldap://localhost -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin
+      test: ldapsearch -x -H ldap://localhost:$${LDAP_PORT:-389} -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin
       interval: 3s
       timeout: 10s
       retries: 5
