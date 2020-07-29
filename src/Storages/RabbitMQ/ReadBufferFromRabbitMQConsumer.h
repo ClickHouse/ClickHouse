@@ -27,15 +27,12 @@ public:
             ChannelPtr setup_channel_,
             HandlerPtr event_handler_,
             const String & exchange_name_,
-            const AMQP::ExchangeType & exchange_type_,
-            const Names & routing_keys_,
             size_t channel_id_,
             const String & queue_base_,
             Poco::Logger * log_,
             char row_delimiter_,
             bool hash_exchange_,
             size_t num_queues_,
-            const String & local_exchange_,
             const String & deadletter_exchange_,
             const std::atomic<bool> & stopped_);
 
@@ -63,8 +60,6 @@ private:
     HandlerPtr event_handler;
 
     const String exchange_name;
-    const AMQP::ExchangeType exchange_type;
-    const Names routing_keys;
     const size_t channel_id;
     const String queue_base;
     const bool hash_exchange;
@@ -75,7 +70,7 @@ private:
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    const String local_exchange, deadletter_exchange;
+    const String deadletter_exchange;
     std::atomic<bool> consumer_error = false;
     std::atomic<size_t> count_subscribed = 0, wait_subscribed;
 
@@ -88,8 +83,8 @@ private:
 
     bool nextImpl() override;
 
-    void initQueueBindings(const size_t queue_id);
-    void subscribe(const String & queue_name);
+    void bindQueue(size_t queue_id);
+    void subscribe();
     void iterateEventLoop();
 };
 

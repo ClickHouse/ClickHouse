@@ -126,7 +126,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     if (exchange_type_ != ExchangeType::DEFAULT)
     {
-        if      (exchange_type_ == ExchangeType::FANOUT)         exchange_type = AMQP::ExchangeType::fanout;
+        if (exchange_type_ == ExchangeType::FANOUT)              exchange_type = AMQP::ExchangeType::fanout;
         else if (exchange_type_ == ExchangeType::DIRECT)         exchange_type = AMQP::ExchangeType::direct;
         else if (exchange_type_ == ExchangeType::TOPIC)          exchange_type = AMQP::ExchangeType::topic;
         else if (exchange_type_ == ExchangeType::HASH)           exchange_type = AMQP::ExchangeType::consistent_hash;
@@ -140,12 +140,11 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     if (exchange_type == AMQP::ExchangeType::headers)
     {
-        std::vector<String> matching;
         for (const auto & header : routing_keys)
         {
+            std::vector<String> matching;
             boost::split(matching, header, [](char c){ return c == '='; });
             bind_headers[matching[0]] = matching[1];
-            matching.clear();
         }
     }
 
@@ -192,7 +191,7 @@ void StorageRabbitMQ::initExchange()
                 + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     });
 
-    /// Bridge exchange is needed to easily disconnect consumer queues.
+    /// Bridge exchange is needed to easily disconnect consumer queues. Also simplifies queue bindings a lot.
     setup_channel->declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable + AMQP::autodelete)
     .onError([&](const char * message)
     {
@@ -230,7 +229,6 @@ void StorageRabbitMQ::bindExchange()
     std::atomic<bool> binding_created = false;
     size_t bound_keys = 0;
 
-    /// Bridge exchange connects client's exchange with consumers' queues.
     if (exchange_type == AMQP::ExchangeType::headers)
     {
         setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
@@ -434,9 +432,9 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        consumer_channel, setup_channel, event_handler, consumer_exchange, exchange_type, routing_keys,
+        consumer_channel, setup_channel, event_handler, consumer_exchange,
         next_channel_id, queue_base, log, row_delimiter, hash_exchange, num_queues,
-        local_exchange, deadletter_exchange, stream_cancelled);
+        deadletter_exchange, stream_cancelled);
 }
 
 
