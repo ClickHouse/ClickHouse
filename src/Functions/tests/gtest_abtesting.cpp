@@ -80,7 +80,7 @@ TEST(BayesAB, beta)
     ASSERT_EQ(0, max);
 }
 
-    
+
 TEST(BayesAB, gamma)
 {
     size_t max = 0, min = 0;
