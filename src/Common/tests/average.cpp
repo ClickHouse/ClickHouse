@@ -15,7 +15,7 @@
   *
   * It tests the overhead of various data structures in comparison to the minimal code doing the same task.
   * It also tests what does it cost to access aggregation state via single pointer indirection.
-  * Also it evaluate various ways to unroll the loop.
+  * Also it evaluates various ways to unroll the loop.
   * And finally it compares with one solution involving bucket sort.
   *
   * How to use:
