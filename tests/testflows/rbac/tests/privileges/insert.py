@@ -5,14 +5,12 @@ from testflows.core import *
 from testflows.asserts import error
 
 from rbac.requirements import *
-import rbac.tests.errors
+import rbac.tests.errors as errors
 
 table_types = {
     "MergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = MergeTree(d, (a, b), 111)",
     "CollapsingMergeTree": "CREATE TABLE {name} (d Date, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = CollapsingMergeTree(d, (a, b), 111, y);"
 }
-
-exitcode, message = errors.not_enough_privileges(name="user0")
 
 @contextmanager
 def table(node, name, table_type="MergeTree"):
@@ -62,12 +60,14 @@ def input_output_equality_check(node, input_columns, input_data):
     RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0")
 )
 def without_privilege(self, table_type, node=None):
-    """Check that user without insert privilege on a table is not able to insert on that table."""
+    """Check that user without insert privilege on a table is not able to insert on that table.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
         with user(node, "user0"):
             with When("I run INSERT without privilege"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')", settings = [("user","user0")],
                             exitcode=exitcode, message=message)
 
@@ -83,7 +83,8 @@ def without_privilege(self, table_type, node=None):
     RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
 )
 def user_with_privilege(self, table_type, node=None):
-    """Check that user can insert into a table on which they have insert privilege and the inserted data is correct."""
+    """Check that user can insert into a table on which they have insert privilege and the inserted data is correct.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
@@ -114,7 +115,8 @@ def user_with_privilege(self, table_type, node=None):
     RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect("1.0"),
 )
 def user_with_revoked_privilege(self, table_type, node=None):
-    """Check that user is unable to insert into a table after insert privilege on that table has been revoked from user."""
+    """Check that user is unable to insert into a table after insert privilege on that table has been revoked from user.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
@@ -124,8 +126,16 @@ def user_with_revoked_privilege(self, table_type, node=None):
             with And("I revoke privilege"):
                 node.query("REVOKE INSERT ON merge_tree FROM user0")
             with And("I use INSERT"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')",
                             settings=[("user","user0")], exitcode=exitcode, message=message)
+
+@TestScenario
+def user_with_privilege_on_columns(self, table_type):
+    Scenario(run=user_column_privileges,
+        examples=Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass table_type",
+            [tuple(list(row)+[table_type]) for row in user_column_privileges.examples]))
+
 
 @TestOutline(Scenario)
 @Requirements(
@@ -154,10 +164,9 @@ def user_with_revoked_privilege(self, table_type, node=None):
     ("d,a,b", "d,a,b", "x", "d,b", '\'woo\'', '\'2020-01-01\',9'),
     ("d,a,b", "b", "y", "d,a,b", '9', '\'2020-01-01\',\'woo\',9')
 ])
-def user_with_privilege_on_columns(self, grant_columns, insert_columns_pass, data_fail, data_pass, table_type,
-                                   revoke_columns=None, insert_columns_fail=None, node=None):
-    """
-    Check that user is able to insert on granted columns
+def user_column_privileges(self, grant_columns, insert_columns_pass, data_fail, data_pass, table_type,
+                                            revoke_columns=None, insert_columns_fail=None, node=None):
+    """Check that user is able to insert on granted columns
     and unable to insert on not granted or revoked columns.
     """
     if node is None:
@@ -168,17 +177,20 @@ def user_with_privilege_on_columns(self, grant_columns, insert_columns_pass, dat
                 node.query(f"GRANT INSERT({grant_columns}) ON merge_tree TO user0")
             if insert_columns_fail is not None:
                 with And("I insert into not granted column"):
+                    exitcode, message = errors.not_enough_privileges(name="user0")
                     node.query(f"INSERT INTO merge_tree ({insert_columns_fail}) VALUES ({data_fail})",
                                 settings=[("user","user0")], exitcode=exitcode, message=message)
             with And("I insert into granted column"):
                 node.query(f"INSERT INTO merge_tree ({insert_columns_pass}) VALUES ({data_pass})",
                             settings=[("user","user0")])
             with Then("I check the insert functioned"):
-                assert input_output_equality_check(node, insert_columns_pass, data_pass), error()
+                input_equals_output = input_output_equality_check(node, insert_columns_pass, data_pass)
+                assert input_equals_output, error()
             if revoke_columns is not None:
                 with When("I revoke insert privilege from columns"):
                     node.query(f"REVOKE INSERT({revoke_columns}) ON merge_tree FROM user0")
                 with And("I insert into revoked columns"):
+                    exitcode, message = errors.not_enough_privileges(name="user0")
                     node.query(f"INSERT INTO merge_tree ({insert_columns_pass}) VALUES ({data_pass})",
                                 settings=[("user","user0")], exitcode=exitcode, message=message)
 
@@ -194,8 +206,7 @@ def user_with_privilege_on_columns(self, grant_columns, insert_columns_pass, dat
     RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
 )
 def role_with_privilege(self, table_type, node=None):
-    """
-    Check that user can insert into a table after it is granted a role that
+    """Check that user can insert into a table after it is granted a role that
     has the insert privilege for that table.
     """
     if node is None:
@@ -230,8 +241,7 @@ def role_with_privilege(self, table_type, node=None):
     RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect("1.0"),
 )
 def role_with_revoked_privilege(self, table_type, node=None):
-    """
-    Check that user with a role that has insert privilege on a table
+    """Check that user with a role that has insert privilege on a table
     is unable to insert into that table after insert privilege
     has been revoked from the role.
     """
@@ -246,6 +256,7 @@ def role_with_revoked_privilege(self, table_type, node=None):
             with And("I revoke privilege from the role"):
                 node.query("REVOKE INSERT ON merge_tree FROM role0")
             with And("I insert into the table"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')",
                             settings=[("user","user0")], exitcode=exitcode, message=message)
 
@@ -261,8 +272,7 @@ def role_with_revoked_privilege(self, table_type, node=None):
     RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0")
 )
 def user_with_revoked_role(self, table_type, node=None):
-    """
-    Check that user with a role that has insert privilege on a table
+    """Check that user with a role that has insert privilege on a table
     is unable to insert into that table after the role with insert
     privilege has been revoked from the user.
     """
@@ -277,8 +287,14 @@ def user_with_revoked_role(self, table_type, node=None):
             with And("I revoke the role from the user"):
                 node.query("REVOKE role0 FROM user0")
             with And("I insert into the table"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')",
                             settings=[("user","user0")], exitcode=exitcode, message=message)
+@TestScenario
+def role_with_privilege_on_columns(self, table_type):
+    Scenario(run=role_column_privileges,
+        examples=Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass table_type",
+            [tuple(list(row)+[table_type]) for row in role_column_privileges.examples]))
 
 @TestOutline(Scenario)
 @Requirements(
@@ -307,10 +323,9 @@ def user_with_revoked_role(self, table_type, node=None):
     ("d,a,b", "d,a,b", "x", "d,b", '\'woo\'', '\'2020-01-01\',9'),
     ("d,a,b", "b", "y", "d,a,b", '9', '\'2020-01-01\',\'woo\',9')
 ])
-def role_with_privilege_on_columns(self, grant_columns, insert_columns_pass, data_fail, data_pass,
-                                   table_type, revoke_columns=None, insert_columns_fail=None, node=None):
-    """
-    Check that user is able to insert on granted columns and unable
+def role_column_privileges(self, grant_columns, insert_columns_pass, data_fail, data_pass,
+                            table_type, revoke_columns=None, insert_columns_fail=None, node=None):
+    """Check that user with a role is able to insert on granted columns and unable
     to insert on not granted or revoked columns.
     """
     if node is None:
@@ -323,17 +338,20 @@ def role_with_privilege_on_columns(self, grant_columns, insert_columns_pass, dat
                     node.query("GRANT role0 TO user0")
                 if insert_columns_fail is not None:
                     with And("I insert into not granted column"):
+                        exitcode, message = errors.not_enough_privileges(name="user0")
                         node.query(f"INSERT INTO merge_tree ({insert_columns_fail}) VALUES ({data_fail})",
                                     settings=[("user","user0")], exitcode=exitcode, message=message)
                 with And("I insert into granted column"):
                     node.query(f"INSERT INTO merge_tree ({insert_columns_pass}) VALUES ({data_pass})",
                                 settings=[("user","user0")])
                 with Then("I check the insert functioned"):
-                    assert input_output_equality_check(node, insert_columns_pass, data_pass), error()
+                    input_equals_output = input_output_equality_check(node, insert_columns_pass, data_pass)
+                    assert input_equals_output, error()
                 if revoke_columns is not None:
                     with When("I revoke insert privilege from columns"):
                         node.query(f"REVOKE INSERT({revoke_columns}) ON merge_tree FROM role0")
                     with And("I insert into revoked columns"):
+                        exitcode, message = errors.not_enough_privileges(name="user0")
                         node.query(f"INSERT INTO merge_tree ({insert_columns_pass}) VALUES ({data_pass})",
                                     settings=[("user","user0")], exitcode=exitcode, message=message)
 
@@ -350,8 +368,7 @@ def role_with_privilege_on_columns(self, grant_columns, insert_columns_pass, dat
     RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0"),
 )
 def user_with_privilege_on_cluster(self, table_type, node=None):
-    """
-    Check that user is able to insert on a table with
+    """Check that user is able to insert on a table with
     privilege granted on a cluster.
     """
     if node is None:
@@ -363,6 +380,7 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
             with When("I grant insert privilege on a cluster without the node with the table"):
                 node.query("GRANT ON CLUSTER cluster23 INSERT ON merge_tree TO user0")
             with And("I insert into the table expecting a fail"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
             with And("I grant insert privilege on cluster including all nodes"):
@@ -391,8 +409,7 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
 )
 def user_with_privilege_from_user_with_grant_option(self, table_type, node=None):
-    """
-    Check that user is able to insert on a table when granted privilege
+    """Check that user is able to insert on a table when granted privilege
     from another user with grant option.
     """
     if node is None:
@@ -402,6 +419,7 @@ def user_with_privilege_from_user_with_grant_option(self, table_type, node=None)
             with When("I grant privilege with grant option to user"):
                 node.query("GRANT INSERT(d) ON merge_tree TO user0 WITH GRANT OPTION")
             with And("I grant privilege on a column I dont have permission on"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("GRANT INSERT(b) ON merge_tree TO user1", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
             with And("I grant privilege to another user via grant option"):
@@ -427,8 +445,7 @@ def user_with_privilege_from_user_with_grant_option(self, table_type, node=None)
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
 )
 def role_with_privilege_from_user_with_grant_option(self, table_type, node=None):
-    """
-    Check that user is able to insert on a table when granted a role with
+    """Check that user is able to insert on a table when granted a role with
     insert privilege that was granted by another user with grant option.
     """
     if node is None:
@@ -438,6 +455,7 @@ def role_with_privilege_from_user_with_grant_option(self, table_type, node=None)
             with When("I grant privilege with grant option to user"):
                 node.query("GRANT INSERT(d) ON merge_tree TO user0 WITH GRANT OPTION")
             with And("I grant privilege on a column I dont have permission on"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("GRANT INSERT(b) ON merge_tree TO role0", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
             with And("I grant privilege to a role via grant option"):
@@ -465,8 +483,7 @@ def role_with_privilege_from_user_with_grant_option(self, table_type, node=None)
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
 )
 def user_with_privilege_from_role_with_grant_option(self, table_type, node=None):
-    """
-    Check that user is able to insert on a table when granted privilege from a role with grant option
+    """Check that user is able to insert on a table when granted privilege from a role with grant option
     """
     if node is None:
         node = self.context.node
@@ -477,6 +494,7 @@ def user_with_privilege_from_role_with_grant_option(self, table_type, node=None)
             with When("I grant role to a user"):
                 node.query("GRANT role0 TO user0")
             with And("I grant privilege on a column I dont have permission on"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("GRANT INSERT(b) ON merge_tree TO user1", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
             with And("I grant privilege to a user via grant option"):
@@ -502,8 +520,7 @@ def user_with_privilege_from_role_with_grant_option(self, table_type, node=None)
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
 )
 def role_with_privilege_from_role_with_grant_option(self, table_type, node=None):
-    """
-    Check that a user is able to insert on a table with a role that was granted privilege
+    """Check that a user is able to insert on a table with a role that was granted privilege
     by another role with grant option
     """
     if node is None:
@@ -515,6 +532,7 @@ def role_with_privilege_from_role_with_grant_option(self, table_type, node=None)
             with And("I grant the role to a user"):
                 node.query("GRANT role0 TO user0")
             with And("I grant privilege on a column I dont have permission on"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("GRANT INSERT(b) ON merge_tree TO role1", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
             with And("I grant privilege to another role via grant option"):
@@ -539,7 +557,8 @@ def role_with_privilege_from_role_with_grant_option(self, table_type, node=None)
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
 )
 def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node=None):
-    """Check that user is unable to revoke a column they don't have access to from a user."""
+    """Check that user is unable to revoke a column they don't have access to from a user.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
@@ -547,6 +566,7 @@ def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node
             with When("I grant privilege with grant option to user"):
                 node.query("GRANT INSERT(d) ON merge_tree TO user0 WITH GRANT OPTION")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("REVOKE INSERT(b) ON merge_tree FROM user1", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
 
@@ -562,7 +582,8 @@ def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
 )
 def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node=None):
-    """Check that user is unable to revoke a column they dont have acces to from a role."""
+    """Check that user is unable to revoke a column they dont have acces to from a role.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
@@ -570,6 +591,7 @@ def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node
             with When("I grant privilege with grant option to user"):
                 node.query("GRANT INSERT(d) ON merge_tree TO user0 WITH GRANT OPTION")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("REVOKE INSERT(b) ON merge_tree FROM role0", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
 
@@ -585,7 +607,8 @@ def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
 )
 def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node=None):
-    """Check that user with a role is unable to revoke a column they dont have acces to from a user."""
+    """Check that user with a role is unable to revoke a column they dont have acces to from a user.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
@@ -595,6 +618,7 @@ def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node
             with And("I grant the role to a user"):
                 node.query("GRANT role0 TO user0")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("REVOKE INSERT(b) ON merge_tree FROM user1", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
 
@@ -610,7 +634,8 @@ def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node
     RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
 )
 def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node=None):
-    """Check that user with a role is unable to revoke a column they dont have acces to from a role."""
+    """Check that user with a role is unable to revoke a column they dont have acces to from a role.
+    """
     if node is None:
         node = self.context.node
     with table(node, "merge_tree", table_type):
@@ -620,6 +645,7 @@ def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node
             with And("I grant the role to a user"):
                 node.query("GRANT role0 TO user0")
             with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("REVOKE INSERT(b) ON merge_tree FROM role1", settings=[("user","user0")],
                             exitcode=exitcode, message=message)
 
@@ -638,15 +664,11 @@ def feature(self, table_type, node="clickhouse1"):
     Scenario(test=without_privilege)(table_type=table_type)
     Scenario(test=user_with_privilege)(table_type=table_type)
     Scenario(test=user_with_revoked_privilege)(table_type=table_type)
-    Scenario(run=user_with_privilege_on_columns,
-        examples=Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass table_type",
-            [tuple(list(row)+[table_type]) for row in user_with_privilege_on_columns.examples]))
+    Scenario(test=user_with_privilege_on_columns)(table_type=table_type)
     Scenario(test=role_with_privilege)(table_type=table_type)
     Scenario(test=role_with_revoked_privilege)(table_type=table_type)
     Scenario(test=user_with_revoked_role)(table_type=table_type)
-    Scenario(run=role_with_privilege_on_columns,
-        examples=Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass table_type",
-            [tuple(list(row)+[table_type]) for row in role_with_privilege_on_columns.examples]))
+    Scenario(test=role_with_privilege_on_columns)(table_type=table_type)
     Scenario(test=user_with_privilege_on_cluster)(table_type=table_type)
     Scenario(test=user_with_privilege_from_user_with_grant_option)(table_type=table_type)
     Scenario(test=role_with_privilege_from_user_with_grant_option)(table_type=table_type)
