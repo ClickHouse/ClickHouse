@@ -1,1 +1,1 @@
-SELECT 2
+SELECT 1
