@@ -750,8 +750,15 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->getBytesOnDisk())
+            size_t max_source_part_size = merger_mutator.getMaxSourcePartSizeForMutation();
+            if (max_source_part_size < part->getBytesOnDisk())
+            {
+                LOG_DEBUG(log, "Current max source part size for mutation is {} but part size {}. Will not mutate part {}. "
+                    "Max size depends not only on available space, but also on settings "
+                    "'number_of_free_entries_in_pool_to_execute_mutation' and 'background_pool_size'",
+                    max_source_part_size, part->getBytesOnDisk(), part->name);
                 continue;
+            }
 
             size_t current_ast_elements = 0;
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
