@@ -1723,4 +1723,21 @@ SELECT * FROM a;
 +---+
 ```
 
+## mutations_sync {#mutations_sync}
+
+Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
+
+Possible values:
+
+-   0 - Mutations execute asynchronously. 
+-   1 - The query waits for all mutations to complete on the current server. 
+-   2 - The query waits for all mutations to complete on all replicas (if they exist).
+
+Default value: `0`.
+
+**See Also**
+
+-   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+-   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
