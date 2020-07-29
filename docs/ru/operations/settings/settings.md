@@ -1480,4 +1480,21 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
+## mutations_sync {#mutations_sync}
+
+Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
+
+Возможные значения:
+
+-   0 - мутации выполняются асинхронно. 
+-   1 - запрос ждет завершения всех мутаций на текущем сервере. 
+-   2 - запрос ждет завершения всех мутаций на всех репликах (если они есть).
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
+-   [Мутации](../../sql-reference/statements/alter.md#mutations)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
