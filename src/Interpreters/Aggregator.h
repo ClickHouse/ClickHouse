@@ -69,8 +69,8 @@ using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 using AggregatedDataWithoutKey = AggregateDataPtr;
 
-using AggregatedDataWithUInt8Key = FixedHashMap<UInt8, AggregateDataPtr>;
-using AggregatedDataWithUInt16Key = FixedHashMap<UInt16, AggregateDataPtr>;
+using AggregatedDataWithUInt8Key = FixedImplicitZeroHashMap<UInt8, AggregateDataPtr>;
+using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDataPtr>;
 
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
