@@ -5,7 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -35,7 +35,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
@@ -472,7 +471,7 @@ void StorageMerge::convertingSourceStream(
             NamesAndTypesList source_columns = metadata_snapshot->getSampleBlock().getNamesAndTypesList();
             auto virtual_column = *getVirtuals().tryGetByName("_table");
             source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
-            auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
+            auto syntax_result = TreeRewriter(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
@@ -480,7 +479,7 @@ void StorageMerge::convertingSourceStream(
             {
                 if (required_column == header_column.name)
                     throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
-                                    + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                                    + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
             }
         }
 
