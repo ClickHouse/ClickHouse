@@ -228,7 +228,7 @@ void DiskCacheWrapper::createHardLink(const String & src_path, const String & ds
     DiskDecorator::createHardLink(src_path, dst_path);
 }
 
-/// TODO: Current reservation mechanism leaks abstraction details.
+/// TODO: Current reservation mechanism leaks IDisk abstraction details.
 /// This hack is needed to return proper disk pointer (wrapper instead of implementation) from reservation object.
 class ReservationDelegate : public IReservation
 {
