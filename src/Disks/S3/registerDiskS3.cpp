@@ -131,10 +131,6 @@ void registerDiskS3(DiskFactory & factory)
             config.getString(config_prefix + ".secret_access_key", ""));
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
-        String cache_path = config.getString(config_prefix + ".cache_path", context.getPath() + "disks/" + name + "/cache/");
-
-        if (metadata_path == cache_path)
-            throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
 
         auto s3disk = std::make_shared<DiskS3>(
             name,
@@ -152,14 +148,27 @@ void registerDiskS3(DiskFactory & factory)
         checkReadAccess(name, *s3disk);
         checkRemoveAccess(*s3disk);
 
-        auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
-        auto cache_file_predicate = [](const String & path) {
-            return path.ends_with(".idx") // index files.
-                || path.ends_with(".mrk") || path.ends_with(".mrk2") || path.ends_with(".mrk3") // mark files.
-                || path.ends_with(".txt");
-        };
+        bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
-        return std::make_shared<DiskCacheWrapper>(s3disk, cache_disk, cache_file_predicate);
+        if (cache_enabled)
+        {
+            String cache_path = config.getString(config_prefix + ".cache_path", context.getPath() + "disks/" + name + "/cache/");
+
+            if (metadata_path == cache_path)
+                throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
+
+            auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
+            auto cache_file_predicate = [] (const String & path)
+            {
+                return path.ends_with("idx") // index files.
+                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") // mark files.
+                       || path.ends_with("txt") || path.ends_with("dat");
+            };
+
+            return std::make_shared<DiskCacheWrapper>(s3disk, cache_disk, cache_file_predicate);
+        }
+
+        return s3disk;
     };
     factory.registerDiskType("s3", creator);
 }

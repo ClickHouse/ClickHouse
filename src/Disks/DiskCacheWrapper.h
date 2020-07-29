@@ -74,6 +74,7 @@ public:
     void remove(const String & path) override;
     void removeRecursive(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
+    ReservationPtr reserve(UInt64 bytes) override;
 
 private:
     std::shared_ptr<FileDownloadMetadata> acquireDownloadMetadata(const String & path) const;
