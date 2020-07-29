@@ -164,6 +164,27 @@ struct Decimal
 
     operator T () const { return value; }
 
+    template <typename U>
+    U convertTo()
+    {
+        if constexpr (std::is_same_v<U, Decimal<Int32>> ||
+                      std::is_same_v<U, Decimal<Int64>> ||
+                      std::is_same_v<U, Decimal<Int128>> ||
+                      std::is_same_v<U, Decimal<bInt256>>)
+        {
+            return convertTo<typename U::NativeType>();
+        }
+        else
+        {
+            if constexpr (is_big_int_v<NativeType>)
+            {
+                return value. template convert_to<U>();
+            }
+            else
+                return static_cast<U>(value);
+        }
+    }
+
     const Decimal<T> & operator += (const T & x) { value += x; return *this; }
     const Decimal<T> & operator -= (const T & x) { value -= x; return *this; }
     const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }

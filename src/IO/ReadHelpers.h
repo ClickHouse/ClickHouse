@@ -281,7 +281,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    short res_sign = 1;
+    bool negative = false;
     make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
@@ -303,7 +303,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '-':
             {
                 if constexpr (is_signed_v<T>)
-                    res_sign = -1;
+                    negative = true;
                 else
                 {
                     if constexpr (throw_exception)
@@ -336,8 +336,13 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                         if (common::mulOverflow<T>(signed_res, 10, signed_res)
                             || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
                             return ReturnType(false);
-                        res = signed_res;
-                        break;
+
+                        /// Cannot assign signed to unsigned for big ints. Ignore fast path.
+                        if constexpr (!is_big_int_v<T>)
+                        {
+                            res = signed_res;
+                            break;
+                        }
                     }
                 }
                 res *= 10;
@@ -351,21 +356,20 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    if (!negative)
+    x = res;
+    if constexpr (is_signed_v<T>)
     {
-        x = res;
-    }
-    else
-    {
-        if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+        if (negative)
         {
-            x = res;
-            if (common::mulOverflow<T>(x, -1, x))
-                return ReturnType(false);
-        }
-        else
-        {
-            x = -res;
+            if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+            {
+                if (common::mulOverflow<T>(x, -1, x))
+                    return ReturnType(false);
+            }
+            else
+            {
+                x = -x;
+            }
         }
     }
 

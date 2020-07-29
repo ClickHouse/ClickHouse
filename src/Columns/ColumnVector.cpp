@@ -645,6 +645,8 @@ void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
 template <typename T>
 void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 {
+    using FastRefT = std::conditional_t<is_big_int_v<T>, const T &, const T>;
+
     size_t size = data.size();
 
     if (size == 0)
@@ -665,7 +667,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     T cur_min = NaNOrZero<T>();
     T cur_max = NaNOrZero<T>();
 
-    for (const T x : data)
+    for (FastRefT x : data)
     {
         if (isNaN(x))
             continue;

@@ -63,12 +63,6 @@ struct UInt128
             return static_cast<T>(low);
     }
 
-    // this probably should be removed after final big int integration
-    explicit operator bUInt128() const { return static_cast<bUInt128>(high) << 64 + low;  }
-    explicit operator bInt128() const { return static_cast<bInt128>(high) << 64 + low; }
-    explicit operator bUInt256() const { return static_cast<bUInt256>(high) << 64 + low; }
-    explicit operator bInt256() const { return static_cast<bInt256>(high) << 64 + low; }
-
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif

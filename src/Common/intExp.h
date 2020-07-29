@@ -233,6 +233,8 @@ constexpr inline T intExp10OfSize(int x)
 {
     if constexpr (sizeof(T) <= 8)
         return intExp10(x);
-    else
+    else if constexpr (sizeof(T) <= 16)
         return common::exp10_i128(x);
+    else
+        return common::exp10_i256(x);
 }

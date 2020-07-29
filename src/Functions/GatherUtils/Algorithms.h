@@ -12,6 +12,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GatherUtils
@@ -39,12 +40,17 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
             sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
         else if constexpr (IsDecimalNumber<U> && is_big_int_v<T>)
             sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i]);
-        else if constexpr (std::is_same_v<T, Decimal256> && std::is_same_v<U, UInt8>)
-            sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i].value));
-        else if constexpr (std::is_same_v<T, Decimal256> && IsDecimalNumber<U>)
-            sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i].value);
+        else if constexpr ((std::is_same_v<T, Decimal256> || is_big_int_v<T>) && std::is_same_v<U, UInt128>)
+            throw Exception("No conversion between old UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
         else if constexpr (std::is_same_v<T, Decimal256>)
-            sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
+        {
+            if constexpr (std::is_same_v<U, UInt8>)
+                sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i].value));
+            else if constexpr (IsDecimalNumber<U>)
+                sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i].value);
+            else
+                sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
+        }
         else if constexpr (std::is_floating_point_v<T> && std::is_same_v<U, Decimal256>)
             sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int64>(slice.data[i]));
         else if constexpr (std::is_same_v<T, UInt8> && std::is_same_v<U, Decimal256>)

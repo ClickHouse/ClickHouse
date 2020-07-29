@@ -24,8 +24,9 @@ namespace DB
                 // Should be a logical error, but this function is callable from SQL.
                 // Need to investigate this.
                 throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_ARGUMENTS);
-            return static_cast<ResultType>(
-                    ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
+
+            auto little_bits = littleBits<A>(a);
+            return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));
         }
 
 #if USE_EMBEDDED_COMPILER
