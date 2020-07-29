@@ -35,6 +35,13 @@ LimitStep::LimitStep(
 {
 }
 
+void LimitStep::updateInputStream(DataStream input_stream)
+{
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+    output_stream = createOutputStream(input_streams.front(), output_stream->header, getDataStreamTraits());
+}
+
 void LimitStep::transformPipeline(QueryPipeline & pipeline)
 {
     auto transform = std::make_shared<LimitTransform>(

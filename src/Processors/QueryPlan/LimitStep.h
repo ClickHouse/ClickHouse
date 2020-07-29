@@ -25,6 +25,11 @@ public:
 
     size_t limitPlusOffset() const { return limit + offset; }
 
+    /// Change input stream when limit is pushed up. TODO: add clone() for steps.
+    void updateInputStream(DataStream input_stream);
+
+    bool withTies() const { return with_ties; }
+
 private:
     size_t limit;
     size_t offset;

@@ -44,6 +44,19 @@ public:
     /// * limit
     /// * estimated rows number
     /// * memory allocation context
+
+    bool hasEqualPropertiesWith(const DataStream & other) const
+    {
+        return distinct_columns == other.distinct_columns
+            && has_single_port == other.has_single_port
+            && sort_description == other.sort_description
+            && (sort_description.empty() || sort_mode == other.sort_mode);
+    }
+
+    bool hasEqualHeaderWith(const DataStream & other) const
+    {
+        return blocksHaveEqualStructure(header, other.header);
+    }
 };
 
 using DataStreams = std::vector<DataStream>;
