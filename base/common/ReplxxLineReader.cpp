@@ -114,6 +114,10 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 void ReplxxLineReader::addToHistory(const String & line)
 {
     // locking history file to prevent from inconsistent concurrent changes
+    //
+    // replxx::Replxx::history_save() already has lockf(),
+    // but replxx::Replxx::history_load() does not
+    // and that is why flock() is added here.
     bool locked = false;
     if (flock(history_file_fd, LOCK_EX))
         rx.print("Lock of history file failed: %s\n", strerror(errno));
