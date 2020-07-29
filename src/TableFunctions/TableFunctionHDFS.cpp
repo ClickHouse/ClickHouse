@@ -4,6 +4,7 @@
 #if USE_HDFS
 #include <Storages/StorageHDFS.h>
 #include <Storages/ColumnsDescription.h>
+#include <Access/AccessType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
 
@@ -21,6 +22,10 @@ StoragePtr TableFunctionHDFS::getStorage(
         compression_method);
 }
 
+AccessType TableFunctionHDFS::getRequiredAccessType() const
+{
+    return AccessType::hdfs;
+}
 
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory)

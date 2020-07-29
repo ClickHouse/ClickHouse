@@ -26,7 +26,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
+    WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
         : hdfs_uri(hdfs_name_)
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))
@@ -54,7 +54,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 
 
-    int write(const char * start, size_t size) const
+    int write(const char * start, size_t size)
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, size);
         if (bytes_written < 0)
@@ -63,7 +63,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         return bytes_written;
     }
 
-    void sync() const
+    void sync()
     {
         int result = hdfsSync(fs.get(), fout);
         if (result < 0)

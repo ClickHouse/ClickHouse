@@ -207,6 +207,8 @@ private:
 
     void calculateBytesAllocated();
 
+    void validateKeyTypes(const DataTypes & key_types) const;
+
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 

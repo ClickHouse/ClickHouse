@@ -2,8 +2,6 @@
 #include <ext/size.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-#include <Core/Defines.h>
-
 
 namespace
 {
@@ -89,7 +87,7 @@ void HashedDictionary::isInAttrImpl(const AttrType & attr, const ChildType & chi
         auto id = getAt(child_ids, row);
         const auto ancestor_id = getAt(ancestor_ids, row);
 
-        for (size_t i = 0; id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
+        while (id != null_value && id != ancestor_id)
         {
             auto it = attr.find(id);
             if (it != std::end(attr))
@@ -446,9 +444,9 @@ void HashedDictionary::addAttributeSize(const Attribute & attribute)
         bucket_count = map_ref->bucket_count();
 
         /** TODO: more accurate calculation */
-        bytes_allocated += sizeof(SparseCollectionType<T>);
+        bytes_allocated += sizeof(CollectionType<T>);
         bytes_allocated += bucket_count;
-        bytes_allocated += map_ref->size() * (sizeof(Key) + sizeof(T));
+        bytes_allocated += map_ref->size() * sizeof(Key) * sizeof(T);
     }
 }
 
@@ -667,7 +665,7 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
         case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             if (!sparse)
             {
                 auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
@@ -772,7 +770,7 @@ BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_n
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
-    auto create_layout = [](const std::string & full_name,
+    auto create_layout = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -795,10 +793,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         return std::make_unique<HashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
     using namespace std::placeholders;
-    factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ false); }, false);
-    factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ true); }, false);
+    factory.registerLayout("hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ false), false);
+    factory.registerLayout("sparse_hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ true), false);
 }
 
 }

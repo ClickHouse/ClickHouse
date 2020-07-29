@@ -74,6 +74,7 @@ def test_drop():
     instance.query(create_query)
 
 
+@pytest.mark.skip(reason="GRANT dictGet doesn't work well in 20.3")
 def test_dictget():
     instance.query(create_query)
 

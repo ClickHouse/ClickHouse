@@ -1,3 +1,4 @@
+#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/ExpressionActions.h>
@@ -20,12 +21,12 @@ namespace ErrorCodes
 
 
 CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
-    const StorageID & table_id_,
+    const String & table_,
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table_id(table_id_),
+    : table(table_),
     output(output_),
     header(header_),
     constraints(constraints_),

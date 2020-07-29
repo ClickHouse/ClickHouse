@@ -25,7 +25,7 @@ struct MetricLogElement
 
     static std::string name() { return "MetricLog"; }
     static Block createBlock();
-    void appendToBlock(MutableColumns & columns) const;
+    void appendToBlock(Block & block) const;
 };
 
 
@@ -34,8 +34,6 @@ class MetricLog : public SystemLog<MetricLogElement>
     using SystemLog<MetricLogElement>::SystemLog;
 
 public:
-    void shutdown() override;
-
     /// Launches a background thread to collect metrics with interval
     void startCollectMetric(size_t collect_interval_milliseconds_);
 

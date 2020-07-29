@@ -7,7 +7,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        extern const int BAD_ARGUMENTS;
+        extern const int BAD_CAST;
     }
 
     /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
@@ -24,9 +24,7 @@ namespace DB
         static inline Result apply(A left, B right)
         {
             if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
-                // Should be a logical error, but this function is callable from SQL.
-                // Need to investigate this.
-                throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskOr.", ErrorCodes::BAD_ARGUMENTS);
+                throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskOr.", ErrorCodes::BAD_CAST);
             return static_cast<ResultType>(
                     ((static_cast<ResultType>(left) | static_cast<ResultType>(right)) & 1)
                     | ((((static_cast<ResultType>(left) >> 1) & (static_cast<ResultType>(right) >> 1)) & 1) << 1));

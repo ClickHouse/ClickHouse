@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -393,8 +394,8 @@ public:
             case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
             case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
             default:
-                throw Exception("Unexpected 'scale' parameter passed to function",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
+                    ErrorCodes::LOGICAL_ERROR);
         }
     }
 };
@@ -551,7 +552,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnWithTypeAndName & column = block.getByPosition(arguments[0]);
         Int64 scale_arg = getScaleArg(block, arguments);
@@ -596,7 +597,8 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRoundDown>(context); }
+    FunctionRoundDown(const Context & context_) : context(context_) {}
 
 public:
     String getName() const override { return name; }
@@ -631,7 +633,7 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         auto in_column = block.getByPosition(arguments[0]).column;
         const auto & in_type = block.getByPosition(arguments[0]).type;
@@ -644,10 +646,10 @@ public:
         auto out = column_result.get();
 
         if (!in_type->equals(*return_type))
-            in_column = castColumn(block.getByPosition(arguments[0]), return_type);
+            in_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
 
         if (!array_type->equals(*return_type))
-            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type));
+            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type), context);
 
         const auto in = in_column.get();
         auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
@@ -677,7 +679,7 @@ public:
 
 private:
     template <typename T>
-    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) const
+    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
     {
         const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
         auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
@@ -689,7 +691,7 @@ private:
     }
 
     template <typename T>
-    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) const
+    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
     {
         const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped);
         auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
@@ -701,7 +703,7 @@ private:
     }
 
     template <typename Container>
-    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
+    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
     {
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
@@ -763,6 +765,9 @@ private:
             }
         }
     }
+
+private:
+    const Context & context;
 };
 
 

@@ -3,10 +3,10 @@ compilers and build settings. Correctly configured Docker daemon is single depen
 
 Usage:
 
-Build deb package with `gcc-9` in `debug` mode:
+Build deb package with `gcc-8` in `debug` mode:
 ```
 $ mkdir deb/test_output
-$ ./packager --output-dir deb/test_output/ --package-type deb --compiler=gcc-9 --build-type=debug
+$ ./packager --output-dir deb/test_output/ --package-type deb --compiler=gcc-8 --build-type=debug
 $ ls -l deb/test_output
 -rw-r--r-- 1 root root      3730 clickhouse-client_18.14.2+debug_all.deb
 -rw-r--r-- 1 root root  84221888 clickhouse-common-static_18.14.2+debug_amd64.deb
@@ -36,5 +36,6 @@ lrwxrwxrwx 1 root root        10  clickhouse-lld -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-local -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-obfuscator -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-odbc-bridge -> clickhouse
+lrwxrwxrwx 1 root root        10  clickhouse-performance-test -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-server -> clickhouse
 ```

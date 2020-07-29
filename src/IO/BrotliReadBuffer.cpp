@@ -1,10 +1,8 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
+#include <Common/config.h>
 #if USE_BROTLI
-#    include <brotli/decode.h>
-#    include "BrotliReadBuffer.h"
+
+#include "BrotliReadBuffer.h"
+#include <brotli/decode.h>
 
 namespace DB
 {
@@ -29,6 +27,7 @@ public:
         BrotliDecoderDestroyInstance(state);
     }
 
+public:
     BrotliDecoderState * state;
     BrotliDecoderResult result;
 };
