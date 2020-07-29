@@ -317,6 +317,9 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 /// If plan looks like Limit -> Sorting, update limit for Sorting
 bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 {
+    if (limit == 0)
+        return false;
+
     QueryPlanStepPtr & step = node->step;
     QueryPlan::Node * child = nullptr;
     bool updated = false;
@@ -374,7 +377,7 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_
         return;
 
     /// Special cases for sorting steps.
-    if (tryUpdateLimitForSortingSteps(child_node, limit->limitPlusOffset()))
+    if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
         return;
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
