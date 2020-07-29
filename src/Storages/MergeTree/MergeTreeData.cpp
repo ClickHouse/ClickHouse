@@ -2408,11 +2408,6 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
     auto disk = part->volume->getDisk();
     String full_part_path = part->getFullRelativePath();
 
-    /// Earlier the list of  columns was written incorrectly. Delete it and re-create.
-    /// But in compact parts we can't get list of columns without this file.
-    if (isWidePart(part))
-        disk->removeIfExists(full_part_path + "columns.txt");
-
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
 }
