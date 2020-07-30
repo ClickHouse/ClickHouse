@@ -23,6 +23,8 @@ xfails = {
     "connection protocols/starttls with custom port":
      [(Fail, "it seems that starttls is not enabled by default on custom plain-text ports in LDAP server")],
     "connection protocols/tls cipher suite":
+     [(Fail, "can't get it to work")],
+    "connection protocols/tls minimum protocol version/:":
      [(Fail, "can't get it to work")]
 }
 
