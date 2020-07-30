@@ -22,6 +22,7 @@ ReservationPtr VolumeRAID1::reserve(UInt64 bytes)
         if (!res[i])
             return {};
     }
+
     return std::make_unique<MultiDiskReservation>(res, bytes);
 }
 

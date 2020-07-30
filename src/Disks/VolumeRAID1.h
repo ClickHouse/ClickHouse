@@ -6,6 +6,10 @@
 namespace DB
 {
 
+/// Volume which reserserves space on each underlying disk.
+///
+/// NOTE: Just interface implementation, doesn't used in codebase,
+/// also not available for user.
 class VolumeRAID1 : public VolumeJBOD
 {
 public:
@@ -18,8 +22,8 @@ public:
         String name_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        DiskSelectorPtr disk_selector
-    ) : VolumeJBOD(name_, config, config_prefix, disk_selector)
+        DiskSelectorPtr disk_selector)
+        : VolumeJBOD(name_, config, config_prefix, disk_selector)
     {
     }
 
