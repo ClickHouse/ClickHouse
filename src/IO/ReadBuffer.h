@@ -57,8 +57,9 @@ public:
     {
         // After we read new portion of data, we have to update the total number
         // of bytes read. offset() calculation involves pointers into
-        // working_buffer that, in theory, shouldn't be changed by nextImpl(),
-        // but we'll assert it below to give some guarantee.
+        // working_buffer that is changed in some nextImpl() variants (e.g. in
+        // compressed buffer, where it points to decompressed data), so we have
+        // to save the offset.
         const auto old_offset = offset();
 
         bool res = nextImpl();
@@ -69,8 +70,6 @@ public:
         }
         else
         {
-            assert(offset() == old_offset);
-
             bytes += old_offset;
 
             pos = working_buffer.begin() + nextimpl_working_buffer_offset;
