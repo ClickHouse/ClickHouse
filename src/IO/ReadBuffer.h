@@ -78,7 +78,7 @@ public:
         }
 
         assert(pos >= working_buffer.begin());
-        assert(pos < working_buffer.end());
+        assert(pos <= working_buffer.end());
 
         return res;
     }
