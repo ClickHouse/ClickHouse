@@ -1,5 +1,9 @@
-#if !defined(ARCADIA_BUILD)
 #pragma once
+
+#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD) && USE_STATS
+
 
 #include <iostream>
 #include <vector>
@@ -28,4 +32,5 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
 String convertToJson(const PODArray<String> & variant_names, const Variants & variants);
 
 }
+
 #endif
