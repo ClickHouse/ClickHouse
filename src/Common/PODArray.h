@@ -216,23 +216,9 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params)
-    {
-        if (n > capacity())
-            realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
-    }
-
-    template <typename ... TAllocatorParams>
     void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
         reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
-        resize_assume_reserved(n);
-    }
-
-    template <typename ... TAllocatorParams>
-    void resize_exact(size_t n, TAllocatorParams &&... allocator_params)
-    {
-        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
@@ -616,7 +602,7 @@ public:
     template <typename... TAllocatorParams>
     void assign(size_t n, const T & x, TAllocatorParams &&... allocator_params)
     {
-        this->resize_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
+        this->resize(n, std::forward<TAllocatorParams>(allocator_params)...);
         std::fill(begin(), end(), x);
     }
 
@@ -625,7 +611,7 @@ public:
     {
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
-            this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
