@@ -91,9 +91,9 @@ public:
 
         Shift shift;
         if (scale_a < scale_b)
-            shift.a = static_cast<CompareInt>(B::getScaleMultiplier(scale_b - scale_a));
+            shift.a = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<B>(scale_b - scale_a));
         if (scale_a > scale_b)
-            shift.b = static_cast<CompareInt>(A::getScaleMultiplier(scale_a - scale_b));
+            shift.b = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<A>(scale_a - scale_b));
 
         return applyWithScale(a, b, shift);
     }

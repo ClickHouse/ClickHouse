@@ -861,7 +861,7 @@ inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinar
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_v<T> && !is_big_int_v<T>, void>
+inline std::enable_if_t<is_integral_or_big_v<T> && !is_big_int_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>

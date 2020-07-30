@@ -172,14 +172,14 @@ template <typename A, typename B>
 struct ResultOfIf
 {
     static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
-    static constexpr bool has_integer = is_integral_v<A> || is_integral_v<B>;
+    static constexpr bool has_integer = is_integral_or_big_v<A> || is_integral_or_big_v<B>;
     static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
     static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
     static constexpr bool has_big_int = is_big_int_v<A> || is_big_int_v<B>;
 
     static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
     static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_integer = max(is_integral_v<A> ? sizeof(A) : 0, is_integral_v<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_integer = max(is_integral_or_big_v<A> ? sizeof(A) : 0, is_integral_or_big_v<B> ? sizeof(B) : 0);
     static constexpr size_t max_size_of_float = max(std::is_floating_point_v<A> ? sizeof(A) : 0, std::is_floating_point_v<B> ? sizeof(B) : 0);
 
     using ConstructedType = typename Construct<has_signed, has_float,
@@ -209,7 +209,7 @@ template <typename A> struct ToInteger
 // NOTE: This case is applied for 64-bit integers only (for backward compatibility), but could be used for any-bit integers
 template <typename A, typename B>
 constexpr bool LeastGreatestSpecialCase =
-    is_integral_v<A> && is_integral_v<B>
+    is_integral_or_big_v<A> && is_integral_or_big_v<B>
     && (8 == sizeof(A) && sizeof(A) == sizeof(B))
     && (is_signed_v<A> ^ is_signed_v<B>);
 

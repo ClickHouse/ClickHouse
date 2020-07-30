@@ -12,19 +12,27 @@ using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
-using bInt128 = boost::multiprecision::int128_t;
-using bInt256 = boost::multiprecision::int256_t;
 
 #if __cplusplus <= 201703L
 using char8_t = unsigned char;
 #endif
 
+/// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
 using UInt8 = char8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
+
+/// We have to use 127 and 255 bit integers to safe a bit for a sign serialization
+//using bInt128 = boost::multiprecision::int128_t;
+//using bInt256 = boost::multiprecision::int256_t;
+using bInt128 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
+    127, 127, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void>>;
+using bInt256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
+    255, 255, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void> >;
 using bUInt128 = boost::multiprecision::uint128_t;
 using bUInt256 = boost::multiprecision::uint256_t;
+
 
 using String = std::string;
 
@@ -55,19 +63,21 @@ template <> struct is_unsigned<bUInt256> { static constexpr bool value = true; }
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
+
 template <typename T>
-struct is_integral
+struct is_integral_or_big
 {
     static constexpr bool value = std::is_integral_v<T>;
 };
 
-template <> struct is_integral<bUInt128> { static constexpr bool value = true; };
-template <> struct is_integral<bInt128> { static constexpr bool value = true; };
-template <> struct is_integral<bUInt256> { static constexpr bool value = true; };
-template <> struct is_integral<bInt256> { static constexpr bool value = true; };
+template <> struct is_integral_or_big<bUInt128> { static constexpr bool value = true; };
+template <> struct is_integral_or_big<bInt128> { static constexpr bool value = true; };
+template <> struct is_integral_or_big<bUInt256> { static constexpr bool value = true; };
+template <> struct is_integral_or_big<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
-inline constexpr bool is_integral_v = is_integral<T>::value;
+inline constexpr bool is_integral_or_big_v = is_integral_or_big<T>::value;
+
 
 template <typename T>
 struct is_arithmetic

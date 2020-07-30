@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <common/types.h>
-#include <Common/intExp.h>
 
 
 namespace DB
@@ -56,20 +55,20 @@ enum class TypeIndex
     LowCardinality,
 };
 
-using UInt8 = char8_t;      /// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
+/// defined in common/types.h
+using UInt8 = ::UInt8;
+using UInt16 = ::UInt16;
+using UInt32 = ::UInt32;
+using UInt64 = ::UInt64;
+using bUInt128 = ::bUInt128;
+using bUInt256 = ::bUInt256;
 
-using UInt16 = uint16_t;
-using UInt32 = uint32_t;
-using UInt64 = uint64_t;
-using bUInt128 = boost::multiprecision::uint128_t;
-using bUInt256 = boost::multiprecision::uint256_t;
-
-using Int8 = int8_t;
-using Int16 = int16_t;
-using Int32 = int32_t;
-using Int64 = int64_t;
-using bInt128 = boost::multiprecision::int128_t;
-using bInt256 = boost::multiprecision::int256_t;
+using Int8 = ::Int8;
+using Int16 = ::Int16;
+using Int32 = ::Int32;
+using Int64 = ::Int64;
+using bInt128 = ::bInt128;
+using bInt256 = ::bInt256;
 
 using Float32 = float;
 using Float64 = double;
@@ -167,6 +166,7 @@ struct Decimal
     template <typename U>
     U convertTo()
     {
+        /// no IsDecimalNumber defined yet
         if constexpr (std::is_same_v<U, Decimal<Int32>> ||
                       std::is_same_v<U, Decimal<Int64>> ||
                       std::is_same_v<U, Decimal<Int128>> ||
@@ -174,15 +174,12 @@ struct Decimal
         {
             return convertTo<typename U::NativeType>();
         }
-        else
+        else if constexpr (is_big_int_v<NativeType>)
         {
-            if constexpr (is_big_int_v<NativeType>)
-            {
-                return value. template convert_to<U>();
-            }
-            else
-                return static_cast<U>(value);
+            return value. template convert_to<U>();
         }
+        else
+            return static_cast<U>(value);
     }
 
     const Decimal<T> & operator += (const T & x) { value += x; return *this; }
@@ -190,8 +187,6 @@ struct Decimal
     const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
-
-    static T getScaleMultiplier(UInt32 scale);
 
     T value;
 };
@@ -235,11 +230,6 @@ template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
 template <> struct NativeType<Decimal256> { using Type = bInt256; };
-
-template <> inline Int32 Decimal32::getScaleMultiplier(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 Decimal64::getScaleMultiplier(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 Decimal128::getScaleMultiplier(UInt32 scale) { return common::exp10_i128(scale); }
-template <> inline bInt256 Decimal256::getScaleMultiplier(UInt32 scale) { return common::exp10_i256(scale); }
 
 inline constexpr const char * getTypeName(TypeIndex idx)
 {

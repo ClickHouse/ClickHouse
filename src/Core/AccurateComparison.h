@@ -35,10 +35,10 @@ using DB::UInt64;
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
 constexpr bool is_safe_conversion = (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
-    || (is_integral_v<A> && is_integral_v<B> && !(is_signed_v<A> ^ is_signed_v<B>))
+    || (is_integral_or_big_v<A> && is_integral_or_big_v<B> && !(is_signed_v<A> ^ is_signed_v<B>))
     || (std::is_same_v<A, DB::Int128> && std::is_same_v<B, DB::Int128>)
-    || (is_integral_v<A> && std::is_same_v<B, DB::Int128>)
-    || (std::is_same_v<A, DB::Int128> && is_integral_v<B>);
+    || (is_integral_or_big_v<A> && std::is_same_v<B, DB::Int128>)
+    || (std::is_same_v<A, DB::Int128> && is_integral_or_big_v<B>);
 template <typename A, typename B>
 using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>, bool>;
 template <typename A, typename B>
@@ -48,7 +48,7 @@ using bool_if_not_safe_conversion = std::enable_if_t<!is_safe_conversion<A, B>, 
 /// Case 2. Are params IntXX and UIntYY ?
 template <typename TInt, typename TUInt>
 constexpr bool is_any_int_vs_uint
-    = is_integral_v<TInt> && is_integral_v<TUInt> && is_signed_v<TInt> && is_unsigned_v<TUInt>;
+    = is_integral_or_big_v<TInt> && is_integral_or_big_v<TUInt> && is_signed_v<TInt> && is_unsigned_v<TUInt>;
 
 
 // Case 2a. Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
@@ -132,7 +132,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 // Case 3a. Comparison via conversion to double.
 template <typename TAInt, typename TAFloat>
 using bool_if_double_can_be_used
-    = std::enable_if_t<is_integral_v<TAInt> && (sizeof(TAInt) <= 4) && std::is_floating_point_v<TAFloat>, bool>;
+    = std::enable_if_t<is_integral_or_big_v<TAInt> && (sizeof(TAInt) <= 4) && std::is_floating_point_v<TAFloat>, bool>;
 
 template <typename TAInt, typename TAFloat>
 inline bool_if_double_can_be_used<TAInt, TAFloat> greaterOpTmpl(TAInt a, TAFloat b)
@@ -605,53 +605,3 @@ template <typename A, typename B> struct GreaterOrEqualsOp
 };
 
 }
-
-// some static compile test, remove later
-
-// DB::bUInt128 buint128{1};
-// DB::bInt128 bint128{1};
-// DB::bUInt256 buint256{1};
-// DB::bInt256 bint256{1};
-
-// DB::Int128 int128{1};
-// DB::UInt128 uint128{1};
-
-// DB::Float32 f32{1};
-// DB::Float64 f64{1};
-// DB::UInt8 uint8{1};
-
-// static_assert(std::is_same_v<DB::bUInt128>
-// static_assert(is_integral_v<DB::bInt256> && is_integral_v<DB::bUInt128>);
-// static_assert(is_signed_v<DB::bInt256>);
-// static_assert(is_unsigned_v<DB::bUInt128>);
-// static_assert(accurate::is_any_int_vs_uint<DB::bInt256, DB::bUInt128>);
-// static_assert(sizeof(DB::bInt256) > sizeof(DB::bUInt128));
-// static_assert(accurate::is_gt_int_vs_uint<DB::bInt256, DB::bUInt128>);
-// static_assert(!accurate::is_gt_int_vs_uint<DB::bInt256, DB::bUInt128>);
-
-// auto a = accurate::equalsOpTmpl(buint128, f32);
-// auto b = accurate::equalsOpTmpl(bint128, f32);
-// auto c = accurate::equalsOpTmpl(buint256, f32);
-// auto d = accurate::equalsOpTmpl(bint256, f32);
-
-// auto a2 = accurate::equalsOpTmpl(buint128, f64);
-// auto b2 = accurate::equalsOpTmpl(bint128, f64);
-// auto c2 = accurate::equalsOpTmpl(buint256, f64);
-// auto d2 = accurate::equalsOpTmpl(bint256, f64);
-
-// auto a3 = accurate::notEqualsOp(buint128, uint8);
-// auto b3 = accurate::notEqualsOp(bint128, uint8);
-// auto c3 = accurate::notEqualsOp(buint256, uint8);
-// auto d3 = accurate::notEqualsOp(bint256, uint8);
-
-// auto a4 = accurate::lessOp(buint128, int128);
-// auto b4 = accurate::lessOp(bint128, int128);
-// auto c4 = accurate::lessOp(buint256, int128);
-// auto d4 = accurate::lessOp(bint256, int128);
-
-// auto a5 = accurate::lessOp(buint128, uint128);
-// auto b5 = accurate::lessOp(bint128, uint128);
-// auto c5 = accurate::lessOp(buint256, uint128);
-// auto d5 = accurate::lessOp(bint256, uint128);
-
-// static_assert(false);

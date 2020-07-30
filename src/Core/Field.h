@@ -10,6 +10,7 @@
 #include <Common/UInt128.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 #include <common/DayNum.h>
 #include <common/strong_typedef.h>
@@ -102,7 +103,7 @@ public:
 
     operator T() const { return dec; }
     T getValue() const { return dec; }
-    T getScaleMultiplier() const { return T::getScaleMultiplier(scale); }
+    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
     UInt32 getScale() const { return scale; }
 
     template <typename U>

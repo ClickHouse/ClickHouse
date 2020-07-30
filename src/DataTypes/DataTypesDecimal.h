@@ -95,13 +95,13 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     MaxNativeType converted_value;
     if (scale_to > scale_from)
     {
-        converted_value = MaxFieldType::getScaleMultiplier(scale_to - scale_from);
+        converted_value = DecimalUtils::scaleMultiplier<MaxNativeType>(scale_to - scale_from);
         if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
             throw Exception(std::string(ToDataType::family_name) + " convert overflow",
                             ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
-        converted_value = value.value / MaxFieldType::getScaleMultiplier(scale_from - scale_to);
+        converted_value = value.value / DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
 
     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
     {
@@ -165,7 +165,7 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
                             ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = value * static_cast<FromFieldType>(ToFieldType::getScaleMultiplier(scale));
+        auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
             static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;

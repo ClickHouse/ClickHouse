@@ -200,7 +200,7 @@ template <> struct is_unsigned<DB::UInt128>
     static constexpr bool value = true;
 };
 
-template <> struct is_integral<DB::UInt128>
+template <> struct is_integral_or_big<DB::UInt128>
 {
     static constexpr bool value = true;
 };

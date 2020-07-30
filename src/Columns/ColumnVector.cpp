@@ -43,93 +43,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-template <typename T>
-struct BigIntPayload
-{
-    static_assert(!is_big_int_v<T>);
-    static constexpr size_t size = 0;
-};
-
-template <> struct BigIntPayload<bUInt128> { static constexpr size_t size = 16; };
-template <> struct BigIntPayload<bInt128> { static constexpr size_t size = 16; };
-template <> struct BigIntPayload<bUInt256> { static constexpr size_t size = 32; };
-template <> struct BigIntPayload<bInt256> { static constexpr size_t size = 32; };
-
-
-template <typename T>
-StringRef serializeBigIntIntoArena(const T & x, Arena & arena, char const *& begin)
-{
-    if constexpr (is_signed_v<T>)
-    {
-        size_t bytesize = BigIntPayload<T>::size;
-        char * pos = arena.allocContinue(bytesize + 1, begin);
-        if (x < 0)
-            *pos = 1;
-        export_bits(x, pos + 1, 8, false);
-        return StringRef(pos, bytesize + 1);
-    }
-    else
-    {
-        size_t bytesize = BigIntPayload<T>::size;
-        char * pos = arena.allocContinue(bytesize, begin);
-        export_bits(x, pos, 8, false);
-        return StringRef(pos, bytesize);
-    }
-}
-
-template <typename T>
-T deserializeBigInt(const char * pos)
-{
-    T x{};
-    if constexpr (is_signed_v<T>)
-    {
-        char is_negative = *pos;
-        import_bits(x, pos + 1, pos + 1 + BigIntPayload<T>::size, false);
-        return is_negative ? -x : x;
-    }
-    else
-    {
-        import_bits(x, pos, pos + BigIntPayload<T>::size, false);
-        return x;
-    }
-}
-}
-
-template <typename T>
-void ColumnVector<T>::insertData(const char * pos, size_t /*length*/)
-{
-    if constexpr (is_big_int_v<T>)
-        data.push_back(deserializeBigInt<T>(pos));
-    else
-        data.push_back(unalignedLoad<T>(pos));
-}
-
-template <typename T>
-void ColumnVector<T>::insertManyDefaults(size_t length)
-{
-    if constexpr (!is_big_int_v<T>)
-        data.resize_fill(data.size() + length, T());
-    else
-        data.resize(data.size() + length, T());
-}
-
-template <typename T>
-void ColumnVector<T>::popBack(size_t n)
-{
-    if constexpr (!is_big_int_v<T>)
-        data.resize_assume_reserved(data.size() - n);
-    else
-        data.resize(data.size() - n);
-}
-
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if constexpr (is_big_int_v<T>)
-        return serializeBigIntIntoArena(data[n], arena, begin);
+    {
+        static constexpr size_t bytesize = BigInt<T>::size;
+        char * pos = arena.allocContinue(bytesize, begin);
+        return BigInt<T>::serialize(data[n], pos);
+    }
     else
     {
         auto * pos = arena.allocContinue(sizeof(T), begin);
@@ -143,15 +65,12 @@ const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     if constexpr (is_big_int_v<T>)
     {
-        data.push_back(deserializeBigInt<T>(pos));
-        if constexpr (is_signed_v<T>)
-            return pos + BigIntPayload<T>::size + 1;
-        else
-            return pos + BigIntPayload<T>::size;
+        data.emplace_back(BigInt<T>::deserialize(pos));
+        return pos + BigInt<T>::size;
     }
     else
     {
-        data.push_back(unalignedLoad<T>(pos));
+        data.emplace_back(unalignedLoad<T>(pos));
         return pos + sizeof(T);
     }
 }
@@ -187,22 +106,6 @@ template <typename T>
 void ColumnVector<T>::updateHashFast(SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
-}
-
-template <typename T>
-size_t ColumnVector<T>::allocatedBytes() const
-{
-    if constexpr (!is_big_int_v<T>)
-        return data.allocated_bytes();
-    else
-        return data.capacity() * sizeof(data[0]);
-}
-
-template <typename T>
-void ColumnVector<T>::protect()
-{
-    if constexpr (!is_big_int_v<T>)
-        data.protect();
 }
 
 template <typename T>
@@ -545,7 +448,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     else
     {
         auto filt_pos = filt.begin();
-        auto filt_end = filt.end();
+        const auto filt_end = filt.end();
         auto data_pos = data.begin();
 
         while (filt_pos < filt_end)

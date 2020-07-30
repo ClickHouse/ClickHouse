@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 
-#include <boost/multiprecision/integer.hpp>
+#include <common/types.h>
 
 // Also defined in Core/Defines.h
 #if !defined(NO_SANITIZE_UNDEFINED)
@@ -138,9 +138,9 @@ constexpr inline __int128 exp10_i128(int x)
 }
 
 
-inline boost::multiprecision::int256_t exp10_i256(int x)
+inline bInt256 exp10_i256(int x)
 {
-    using boost::multiprecision::int256_t;
+    using int256_t = bInt256;
     static constexpr int256_t i10e18{1000000000000000000ll};
     static const int256_t values[] = {
         static_cast<int256_t>(1ll),

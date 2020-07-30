@@ -537,7 +537,7 @@ public:
 
     void writeEnum16(Int16 value) override
     {
-        if constexpr (!is_integral_v<ToType>)
+        if constexpr (!is_integral_or_big_v<ToType>)
             cannotConvertType("Enum"); // It's not correct to convert enum to floating point.
         castNumericAndWriteField(value);
     }

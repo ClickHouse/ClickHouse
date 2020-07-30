@@ -64,7 +64,7 @@ bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision,
     if (!tryReadDecimalText(istr, x, precision, unread_scale))
         return false;
 
-    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier(x, unread_scale), x.value))
         return false;
 
     return true;
@@ -79,7 +79,7 @@ void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UI
     else
         readDecimalText(istr, x, precision, unread_scale);
 
-    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier(x, unread_scale), x.value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
@@ -107,7 +107,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
 
-    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier(x, unread_scale), x.value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;

@@ -88,6 +88,59 @@ struct FloatCompareHelper
 template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {};
 template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
 
+template <typename T>
+struct BigIntPayload
+{
+    static_assert(!is_big_int_v<T>);
+    static constexpr size_t size = 0;
+};
+
+template <> struct BigIntPayload<bUInt128> { static constexpr size_t size = 16; };
+template <> struct BigIntPayload<bInt128> { static constexpr size_t size = 16; };
+template <> struct BigIntPayload<bUInt256> { static constexpr size_t size = 32; };
+template <> struct BigIntPayload<bInt256> { static constexpr size_t size = 32; };
+
+template <typename T>
+struct BigInt : BigIntPayload<T>
+{
+    using BigIntPayload<T>::size;
+
+    static constexpr size_t lastBit()
+    {
+        return size * 8 - 1;
+    }
+
+    static StringRef serialize(const T & x, char * pos)
+    {
+        if constexpr (is_signed_v<T>)
+        {
+            T tmp = x;
+            bit_unset(tmp, lastBit());
+            if (x < 0)
+                bit_set(tmp, lastBit());
+            export_bits(tmp, pos, 8, false);
+        }
+        else
+            export_bits(x, pos, 8, false);
+        return StringRef(pos, size);
+    }
+
+    static T deserialize(const char * pos)
+    {
+        T x;
+        import_bits(x, pos, pos + size, false);
+
+        if constexpr (is_signed_v<T>)
+        {
+            bool is_negative = bit_test(x, lastBit());
+            bit_unset(x, lastBit());
+            if (is_negative)
+                return -x;
+        }
+        return x;
+    }
+};
+
 
 /** A template for columns that use a simple array to store.
  */
@@ -136,16 +189,34 @@ public:
         data.push_back(static_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertData(const char * pos, size_t length) override;
+    void insertData(const char * pos, size_t) override
+    {
+        if constexpr (is_big_int_v<T>)
+            data.emplace_back(BigInt<T>::deserialize(pos));
+        else
+            data.emplace_back(unalignedLoad<T>(pos));
+    }
 
     void insertDefault() override
     {
         data.push_back(T());
     }
 
-    void insertManyDefaults(size_t length) override;
+    void insertManyDefaults(size_t length) override
+    {
+        if constexpr (!is_big_int_v<T>)
+            data.resize_fill(data.size() + length, T());
+        else
+            data.resize(data.size() + length, T());
+    }
 
-    void popBack(size_t n) override;
+    void popBack(size_t n) override
+    {
+        if constexpr (!is_big_int_v<T>)
+            data.resize_assume_reserved(data.size() - n);
+        else
+            data.resize(data.size() - n);
+    }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
@@ -162,9 +233,19 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t allocatedBytes() const override;
+    size_t allocatedBytes() const override
+    {
+        if constexpr (!is_big_int_v<T>)
+            return data.allocated_bytes();
+        else
+            return data.capacity() * sizeof(data[0]);
+    }
 
-    void protect() override;
+    void protect() override
+    {
+        if constexpr (!is_big_int_v<T>)
+            data.protect();
+    }
 
     void insertValue(const T value)
     {

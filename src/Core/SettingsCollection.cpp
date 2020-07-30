@@ -93,9 +93,9 @@ void SettingNumber<Type>::serialize(WriteBuffer & buf, SettingsBinaryFormat form
          return;
     }
 
-    if constexpr (is_integral_v<Type> && is_unsigned_v<Type>)
+    if constexpr (is_integral_or_big_v<Type> && is_unsigned_v<Type>)
         writeVarUInt(static_cast<UInt64>(value), buf);
-    else if constexpr (is_integral_v<Type> && is_signed_v<Type>)
+    else if constexpr (is_integral_or_big_v<Type> && is_signed_v<Type>)
         writeVarInt(static_cast<Int64>(value), buf);
     else
     {
@@ -115,13 +115,13 @@ void SettingNumber<Type>::deserialize(ReadBuffer & buf, SettingsBinaryFormat for
         return;
     }
 
-    if constexpr (is_integral_v<Type> && is_unsigned_v<Type>)
+    if constexpr (is_integral_or_big_v<Type> && is_unsigned_v<Type>)
     {
         UInt64 x;
         readVarUInt(x, buf);
         set(static_cast<Type>(x));
     }
-    else if constexpr (is_integral_v<Type> && is_signed_v<Type>)
+    else if constexpr (is_integral_or_big_v<Type> && is_signed_v<Type>)
     {
         Int64 x;
         readVarInt(x, buf);

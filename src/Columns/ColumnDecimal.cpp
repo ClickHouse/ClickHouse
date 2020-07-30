@@ -11,6 +11,7 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -25,29 +26,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-StringRef serializeBigIntIntoArena(const bInt256 & x, Arena & arena, char const *& begin)
-{
-    static constexpr size_t bytesize = 32;
-    char * pos = arena.allocContinue(bytesize + 1, begin);
-    if (x < 0)
-        *pos = 1;
-    export_bits(x, pos + 1, 8, false);
-    return StringRef(pos, bytesize + 1);
-}
-
-bInt256 deserializeBigInt(const char * pos)
-{
-    static constexpr size_t bytesize = 32;
-
-    bInt256 x{};
-    char is_negative = *pos;
-    import_bits(x, pos + 1, pos + 1 + bytesize, false);
-    return is_negative ? -x : x;
-}
 }
 
 template <typename T>
@@ -82,7 +60,8 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
     }
     else
     {
-        return serializeBigIntIntoArena(data[n], arena, begin);
+        char * pos = arena.allocContinue(BigInt<T>::size, begin);
+        return BigInt<bInt256>::serialize(data[n], pos);
     }
 }
 
@@ -96,8 +75,8 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
     }
     else
     {
-        data.push_back(deserializeBigInt(pos));
-        return pos + 32 + 1;
+        data.push_back(BigInt<bInt256>::deserialize(pos));
+        return pos + BigInt<bInt256>::size;
     }
 }
 
@@ -294,7 +273,7 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
     }
     else
     {
-        data.push_back(deserializeBigInt(src));
+        data.push_back(BigInt<bInt256>::deserialize(src));
     }
 }
 

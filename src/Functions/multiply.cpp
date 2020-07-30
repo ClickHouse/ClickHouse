@@ -5,16 +5,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 template <typename Result, typename A, typename B>
 inline Result applyBigInt([[maybe_unused]] A a, [[maybe_unused]] B b)
 {
-    if constexpr (std::is_floating_point_v<A> || std::is_floating_point_v<B>)
-        throw Exception("Big floats are not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    if constexpr (std::is_floating_point_v<A>)
+        return a * static_cast<A>(b);
+    else if constexpr (std::is_floating_point_v<B>)
+        return static_cast<B>(a) * b;
     else if constexpr (std::is_same_v<A, UInt8>)
         return static_cast<Result>(static_cast<UInt16>(a)) * static_cast<Result>(b);
     else if constexpr (std::is_same_v<B, UInt8>)
