@@ -29,6 +29,8 @@ public:
 
     String getName() const override { return "AggregatingSorted"; }
 
+    bool isSortedOutput() const override { return true; }
+
     Block getHeader() const override  { return result_header; }
 
 protected:

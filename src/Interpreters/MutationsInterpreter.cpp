@@ -366,28 +366,15 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         affected_materialized.emplace(mat_column);
                 }
 
-                /// When doing UPDATE column = expression WHERE condition
-                /// we will replace column to the result of the following expression:
-                ///
-                /// CAST(if(condition, CAST(expression, type), column), type)
-                ///
-                /// Inner CAST is needed to make 'if' work when branches have no common type,
-                /// example: type is UInt64, UPDATE x = -1 or UPDATE x = x - 1.
-                ///
-                /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
-
-                auto type_literal = std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName());
-
+                /// Just to be sure, that we don't change type
+                /// after update expression execution.
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
                         command.predicate->clone(),
-                        makeASTFunction("CAST",
-                            update_expr->clone(),
-                            type_literal),
+                        update_expr->clone(),
                         std::make_shared<ASTIdentifier>(column)),
-                    type_literal);
-
+                    std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName()));
                 stages.back().column_to_updated.emplace(column, updated_column);
             }
 

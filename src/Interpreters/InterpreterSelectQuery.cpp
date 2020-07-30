@@ -1010,14 +1010,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             executeWithFill(pipeline);
 
-            /// If we have 'WITH TIES', we need execute limit before projection,
-            /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties)
-            {
-                executeLimit(pipeline);
-                has_prelimit = true;
-            }
-
             /** We must do projection after DISTINCT because projection may remove some columns.
               */
             executeProjection(pipeline, expressions.final_projection);
@@ -1507,6 +1499,9 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if constexpr (pipeline_with_processors)
         {
+            if (!storage->isView() && (streams.size() == 1 || pipes.size() == 1))
+                pipeline.setMaxThreads(1);
+
             /// Unify streams. They must have same headers.
             if (streams.size() > 1)
             {
