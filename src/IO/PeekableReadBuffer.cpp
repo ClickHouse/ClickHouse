@@ -154,7 +154,7 @@ bool PeekableReadBuffer::nextImpl()
     /// Switch to reading from sub_buf (or just update it if already switched)
     Buffer & sub_working = sub_buf.buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
-    working_buffer_offset = sub_buf.offset();
+    nextimpl_working_buffer_offset = sub_buf.offset();
 
     checkStateCorrect();
     return res;

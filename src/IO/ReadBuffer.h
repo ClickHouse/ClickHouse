@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstring>
 #include <algorithm>
 #include <memory>
@@ -54,19 +55,31 @@ public:
       */
     bool next()
     {
-        bytes += offset();
+        // After we read new portion of data, we have to update the total number
+        // of bytes read. offset() calculation involves pointers into
+        // working_buffer that, in theory, shouldn't be changed by nextImpl(),
+        // but we'll assert it below to give some guarantee.
+        const auto old_offset = offset();
+
         bool res = nextImpl();
         if (!res)
         {
             pos = working_buffer.end();
-            Buffer empty_buffer(pos, pos);
-            working_buffer.swap(empty_buffer);
+            nextimpl_working_buffer_offset = 0;
         }
         else
         {
-            pos = working_buffer.begin() + working_buffer_offset;
-            working_buffer_offset = 0;
+            assert(offset() == old_offset);
+
+            bytes += old_offset;
+
+            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            nextimpl_working_buffer_offset = 0;
         }
+
+        assert(pos >= working_buffer.begin());
+        assert(pos < working_buffer.end());
+
         return res;
     }
 
@@ -180,8 +193,10 @@ public:
     }
 
 protected:
-    /// The number of bytes to ignore from the initial position of `working_buffer` buffer.
-    size_t working_buffer_offset = 0;
+    /// The number of bytes to ignore from the initial position of `working_buffer`
+    /// buffer. Apparently this is an additional out-parameter for nextImpl(),
+    /// not a real field.
+    size_t nextimpl_working_buffer_offset = 0;
 
 private:
     /** Read the next data and fill a buffer with it.

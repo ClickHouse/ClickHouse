@@ -135,7 +135,13 @@ void writeCommonErrorMessage(
     out << ": failed at position " << (last_token.begin - begin + 1);
 
     if (last_token.type == TokenType::EndOfStream || last_token.type == TokenType::Semicolon)
+    {
         out << " (end of query)";
+    }
+    else
+    {
+        out << " ('" << std::string(last_token.begin, last_token.end - last_token.begin) << "')";
+    }
 
     /// If query is multiline.
     const char * nl = find_first_symbols<'\n'>(begin, end);
