@@ -1138,7 +1138,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
                      kafka_group_name = 'virt2',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime))
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')))
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
@@ -1406,7 +1406,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1414,7 +1414,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
 
-        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1615,7 +1615,7 @@ def test_kafka_rebalance(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -1835,7 +1835,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -2033,7 +2033,7 @@ def test_premature_flush_on_eof(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
