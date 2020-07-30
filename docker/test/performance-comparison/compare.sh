@@ -63,7 +63,7 @@ function restart
     kill -0 $left_pid
     disown $left_pid
 
-    numactl --cpunodebind=0 --membind=0 \
+    numactl --cpunodebind=1 --membind=1 \
         right/clickhouse-server --config-file=right/config/config.xml \
             -- --path right/db --user_files_path right/db/user_files \
             &>> right-server-log.log &
