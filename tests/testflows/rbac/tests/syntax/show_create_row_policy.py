@@ -2,7 +2,7 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
-from requirements import *
+from rbac.requirements import *
 
 @TestFeature
 @Name("show create row policy")
