@@ -1432,7 +1432,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
 
-    while int(instance.query("SELECT count() FROM test.view")) < 5
+    while int(instance.query("SELECT count() FROM test.view")) < 5:
         time.sleep(1)
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
