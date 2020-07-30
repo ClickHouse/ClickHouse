@@ -18,6 +18,7 @@ namespace DB
 {
 
 class ASTStorage;
+struct Settings;
 
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
@@ -127,6 +128,9 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
         return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part"
             || name == "min_bytes_for_compact_part" || name == "min_rows_for_compact_part";
     }
+
+    /// Check that the values are sane taking also query-level settings into account.
+    void sanityCheck(const Settings & query_settings) const;
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
