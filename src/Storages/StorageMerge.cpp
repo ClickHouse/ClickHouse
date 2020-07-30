@@ -35,7 +35,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
@@ -480,7 +479,7 @@ void StorageMerge::convertingSourceStream(
             {
                 if (required_column == header_column.name)
                     throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
-                                    + "\n" + header.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                                    + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
             }
         }
 
