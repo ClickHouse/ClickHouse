@@ -13,3 +13,5 @@ Columns:
 -   `is_default` (UInt8) - Whether the pattern is the default.
 -   `Tables.database` (Array(String)) - Array of names of database tables that use the `config_name` parameter.
 -   `Tables.table` (Array(String)) - Array of table names that use the `config_name` parameter.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/graphite_retentions) <!--hide-->

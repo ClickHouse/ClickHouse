@@ -1,4 +1,4 @@
-# system.table\_engines {#system-table-engines}
+# system.table_engines {#system-table-engines}
 
 Contains description of table engines supported by server and their feature support information.
 
