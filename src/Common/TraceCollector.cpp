@@ -14,7 +14,6 @@
 #include <common/logger_useful.h>
 
 
-
 namespace DB
 {
 
