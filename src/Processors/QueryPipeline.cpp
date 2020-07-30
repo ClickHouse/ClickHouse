@@ -654,7 +654,7 @@ void QueryPipeline::unitePipelines(
         if (extremes.size() == 1)
             extremes_port = extremes.back();
         else
-            extremes_port = uniteExtremes(extremes, current_header, processors);
+            extremes_port = uniteExtremes(extremes, common_header, processors);
     }
 
     if (!totals.empty())
@@ -662,7 +662,7 @@ void QueryPipeline::unitePipelines(
         if (totals.size() == 1)
             totals_having_port = totals.back();
         else
-            totals_having_port = uniteTotals(totals, current_header, processors);
+            totals_having_port = uniteTotals(totals, common_header, processors);
     }
 
     current_header = common_header;

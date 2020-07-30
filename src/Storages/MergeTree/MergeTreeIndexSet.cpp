@@ -2,7 +2,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -265,7 +265,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
-    auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(
             expression_ast, index_sample_block.getNamesAndTypesList());
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
 }
