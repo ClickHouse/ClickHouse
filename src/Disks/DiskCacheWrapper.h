@@ -6,43 +6,7 @@
 
 namespace DB
 {
-/**
- * Write buffer with possibility to set and invoke callback when buffer is finalized.
- */
-class CompletionAwareWriteBuffer : public WriteBufferFromFileBase
-{
-public:
-    CompletionAwareWriteBuffer(
-        std::unique_ptr<WriteBufferFromFileBase> impl_, std::function<void()> completion_callback_, size_t buf_size_);
-    ~CompletionAwareWriteBuffer() override;
-    void finalize() override;
-    void sync() override;
-    std::string getFileName() const override;
-
-private:
-    void nextImpl() override;
-
-    /// Actual write buffer.
-    std::unique_ptr<WriteBufferFromFileBase> impl;
-    /// Callback is called when finalize is completed.
-    const std::function<void()> completion_callback;
-    bool finalized = false;
-};
-
-enum FileDownloadStatus
-{
-    NONE,
-    DOWNLOADING,
-    DOWNLOADED,
-    ERROR
-};
-
-struct FileDownloadMetadata
-{
-    /// Thread waits on this condition if download process is in progress.
-    std::condition_variable condition;
-    FileDownloadStatus status = NONE;
-};
+struct FileDownloadMetadata;
 
 /**
  * Simple cache wrapper.
@@ -62,6 +26,8 @@ public:
         std::shared_ptr<IDisk> delegate_,
         std::shared_ptr<DiskLocal> cache_disk_,
         std::function<bool(const String &)> cache_file_predicate_);
+    void createDirectory(const String & path) override;
+    void createDirectories(const String & path) override;
     void clearDirectory(const String & path) override;
     void moveDirectory(const String & from_path, const String & to_path) override;
     void moveFile(const String & from_path, const String & to_path) override;
@@ -78,8 +44,11 @@ public:
 
 private:
     std::shared_ptr<FileDownloadMetadata> acquireDownloadMetadata(const String & path) const;
+    String getDirectoryPath(const String & path) const;
 
+    /// Disk to cache files.
     std::shared_ptr<DiskLocal> cache_disk;
+    /// Cache only files satisfies predicate.
     const std::function<bool(const String &)> cache_file_predicate;
     /// Contains information about currently running file downloads to cache.
     mutable std::unordered_map<String, std::weak_ptr<FileDownloadMetadata>> file_downloads;

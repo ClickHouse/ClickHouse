@@ -2,10 +2,78 @@
 #include <IO/copyData.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
-
+#include <condition_variable>
 
 namespace DB
 {
+/**
+ * Write buffer with possibility to set and invoke callback when buffer is finalized.
+ */
+class CompletionAwareWriteBuffer : public WriteBufferFromFileBase
+{
+public:
+    CompletionAwareWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, std::function<void()> completion_callback_, size_t buf_size_)
+        : WriteBufferFromFileBase(buf_size_, nullptr, 0), impl(std::move(impl_)), completion_callback(completion_callback_) { }
+
+    ~CompletionAwareWriteBuffer() override
+    {
+        try
+        {
+            CompletionAwareWriteBuffer::finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void finalize() override
+    {
+        if (finalized)
+            return;
+
+        next();
+        impl->finalize();
+
+        finalized = true;
+
+        completion_callback();
+    }
+
+    void sync() override { impl->sync(); }
+
+    std::string getFileName() const override { return impl->getFileName(); }
+
+private:
+    void nextImpl() override
+    {
+        impl->swap(*this);
+        impl->next();
+        impl->swap(*this);
+    }
+
+    /// Actual write buffer.
+    std::unique_ptr<WriteBufferFromFileBase> impl;
+    /// Callback is invoked when finalize is completed.
+    const std::function<void()> completion_callback;
+    bool finalized = false;
+};
+
+enum FileDownloadStatus
+{
+    NONE,
+    DOWNLOADING,
+    DOWNLOADED,
+    ERROR
+};
+
+struct FileDownloadMetadata
+{
+    /// Thread waits on this condition if download process is in progress.
+    std::condition_variable condition;
+    FileDownloadStatus status = NONE;
+};
+
 DiskCacheWrapper::DiskCacheWrapper(
     std::shared_ptr<IDisk> delegate_, std::shared_ptr<DiskLocal> cache_disk_, std::function<bool(const String &)> cache_file_predicate_)
     : DiskDecorator(delegate_), cache_disk(cache_disk_), cache_file_predicate(cache_file_predicate_)
@@ -38,13 +106,9 @@ std::unique_ptr<ReadBufferFromFileBase>
 DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
 {
     if (!cache_file_predicate(path))
-    {
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Skip reading file from cache {}", backQuote(path));
-
         return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
-    }
 
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Try to read file from cache {}", backQuote(path));
+    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
         return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
@@ -58,11 +122,11 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
         {
             /// This thread will responsible for file downloading to cache.
             metadata->status = DOWNLOADING;
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File doesn't exist in cache. Will download it {}", backQuote(path));
+            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File {} doesn't exist in cache. Will download it", backQuote(path));
         }
         else if (metadata->status == DOWNLOADING)
         {
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Waiting for file download to cache {}", backQuote(path));
+            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Waiting for file {} download to cache", backQuote(path));
             metadata->condition.wait(lock, [metadata] { return metadata->status == DOWNLOADED || metadata->status == ERROR; });
         }
     }
@@ -75,17 +139,19 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
         {
             try
             {
-                cache_disk->createDirectories(Poco::Path{path}.setFileName("").toString());
+                auto dir_path = getDirectoryPath(path);
+                if (!cache_disk->exists(dir_path))
+                    cache_disk->createDirectories(dir_path);
 
                 auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
                 auto dst_buffer = cache_disk->writeFile(path, buf_size, WriteMode::Rewrite, estimated_size, aio_threshold);
                 copyData(*src_buffer, *dst_buffer);
 
-                LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File downloaded to cache {}", backQuote(path));
+                LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File {} downloaded to cache", backQuote(path));
             }
             catch (...)
             {
-                tryLogCurrentException("DiskS3", "Failed to download file to cache " + backQuote(path));
+                tryLogCurrentException("DiskS3", "Failed to download file + " + backQuote(path) + " to cache");
                 result_status = ERROR;
             }
         }
@@ -104,66 +170,21 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
     return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
 }
 
-CompletionAwareWriteBuffer::CompletionAwareWriteBuffer(
-    std::unique_ptr<WriteBufferFromFileBase> impl_, std::function<void()> completion_callback_, size_t buf_size_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0), impl(std::move(impl_)), completion_callback(completion_callback_)
-{
-}
-
-void CompletionAwareWriteBuffer::nextImpl()
-{
-    impl->swap(*this);
-    impl->next();
-    impl->swap(*this);
-}
-
-void CompletionAwareWriteBuffer::finalize()
-{
-    if (finalized)
-        return;
-
-    next();
-    impl->finalize();
-
-    finalized = true;
-
-    completion_callback();
-}
-
-CompletionAwareWriteBuffer::~CompletionAwareWriteBuffer()
-{
-    try
-    {
-        CompletionAwareWriteBuffer::finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void CompletionAwareWriteBuffer::sync()
-{
-    impl->sync();
-}
-
-std::string CompletionAwareWriteBuffer::getFileName() const
-{
-    return impl->getFileName();
-}
-
 std::unique_ptr<WriteBufferFromFileBase>
 DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
 
-    cache_disk->createDirectories(Poco::Path{path}.setFileName("").toString());
+    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write file {} to cache", backQuote(path));
+
+    auto dir_path = getDirectoryPath(path);
+    if (!cache_disk->exists(dir_path))
+        cache_disk->createDirectories(dir_path);
 
     return std::make_unique<CompletionAwareWriteBuffer>(
         cache_disk->writeFile(path, buf_size, mode, estimated_size, aio_threshold),
-        [this, path, buf_size, mode, estimated_size, aio_threshold] ()
-        {
+        [this, path, buf_size, mode, estimated_size, aio_threshold]() {
             /// Copy file from cache to actual disk when cached buffer is finalized.
             auto src_buffer = cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, 0);
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
@@ -228,13 +249,29 @@ void DiskCacheWrapper::createHardLink(const String & src_path, const String & ds
     DiskDecorator::createHardLink(src_path, dst_path);
 }
 
+void DiskCacheWrapper::createDirectory(const String & path)
+{
+    cache_disk->createDirectory(path);
+    DiskDecorator::createDirectory(path);
+}
+
+void DiskCacheWrapper::createDirectories(const String & path)
+{
+    cache_disk->createDirectories(path);
+    DiskDecorator::createDirectories(path);
+}
+
+inline String DiskCacheWrapper::getDirectoryPath(const String & path) const
+{
+    return Poco::Path{path}.setFileName("").toString();
+}
+
 /// TODO: Current reservation mechanism leaks IDisk abstraction details.
 /// This hack is needed to return proper disk pointer (wrapper instead of implementation) from reservation object.
 class ReservationDelegate : public IReservation
 {
 public:
-    ReservationDelegate(ReservationPtr delegate_, DiskPtr wrapper_)
-        : delegate(std::move(delegate_)), wrapper(wrapper_) { }
+    ReservationDelegate(ReservationPtr delegate_, DiskPtr wrapper_) : delegate(std::move(delegate_)), wrapper(wrapper_) { }
     UInt64 getSize() const override { return delegate->getSize(); }
     DiskPtr getDisk(size_t) const override { return wrapper; }
     Disks getDisks() const override { return {wrapper}; }
