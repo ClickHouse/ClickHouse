@@ -25,6 +25,7 @@ def regression(self, local, clickhouse_binary_path):
     with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
         self.context.cluster = cluster
 
+        Feature(run=load("rbac.tests.syntax.feature", "feature"), flags=TE)
         Feature(run=load("rbac.tests.privileges.feature", "feature"), flags=TE)
 
 if main():
