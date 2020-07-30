@@ -61,7 +61,7 @@ public:
         bool deduplicate,
         const Context & context) override;
 
-    void alterPartition(
+    Pipes alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,
@@ -149,7 +149,8 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, bool part, const Context & context);
+
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;

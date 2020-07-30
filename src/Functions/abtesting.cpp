@@ -1,4 +1,6 @@
-#if !defined(ARCADIA_BUILD)
+#include <Functions/abtesting.h>
+
+#if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
 #include <sstream>
@@ -9,7 +11,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/abtesting.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 
@@ -300,6 +301,19 @@ public:
 void registerFunctionBayesAB(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBayesAB>();
+}
+
+}
+
+#else
+
+namespace DB
+{
+
+class FunctionFactory;
+
+void registerFunctionBayesAB(FunctionFactory & /* factory */)
+{
 }
 
 }

@@ -567,6 +567,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     RangesInDataParts parts_with_ranges(parts.size());
     size_t sum_marks = 0;
+    std::atomic<size_t> sum_marks_pk = 0;
     size_t sum_ranges = 0;
 
     /// Let's find what range to read from each part.
@@ -589,6 +590,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
                     ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
                 }
             }
+
+            sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
             for (const auto & index_and_condition : useful_indices)
                 ranges.ranges = filterMarksUsingIndex(
@@ -636,7 +639,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         parts_with_ranges.resize(next_part);
     }
 
-    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
+    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
