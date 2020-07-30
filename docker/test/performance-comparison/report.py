@@ -238,12 +238,13 @@ if args.report == 'main':
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
-            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
-            'p&nbsp;<&nbsp;0.001 threshold',                   # 3
-            # Failed                                           # 4
-            'Test',                                            # 5
-            '#',                                               # 6
-            'Query',                                           # 7
+            'Times speedup / slowdown',                 # 2
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
+            'p&nbsp;<&nbsp;0.001 threshold',                   # 4
+            # Failed                                           # 5
+            'Test',                                            # 6
+            '#',                                               # 7
+            'Query',                                           # 8
             ]
 
         print(tableHeader(columns))
@@ -251,15 +252,15 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         attrs[4] = None
         for row in rows:
-            if int(row[4]):
-                if float(row[2]) < 0.:
+            if int(row[5]):
+                if float(row[3]) < 0.:
                     faster_queries += 1
-                    attrs[2] = f'style="background: {color_good}"'
+                    attrs[2] = attrs[3] = f'style="background: {color_good}"'
                 else:
                     slower_queries += 1
-                    attrs[2] = f'style="background: {color_bad}"'
+                    attrs[2] = attrs[3] = f'style="background: {color_bad}"'
             else:
-                attrs[2] = ''
+                attrs[2] = attrs[3] = ''
 
             print(tableRow(row, attrs))
 
@@ -498,8 +499,8 @@ elif args.report == 'all-queries':
             # Unstable #1
             'Old,&nbsp;s', #2
             'New,&nbsp;s', #3
-            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
-            'Times speedup / slowdown',                 #5
+            'Times speedup / slowdown',                 #4
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
             '#',                                      #8
@@ -519,12 +520,12 @@ elif args.report == 'all-queries':
                 attrs[6] = ''
 
             if int(r[0]):
-                if float(r[4]) > 0.:
-                    attrs[4] = f'style="background: {color_bad}"'
+                if float(r[5]) > 0.:
+                    attrs[4] = attrs[5] = f'style="background: {color_bad}"'
                 else:
-                    attrs[4] = f'style="background: {color_good}"'
+                    attrs[4] = attrs[5] = f'style="background: {color_good}"'
             else:
-                attrs[4] = ''
+                attrs[4] = attrs[5] = ''
 
             if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
                 attrs[2] = f'style="background: {color_bad}"'
