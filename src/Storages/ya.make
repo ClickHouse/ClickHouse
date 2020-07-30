@@ -87,6 +87,7 @@ SRCS(
     MergeTree/MergeTreeDataPartWriterOnDisk.cpp
     MergeTree/MergeTreeReaderInMemory.cpp
     MergeTree/MergeTreeWriteAheadLog.cpp
+    MergeTree/MergeTreeMutationStatus.cpp
     System/attachSystemTables.cpp
     System/StorageSystemAggregateFunctionCombinators.cpp
     System/StorageSystemAsynchronousMetrics.cpp

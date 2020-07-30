@@ -102,6 +102,7 @@ using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
 void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
+    factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -43,7 +43,7 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
