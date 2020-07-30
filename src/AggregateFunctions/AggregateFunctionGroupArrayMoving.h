@@ -38,7 +38,6 @@ struct MovingData
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;
-    Array window;
     T sum = 0;
 
     void add(T val, Arena * arena)
