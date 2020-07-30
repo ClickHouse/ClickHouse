@@ -25,3 +25,5 @@ kurtSamp(expr)
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/) <!--hide-->

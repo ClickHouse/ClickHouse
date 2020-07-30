@@ -23,3 +23,5 @@ uniqExact(x[, ...])
 -   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqexact/) <!--hide-->

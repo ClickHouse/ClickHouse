@@ -89,3 +89,5 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
 │ [7]                           │
 └───────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/) <!--hide-->
