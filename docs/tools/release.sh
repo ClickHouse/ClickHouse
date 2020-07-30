@@ -37,7 +37,7 @@ then
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m
-        python3 purge-cache-for-changed-files.py
+        python3 purge_cache_for_changed_files.py
     fi
     cd "${BUILD_DIR}"
 fi
