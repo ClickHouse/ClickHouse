@@ -41,6 +41,36 @@ struct State
         ++count;
     }
 
+    template <size_t unroll_count = 128 / sizeof(Float)>
+    void addBatch(const Float * ptr, size_t size)
+    {
+        /// Compiler cannot unroll this loop, do it manually.
+        /// (at least for floats, most likely due to the lack of -fassociative-math)
+
+        Float partial_sums[unroll_count]{};
+
+        const auto * end = ptr + size;
+        const auto * unrolled_end = ptr + (size / unroll_count * unroll_count);
+
+        while (ptr < unrolled_end)
+        {
+            for (size_t i = 0; i < unroll_count; ++i)
+                partial_sums[i] += ptr[i];
+            ptr += unroll_count;
+        }
+
+        for (size_t i = 0; i < unroll_count; ++i)
+            sum += partial_sums[i];
+
+        while (ptr < end)
+        {
+            sum += *ptr;
+            ++ptr;
+        }
+
+        count += size;
+    }
+
     Float result() const
     {
         return sum / count;
@@ -406,6 +436,44 @@ Float NO_INLINE microsort(const PODArray<UInt8> & keys, const PODArray<Float> & 
 }
 
 
+Float NO_INLINE buffered(const PODArray<UInt8> & keys, const PODArray<Float> & values)
+{
+    State map[256]{};
+
+    static constexpr size_t BUF_SIZE = 16384 / 256 / sizeof(Float); /// Should fit in L1d.
+
+    Float buffers[256 * BUF_SIZE];
+    Float * ptrs[256];
+
+    for (size_t i = 0; i < 256; ++i)
+        ptrs[i] = &buffers[i * BUF_SIZE];
+
+    size_t size = keys.size();
+    const auto * key = keys.data();
+    const auto * key_end = key + size;
+    const auto * value = values.data();
+
+    while (key < key_end)
+    {
+        *ptrs[*key] = *value;
+
+        if (++ptrs[*key] == &buffers[(*key + 1) * BUF_SIZE])  /// Calculation is better than L1d load of cached end pointer.
+        {
+            ptrs[*key] -= BUF_SIZE;
+            map[*key].addBatch<BUF_SIZE>(ptrs[*key], BUF_SIZE);
+        }
+
+        ++key;
+        ++value;
+    }
+
+    for (size_t i = 0; i < 256; ++i)
+        map[i].addBatch<4>(&buffers[i * BUF_SIZE], ptrs[i] - &buffers[i * BUF_SIZE]);
+
+    return map[0].result();
+}
+
+
 int main(int argc, char ** argv)
 {
     size_t size = argc > 1 ? std::stoull(argv[1]) : 1000000000;
@@ -437,6 +505,7 @@ int main(int argc, char ** argv)
         case 7: res = simple_lookup_table_embedded_states(keys, values); break;
         case 8: res = microsort<1>(keys, values); break;
         case 9: res = baseline_baseline(keys, values); break;
+        case 10: res = buffered(keys, values); break;
 
         case 32: res = unrolled<2>(keys, values); break;
         case 34: res = unrolled<4>(keys, values); break;
