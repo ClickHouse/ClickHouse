@@ -160,6 +160,15 @@ public:
     }
 };
 
+
+template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
+using FixedImplicitZeroHashMap = FixedHashMap<
+    Key,
+    Mapped,
+    FixedHashMapImplicitZeroCell<Key, Mapped>,
+    FixedHashTableStoredSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
+    Allocator>;
+
 template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
 using FixedImplicitZeroHashMapWithCalculatedSize = FixedHashMap<
     Key,
