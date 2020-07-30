@@ -1,8 +1,9 @@
 ---
 toc_priority: 48
+toc_title: KILL
 ---
 
-## KILL Statements {#kill-statements}
+# KILL Statements {#kill-statements}
 
 There are two kinds of kill statements: to kill a query and to kill a mutation
 

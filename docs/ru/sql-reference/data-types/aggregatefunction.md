@@ -23,7 +23,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../sql-reference/data-types/aggregatefunction.md#agg_function-uniq), anyIf ([any](../../sql-reference/data-types/aggregatefunction.md#agg_function-any)+[If](../../sql-reference/data-types/aggregatefunction.md#agg-functions-combinator-if)) и [quantiles](../../sql-reference/data-types/aggregatefunction.md) — агрегатные функции, поддержанные в ClickHouse.
+[uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq), anyIf ([any](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)+[If](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md) — агрегатные функции, поддержанные в ClickHouse.
 
 ## Особенности использования {#osobennosti-ispolzovaniia}
 

@@ -551,7 +551,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & column = block.getByPosition(arguments[0]);
         Int64 scale_arg = getScaleArg(block, arguments);
@@ -631,7 +631,7 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         auto in_column = block.getByPosition(arguments[0]).column;
         const auto & in_type = block.getByPosition(arguments[0]).type;
@@ -677,7 +677,7 @@ public:
 
 private:
     template <typename T>
-    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) const
     {
         const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
         auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
@@ -689,7 +689,7 @@ private:
     }
 
     template <typename T>
-    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) const
     {
         const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped);
         auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
@@ -701,7 +701,7 @@ private:
     }
 
     template <typename Container>
-    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
+    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
