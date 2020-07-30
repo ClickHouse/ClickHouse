@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<yandex>
+    <users>
+        <default>
+            <databases>
+                <mydb>
+                    <!-- PREWHERE -->
+                    <prewhere_filter>
+                        <filter>b = 1</filter>
+                    </prewhere_filter>
+                </mydb>
+            </databases>
+        </default>
+    </users>
+</yandex>

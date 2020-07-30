@@ -523,4 +523,18 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
+
+    <!-- Uncomment to allow insecure PREWHERE in conjunction with row-level filter
+
+         NOTE: this is insecure, since right now short circuit evaluation is not
+         supported, and this means that in the following expression:
+
+             and(row_level_filter, user_prewhere)
+
+         Both `row_level_filter` and `user_prewhere` will be evaluated, and
+         `user_prewhere` may contain throwIf() against column from
+         `row_level_filter` that will allow to check the value for rows that the
+         user should not have access.
+    -->
+    <!-- <allow_insecure_prewhere>false</allow_insecure_prewhere> -->
 </yandex>

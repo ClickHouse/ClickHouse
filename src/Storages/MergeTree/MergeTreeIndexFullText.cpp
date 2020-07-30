@@ -19,6 +19,15 @@
 
 #include <boost/algorithm/string.hpp>
 
+#if defined(__SSE2__)
+#include <immintrin.h>
+
+#if defined(__SSE4_2__)
+#include <nmmintrin.h>
+#endif
+
+#endif
+
 
 namespace DB
 {
@@ -119,121 +128,6 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     *pos += rows_read;
 }
 
-
-const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
-{
-        {
-                "notEquals",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "equals",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    return createFunctionEqualsCondition(out, value, idx);
-                }
-        },
-        {
-                "like",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "notLike",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "hasToken",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-        },
-        {
-                "startsWith",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    return createFunctionEqualsCondition(out, value, idx);
-                }
-        },
-        {
-                "endsWith",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    return createFunctionEqualsCondition(out, value, idx);
-                }
-        },
-        {
-                "multiSearchAny",
-                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_MULTI_SEARCH;
-
-                    /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
-                    std::vector<std::vector<BloomFilter>> bloom_filters;
-                    bloom_filters.emplace_back();
-                    for (const auto & element : value.get<Array>())
-                    {
-                        if (element.getType() != Field::Types::String)
-                            return false;
-
-                        bloom_filters.back().emplace_back(idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-                        const auto & str = element.get<String>();
-                        stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, bloom_filters.back().back());
-                    }
-                    out.set_bloom_filters = std::move(bloom_filters);
-                    return true;
-                }
-        },
-        {
-                "notIn",
-                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN;
-                    return true;
-                }
-        },
-        {
-                "in",
-                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
-                {
-                    out.function = RPNElement::FUNCTION_IN;
-                    return true;
-                }
-        },
-};
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
@@ -429,21 +323,110 @@ bool MergeTreeConditionFullText::atomFromAST(
             return false;
 
         if (const_type && const_type->getTypeId() != TypeIndex::String
-                        && const_type->getTypeId() != TypeIndex::FixedString
-                        && const_type->getTypeId() != TypeIndex::Array)
+                       && const_type->getTypeId() != TypeIndex::FixedString
+                       && const_type->getTypeId() != TypeIndex::Array)
+        {
             return false;
+        }
 
         if (key_arg_pos == 1 && (func_name != "equals" || func_name != "notEquals"))
             return false;
         else if (!index.token_extractor_func->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
 
-        const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
-            return false;
+        if (func_name == "notEquals")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_NOT_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
 
-        out.key_column = key_column_num;
-        return atom_it->second(out, const_value, index);
+            const auto & str = const_value.get<String>();
+            stringToBloomFilter(str.c_str(), str.size(), index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "equals")
+        {
+            out.key_column = key_column_num;
+            return createFunctionEqualsCondition(out, const_value, index);
+        }
+        else if (func_name == "like")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+
+            const auto & str = const_value.get<String>();
+            likeStringToBloomFilter(str, index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "notLike")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_NOT_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+
+            const auto & str = const_value.get<String>();
+            likeStringToBloomFilter(str, index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "hasToken")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(
+                    index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+
+            const auto & str = const_value.get<String>();
+            stringToBloomFilter(str.c_str(), str.size(), index.token_extractor_func, *out.bloom_filter);
+            return true;
+        }
+        else if (func_name == "startsWith")
+        {
+            out.key_column = key_column_num;
+            return createFunctionEqualsCondition(out, const_value, index);
+        }
+        else if (func_name == "endsWith")
+        {
+            out.key_column = key_column_num;
+            return createFunctionEqualsCondition(out, const_value, index);
+        }
+        else if (func_name == "multiSearchAny")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_MULTI_SEARCH;
+
+            /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
+            std::vector<std::vector<BloomFilter>> bloom_filters;
+            bloom_filters.emplace_back();
+            for (const auto & element : const_value.get<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+
+                bloom_filters.back().emplace_back(index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+                const auto & str = element.get<String>();
+                stringToBloomFilter(str.c_str(), str.size(), index.token_extractor_func, bloom_filters.back().back());
+            }
+            out.set_bloom_filters = std::move(bloom_filters);
+            return true;
+        }
+        else if (func_name == "notIn")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_NOT_IN;
+            return true;
+        }
+        else if (func_name == "in")
+        {
+            out.key_column = key_column_num;
+            out.function = RPNElement::FUNCTION_IN;
+            return true;
+        }
+
+        return false;
     }
     else if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
     {
@@ -632,8 +615,67 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 {
     *token_start = *pos;
     *token_len = 0;
+
     while (*pos < len)
     {
+#if defined(__SSE2__)
+        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
+        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
+        const size_t haystack_length = 16;
+
+#if defined(__SSE4_2__)
+        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
+        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
+        // Every bit represents if `haystack` character is in the ranges (1) or not(0)
+        const int result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
+#else
+        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
+        const auto number_begin =      _mm_set1_epi8('0' - 1);
+        const auto number_end =        _mm_set1_epi8('9' + 1);
+        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
+        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
+        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
+        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
+        const auto zero  =             _mm_set1_epi8(0);
+
+        // every bit represents if `haystack` character `c` statisfies condition:
+        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
+        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
+        const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
+                _mm_cmplt_epi8(haystack, zero),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
+#endif
+        if (result_bitmask == 0)
+        {
+            if (*token_len != 0)
+                // end of token started on previous haystack
+                return true;
+
+            *pos += haystack_length;
+            continue;
+        }
+
+        const auto token_start_pos_in_current_haystack = getTrailingZeroBitsUnsafe(result_bitmask);
+        if (*token_len == 0)
+            // new token
+            *token_start = *pos + token_start_pos_in_current_haystack;
+        else if (token_start_pos_in_current_haystack != 0)
+            // end of token starting in one of previous haystacks
+            return true;
+
+        const auto token_bytes_in_current_haystack = getTrailingZeroBitsUnsafe(~(result_bitmask >> token_start_pos_in_current_haystack));
+        *token_len += token_bytes_in_current_haystack;
+
+        *pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
+        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
+            // check if there are leftovers in next `haystack`
+            continue;
+
+        break;
+#else
         if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
             /// Finish current token if any
@@ -647,7 +689,16 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
             ++*pos;
             ++*token_len;
         }
+#endif
     }
+
+#if defined(__SSE2__)
+    // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
+    if (*token_start > len)
+        return false;
+    *token_len = std::min(len - *token_start, *token_len);
+#endif
+
     return *token_len > 0;
 }
 

@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
     extern const int NOT_IMPLEMENTED;
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 /// Is the LIKE expression reduced to finding a substring in a string?
@@ -1018,6 +1019,10 @@ using FunctionReplaceAll = FunctionStringReplace<ReplaceStringImpl<false>, NameR
 using FunctionReplaceRegexpOne = FunctionStringReplace<ReplaceRegexpImpl<true>, NameReplaceRegexpOne>;
 using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<false>, NameReplaceRegexpAll>;
 
+void registerFunctionExtractAllGroupsVertical(FunctionFactory &);
+void registerFunctionExtractAllGroupsHorizontal(FunctionFactory &);
+
+
 void registerFunctionsStringRegex(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMatch>();
@@ -1037,5 +1042,9 @@ void registerFunctionsStringRegex(FunctionFactory & factory)
     factory.registerFunction<FunctionMultiFuzzyMatchAnyIndex>();
     factory.registerFunction<FunctionMultiFuzzyMatchAllIndices>();
     factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
+
+    registerFunctionExtractAllGroupsVertical(factory);
+    registerFunctionExtractAllGroupsHorizontal(factory);
 }
+
 }

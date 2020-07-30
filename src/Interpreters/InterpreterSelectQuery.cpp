@@ -294,6 +294,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
+//=======
+    ASTPtr row_policy_filter;
+    if (storage)
+        row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+
+    /// If allow_insecure_prewhere enabled, move row-policy filters into PREWHERE
+    /// (WHERE cannot be used here, since it will introduce more security breaches)
+    if (row_policy_filter && storage->supportsPrewhere() && context->getAllowInsecurePrewhere())
+    {
+        if (query.prewhere())
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, makeASTFunction("and",
+                row_policy_filter->clone(), query.prewhere()->clone()));
+        else
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, row_policy_filter->clone());
+        row_policy_filter.reset();
+    }
+
+//>>>>>>> e79460833d... Implement allow_insecure_prewhere server setting [DRAFT]
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
@@ -350,8 +368,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             source_header = storage->getSampleBlockForColumns(required_columns);
 
+            /// Append columns from the table filter to required
+            row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             /// Fix source_header for filter actions.
-            auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             row_policy_filter = RowPolicyContext::combineConditionsUsingAnd(row_policy_filter, context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER));
             if (row_policy_filter)
             {
@@ -1102,19 +1121,23 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     if (storage)
     {
-        /// Append columns from the table filter to required
-        auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
-        if (row_policy_filter)
+        // If allow_insecure_prewhere is enabled, it has been moved to PREWHERE already
+        if (!context->getAllowInsecurePrewhere())
         {
-            auto initial_required_columns = required_columns;
-            ExpressionActionsPtr actions;
-            generateFilterActions(actions, row_policy_filter, initial_required_columns);
-            auto required_columns_from_filter = actions->getRequiredColumns();
-
-            for (const auto & column : required_columns_from_filter)
+            /// Append columns from the table filter to required
+            auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+            if (row_policy_filter)
             {
-                if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
-                    required_columns.push_back(column);
+                auto initial_required_columns = required_columns;
+                ExpressionActionsPtr actions;
+                generateFilterActions(actions, row_policy_filter, initial_required_columns);
+                auto required_columns_from_filter = actions->getRequiredColumns();
+
+                for (const auto & column : required_columns_from_filter)
+                {
+                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
+                        required_columns.push_back(column);
+                }
             }
         }
 

@@ -264,6 +264,9 @@ public:
     void checkAccess(const AccessRightsElement & access) const;
     void checkAccess(const AccessRightsElements & access) const;
 
+    void setAllowInsecurePrewhere(bool allow);
+    bool getAllowInsecurePrewhere() const;
+
     AccessRightsContextPtr getAccessRights() const;
 
     RowPolicyContextPtr getRowPolicy() const;
