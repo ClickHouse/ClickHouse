@@ -1471,7 +1471,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     if (old_metadata.hasSettingsChanges())
     {
-
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
@@ -1619,6 +1618,7 @@ void MergeTreeData::changeSettings(
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
 
         for (const auto & change : new_changes)
+        {
             if (change.name == "storage_policy")
             {
                 StoragePolicyPtr new_storage_policy = global_context.getStoragePolicy(change.value.safeGet<String>());
@@ -1653,9 +1653,13 @@ void MergeTreeData::changeSettings(
                     has_storage_policy_changed = true;
                 }
             }
+        }
 
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
+
+        copy.sanityCheck(global_context.getSettingsRef());
+
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
