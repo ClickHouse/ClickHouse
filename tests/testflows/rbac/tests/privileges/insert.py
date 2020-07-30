@@ -56,9 +56,6 @@ def input_output_equality_check(node, input_columns, input_data):
     return input_dict == output_dict
 
 @TestScenario
-@Requirements(
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0")
-)
 def without_privilege(self, table_type, node=None):
     """Check that user without insert privilege on a table is not able to insert on that table.
     """
@@ -72,16 +69,6 @@ def without_privilege(self, table_type, node=None):
                             exitcode=exitcode, message=message)
 
 @TestScenario
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-)
 def user_with_privilege(self, table_type, node=None):
     """Check that user can insert into a table on which they have insert privilege and the inserted data is correct.
     """
@@ -98,22 +85,6 @@ def user_with_privilege(self, table_type, node=None):
                 assert output == '{"d":"2020-01-01"}', error()
 
 @TestScenario
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect("1.0"),
-)
 def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to insert into a table after insert privilege on that table has been revoked from user.
     """
@@ -139,24 +110,7 @@ def user_with_privilege_on_columns(self, table_type):
 
 @TestOutline(Scenario)
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns_Effect("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass", [
     ("d", "d", "x", "d", '\'woo\'', '\'2020-01-01\''),
@@ -195,16 +149,6 @@ def user_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
                                 settings=[("user","user0")], exitcode=exitcode, message=message)
 
 @TestScenario
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-)
 def role_with_privilege(self, table_type, node=None):
     """Check that user can insert into a table after it is granted a role that
     has the insert privilege for that table.
@@ -224,22 +168,6 @@ def role_with_privilege(self, table_type, node=None):
                 assert output == '{"d":"2020-01-01"}', error()
 
 @TestScenario
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect("1.0"),
-)
 def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has insert privilege on a table
     is unable to insert into that table after insert privilege
@@ -261,16 +189,6 @@ def role_with_revoked_privilege(self, table_type, node=None):
                             settings=[("user","user0")], exitcode=exitcode, message=message)
 
 @TestScenario
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0")
-)
 def user_with_revoked_role(self, table_type, node=None):
     """Check that user with a role that has insert privilege on a table
     is unable to insert into that table after the role with insert
@@ -298,24 +216,7 @@ def role_with_privilege_on_columns(self, table_type):
 
 @TestOutline(Scenario)
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_From_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns_Effect("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns insert_columns_fail insert_columns_pass data_fail data_pass", [
     ("d", "d", "x", "d", '\'woo\'', '\'2020-01-01\''),
@@ -357,15 +258,7 @@ def role_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Cluster("1.0"),
 )
 def user_with_privilege_on_cluster(self, table_type, node=None):
     """Check that user is able to insert on a table with
@@ -396,17 +289,7 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def user_with_privilege_from_user_with_grant_option(self, table_type, node=None):
     """Check that user is able to insert on a table when granted privilege
@@ -432,17 +315,7 @@ def user_with_privilege_from_user_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def role_with_privilege_from_user_with_grant_option(self, table_type, node=None):
     """Check that user is able to insert on a table when granted a role with
@@ -470,17 +343,7 @@ def role_with_privilege_from_user_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def user_with_privilege_from_role_with_grant_option(self, table_type, node=None):
     """Check that user is able to insert on a table when granted privilege from a role with grant option
@@ -507,17 +370,7 @@ def user_with_privilege_from_role_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def role_with_privilege_from_role_with_grant_option(self, table_type, node=None):
     """Check that a user is able to insert on a table with a role that was granted privilege
@@ -547,14 +400,7 @@ def role_with_privilege_from_role_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node=None):
     """Check that user is unable to revoke a column they don't have access to from a user.
@@ -572,14 +418,7 @@ def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node=None):
     """Check that user is unable to revoke a column they dont have acces to from a role.
@@ -597,14 +436,7 @@ def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node=None):
     """Check that user with a role is unable to revoke a column they dont have acces to from a user.
@@ -624,14 +456,7 @@ def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Privileges_GrantOption("1.0"),
-    RQ_SRS_006_RBAC_RequiredPrivileges_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_To_Effect("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_On("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
-    RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
 )
 def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node=None):
     """Check that user with a role is unable to revoke a column they dont have acces to from a role.
@@ -650,6 +475,9 @@ def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node
                             exitcode=exitcode, message=message)
 
 @TestOutline(Feature)
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Insert("1.0"),
+)
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
