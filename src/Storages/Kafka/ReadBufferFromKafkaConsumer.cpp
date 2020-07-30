@@ -384,7 +384,8 @@ bool ReadBufferFromKafkaConsumer::poll()
         {
             messages = std::move(new_messages);
             current = messages.begin();
-            LOG_TRACE(log, "Polled batch of {} messages. Offset position: {}", messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+            LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",
+                messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
             break;
         }
     }
