@@ -165,9 +165,4 @@ void DiskDecorator::truncateFile(const String & path, size_t size)
     delegate->truncateFile(path, size);
 }
 
-const String DiskDecorator::getType() const
-{
-    return delegate->getType();
-}
-
 }

@@ -42,7 +42,7 @@ public:
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     void truncateFile(const String & path, size_t size) override;
-    const String getType() const override;
+    const String getType() const override { return delegate->getType(); }
 
 protected:
     DiskPtr delegate;
