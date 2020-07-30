@@ -533,7 +533,7 @@ void PipelineExecutor::finalizeExecution()
         {
             /// Single thread, do not hold mutex
             all_processors_finished = false;
-    	    break;
+            break;
         }
     }
 
