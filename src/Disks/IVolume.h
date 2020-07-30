@@ -36,7 +36,10 @@ using Volumes = std::vector<VolumePtr>;
 class IVolume : public Space
 {
 public:
-    IVolume(String name_, Disks disks_): disks(std::move(disks_)), name(name_)
+    IVolume(String name_, Disks disks_, size_t max_data_part_size_ = 0)
+        : disks(std::move(disks_))
+        , name(name_)
+        , max_data_part_size(max_data_part_size_)
     {
     }
 
@@ -56,14 +59,19 @@ public:
     /// Return biggest unreserved space across all disks
     UInt64 getMaxUnreservedFreeSpace() const;
 
-    DiskPtr getDisk(size_t i = 0) const { return disks[i]; }
+    virtual DiskPtr getDisk(size_t i = 0) const { return disks[i]; }
     const Disks & getDisks() const { return disks; }
 
 protected:
     Disks disks;
     const String name;
+
+public:
+    /// Max size of reservation, zero means unlimited size
+    UInt64 max_data_part_size = 0;
 };
 
+/// Reservation for multiple disks at once. Can be used in RAID1 implementation.
 class MultiDiskReservation : public IReservation
 {
 public:

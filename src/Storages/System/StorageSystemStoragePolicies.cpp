@@ -28,7 +28,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
              {"volume_priority", std::make_shared<DataTypeUInt64>()},
              {"disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
              {"volume_type", std::make_shared<DataTypeString>()},
-             {"max_data_part_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+             {"max_data_part_size", std::make_shared<DataTypeUInt64>()},
              {"move_factor", std::make_shared<DataTypeFloat32>()},
     }));
     // TODO: Add string column with custom volume-type-specific options
@@ -51,7 +51,7 @@ Pipes StorageSystemStoragePolicies::read(
     MutableColumnPtr col_priority = ColumnUInt64::create();
     MutableColumnPtr col_disks = ColumnArray::create(ColumnString::create());
     MutableColumnPtr col_volume_type = ColumnString::create();
-    MutableColumnPtr col_max_part_size = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+    MutableColumnPtr col_max_part_size = ColumnUInt64::create();
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
 
     for (const auto & [policy_name, policy_ptr] : context.getPoliciesMap())
@@ -68,11 +68,7 @@ Pipes StorageSystemStoragePolicies::read(
                 disks.push_back(disk_ptr->getName());
             col_disks->insert(disks);
             col_volume_type->insert(volumeTypeToString(volumes[i]->getType()));
-            auto volume_jbod = std::dynamic_pointer_cast<VolumeJBOD>(volumes[i]);
-            if (volume_jbod)
-                col_max_part_size->insert(volume_jbod->max_data_part_size);
-            else
-                col_max_part_size->insert(Null{});
+            col_max_part_size->insert(volumes[i]->max_data_part_size);
             col_move_factor->insert(policy_ptr->getMoveFactor());
         }
     }

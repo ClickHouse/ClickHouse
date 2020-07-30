@@ -766,16 +766,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
 
-        std::string tmp_path;
-        VolumeJBODPtr vol;
-        if ((vol = dynamic_pointer_cast<VolumeJBOD>(params.tmp_volume)) != nullptr)
-        {
-            tmp_path = vol->getNextDisk()->getPath();
-        }
-        else
-        {
-            tmp_path = params.tmp_volume->getDisk()->getPath();
-        }
+        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
 
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
@@ -865,16 +856,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
-    String tmp_path;
-    auto volume_jbod = std::dynamic_pointer_cast<VolumeJBOD>(params.tmp_volume);
-    if (volume_jbod)
-    {
-        tmp_path = volume_jbod->getNextDisk()->getPath();
-    }
-    else
-    {
-        tmp_path = params.tmp_volume->getDisk()->getPath();
-    }
+    String tmp_path = params.tmp_volume->getDisk()->getPath();
     return writeToTemporaryFile(data_variants, tmp_path);
 }
 

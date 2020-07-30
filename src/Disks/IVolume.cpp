@@ -32,7 +32,10 @@ String volumeTypeToString(VolumeType type)
 }
 
 IVolume::IVolume(
-    String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disk_selector)
+    String name_,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    DiskSelectorPtr disk_selector)
     : name(std::move(name_))
 {
     Poco::Util::AbstractConfiguration::Keys keys;

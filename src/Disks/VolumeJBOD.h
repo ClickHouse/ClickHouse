@@ -14,7 +14,7 @@ class VolumeJBOD : public IVolume
 {
 public:
     VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_)
-        : IVolume(name_, disks_), max_data_part_size(max_data_part_size_)
+        : IVolume(name_, disks_, max_data_part_size_)
     {
     }
 
@@ -27,20 +27,17 @@ public:
 
     VolumeType getType() const override { return VolumeType::JBOD; }
 
-    /// Next disk (round-robin)
+    /// Always returns next disk (round-robin), ignores argument.
     ///
     /// - Used with policy for temporary data
     /// - Ignores all limitations
     /// - Shares last access with reserve()
-    // TODO: Remove getNextDisk, move it's behaviour to VolumeJBOD::getDisk(), if it was called without argument.
-    DiskPtr getNextDisk();
+    DiskPtr getDisk(size_t index = 0) const override;
 
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
 
-    /// Max size of reservation
-    UInt64 max_data_part_size = 0;
 private:
     mutable std::atomic<size_t> last_used = 0;
 };
