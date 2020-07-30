@@ -17,7 +17,7 @@ MIN_CHANGED_WORDS = 4
 def collect_changed_files():
     proc = subprocess.Popen("git diff HEAD~1 --word-diff=porcelain | grep -e '^+[^+]\|^\-[^\-]\|^\+\+\+'", stdout=subprocess.PIPE, shell=True)
     changed_files = []
-    current_file_name = ''
+    current_file_name = ""
     changed_words = []
     while True:
         line = proc.stdout.readline().decode("utf-8").strip()
