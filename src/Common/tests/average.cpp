@@ -129,12 +129,6 @@ Float NO_INLINE baseline(const PODArray<UInt8> & keys, const PODArray<Float> & v
 }
 
 
-template <typename Key, typename Mapped>
-using FixedImplicitZeroHashMap = FixedHashMap<
-    Key,
-    Mapped,
-    FixedHashMapImplicitZeroCell<Key, Mapped>>;
-
 Float NO_INLINE implicit_zero(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
     Arena arena;
