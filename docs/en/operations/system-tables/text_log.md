@@ -24,3 +24,5 @@ Columns:
 -   `revision` (UInt32) — ClickHouse revision.
 -   `source_file` (LowCardinality(String)) — Source file from which the logging was done.
 -   `source_line` (UInt64) — Source line from which the logging was done.
+
+ [Original article](https://clickhouse.tech/docs/en/operations/system_tables/text_log) <!--hide-->

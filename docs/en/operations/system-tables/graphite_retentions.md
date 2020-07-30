@@ -1,4 +1,4 @@
-# system.graphite\_retentions {#system-graphite-retentions}
+# system.graphite_retentions {#system-graphite-retentions}
 
 Contains information about parameters [graphite\_rollup](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) which are used in tables with [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) engines.
 
