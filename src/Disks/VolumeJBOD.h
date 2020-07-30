@@ -32,7 +32,7 @@ public:
     /// - Used with policy for temporary data
     /// - Ignores all limitations
     /// - Shares last access with reserve()
-    DiskPtr getDisk(size_t index = 0) const override;
+    DiskPtr getDisk(size_t index) const override;
 
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.
