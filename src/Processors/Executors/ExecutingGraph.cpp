@@ -33,7 +33,9 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
     }
 
     edge.to = it->second;
-    return edges.emplace_back(std::move(edge));
+    auto & added_edge = edges.emplace_back(std::move(edge));
+    added_edge.update_info.id = &added_edge;
+    return added_edge;
 }
 
 bool ExecutingGraph::addEdges(uint64_t node)
