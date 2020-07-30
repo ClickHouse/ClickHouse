@@ -204,7 +204,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     for (const auto & volume : getVolumes())
     {
         if (new_volume_names.count(volume->getName()) == 0)
-            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_set<String> new_disk_names;
         for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
@@ -212,7 +212,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
         for (const auto & disk : volume->getDisks())
             if (new_disk_names.count(disk->getName()) == 0)
-                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
