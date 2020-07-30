@@ -112,7 +112,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
     for (const auto & part : parts)
     {
-        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings);
+        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
@@ -173,8 +173,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
-    size_t part_index = 0;
-
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
     Names virt_column_names;
@@ -518,7 +516,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             }
 
             ASTPtr query = filter_function;
-            auto syntax_result = SyntaxAnalyzer(context).analyze(query, available_real_columns);
+            auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
             filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
             if (!select.final())
@@ -557,8 +555,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (select.prewhere())
         prewhere_column = select.prewhere()->getColumnName();
 
-    RangesInDataParts parts_with_ranges;
-
     std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -569,40 +565,81 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             useful_indices.emplace_back(index_helper, condition);
     }
 
-    /// Let's find what range to read from each part.
+    RangesInDataParts parts_with_ranges(parts.size());
     size_t sum_marks = 0;
+    std::atomic<size_t> sum_marks_pk = 0;
     size_t sum_ranges = 0;
-    for (auto & part : parts)
-    {
-        RangesInDataPart ranges(part, part_index++);
 
-        if (metadata_snapshot->hasPrimaryKey())
-            ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings);
+    /// Let's find what range to read from each part.
+    {
+        auto process_part = [&](size_t part_index)
+        {
+            auto & part = parts[part_index];
+
+            RangesInDataPart ranges(part, part_index);
+
+            if (metadata_snapshot->hasPrimaryKey())
+                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
+            else
+            {
+                size_t total_marks_count = part->getMarksCount();
+                if (total_marks_count)
+                {
+                    if (part->index_granularity.hasFinalMark())
+                        --total_marks_count;
+                    ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+                }
+            }
+
+            sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+
+            for (const auto & index_and_condition : useful_indices)
+                ranges.ranges = filterMarksUsingIndex(
+                        index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings, log);
+
+            if (!ranges.ranges.empty())
+                parts_with_ranges[part_index] = std::move(ranges);
+        };
+
+        size_t num_threads = std::min(size_t(num_streams), parts.size());
+
+        if (num_threads <= 1)
+        {
+            for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                process_part(part_index);
+        }
         else
         {
-            size_t total_marks_count = part->getMarksCount();
-            if (total_marks_count)
-            {
-                if (part->index_granularity.hasFinalMark())
-                    --total_marks_count;
-                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
-            }
+            /// Parallel loading of data parts.
+            ThreadPool pool(num_threads);
+
+            for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+                pool.scheduleOrThrowOnError([&, part_index] { process_part(part_index); });
+
+            pool.wait();
         }
 
-        for (const auto & index_and_condition : useful_indices)
-            ranges.ranges = filterMarksUsingIndex(
-                index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings);
-
-        if (!ranges.ranges.empty())
+        /// Skip empty ranges.
+        size_t next_part = 0;
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         {
-            parts_with_ranges.push_back(ranges);
+            auto & part = parts_with_ranges[part_index];
+            if (!part.data_part)
+                continue;
 
-            sum_ranges += ranges.ranges.size();
-            sum_marks += ranges.getMarksCount();
+            sum_ranges += part.ranges.size();
+            sum_marks += part.getMarksCount();
+
+            if (next_part != part_index)
+                std::swap(parts_with_ranges[next_part], part);
+
+            ++next_part;
         }
+
+        parts_with_ranges.resize(next_part);
     }
 
-    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
+    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
@@ -651,7 +688,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
-        auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
+        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, metadata_snapshot->getColumns().getAllPhysical());
         auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
 
         res = spreadMarkRangesAmongStreamsWithOrder(
@@ -1292,7 +1329,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
-    const Settings & settings) const
+    const Settings & settings,
+    Poco::Logger * log)
 {
     MarkRanges res;
 
@@ -1499,7 +1537,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings,
-    const MergeTreeReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings,
+    Poco::Logger * log)
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
@@ -1516,6 +1555,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         part->index_granularity_info.index_granularity_bytes);
 
     size_t granules_dropped = 0;
+    size_t total_granules = 0;
 
     size_t marks_count = part->getMarksCount();
     size_t final_mark = part->index_granularity.hasFinalMark();
@@ -1542,6 +1582,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
 
+        total_granules += index_range.end - index_range.begin;
+
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
@@ -1566,7 +1608,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index_helper->index.name), granules_dropped);
+    LOG_DEBUG(log, "Index {} has dropped {} / {} granules.", backQuote(index_helper->index.name), granules_dropped, total_granules);
 
     return res;
 }

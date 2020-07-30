@@ -124,9 +124,9 @@ public:
         throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const UInt64 & x) const { return x; }
-    T operator() (const Int64 & x) const { return x; }
-    T operator() (const Float64 & x) const { return x; }
+    T operator() (const UInt64 & x) const { return T(x); }
+    T operator() (const Int64 & x) const { return T(x); }
+    T operator() (const Float64 & x) const { return T(x); }
 
     T operator() (const UInt128 &) const
     {
@@ -139,7 +139,7 @@ public:
         if constexpr (std::is_floating_point_v<T>)
             return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
         else
-            return x.getValue() / x.getScaleMultiplier();
+            return static_cast<T>(x.getValue() / x.getScaleMultiplier());
     }
 
     T operator() (const AggregateFunctionStateData &) const

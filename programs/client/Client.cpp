@@ -216,7 +216,7 @@ private:
     ConnectionParameters connection_parameters;
 
     QueryFuzzer fuzzer;
-    int query_fuzzer_runs;
+    int query_fuzzer_runs = 0;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -1041,10 +1041,12 @@ private:
                 begin - text.data());
 
             ASTPtr fuzz_base = orig_ast;
-            for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
+            // Don't repeat inserts, the tables grow too big.
+            const int this_query_runs = as_insert ? 1 : query_fuzzer_runs;
+            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
             {
-                fprintf(stderr, "fuzzing step %d for query at pos %zd\n",
-                    fuzz_step, this_query_begin - text.data());
+                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
+                    fuzz_step, this_query_runs, this_query_begin - text.data());
 
                 ASTPtr ast_to_process;
                 try
@@ -1058,7 +1060,11 @@ private:
                     std::stringstream dump_of_cloned_ast;
                     ast_to_process->dumpTree(dump_of_cloned_ast);
 
-                    fuzzer.fuzzMain(ast_to_process);
+                    // Run the original query as well.
+                    if (fuzz_step > 0)
+                    {
+                        fuzzer.fuzzMain(ast_to_process);
+                    }
 
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
