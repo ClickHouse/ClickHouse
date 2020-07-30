@@ -90,7 +90,7 @@ std::vector<uint64_t> ExecutingGraph::expandPipeline(const Processors & processo
 
     while (nodes.size() < num_processors)
     {
-        auto * processor = processors[num_processors].get();
+        auto * processor = processors[nodes.size()].get();
         if (processors_map.count(processor))
             throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
                             ErrorCodes::LOGICAL_ERROR);
