@@ -83,7 +83,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
 
 std::vector<uint64_t> ExecutingGraph::expandPipeline(const Processors & processors)
 {
-    uint64_t num_processors;
+    uint64_t num_processors = processors.size();
     nodes.reserve(num_processors);
 
     while (nodes.size() < num_processors)
