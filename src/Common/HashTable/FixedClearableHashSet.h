@@ -33,12 +33,12 @@ struct FixedClearableHashTableCell
 };
 
 
-template <typename Key>
+template <typename Key, typename Allocator = HashTableAllocator>
 class FixedClearableHashSet : public FixedHashTable<
-    Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>>
+    Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>>;
+    using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>, Allocator>;
     using LookupResult = typename Base::LookupResult;
 
     void clear()
