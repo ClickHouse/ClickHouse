@@ -477,7 +477,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
                 if (auto query_log = context.getQueryLog())
-                    query_log->add(std::move(elem));
+                    query_log->add(elem);
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.

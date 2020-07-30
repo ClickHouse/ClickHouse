@@ -134,7 +134,8 @@ public:
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
-    void add(LogElement && element);
+    template <typename T>
+    void add(T && element);
 
     void stopFlushThread();
 
@@ -226,10 +227,11 @@ void SystemLog<LogElement>::startup()
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
-
 template <typename LogElement>
-void SystemLog<LogElement>::add(LogElement && element)
+template <typename T>
+void SystemLog<LogElement>::add(T && element)
 {
+    static_assert(std::is_same_v<LogElement, typename std::remove_reference_t<T>>);
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
@@ -281,7 +283,7 @@ void SystemLog<LogElement>::add(LogElement && element)
             return;
         }
 
-    queue.emplace_back(std::move(element));
+    queue.emplace_back(std::forward<T>(element));
     }
 
     if (queue_is_half_full)
