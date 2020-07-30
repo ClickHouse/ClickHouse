@@ -184,7 +184,8 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
 
     return std::make_unique<CompletionAwareWriteBuffer>(
         cache_disk->writeFile(path, buf_size, mode, estimated_size, aio_threshold),
-        [this, path, buf_size, mode, estimated_size, aio_threshold]() {
+        [this, path, buf_size, mode, estimated_size, aio_threshold]()
+        {
             /// Copy file from cache to actual disk when cached buffer is finalized.
             auto src_buffer = cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, 0);
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
