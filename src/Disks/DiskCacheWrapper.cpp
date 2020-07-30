@@ -210,21 +210,39 @@ void DiskCacheWrapper::moveDirectory(const String & from_path, const String & to
 void DiskCacheWrapper::moveFile(const String & from_path, const String & to_path)
 {
     if (cache_disk->exists(from_path))
+    {
+        auto dir_path = getDirectoryPath(to_path);
+        if (!cache_disk->exists(to_path))
+            cache_disk->createDirectories(to_path);
+
         cache_disk->moveFile(from_path, to_path);
+    }
     DiskDecorator::moveFile(from_path, to_path);
 }
 
 void DiskCacheWrapper::replaceFile(const String & from_path, const String & to_path)
 {
     if (cache_disk->exists(from_path))
+    {
+        auto dir_path = getDirectoryPath(to_path);
+        if (!cache_disk->exists(to_path))
+            cache_disk->createDirectories(to_path);
+
         cache_disk->replaceFile(from_path, to_path);
+    }
     DiskDecorator::replaceFile(from_path, to_path);
 }
 
 void DiskCacheWrapper::copyFile(const String & from_path, const String & to_path)
 {
     if (cache_disk->exists(from_path))
+    {
+        auto dir_path = getDirectoryPath(to_path);
+        if (!cache_disk->exists(to_path))
+            cache_disk->createDirectories(to_path);
+
         cache_disk->copyFile(from_path, to_path);
+    }
     DiskDecorator::copyFile(from_path, to_path);
 }
 
@@ -245,7 +263,13 @@ void DiskCacheWrapper::removeRecursive(const String & path)
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)
 {
     if (cache_disk->exists(src_path))
+    {
+        auto dir_path = getDirectoryPath(dst_path);
+        if (!cache_disk->exists(dir_path))
+            cache_disk->createDirectories(dir_path);
+
         cache_disk->createHardLink(src_path, dst_path);
+    }
     DiskDecorator::createHardLink(src_path, dst_path);
 }
 
@@ -261,7 +285,7 @@ void DiskCacheWrapper::createDirectories(const String & path)
     DiskDecorator::createDirectories(path);
 }
 
-inline String DiskCacheWrapper::getDirectoryPath(const String & path) const
+inline String DiskCacheWrapper::getDirectoryPath(const String & path)
 {
     return Poco::Path{path}.setFileName("").toString();
 }
