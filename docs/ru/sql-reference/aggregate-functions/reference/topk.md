@@ -35,3 +35,5 @@ FROM ontime
 │ [19393,19790,19805] │
 └─────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topk/) <!--hide-->

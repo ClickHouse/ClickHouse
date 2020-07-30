@@ -27,3 +27,5 @@ SELECT argMin(user, salary) FROM salary
 │ worker               │
 └──────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmin/) <!--hide-->

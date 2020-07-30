@@ -40,3 +40,5 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 │ (1,3)                                                             │
 └───────────────────────────────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/) <!--hide-->
