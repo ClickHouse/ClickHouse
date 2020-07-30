@@ -127,10 +127,10 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     }
 
     uint64_t num_processors = processors.size();
-    std::vector<uint64_t> back_edges_sizes(num_processors);
-    std::vector<uint64_t> direct_edge_sizes(num_processors);
+    std::vector<uint64_t> back_edges_sizes(num_processors, 0);
+    std::vector<uint64_t> direct_edge_sizes(num_processors, 0);
 
-    for (uint64_t node = 0; node < num_processors; ++node)
+    for (uint64_t node = 0; node < graph->nodes.size(); ++node)
     {
         direct_edge_sizes[node] = graph->nodes[node]->direct_edges.size();
         back_edges_sizes[node] = graph->nodes[node]->direct_edges.size();
