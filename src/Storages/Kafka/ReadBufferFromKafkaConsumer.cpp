@@ -416,7 +416,7 @@ size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
         return false;
     });
 
-    size_t skipped = std::distance(messages.end(), new_end);
+    size_t skipped = std::distance(new_end, messages.end());
     if (skipped)
     {
         LOG_ERROR(log, "There were {} messages with an error", skipped);
