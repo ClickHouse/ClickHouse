@@ -147,6 +147,10 @@ MergeTreeData::MergeTreeData(
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
+    /// Check sanity of MergeTreeSettings. Only when table is created.
+    if (!attach)
+        settings->sanityCheck(global_context.getSettingsRef());
+
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
     {
