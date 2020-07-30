@@ -456,12 +456,12 @@
 ## Revision History
 
 This document is stored in an electronic form using [Git] source control management software
-hosted in a Gitlab repository.
+hosted in a GitHub repository.
 
 All the updates are tracked using the [Git]'s revision history.
 
-* Gitlab repository: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/blob/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
-* Revision history: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/commits/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
+* GitHub repository: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
+* Revision history: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 
 ## Introduction
 
@@ -3491,15 +3491,15 @@ through one of the roles with **admin option** privilege assigned to the user.
 ## References
 
 * **ClickHouse:** https://clickhouse.tech
-* **Gitlab repository:** https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/blob/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
-* **Revision history:** https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/commits/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
+* **GitHub repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
+* **Revision history:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 * **Git:** https://git-scm.com/
 * **MySQL:** https://dev.mysql.com/doc/refman/8.0/en/account-management-statements.html
 * **PostgreSQL:** https://www.postgresql.org/docs/12/user-manag.html
 
 [ClickHouse]: https://clickhouse.tech
-[Gitlab repository]: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/blob/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
-[Revision history]: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/commits/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
+[GitHub repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
+[Revision history]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 [Git]: https://git-scm.com/
 [MySQL]: https://dev.mysql.com/doc/refman/8.0/en/account-management-statements.html
 [PostgreSQL]: https://www.postgresql.org/docs/12/user-manag.html
