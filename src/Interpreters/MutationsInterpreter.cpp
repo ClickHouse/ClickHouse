@@ -361,7 +361,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("isZeroOrNull", command.getPartitionAndPredicate());
+            auto negated_predicate = makeASTFunction("isZeroOrNull", std::move(command.getPartitionAndPredicate()));
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
@@ -399,7 +399,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
-                        command.getPartitionAndPredicate(),
+                        std::move(command.getPartitionAndPredicate()),
                         makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
