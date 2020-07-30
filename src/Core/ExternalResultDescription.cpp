@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
 
 
 namespace DB

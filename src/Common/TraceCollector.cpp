@@ -13,8 +13,6 @@
 #include <Common/StackTrace.h>
 #include <common/logger_useful.h>
 
-#include <unistd.h>
-#include <fcntl.h>
 
 
 namespace DB
