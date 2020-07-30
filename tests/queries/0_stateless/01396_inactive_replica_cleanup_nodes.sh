@@ -26,17 +26,16 @@ for i in {1..60}; do
 done
 
 
-$CLICKHOUSE_CLIENT --query "SELECT name, numChildren < 1000 FROM system.zookeeper WHERE path = '/clickhouse/tables/r'";
+$CLICKHOUSE_CLIENT --query "SELECT numChildren < 1000 FROM system.zookeeper WHERE path = '/clickhouse/tables/r' AND name = 'log'";
 echo -e '\n---\n';
-$CLICKHOUSE_CLIENT --query "SELECT name, numChildren < 1000, name = 'is_lost' ? value : '' FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/1'";
-echo -e '\n---\n';
-$CLICKHOUSE_CLIENT --query "SELECT name, numChildren < 1000, name = 'is_lost' ? value : '' FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2'";
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/1' AND name = 'is_lost'";
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2' AND name = 'is_lost'";
 echo -e '\n---\n';
 
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE r2"
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA r2"
 
-$CLICKHOUSE_CLIENT --query "SELECT name, numChildren < 1000, name = 'is_lost' ? value : '' FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2'";
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2' AND name = 'is_lost'";
 
 $CLICKHOUSE_CLIENT -n --query "
     DROP TABLE IF EXISTS r1;
