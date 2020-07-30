@@ -4,6 +4,8 @@ set -ex
 # Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
+    git -C right/ch log -1 origin/master
+    git -C right/ch log -1 pr
     # Go back from the revision to be tested, trying to find the closest published
     # testing release. The PR branch may be either pull/*/head which is the
     # author's branch, or pull/*/merge, which is head merged with some master

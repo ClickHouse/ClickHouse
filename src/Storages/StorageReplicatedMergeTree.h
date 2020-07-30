@@ -111,7 +111,7 @@ public:
 
     void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
-    void alterPartition(
+    Pipes alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,
@@ -534,7 +534,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
-    void attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);

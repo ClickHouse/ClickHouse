@@ -63,7 +63,7 @@ Variants test_bayesab(std::string dist, PODArray<Float64> xs, PODArray<Float64> 
 
 int main(int, char **)
 {
-    size_t max, min;
+    size_t max = 0, min = 0;
 
     auto variants = test_bayesab("beta", {10000, 1000, 900}, {600, 110, 90}, max, min);
     if (max != 1) exit(1);
