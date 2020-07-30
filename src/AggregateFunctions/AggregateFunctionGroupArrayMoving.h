@@ -37,7 +37,7 @@ struct MovingData
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
 
-    Array value;
+    Array value;    /// Prefix sums.
     T sum = 0;
 
     void add(T val, Arena * arena)
@@ -66,7 +66,7 @@ struct MovingAvgData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingAvg";
 
-    Float64 get(size_t idx, UInt64 window_size) const
+    T get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx] / window_size;
