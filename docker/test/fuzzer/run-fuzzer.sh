@@ -156,6 +156,7 @@ case "$stage" in
         echo "success" > status.txt
         task_exit_code=0
     elif [ "$fuzzer_exit_code" == 210 ]
+    then
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
