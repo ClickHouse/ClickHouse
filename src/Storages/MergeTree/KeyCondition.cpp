@@ -1089,7 +1089,7 @@ BoolMask KeyCondition::checkInRange(
 /*      std::cerr << "Hyperrectangle: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
             std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
-        std::cerr << ": " << res << "\n";*/
+        std::cerr << ": " << res.can_be_true << "\n";*/
 
         return res;
     });
@@ -1112,10 +1112,20 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             return {};
         }
 
+        /// If we apply function to open interval, we can get empty intervals in result.
+        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+        /// To avoid this we make range left and right included.
         if (!key_range.left.isNull())
+        {
             key_range.left = applyFunction(func, current_type, key_range.left);
+            key_range.left_included = true;
+        }
+
         if (!key_range.right.isNull())
+        {
             key_range.right = applyFunction(func, current_type, key_range.right);
+            key_range.right_included = true;
+        }
 
         current_type = func->getReturnType();
 
