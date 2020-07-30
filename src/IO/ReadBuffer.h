@@ -95,9 +95,6 @@ public:
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).
       * If at the moment the position is at the end of the buffer, it calls the next() method.
-      * That is, it has a side effect - if the buffer is over, then it updates it and set the position to the beginning.
-      *
-      * Try to read after the end should throw an exception.
       */
     bool ALWAYS_INLINE eof()
     {
