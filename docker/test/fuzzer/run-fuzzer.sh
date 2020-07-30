@@ -72,7 +72,7 @@ function watchdog
 
 function fuzz
 {
-    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
+    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -10000 > server.log &
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
@@ -83,7 +83,7 @@ function fuzz
     fuzzer_exit_code=0
     ./clickhouse-client --query-fuzzer-runs=1000 \
         < <(for f in $(ls ch/tests/queries/0_stateless/*.sql | sort -R); do cat "$f"; echo ';'; done) \
-        > >(tail -100000 > fuzzer.log) \
+        > >(tail -10000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
     
@@ -100,13 +100,6 @@ function fuzz
         sleep 1
     done
     killall -9 clickhouse-server ||:
-
-    if [ "$fuzzer_exit_code" == "143" ]
-    then
-        # Killed by watchdog, meaning, no errors.
-        return 0
-    fi
-    return $fuzzer_exit_code
 }
 
 case "$stage" in
@@ -123,8 +116,9 @@ case "$stage" in
         # Run the testing script from the repository
         echo Using the testing script from the repository
         export stage=download
+        time ch/docker/test/fuzzer/run-fuzzer.sh
         # Keep the error code
-        time ch/docker/test/fuzzer/run-fuzzer.sh || exit $?
+        exit $?
     fi
     ;&
 "download")
@@ -155,19 +149,31 @@ case "$stage" in
     pstree -aspgT
 
     # Make files with status and description we'll show for this check on Github
-    if [ "$fuzzer_exit_code" == 0 ]
+    task_exit_code=$fuzzer_exit_code
+    if [ "$fuzzer_exit_code" == 143 ]
     then
-        echo "OK" > description.txt
+        # SIGTERM -- the fuzzer was killed by timeout, which means a normal run.
         echo "success" > status.txt
-    else
+        echo "OK" > description.txt
+        task_exit_code=0
+    elif [ "$fuzzer_exit_code" == 210 ]
+    then
+        # Lost connection to the server. This probably means that the server died
+        # with abort.
         echo "failure" > status.txt
-        if ! grep "received signal \|Logical error" server.log > description.txt
+        if ! grep -a "Received signal \|Logical error" server.log > description.txt
         then
-            echo "Fuzzer exit code $fuzzer_exit_code. See the logs" > description.txt
+            echo "Lost connection to server. See the logs" > description.txt
         fi
+    else
+        # Something different -- maybe the fuzzer itself died? Don't grep the
+        # server log in this case, because we will find a message about normal
+        # server termination (Received signal 15), which is confusing.
+        echo "failure" > status.txt
+        echo "Fuzzer failed ($fuzzer_exit_code). See the logs" > description.txt
     fi
 
-    exit $fuzzer_exit_code
+    exit $task_exit_code
     ;&
 esac
 
