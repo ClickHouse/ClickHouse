@@ -120,12 +120,12 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
 }
 
 
-ASTPtr && MutationCommand::getPartitionAndPredicate() const
+ASTPtr MutationCommand::getPartitionAndPredicate() const
 {
     ASTPtr result;
-    static const auto partition_id = std::make_shared<ASTLiteral>(Field{"_partition_id"});
+    auto partition_id = std::make_shared<ASTLiteral>(Field{"_partition_id"});
     if (partition)
-        result = makeASTFunction("equals", partition_id->clone(), partition->clone());
+        result = makeASTFunction("equals", std::move(partition_id), partition->clone());
     if (predicate)
     {
         if (!result)
@@ -133,7 +133,7 @@ ASTPtr && MutationCommand::getPartitionAndPredicate() const
         else
             result = makeASTFunction("and", std::move(result), predicate->clone());
     }
-    return std::move(result);
+    return result;
 }
 
 
