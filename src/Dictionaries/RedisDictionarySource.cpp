@@ -179,6 +179,7 @@ namespace DB
                         primary_with_secondary.addRedisType(key);
                     }
                 }
+
                 if (primary_with_secondary.size() > 1)
                     hkeys.add(std::move(primary_with_secondary));
             }
