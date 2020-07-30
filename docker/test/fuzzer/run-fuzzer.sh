@@ -152,8 +152,8 @@ case "$stage" in
     if [ "$fuzzer_exit_code" == 143 ]
     then
         # SIGTERM -- the fuzzer was killed by timeout, which means a normal run.
-        echo "OK" > description.txt
         echo "success" > status.txt
+        echo "OK" > description.txt
         task_exit_code=0
     elif [ "$fuzzer_exit_code" == 210 ]
     then
@@ -162,14 +162,14 @@ case "$stage" in
         echo "failure" > status.txt
         if ! grep -a "Received signal \|Logical error" server.log > description.txt
         then
-            echo "Exit code $fuzzer_exit_code. See the logs" > description.txt
+            echo "Lost connection to server. See the logs" > description.txt
         fi
     else
         # Something different -- maybe the fuzzer itself died? Don't grep the
         # server log in this case, because we will find a message about normal
         # server termination (Received signal 15), which is confusing.
         echo "failure" > status.txt
-        echo "Exit code $fuzzer_exit_code. See the logs" > description.txt
+        echo "Fuzzer failed ($fuzzer_exit_code). See the logs" > description.txt
     fi
 
     exit $task_exit_code
