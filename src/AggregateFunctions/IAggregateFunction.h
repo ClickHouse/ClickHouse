@@ -359,7 +359,7 @@ public:
 
         /// Will use UNROLL_COUNT number of lookup tables.
 
-        static constexpr size_t UNROLL_COUNT = 8;
+        static constexpr size_t UNROLL_COUNT = 4;
 
         Data places[256 * UNROLL_COUNT];
         bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
