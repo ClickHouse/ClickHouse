@@ -27,17 +27,19 @@ template <> constexpr size_t maxPrecision<Decimal64>() { return 18; }
 template <> constexpr size_t maxPrecision<Decimal128>() { return 38; }
 template <> constexpr size_t maxPrecision<Decimal256>() { return 76; }
 
-template <typename T> T scaleMultiplier(UInt32 scale);
-template <> inline Int32 scaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 scaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 scaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
-template <> inline bInt256 scaleMultiplier<bInt256>(UInt32 scale) { return common::exp10_i256(scale); }
-
 template <typename T>
-T scaleMultiplier(const Decimal<T> &, UInt32 scale)
+inline auto scaleMultiplier(UInt32 scale)
 {
-    return scaleMultiplier<T>(scale);
+    if constexpr (std::is_same_v<T, Int32> || std::is_same_v<T, Decimal32>)
+        return common::exp10_i32(scale);
+    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64>)
+        return common::exp10_i64(scale);
+    else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
+        return common::exp10_i128(scale);
+    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, Decimal256>)
+        return common::exp10_i256(scale);
 }
+
 
 /** Components of DecimalX value:
  * whole - represents whole part of decimal, can be negatve or positive.

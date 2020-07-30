@@ -51,9 +51,9 @@ inline auto checkedDivision(A a, B b)
     throwIfDivisionLeadsToFPE(a, b);
 
     if constexpr (is_big_int_v<A> && is_big_int_v<B>)
-        return (a / b). template convert_to<A>();
+        return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
-        return (B(a) / b). template convert_to<A>();
+        return static_cast<A>(B(a) / b);
     else
         return a / b;
 }
