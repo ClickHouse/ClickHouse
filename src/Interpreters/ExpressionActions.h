@@ -347,7 +347,7 @@ struct ExpressionActionsChain
         return steps.back();
     }
 
-    std::string dumpChain();
+    std::string dumpChain() const;
 };
 
 }

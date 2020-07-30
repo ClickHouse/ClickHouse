@@ -317,9 +317,11 @@ create view right_query_log as select *
         '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
-    select *, 0 version from left_query_log
+    select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+        query_duration_ms from left_query_log
     union all
-    select *, 1 version from right_query_log
+    select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+        query_duration_ms from right_query_log
     ;
 
 -- This is a single source of truth on all metrics we have for query runs. The

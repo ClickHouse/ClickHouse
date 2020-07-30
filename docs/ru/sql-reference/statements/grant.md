@@ -433,7 +433,7 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
     -   `FILE`. Level: `GLOBAL`
     -   `URL`. Level: `GLOBAL`
     -   `REMOTE`. Level: `GLOBAL`
-    -   `YSQL`. Level: `GLOBAL`
+    -   `MYSQL`. Level: `GLOBAL`
     -   `ODBC`. Level: `GLOBAL`
     -   `JDBC`. Level: `GLOBAL`
     -   `HDFS`. Level: `GLOBAL`
