@@ -1010,6 +1010,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             executeWithFill(pipeline);
 
+            bool has_prelimit = false;
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
             if (query.limit_with_ties)
@@ -1026,7 +1027,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               */
             executeExtremes(pipeline);
 
-            executeLimit(pipeline);
+            if (!has_prelimit)
+                executeLimit(pipeline);
         }
     }
 
