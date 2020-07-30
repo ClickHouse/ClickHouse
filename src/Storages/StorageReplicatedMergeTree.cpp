@@ -348,7 +348,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     std::set<String> inactive_replicas;
     for (const String & replica : replicas)
     {
-
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
 
         while (!partial_shutdown_called)
@@ -358,8 +357,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             Coordination::Stat exists_stat;
             if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id, &exists_stat, wait_event))
             {
-                LOG_WARNING(log, "Mutation {} was killed or manually removed. Nothing to wait.", mutation_id);
-                return;
+                throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
             }
 
             auto zookeeper = getZooKeeper();
@@ -387,7 +385,22 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica can become inactive, so wait with timeout and recheck it
             if (wait_event->tryWait(1000))
                 break;
+
+            auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
+            if (!mutation_status || !mutation_status->latest_fail_reason.empty())
+                break;
         }
+
+        /// It maybe already removed from zk, but local in-memory mutations
+        /// state was not update.
+        if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id))
+        {
+            throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
+        }
+
+        Strings mutation_ids;
+        auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
+        checkMutationStatus(mutation_status, mutation_ids);
 
         if (partial_shutdown_called)
             throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
