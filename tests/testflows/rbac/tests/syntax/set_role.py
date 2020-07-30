@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
-from requirements import *
-import errors
+from rbac.requirements import *
+import rbac.tests.errors as errors
 
 @TestFeature
 @Name("set role")

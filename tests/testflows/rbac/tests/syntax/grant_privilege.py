@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
-from requirements import *
-import errors
+from rbac.requirements import *
+import rbac.tests.errors as errors
 
 @contextmanager
 def setup(node):
@@ -19,7 +19,7 @@ def setup(node):
             node.query("DROP USER IF EXISTS user1")
             node.query("DROP ROLE IF EXISTS role1")
 
-
+                    
 @TestOutline(Scenario)
 @Examples("privilege on allow_introspection", [
     ("dictGet", ("db0.table0","db0.*","*.*","tb0","*"), False, Requirements(RQ_SRS_006_RBAC_Grant_Privilege_DictGet("1.0"))),
@@ -41,10 +41,10 @@ def setup(node):
     ],)
 def grant_privileges(self, privilege, on, allow_introspection, node="clickhouse1"):
     grant_privilege(privilege=privilege, on=on, allow_introspection=allow_introspection, node=node)
-
+                    
 @TestOutline(Scenario)
 @Requirements(RQ_SRS_006_RBAC_Grant_Privilege_GrantOption("1.0"))
-def grant_privilege(self, privilege, on, allow_introspection, node="clickhouse1"):
+def grant_privilege(self, privilege, on, allow_introspection, node="clickhouse1"):   
     node = self.context.cluster.node(node)
 
     for on_ in on:
@@ -62,7 +62,7 @@ def grant_privilege(self, privilege, on, allow_introspection, node="clickhouse1"
                 #grant column specific for some column 'x'
                 with When("I grant privilege with columns"):
                     node.query(f"GRANT {privilege}(x) ON {on_} TO user0", settings=settings)
-
+                    	
 @TestFeature
 @Name("grant privilege")
 @Args(format_description=False)
@@ -78,7 +78,7 @@ def feature(self, node="clickhouse1"):
     ```
     """
     node = self.context.cluster.node(node)
-
+    
     Scenario(run=grant_privileges)
 
     # with nonexistant object name, GRANT assumes type role
@@ -89,45 +89,45 @@ def feature(self, node="clickhouse1"):
         with When("I grant privilege ON CLUSTER"):
             exitcode, message = errors.role_not_found_in_disk(name="role0")
             node.query("GRANT NONE TO role0", exitcode=exitcode, message=message)
-
+    
     with Scenario("I grant privilege ON CLUSTER", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0"),
+            RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0"), 
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege ON CLUSTER"):
                 node.query("GRANT ON CLUSTER sharded_cluster NONE TO user0")
-
+    
     with Scenario("I grant privilege on fake cluster, throws exception", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Grant_Privilege_OnCluster("1.0")]):
         with setup(node):
             with When("I grant privilege ON CLUSTER"):
                 exitcode, message = errors.cluster_not_found("fake_cluster")
                 node.query("GRANT ON CLUSTER fake_cluster NONE TO user0", exitcode=exitcode, message=message)
-
+                
     with Scenario("I grant privilege to multiple users and roles", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"),
+            RQ_SRS_006_RBAC_Grant_Privilege_To("1.0"), 
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege to several users"):
                 node.query("GRANT NONE TO user0, user1, role1")
-
+                
     with Scenario("I grant privilege to current user", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser("1.0"),
+            RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser("1.0"), 
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege to current user"):
                 node.query("GRANT NONE TO CURRENT_USER", settings = [("user","user0")])
 
     with Scenario("I grant privilege NONE to default user, throws exception", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser("1.0"),
+            RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser("1.0"), 
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege to current user"):
                 exitcode, message = errors.cannot_update_default()
                 node.query("GRANT NONE TO CURRENT_USER", exitcode=exitcode, message=message)
-
+                
     with Scenario("I grant privilege with grant option", flags=TE, requirements=[
-            RQ_SRS_006_RBAC_Grant_Privilege_GrantOption("1.0"),
+            RQ_SRS_006_RBAC_Grant_Privilege_GrantOption("1.0"), 
             RQ_SRS_006_RBAC_Grant_Privilege_None("1.0")]):
         with setup(node):
             with When("I grant privilege with grant option"):
