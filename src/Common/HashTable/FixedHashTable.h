@@ -19,7 +19,7 @@ struct FixedHashTableCell
     using mapped_type = VoidMapped;
     bool full;
 
-    FixedHashTableCell() {} /// Not default to avoid unnecessary zero-initialization.
+    FixedHashTableCell() {}
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; }
@@ -95,8 +95,6 @@ struct FixedHashTableCalculatedSize
   *  comparision; c) The number of cycles for checking cell empty is halved; d)
   *  Memory layout is tighter, especially the Clearable variants.
   *
-  * The sizeof is large - not meant to be allocated on stack. Use unique_ptr.
-  *
   * NOTE: For Set variants this should always be better. For Map variants
   *  however, as we need to assemble the real cell inside each iterator, there
   *  might be some cases we fall short.
@@ -106,8 +104,8 @@ struct FixedHashTableCalculatedSize
   *  transfer, key updates (f.g. StringRef) and serde. This will allow
   *  TwoLevelHashSet(Map) to contain different type of sets(maps).
   */
-template <typename Key, typename Cell, typename Size>
-class FixedHashTable : private boost::noncopyable, protected Cell::State, protected Size
+template <typename Key, typename Cell, typename Size, typename Allocator>
+class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
 
@@ -118,7 +116,18 @@ protected:
 
     using Self = FixedHashTable;
 
-    Cell buf[NUM_CELLS]; /// A piece of memory for all elements.
+    Cell * buf; /// A piece of memory for all elements.
+
+    void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
+
+    void free()
+    {
+        if (buf)
+        {
+            Allocator::free(buf, getBufferSizeInBytes());
+            buf = nullptr;
+        }
+    }
 
     void destroyElements()
     {
@@ -193,29 +202,25 @@ public:
 
     size_t hash(const Key & x) const { return x; }
 
-    FixedHashTable()
-    {
-        /// Must zero-initialize.
-        /// Note: Cell buf[NUM_CELLS]{} does not zero-initialize if the Cell constructor is not default for POD type.
-        memset(buf, 0, NUM_CELLS * sizeof(Cell));
-    }
+    FixedHashTable() { alloc(); }
 
-    FixedHashTable(FixedHashTable && rhs) { *this = std::move(rhs); }
+    FixedHashTable(FixedHashTable && rhs) : buf(nullptr) { *this = std::move(rhs); }
 
     ~FixedHashTable()
     {
         destroyElements();
+        free();
     }
 
     FixedHashTable & operator=(FixedHashTable && rhs)
     {
         destroyElements();
+        free();
 
-        memcpy(buf, rhs.buf, NUM_CELLS * sizeof(Cell));
-        memset(rhs.buf, 0, NUM_CELLS * sizeof(Cell));
-
+        std::swap(buf, rhs.buf);
         this->setSize(rhs.size());
 
+        Allocator::operator=(std::move(rhs));
         Cell::State::operator=(std::move(rhs));
 
         return *this;
@@ -283,6 +288,9 @@ public:
 
     const_iterator begin() const
     {
+        if (!buf)
+            return end();
+
         const Cell * ptr = buf;
         auto buf_end = buf + NUM_CELLS;
         while (ptr < buf_end && ptr->isZero(*this))
@@ -295,6 +303,9 @@ public:
 
     iterator begin()
     {
+        if (!buf)
+            return end();
+
         Cell * ptr = buf;
         auto buf_end = buf + NUM_CELLS;
         while (ptr < buf_end && ptr->isZero(*this))
@@ -306,7 +317,7 @@ public:
     const_iterator end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, buf + NUM_CELLS);
+        return const_iterator(this, buf ? buf + NUM_CELLS : buf);
     }
 
     const_iterator cend() const
@@ -316,7 +327,7 @@ public:
 
     iterator end()
     {
-        return iterator(this, buf + NUM_CELLS);
+        return iterator(this, buf ? buf + NUM_CELLS : buf);
     }
 
 
@@ -366,6 +377,9 @@ public:
         Cell::State::write(wb);
         DB::writeVarUInt(size(), wb);
 
+        if (!buf)
+            return;
+
         for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
         {
             if (!ptr->isZero(*this))
@@ -381,6 +395,9 @@ public:
         Cell::State::writeText(wb);
         DB::writeText(size(), wb);
 
+        if (!buf)
+            return;
+
         for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
         {
             if (!ptr->isZero(*this))
@@ -395,18 +412,13 @@ public:
 
     void read(DB::ReadBuffer & rb)
     {
-        size_t old_size = size();
         Cell::State::read(rb);
-
-        if (old_size)
-            destroyElements();
-
+        destroyElements();
         size_t m_size;
         DB::readVarUInt(m_size, rb);
         this->setSize(m_size);
-
-        if (old_size)
-            memset(buf, 0, NUM_CELLS * sizeof(Cell));
+        free();
+        alloc();
 
         for (size_t i = 0; i < m_size; ++i)
         {
@@ -420,18 +432,13 @@ public:
 
     void readText(DB::ReadBuffer & rb)
     {
-        size_t old_size = size();
         Cell::State::readText(rb);
-
-        if (old_size)
-            destroyElements();
-
+        destroyElements();
         size_t m_size;
         DB::readText(m_size, rb);
         this->setSize(m_size);
-
-        if (old_size)
-            memset(buf, 0, NUM_CELLS * sizeof(Cell));
+        free();
+        alloc();
 
         for (size_t i = 0; i < m_size; ++i)
         {
@@ -453,7 +460,7 @@ public:
         destroyElements();
         this->clearSize();
 
-        memset(buf, 0, NUM_CELLS * sizeof(Cell));
+        memset(static_cast<void *>(buf), 0, NUM_CELLS * sizeof(*buf));
     }
 
     /// After executing this function, the table can only be destroyed,
@@ -462,6 +469,7 @@ public:
     {
         destroyElements();
         this->clearSize();
+        free();
     }
 
     size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }

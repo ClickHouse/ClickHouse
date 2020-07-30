@@ -2,12 +2,12 @@
 
 #include <Common/HashTable/FixedHashTable.h>
 
-template <typename Key>
-class FixedHashSet : public FixedHashTable<Key, FixedHashTableCell<Key>, FixedHashTableStoredSize<FixedHashTableCell<Key>>>
+template <typename Key, typename Allocator = HashTableAllocator>
+class FixedHashSet : public FixedHashTable<Key, FixedHashTableCell<Key>, FixedHashTableStoredSize<FixedHashTableCell<Key>>, Allocator>
 {
 public:
     using Cell = FixedHashTableCell<Key>;
-    using Base = FixedHashTable<Key, Cell, FixedHashTableStoredSize<Cell>>;
+    using Base = FixedHashTable<Key, Cell, FixedHashTableStoredSize<Cell>, Allocator>;
     using Self = FixedHashSet;
 
     void merge(const Self & rhs)
