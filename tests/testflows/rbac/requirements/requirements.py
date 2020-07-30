@@ -5896,11 +5896,39 @@ RQ_SRS_006_RBAC_Privileges_Insert = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting or revoking **insert** privilege\n'
+        '[ClickHouse] SHALL support changing access to the **insert** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**.\n'
         'Any `INSERT INTO` statements SHALL not to be executed, unless the user\n'
         'has the **insert** privilege for the destination table\n'
         'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **insert** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **insert** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
         ),
         link=None
     )
@@ -5946,15 +5974,45 @@ RQ_SRS_006_RBAC_Privileges_Insert_GrantOption = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support granting or revoking **insert** privilege\n'
+        '[ClickHouse] SHALL support granting **insert** privilege\n'
         'for a database or a specific table to one or more **users** or **roles**\n'
-        'with a `GRANT OPTION` clause. Granting or revoking **insert** privilege\n'
-        'by a user with `GRANT OPTION` SHALL only succeed if the access scope of the grant or revoke\n'
-        'is less than or equal to their own. Any `INSERT INTO` statements SHALL succeed\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **insert** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **insert** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `INSERT INTO` statements SHALL succeed\n'
         'when done by a user with privilege granted by a user with `GRANT OPTION`,\n'
-        'either directly or through an assigned role. Any `INSERT INTO` statements SHALL fail\n'
-        'when done by a user with privilege revoked by a user with `GRANT OPTION`,\n'
-        'unless they have access otherwise.\n'
+        'either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **insert** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `INSERT INTO` statements SHALL fail\n'
+        'when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
         ),
         link=None
     )

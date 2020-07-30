@@ -69,6 +69,9 @@ def without_privilege(self, table_type, node=None):
                             exitcode=exitcode, message=message)
 
 @TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Insert_Grant("1.0"),
+)
 def user_with_privilege(self, table_type, node=None):
     """Check that user can insert into a table on which they have insert privilege and the inserted data is correct.
     """
@@ -85,6 +88,9 @@ def user_with_privilege(self, table_type, node=None):
                 assert output == '{"d":"2020-01-01"}', error()
 
 @TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Insert_Revoke("1.0"),
+)
 def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to insert into a table after insert privilege on that table has been revoked from user.
     """
@@ -149,6 +155,9 @@ def user_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
                                 settings=[("user","user0")], exitcode=exitcode, message=message)
 
 @TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Insert_Grant("1.0"),
+)
 def role_with_privilege(self, table_type, node=None):
     """Check that user can insert into a table after it is granted a role that
     has the insert privilege for that table.
@@ -168,6 +177,9 @@ def role_with_privilege(self, table_type, node=None):
                 assert output == '{"d":"2020-01-01"}', error()
 
 @TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Insert_Revoke("1.0"),
+)
 def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has insert privilege on a table
     is unable to insert into that table after insert privilege
@@ -208,6 +220,7 @@ def user_with_revoked_role(self, table_type, node=None):
                 exitcode, message = errors.not_enough_privileges(name="user0")
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')",
                             settings=[("user","user0")], exitcode=exitcode, message=message)
+
 @TestScenario
 def role_with_privilege_on_columns(self, table_type):
     Scenario(run=role_column_privileges,
@@ -289,7 +302,7 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Grant("1.0"),
 )
 def user_with_privilege_from_user_with_grant_option(self, table_type, node=None):
     """Check that user is able to insert on a table when granted privilege
@@ -315,7 +328,7 @@ def user_with_privilege_from_user_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Grant("1.0"),
 )
 def role_with_privilege_from_user_with_grant_option(self, table_type, node=None):
     """Check that user is able to insert on a table when granted a role with
@@ -343,7 +356,7 @@ def role_with_privilege_from_user_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Grant("1.0"),
 )
 def user_with_privilege_from_role_with_grant_option(self, table_type, node=None):
     """Check that user is able to insert on a table when granted privilege from a role with grant option
@@ -370,7 +383,7 @@ def user_with_privilege_from_role_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Grant("1.0"),
 )
 def role_with_privilege_from_role_with_grant_option(self, table_type, node=None):
     """Check that a user is able to insert on a table with a role that was granted privilege
@@ -400,7 +413,7 @@ def role_with_privilege_from_role_with_grant_option(self, table_type, node=None)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke("1.0"),
 )
 def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node=None):
     """Check that user is unable to revoke a column they don't have access to from a user.
@@ -418,7 +431,7 @@ def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke("1.0"),
 )
 def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node=None):
     """Check that user is unable to revoke a column they dont have acces to from a role.
@@ -436,7 +449,7 @@ def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke("1.0"),
 )
 def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node=None):
     """Check that user with a role is unable to revoke a column they dont have acces to from a user.
@@ -456,7 +469,7 @@ def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke("1.0"),
 )
 def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node=None):
     """Check that user with a role is unable to revoke a column they dont have acces to from a role.
