@@ -357,12 +357,6 @@ public:
             return;
         }
 
-        /// The warning about array bounds is irrelevant if the function not allocatesMemoryInArena.
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
-
         /// Will use UNROLL_COUNT number of lookup tables.
 
         static constexpr size_t UNROLL_COUNT = 8;
@@ -417,10 +411,6 @@ public:
 
             func.add(place + place_offset, columns, i, nullptr);
         }
-
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
     }
 };
 
