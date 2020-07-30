@@ -35,7 +35,7 @@ import kafka_pb2
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 config_dir='configs',
-                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml', 'configs/kafka_macros.xml' ],
                                 with_kafka=True,
                                 with_zookeeper=True,
                                 clickhouse_path_dir='clickhouse_path')
@@ -570,9 +570,18 @@ def kafka_setup_teardown():
 
 @pytest.mark.timeout(180)
 def test_kafka_settings_old_syntax(kafka_cluster):
+    assert TSV(instance.query("SELECT * FROM system.macros WHERE macro like 'kafka%' ORDER BY macro", ignore_error=True)) == TSV('''kafka_broker	kafka1
+kafka_client_id	instance
+kafka_format_json_each_row	JSONEachRow
+kafka_group_name_new	new
+kafka_group_name_old	old
+kafka_topic_new	new
+kafka_topic_old	old
+''')
+
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('kafka1:19092', 'old', 'old', 'JSONEachRow', '\\n');
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n');
         ''')
 
     # Don't insert malformed messages since old settings syntax
@@ -599,12 +608,12 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'new',
-                     kafka_group_name = 'new',
-                     kafka_format = 'JSONEachRow',
+            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
+                     kafka_topic_list = '{kafka_topic_new}',
+                     kafka_group_name = '{kafka_group_name_new}',
+                     kafka_format = '{kafka_format_json_each_row}',
                      kafka_row_delimiter = '\\n',
-                     kafka_client_id = '{instance} test 1234',
+                     kafka_client_id = '{kafka_client_id} test 1234',
                      kafka_skip_broken_messages = 1;
         ''')
 
