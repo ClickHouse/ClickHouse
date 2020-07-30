@@ -30,7 +30,7 @@ struct MovingSum
 template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
-    using Data = MovingAvgData<Float64>;
+    using Data = MovingAvgData<std::conditional_t<IsDecimalNumber<T>, Decimal128, Float64>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
