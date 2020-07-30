@@ -16,4 +16,4 @@ ClickHouse is an open-source column-oriented database management system that all
 
 ## Upcoming Events		
 
-* [ClickHouse at ByteDance (in Chinese)](https://mp.weixin.qq.com/s/Em-HjPylO8D7WPui4RREAQ) on July 17, 2020.
+* [ClickHouse at ByteDance (in Chinese)](https://mp.weixin.qq.com/s/Em-HjPylO8D7WPui4RREAQ) on July 31, 2020.

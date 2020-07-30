@@ -113,6 +113,10 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
+    /// Check that alter command require data modification (mutation) to be
+    /// executed. For example, cast from Date to UInt16 type can be executed
+    /// without any data modifications. But column drop or modify from UInt16 to
+    /// UInt32 require data modification.
     bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
     /// Checks that only settings changed by alter

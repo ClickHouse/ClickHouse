@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <Common/ActionBlocker.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
 
 
 namespace DB
@@ -242,8 +243,10 @@ private:
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
 
-    /// Last time when TTLMergeSelector has been used
-    time_t last_merge_with_ttl = 0;
+    /// Stores the next TTL merge due time for each partition (used only by TTLMergeSelector)
+    TTLMergeSelector::PartitionIdToTTLs next_ttl_merge_times_by_partition;
+    /// Performing TTL merges independently for each partition guarantees that
+    /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
 
 

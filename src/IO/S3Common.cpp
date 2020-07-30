@@ -233,24 +233,30 @@ namespace S3
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3[.\-][a-z0-9\-.:]+))");
+        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos)([.\-][a-z0-9\-.:]+))");
 
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
         static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
+        static constexpr auto S3 = "S3";
+        static constexpr auto COSN = "COSN";
+        static constexpr auto COS = "COS";
+
         uri = uri_;
+        storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
+        String name;
         String endpoint_authority_from_uri;
 
-        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &endpoint_authority_from_uri))
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
         {
             is_virtual_hosted_style = true;
-            endpoint = uri.getScheme() + "://" + endpoint_authority_from_uri;
+            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
 
             /// S3 specification requires at least 3 and at most 63 characters in bucket name.
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
@@ -262,6 +268,19 @@ namespace S3
             key = uri.getPath().substr(1);
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+            boost::to_upper(name);
+            if (name != S3 && name != COS)
+            {
+                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+            }
+            if (name == S3)
+            {
+                storage_name = name;
+            }
+            else
+            {
+                storage_name = COSN;
+            }
         }
         else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
