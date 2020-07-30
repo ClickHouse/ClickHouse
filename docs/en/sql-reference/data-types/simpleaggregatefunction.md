@@ -15,6 +15,9 @@ The following aggregate functions are supported:
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference/groupbitxor.md#groupbitxor)
 -   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray)
 -   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
+-   [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
+-   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
+-   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
 
 Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 

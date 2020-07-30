@@ -8,7 +8,7 @@ namespace DB::GatherUtils
 struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSelectArraySourcePair>
 {
     template <typename FirstSource, typename SecondSource>
-    static void selectSourcePair(FirstSource && first, SecondSource && second, ArraySearchType & search_type, ColumnUInt8 & result)
+    static void selectSourcePair(FirstSource && first, SecondSource && second, ArraySearchType search_type, ColumnUInt8 & result)
     {
         switch (search_type)
         {
@@ -27,7 +27,7 @@ struct ArrayHasSelectArraySourcePair : public ArraySourcePairSelector<ArrayHasSe
 };
 
 
-void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType & search_type, ColumnUInt8 & result)
+void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType search_type, ColumnUInt8 & result)
 {
     ArrayHasSelectArraySourcePair::select(first, second, search_type, result);
 }

@@ -26,8 +26,8 @@ class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
 
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -161,7 +161,7 @@ private:
     SelectQueryOptions options;
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;
-    SyntaxAnalyzerResultPtr syntax_analyzer_result;
+    TreeRewriterResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
 

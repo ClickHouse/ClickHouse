@@ -5,6 +5,8 @@ toc_title: SYSTEM
 
 # SYSTEM Statements {#query-language-system}
 
+The list of available `SYSTEM` statements:
+
 -   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
@@ -36,7 +38,7 @@ toc_title: SYSTEM
 -   [RESTART REPLICA](#query_language-system-restart-replica)
 -   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
-## RELOAD EMBEDDED DICTIONARIES\] {#query_language-system-reload-emdedded-dictionaries}
+## RELOAD EMBEDDED DICTIONARIES {#query_language-system-reload-emdedded-dictionaries}
 
 Reload all [Internal dictionaries](../../sql-reference/dictionaries/internal-dicts.md).
 By default, internal dictionaries are disabled.
@@ -48,7 +50,7 @@ Reloads all dictionaries that have been successfully loaded before.
 By default, dictionaries are loaded lazily (see [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
-## RELOAD DICTIONARY Dictionary\_name {#query_language-system-reload-dictionary}
+## RELOAD DICTIONARY {#query_language-system-reload-dictionary}
 
 Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT\_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
@@ -115,7 +117,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables {#query-language-system-distributed}
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the `insert_distributed_sync` setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the [insert_distributed_sync](../../operations/settings/settings.md#insert_distributed_sync) setting.
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 

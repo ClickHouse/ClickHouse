@@ -64,7 +64,7 @@ public:
                     const IColumn * lon_max_column,
                     const IColumn * lat_max_column,
                     const IColumn * precision_column,
-                    ColumnPtr & result)
+                    ColumnPtr & result) const
     {
         static constexpr size_t max_array_size = 10'000'000;
 
@@ -140,7 +140,7 @@ public:
         result = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
         const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();
