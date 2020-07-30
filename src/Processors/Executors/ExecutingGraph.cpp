@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 ExecutingGraph::ExecutingGraph(const Processors & processors)
 {
     uint64_t num_processors = processors.size();
