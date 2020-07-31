@@ -3,10 +3,10 @@
 Содержит исторические значения метрик из таблицы `system.asynchronous_metrics`, которые сохраняются раз в минуту. По умолчанию включена.
 
 Столбцы:
--   `event_date` ([Date](../sql-reference/data-types/date.md)) — дата события.
--   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — время события.
--   `name` ([String](../sql-reference/data-types/string.md)) — название метрики.
--   `value` ([Float64](../sql-reference/data-types/float.md)) — значение метрики.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата события.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время события.
+-   `name` ([String](../../sql-reference/data-types/string.md)) — название метрики.
+-   `value` ([Float64](../../sql-reference/data-types/float.md)) — значение метрики.
 
 **Пример**
 

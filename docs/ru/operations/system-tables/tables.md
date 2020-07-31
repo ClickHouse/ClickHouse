@@ -12,7 +12,7 @@
 -   `metadata_path` (String) — путь к табличным метаданным в файловой системе.
 -   `metadata_modification_time` (DateTime) — время последней модификации табличных метаданных.
 -   `dependencies_database` (Array(String)) — зависимости базы данных.
--   `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](../engines/table-engines/special/materializedview.md), созданные на базе текущей таблицы).
+-   `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](../../engines/table-engines/special/materializedview.md), созданные на базе текущей таблицы).
 -   `create_table_query` (String) — запрос, которым создавалась таблица.
 -   `engine_full` (String) — параметры табличного движка.
 -   `partition_key` (String) — ключ партиционирования таблицы.
@@ -21,8 +21,8 @@
 -   `sampling_key` (String) — ключ сэмплирования таблицы.
 -   `storage_policy` (String) - политика хранения данных:
 
-    -   [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    -   [Distributed](../engines/table-engines/special/distributed.md#distributed)
+    -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
 
 -   `total_rows` (Nullable(UInt64)) - Общее количество строк, если есть возможность быстро определить точное количество строк в таблице, в противном случае `Null` (включая базовую таблицу `Buffer`).
 

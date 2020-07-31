@@ -4,9 +4,9 @@
 
 Столбцы:
 
--   `metric` ([String](../sql-reference/data-types/string.md)) — название метрики.
--   `value` ([Int64](../sql-reference/data-types/int-uint.md)) — значение метрики.
--   `description` ([String](../sql-reference/data-types/string.md)) — описание метрики.
+-   `metric` ([String](../../sql-reference/data-types/string.md)) — название метрики.
+-   `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — значение метрики.
+-   `description` ([String](../../sql-reference/data-types/string.md)) — описание метрики.
 
 Список поддержанных метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 

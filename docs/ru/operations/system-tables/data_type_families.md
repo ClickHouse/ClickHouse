@@ -1,12 +1,12 @@
 # system.data_type_families {#system_tables-data_type_families}
 
-Содержит информацию о поддерживаемых [типах данных](../sql-reference/data-types/).
+Содержит информацию о поддерживаемых [типах данных](../../sql-reference/data-types/).
 
 Столбцы:
 
--   `name` ([String](../sql-reference/data-types/string.md)) — имя типа данных.
--   `case_insensitive` ([UInt8](../sql-reference/data-types/int-uint.md)) — свойство, которое показывает, зависит ли имя типа данных в запросе от регистра. Например, допустимы и `Date`, и `date`.
--   `alias_to` ([String](../sql-reference/data-types/string.md)) — тип данных, для которого `name` является алиасом.
+-   `name` ([String](../../sql-reference/data-types/string.md)) — имя типа данных.
+-   `case_insensitive` ([UInt8](../../sql-reference/data-types/int-uint.md)) — свойство, которое показывает, зависит ли имя типа данных в запросе от регистра. Например, допустимы и `Date`, и `date`.
+-   `alias_to` ([String](../../sql-reference/data-types/string.md)) — тип данных, для которого `name` является алиасом.
 
 **Пример**
 
@@ -31,6 +31,6 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 
 **See Also**
 
--   [Синтаксис](../sql-reference/syntax.md) — поддерживаемый SQL синтаксис.
+-   [Синтаксис](../../sql-reference/syntax.md) — поддерживаемый SQL синтаксис.
 
 [Original article](https://clickhouse.tech/docs/ru/operations/system_tables/data_type_families) <!--hide-->

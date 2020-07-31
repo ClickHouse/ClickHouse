@@ -4,8 +4,8 @@
 
 Столбцы:
 
--   `metric` ([String](../sql-reference/data-types/string.md)) — название метрики.
--   `value` ([Float64](../sql-reference/data-types/float.md)) — значение метрики.
+-   `metric` ([String](../../sql-reference/data-types/string.md)) — название метрики.
+-   `value` ([Float64](../../sql-reference/data-types/float.md)) — значение метрики.
 
 **Пример**
 

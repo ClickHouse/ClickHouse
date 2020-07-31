@@ -4,8 +4,8 @@
 
 Столбцы:
 
- - `role_name` ([String](../sql-reference/data-types/string.md))) — Имя роли.
- - `with_admin_option` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, обладает ли `current_role` роль привилегией `ADMIN OPTION`.
- - `is_default` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) —  Флаг, который показывает, является ли `current_role` ролью по умолчанию. 
+ - `role_name` ([String](../../sql-reference/data-types/string.md))) — Имя роли.
+ - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, обладает ли `current_role` роль привилегией `ADMIN OPTION`.
+ - `is_default` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) —  Флаг, который показывает, является ли `current_role` ролью по умолчанию. 
 
  [Original article](https://clickhouse.tech/docs/ru/operations/system_tables/current-roles) <!--hide-->

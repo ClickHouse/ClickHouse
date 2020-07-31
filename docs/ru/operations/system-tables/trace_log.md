@@ -8,24 +8,24 @@ To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` intro
 
 Columns:
 
--   `event_date`([Date](../sql-reference/data-types/date.md)) — Date of sampling moment.
+-   `event_date`([Date](../../sql-reference/data-types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../sql-reference/data-types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time`([DateTime](../../sql-reference/data-types/datetime.md)) — Timestamp of sampling moment.
 
--   `revision`([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
+-   `revision`([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
         When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
--   `timer_type`([Enum8](../sql-reference/data-types/enum.md)) — Timer type:
+-   `timer_type`([Enum8](../../sql-reference/data-types/enum.md)) — Timer type:
 
         - `Real` represents wall-clock time.
         - `CPU` represents CPU time.
 
--   `thread_number`([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_number`([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id`([String](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id`([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
 
--   `trace`([Array(UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace`([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Example**
 

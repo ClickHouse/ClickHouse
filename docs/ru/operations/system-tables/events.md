@@ -4,9 +4,9 @@
 
 Столбцы:
 
--   `event` ([String](../sql-reference/data-types/string.md)) — имя события.
--   `value` ([UInt64](../sql-reference/data-types/int-uint.md)) — количество произошедших событий.
--   `description` ([String](../sql-reference/data-types/string.md)) — описание события.
+-   `event` ([String](../../sql-reference/data-types/string.md)) — имя события.
+-   `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — количество произошедших событий.
+-   `description` ([String](../../sql-reference/data-types/string.md)) — описание события.
 
 **Пример**
 

@@ -9,7 +9,7 @@
 -   `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
 -   `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
 -   `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
--   `supports_replication` (UInt8) — флаг, показывающий поддержку [репликации](../engines/table-engines/mergetree-family/replication.md).
+-   `supports_replication` (UInt8) — флаг, показывающий поддержку [репликации](../../engines/table-engines/mergetree-family/replication.md).
 -   `supports_deduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
 
 Пример:
@@ -30,8 +30,8 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Смотрите также**
 
--   [Секции движка](../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) семейства MergeTree
--   [Настройки](../engines/table-engines/integrations/kafka.md#table_engine-kafka-creating-a-table) Kafka
--   [Настройки](../engines/table-engines/special/join.md#join-limitations-and-settings) Join
+-   [Секции движка](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) семейства MergeTree
+-   [Настройки](../../engines/table-engines/integrations/kafka.md#table_engine-kafka-creating-a-table) Kafka
+-   [Настройки](../../engines/table-engines/special/join.md#join-limitations-and-settings) Join
 
 [Original article](https://clickhouse.tech/docs/ru/operations/system_tables/table_engines) <!--hide-->
