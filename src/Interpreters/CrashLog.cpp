@@ -60,24 +60,28 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 
 void CrashLog::collect(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace)
 {
-    UInt64 time = clock_gettime_ns();
+    if (auto crash_log_owned = crash_log.lock())
+    {
+        UInt64 time = clock_gettime_ns();
 
-    size_t stack_trace_size = stack_trace.getSize();
-    size_t stack_trace_offset = stack_trace.getOffset();
-    size_t num_frames = stack_trace_size - stack_trace_offset;
+        size_t stack_trace_size = stack_trace.getSize();
+        size_t stack_trace_offset = stack_trace.getOffset();
+        size_t num_frames = stack_trace_size - stack_trace_offset;
 
-    Array trace;
-    Array trace_full;
+        Array trace;
+        Array trace_full;
 
-    trace.reserve(num_frames);
-    trace_full.reserve(num_frames);
+        trace.reserve(num_frames);
+        trace_full.reserve(num_frames);
 
-    for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        trace.push_back(reinterpret_cast<uintptr_t>(stack_trace.getFramePointers()[i]));
+        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
+            trace.push_back(reinterpret_cast<uintptr_t>(stack_trace.getFramePointers()[i]));
 
-    stack_trace.toStringEveryLine([&trace_full](const std::string & line) { trace_full.push_back(line); });
+        stack_trace.toStringEveryLine([&trace_full](const std::string & line) { trace_full.push_back(line); });
 
-    CrashLogElement element{time_t(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
+        CrashLogElement element{time_t(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
+        crash_log_owned->add(element);
+    }
 }
 
 }

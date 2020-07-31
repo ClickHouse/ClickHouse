@@ -35,12 +35,6 @@ public:
         crash_log = std::move(crash_log_);
     }
 
-    static void collect(const CrashLogElement & element)
-    {
-        if (auto crash_log_owned = crash_log.lock())
-            crash_log_owned->add(element);
-    }
-
     static void collect(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 };
 
