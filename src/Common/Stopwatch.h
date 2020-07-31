@@ -1,16 +1,19 @@
 #pragma once
 
 #include <common/time.h>
-#include <common/types.h>
+#include <common/Types.h>
 
 #include <atomic>
 
 
-inline UInt64 clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
+namespace StopWatchDetail
 {
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+    inline UInt64 nanoseconds(clockid_t clock_type)
+    {
+        struct timespec ts;
+        clock_gettime(clock_type, &ts);
+        return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+    }
 }
 
 
@@ -41,7 +44,7 @@ private:
     clockid_t clock_type;
     bool is_running = false;
 
-    UInt64 nanoseconds() const { return clock_gettime_ns(clock_type); }
+    UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type); }
 };
 
 
@@ -128,7 +131,7 @@ private:
     clockid_t clock_type;
 
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
-    UInt64 nanoseconds() const { return clock_gettime_ns(clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
+    UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
 };
 
 

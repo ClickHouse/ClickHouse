@@ -9,6 +9,7 @@
 
 #include <string.h>
 #include <algorithm>
+#include <cstdlib>
 #include <type_traits>
 
 #include <bitset>
@@ -18,9 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPRESS;
-    extern const int CANNOT_DECOMPRESS;
-    extern const int BAD_ARGUMENTS;
+extern const int CANNOT_COMPRESS;
+extern const int CANNOT_DECOMPRESS;
 }
 
 namespace
@@ -61,7 +61,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
     return (items_count * max_item_size_bits + 8) / 8;
 }
 
-struct BinaryValueInfo
+struct binary_value_info
 {
     UInt8 leading_zero_bits;
     UInt8 data_bits;
@@ -69,7 +69,7 @@ struct BinaryValueInfo
 };
 
 template <typename T>
-BinaryValueInfo getLeadingAndTrailingBits(const T & value)
+binary_value_info getLeadingAndTrailingBits(const T & value)
 {
     constexpr UInt8 bit_size = sizeof(T) * 8;
 
@@ -77,7 +77,7 @@ BinaryValueInfo getLeadingAndTrailingBits(const T & value)
     const UInt8 tz = getTrailingZeroBits(value);
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
 
-    return BinaryValueInfo{lz, data_size, tz};
+    return binary_value_info{lz, data_size, tz};
 }
 
 template <typename T>
@@ -100,7 +100,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     T prev_value{};
     // That would cause first XORed value to be written in-full.
-    BinaryValueInfo prev_xored_info{0, 0, 0};
+    binary_value_info prev_xored_info{0, 0, 0};
 
     if (source < source_end)
     {
@@ -119,7 +119,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         source += sizeof(curr_value);
 
         const auto xored_data = curr_value ^ prev_value;
-        const BinaryValueInfo curr_xored_info = getLeadingAndTrailingBits(xored_data);
+        const binary_value_info curr_xored_info = getLeadingAndTrailingBits(xored_data);
 
         if (xored_data == 0)
         {
@@ -178,14 +178,14 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     BitReader reader(source, source_size - sizeof(items_count) - sizeof(prev_value));
 
-    BinaryValueInfo prev_xored_info{0, 0, 0};
+    binary_value_info prev_xored_info{0, 0, 0};
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more that there is.
     for (UInt32 items_read = 1; items_read < items_count && !reader.eof(); ++items_read)
     {
         T curr_value = prev_value;
-        BinaryValueInfo curr_xored_info = prev_xored_info;
+        binary_value_info curr_xored_info = prev_xored_info;
         T xored_data{};
 
         if (reader.readBit() == 1)
@@ -223,16 +223,14 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
 UInt8 getDataBytesSize(DataTypePtr column_type)
 {
-    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
-            column_type->getName());
-
-    size_t max_size = column_type->getSizeOfValueInMemory();
-    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-        return static_cast<UInt8>(max_size);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-            column_type->getName());
+    UInt8 delta_bytes_size = 1;
+    if (column_type && column_type->haveMaximumSizeOfValue())
+    {
+        size_t max_size = column_type->getSizeOfValueInMemory();
+        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+            delta_bytes_size = static_cast<UInt8>(max_size);
+    }
+    return delta_bytes_size;
 }
 
 }
@@ -322,7 +320,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
-void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
+void CompressionCodecGorilla::useInfoAboutType(DataTypePtr data_type)
 {
     data_bytes_size = getDataBytesSize(data_type);
 }
@@ -330,14 +328,10 @@ void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
-    factory.registerCompressionCodecWithType("Gorilla", method_code,
-        [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Gorilla", method_code, [&](const ASTPtr &, DataTypePtr column_type) -> CompressionCodecPtr
     {
-        if (arguments)
-            throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
-
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
-        return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
+        UInt8 delta_bytes_size = getDataBytesSize(column_type);
+        return std::make_shared<CompressionCodecGorilla>(delta_bytes_size);
     });
 }
 }

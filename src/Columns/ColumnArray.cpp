@@ -17,8 +17,6 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
 
 
 namespace DB
@@ -163,22 +161,19 @@ void ColumnArray::insertData(const char * pos, size_t length)
 {
     /** Similarly - only for arrays of fixed length values.
       */
-    if (!data->isFixedAndContiguous())
+    IColumn * data_ = &getData();
+    if (!data_->isFixedAndContiguous())
         throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    size_t field_size = data->sizeOfValueIfFixed();
+    size_t field_size = data_->sizeOfValueIfFixed();
 
+    const char * end = pos + length;
     size_t elems = 0;
+    for (; pos + field_size <= end; pos += field_size, ++elems)
+        data_->insertData(pos, field_size);
 
-    if (length)
-    {
-        const char * end = pos + length;
-        for (; pos + field_size <= end; pos += field_size, ++elems)
-            data->insertData(pos, field_size);
-
-        if (pos != end)
-            throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
-    }
+    if (pos != end)
+        throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
 
     getOffsets().push_back(getOffsets().back() + elems);
 }
@@ -228,42 +223,6 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
-void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
-{
-    auto s = offsets->size();
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
-
-    WeakHash32 internal_hash(data->size());
-    data->updateWeakHash32(internal_hash);
-
-    Offset prev_offset = 0;
-    const auto & offsets_data = getOffsets();
-    auto & hash_data = hash.getData();
-    auto & internal_hash_data = internal_hash.getData();
-
-    for (size_t i = 0; i < s; ++i)
-    {
-        /// This row improves hash a little bit according to integration tests.
-        /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = intHashCRC32(hash_data[i]);
-
-        for (size_t row = prev_offset; row < offsets_data[i]; ++row)
-            /// It is probably not the best way to combine hashes.
-            /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
-            /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = intHashCRC32(internal_hash_data[row], hash_data[i]);
-
-        prev_offset = offsets_data[i];
-    }
-}
-
-void ColumnArray::updateHashFast(SipHash & hash) const
-{
-    offsets->updateHashFast(hash);
-    data->updateHashFast(hash);
-}
 
 void ColumnArray::insert(const Field & x)
 {
@@ -324,23 +283,16 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
             : 1);
 }
 
-void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnArray>(assert_cast<const ColumnArray &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
 
 namespace
 {
     template <bool positive>
-    struct Less
+    struct less
     {
         const ColumnArray & parent;
         int nan_direction_hint;
 
-        Less(const ColumnArray & parent_, int nan_direction_hint_)
+        less(const ColumnArray & parent_, int nan_direction_hint_)
             : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
 
         bool operator()(size_t lhs, size_t rhs) const
@@ -357,7 +309,7 @@ namespace
 void ColumnArray::reserve(size_t n)
 {
     getOffsets().reserve(n);
-    getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
+    getData().reserve(n);        /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
 
@@ -615,8 +567,8 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
 
     auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
-    const auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
-    const auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
+    auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
+    auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
     auto res_null_map = ColumnUInt8::create();
 
@@ -746,89 +698,19 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
     if (limit)
     {
         if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this, nan_direction_hint));
         else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this, nan_direction_hint));
     }
     else
     {
         if (reverse)
-            std::sort(res.begin(), res.end(), Less<false>(*this, nan_direction_hint));
+            std::sort(res.begin(), res.end(), less<false>(*this, nan_direction_hint));
         else
-            std::sort(res.begin(), res.end(), Less<true>(*this, nan_direction_hint));
+            std::sort(res.begin(), res.end(), less<true>(*this, nan_direction_hint));
     }
 }
 
-void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
-{
-    if (limit >= size() || limit >= equal_range.back().second)
-        limit = 0;
-
-    size_t n = equal_range.size();
-
-    if (limit)
-        --n;
-
-    EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i)
-    {
-        const auto& [first, last] = equal_range[i];
-
-        if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
-        else
-            std::sort(res.begin() + first, res.begin() + last, Less<true>(*this, nan_direction_hint));
-        auto new_first = first;
-
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto& [first, last] = equal_range.back();
-        if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<false>(*this, nan_direction_hint));
-        else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, Less<true>(*this, nan_direction_hint));
-        auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-        {
-            new_ranges.emplace_back(new_first, new_last);
-        }
-    }
-    equal_range = std::move(new_ranges);
-}
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
@@ -865,13 +747,13 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return res;
 
-    ColumnArray & res_arr = typeid_cast<ColumnArray &>(*res);
+    ColumnArray & res_ = typeid_cast<ColumnArray &>(*res);
 
     const typename ColumnVector<T>::Container & src_data = typeid_cast<const ColumnVector<T> &>(*data).getData();
     const Offsets & src_offsets = getOffsets();
 
-    typename ColumnVector<T>::Container & res_data = typeid_cast<ColumnVector<T> &>(res_arr.getData()).getData();
-    Offsets & res_offsets = res_arr.getOffsets();
+    typename ColumnVector<T>::Container & res_data = typeid_cast<ColumnVector<T> &>(res_.getData()).getData();
+    Offsets & res_offsets = res_.getOffsets();
 
     res_data.reserve(data->size() / col_size * replicate_offsets.back());
     res_offsets.reserve(replicate_offsets.back());
@@ -916,16 +798,16 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return res;
 
-    ColumnArray & res_arr = assert_cast<ColumnArray &>(*res);
+    ColumnArray & res_ = assert_cast<ColumnArray &>(*res);
 
     const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
     const ColumnString::Chars & src_chars = src_string.getChars();
     const Offsets & src_string_offsets = src_string.getOffsets();
     const Offsets & src_offsets = getOffsets();
 
-    ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res_arr.getData()).getChars();
-    Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_arr.getData()).getOffsets();
-    Offsets & res_offsets = res_arr.getOffsets();
+    ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res_.getData()).getChars();
+    Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_.getData()).getOffsets();
+    Offsets & res_offsets = res_.getOffsets();
 
     res_chars.reserve(src_chars.size() / col_size * replicate_offsets.back());
     res_string_offsets.reserve(src_string_offsets.size() / col_size * replicate_offsets.back());

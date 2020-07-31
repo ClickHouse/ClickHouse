@@ -42,7 +42,7 @@ struct Estimator
         }
     }
 
-    SimpleMergeSelector::PartsInPartition getBest() const
+    SimpleMergeSelector::PartsInPartition getBest()
     {
         return SimpleMergeSelector::PartsInPartition(best_begin, best_end);
     }

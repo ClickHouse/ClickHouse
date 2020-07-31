@@ -9,7 +9,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitors.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 
@@ -333,7 +333,7 @@ struct ArrayIndexStringImpl
         }
     }
 
-    static void vectorVector(
+    static void vector_vector(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const ColumnString::Chars & item_values, const ColumnString::Offsets & item_offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
@@ -596,7 +596,7 @@ private:
     using ResultColumnType = ColumnVector<typename IndexConv::ResultType>;
 
     template <typename T>
-    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         return executeNumberNumber<T, UInt8>(block, arguments, result)
             || executeNumberNumber<T, UInt16>(block, arguments, result)
@@ -611,7 +611,7 @@ private:
     }
 
     template <typename T, typename U>
-    bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
@@ -659,7 +659,7 @@ private:
         return true;
     }
 
-    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
@@ -714,7 +714,7 @@ private:
         }
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
         {
-            ArrayIndexStringImpl<IndexConv>::vectorVector(col_nested->getChars(), col_array->getOffsets(),
+            ArrayIndexStringImpl<IndexConv>::vector_vector(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
                 col_res->getData(), null_map_data, null_map_item);
         }
@@ -725,7 +725,7 @@ private:
         return true;
     }
 
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
@@ -801,7 +801,7 @@ private:
         return true;
     }
 
-    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
@@ -878,7 +878,7 @@ public:
         return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// If one or both arguments passed to this function are nullable,
         /// we create a new block that contains non-nullable arguments:
@@ -985,7 +985,7 @@ public:
 
 private:
     /// Perform function on the given block. Internal version.
-    void perform(Block & block, const ColumnNumbers & arguments, size_t result) const
+    void perform(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         if (!(executeNumber<UInt8>(block, arguments, result)
             || executeNumber<UInt16>(block, arguments, result)

@@ -2,15 +2,13 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Access/EnabledQuota.h>
+#include <Access/QuotaContext.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
-    extern const Event SelectedRows;
-    extern const Event SelectedBytes;
 }
 
 
@@ -71,7 +69,7 @@ Block IBlockInputStream::read()
     }
     else
     {
-        /** If the stream is over, then we will ask all children to abort the execution.
+        /** If the thread is over, then we will ask all children to abort the execution.
           * This makes sense when running a query with LIMIT
           * - there is a situation when all the necessary data has already been read,
           *   but children sources are still working,
@@ -199,7 +197,7 @@ void IBlockInputStream::updateExtremes(Block & block)
 }
 
 
-bool IBlockInputStream::checkTimeLimit() const
+bool IBlockInputStream::checkTimeLimit()
 {
     return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
 }
@@ -265,9 +263,6 @@ void IBlockInputStream::progressImpl(const Progress & value)
         if (quota && limits.mode == LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
-
-    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
 }
 
 

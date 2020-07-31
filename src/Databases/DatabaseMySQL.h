@@ -5,21 +5,19 @@
 
 #include <mysqlxx/Pool.h>
 #include <Databases/DatabasesCommon.h>
+#include <Interpreters/Context.h>
 #include <memory>
 #include <Parsers/ASTCreateQuery.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
 {
 
-class Context;
-
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL final : public IDatabase
+class DatabaseMySQL : public IDatabase
 {
 public:
     ~DatabaseMySQL() override;
@@ -30,15 +28,15 @@ public:
 
     String getEngineName() const override { return "MySQL"; }
 
-    bool empty() const override;
+    bool empty(const Context & context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
+    ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
 
-    bool isTableExist(const String & name, const Context & context) const override;
+    bool isTableExist(const Context & context, const String & name) const override;
 
-    StoragePtr tryGetTable(const String & name, const Context & context) const override;
+    StoragePtr tryGetTable(const Context & context, const String & name) const override;
 
     time_t getObjectMetadataModificationTime(const String & name) const override;
 
@@ -54,15 +52,16 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void dropTable(const Context &, const String & table_name, bool no_delay) override;
+    void removeTable(const Context &, const String & table_name) override;
 
-    void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
+    void attachTable(const String & table_name, const StoragePtr & storage) override;
+
 
 protected:
-    ASTPtr getCreateTableQueryImpl(const String & name, const Context & context, bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & name, bool throw_on_error) const override;
 
 private:
-    const Context & global_context;
+    Context global_context;
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;

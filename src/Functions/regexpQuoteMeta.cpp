@@ -49,7 +49,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr & column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
@@ -67,8 +67,8 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        const auto * src_begin = reinterpret_cast<const char *>(input->getChars().data());
-        const auto * src_pos = src_begin;
+        auto src_begin = reinterpret_cast<const char *>(input->getChars().data());
+        auto src_pos = src_begin;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {

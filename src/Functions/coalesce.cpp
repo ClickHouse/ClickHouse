@@ -26,7 +26,7 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(const Context & context_) : context(context_) {}
+    FunctionCoalesce(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -85,7 +85,7 @@ public:
         return res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// coalesce(arg0, arg1, ..., argN) is essentially
         /// multiIf(isNotNull(arg0), assumeNotNull(arg0), isNotNull(arg1), assumeNotNull(arg1), ..., argN)
@@ -160,9 +160,9 @@ public:
         /// if last argument is not nullable, result should be also not nullable
         if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
         {
-            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
+            if (auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
                 res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
-            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*res))
+            else if (auto * column_const = checkAndGetColumn<ColumnConst>(*res))
                 res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn())->getNestedColumnPtr();
             else
                 res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();

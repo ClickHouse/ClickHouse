@@ -4,6 +4,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <string>
@@ -40,7 +42,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
         throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
                         + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+    const auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!name_col)
         throw Exception("First argument of function " + getName() + " must be a constant string",
                         ErrorCodes::ILLEGAL_COLUMN);
@@ -54,7 +56,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
 
     if (has_nullable)
     {
-        if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        if (auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
         {
             auto elements = tuple->getElements();
             for (auto & element : elements)
@@ -69,9 +71,9 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-    const auto * name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+    const auto name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
     if (!name_col)
         throw Exception("First argument of function " + getName() + " must be a constant string",
                         ErrorCodes::ILLEGAL_COLUMN);
@@ -92,13 +94,13 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
             materialized_columns.push_back(full_column);
             columns.back() = full_column.get();
         }
-        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*columns.back()))
+        if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(*columns.back()))
         {
             if (!null_map)
                 null_map = col_nullable->getNullMapColumnPtr();
             else
             {
-                auto mut_null_map = IColumn::mutate(std::move(null_map));
+                auto mut_null_map = (*std::move(null_map)).mutate();
 
                 NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mut_null_map).getData();
                 const NullMap & src_null_map = col_nullable->getNullMapColumn().getData();
@@ -118,7 +120,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
 
     if (null_map)
     {
-        if (const auto * tuple = typeid_cast<const ColumnTuple *>(res.get()))
+        if (auto * tuple = typeid_cast<const ColumnTuple *>(res.get()))
         {
             auto nested = tuple->getColumns();
             for (auto & col : nested)

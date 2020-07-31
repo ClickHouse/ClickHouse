@@ -39,7 +39,7 @@ public:
         throw Exception("Cannot reinterpret " + type.getName() + " as FixedString because it is not fixed size and contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
+    void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
         size_t rows = src.size();
         ColumnFixedString::Chars & data_to = dst.getChars();
@@ -54,7 +54,7 @@ public:
         }
     }
 
-    static void NO_INLINE executeContiguousToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
+    void NO_INLINE executeContiguousToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
         size_t rows = src.size();
         ColumnFixedString::Chars & data_to = dst.getChars();
@@ -65,7 +65,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn & src = *block.getByPosition(arguments[0]).column;
         MutableColumnPtr dst = block.getByPosition(result).type->createColumn();

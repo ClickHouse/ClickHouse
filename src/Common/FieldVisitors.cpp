@@ -1,7 +1,9 @@
 #include <Core/UUID.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/FieldVisitors.h>

@@ -1,8 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
+#ifdef __SSE2__
+    #define LIBDIVIDE_USE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -24,7 +24,7 @@ struct DivideIntegralByConstantImpl
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
+    static NO_INLINE void vector_constant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -56,7 +56,7 @@ struct DivideIntegralByConstantImpl
 
         const A * a_end = a_pos + size;
 
-#if defined(__SSE2__)
+#ifdef __SSE2__
         static constexpr size_t values_per_sse_register = 16 / sizeof(A);
         const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
 

@@ -5,7 +5,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Interpreters/Set.h>
-#include <Interpreters/IJoin.h>
+#include <Interpreters/Join.h>
 #include <Storages/IStorage.h>
 
 #include <iomanip>
@@ -23,13 +23,13 @@ namespace ErrorCodes
 
 CreatingSetsTransform::CreatingSetsTransform(
     Block out_header_,
-    SubqueriesForSets subqueries_for_sets_,
-    SizeLimits network_transfer_limits_,
+    const SubqueriesForSets & subqueries_for_sets_,
+    const SizeLimits & network_transfer_limits_,
     const Context & context_)
     : IProcessor({}, {std::move(out_header_)})
-    , subqueries_for_sets(std::move(subqueries_for_sets_))
+    , subqueries_for_sets(subqueries_for_sets_)
     , cur_subquery(subqueries_for_sets.begin())
-    , network_transfer_limits(std::move(network_transfer_limits_))
+    , network_transfer_limits(network_transfer_limits_)
     , context(context_)
 {
 }
@@ -56,17 +56,14 @@ IProcessor::Status CreatingSetsTransform::prepare()
 
 void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
 {
-    if (subquery.set)
-        LOG_TRACE(log, "Creating set.");
-    if (subquery.join)
-        LOG_TRACE(log, "Creating join.");
-    if (subquery.table)
-        LOG_TRACE(log, "Filling temporary table.");
+    LOG_TRACE(log, (subquery.set ? "Creating set. " : "")
+            << (subquery.join ? "Creating join. " : "")
+            << (subquery.table ? "Filling temporary table. " : ""));
 
     elapsed_nanoseconds = 0;
 
     if (subquery.table)
-        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), context);
+        table_out = subquery.table->write({}, context);
 
     done_with_set = !subquery.set;
     done_with_join = !subquery.join;
@@ -90,14 +87,19 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
 
     if (head_rows != 0)
     {
-        auto seconds = elapsed_nanoseconds / 1e9;
+        std::stringstream msg;
+        msg << std::fixed << std::setprecision(3);
+        msg << "Created. ";
 
         if (subquery.set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
+            msg << "Set with " << subquery.set->getTotalRowCount() << " entries from " << head_rows << " rows. ";
         if (subquery.join)
-            LOG_DEBUG(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
+            msg << "Join with " << subquery.join->getTotalRowCount() << " entries from " << head_rows << " rows. ";
         if (subquery.table)
-            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
+            msg << "Table with " << head_rows << " rows. ";
+
+        msg << "In " << (static_cast<double>(elapsed_nanoseconds) / 1000000000ULL) << " sec.";
+        LOG_DEBUG(log, msg.rdbuf());
     }
     else
     {
@@ -138,7 +140,7 @@ void CreatingSetsTransform::work()
         started_cur_subquery = true;
     }
 
-    auto finish_current_subquery = [&]()
+    auto finishCurrentSubquery = [&]()
     {
         if (subquery.set)
             subquery.set->finishInsert();
@@ -164,7 +166,7 @@ void CreatingSetsTransform::work()
     auto block = subquery.source->read();
     if (!block)
     {
-        finish_current_subquery();
+        finishCurrentSubquery();
         return;
     }
 
@@ -196,7 +198,7 @@ void CreatingSetsTransform::work()
     if (done_with_set && done_with_join && done_with_table)
     {
         subquery.source->cancel(false);
-        finish_current_subquery();
+        finishCurrentSubquery();
     }
     else
         elapsed_nanoseconds += watch.elapsedNanoseconds();

@@ -1,7 +1,5 @@
 SELECT '===Ordinary case===';
 
-SET replication_alter_partitions_sync = 2;
-
 DROP TABLE IF EXISTS clear_column;
 CREATE TABLE clear_column (d Date, num Int64, str String) ENGINE = MergeTree(d, d, 8192);
 
@@ -21,9 +19,9 @@ DROP TABLE clear_column;
 
 SELECT '===Replicated case===';
 
-DROP TABLE IF EXISTS clear_column1 NO DELAY;
-DROP TABLE IF EXISTS clear_column2 NO DELAY;
-SELECT sleep(1) FORMAT Null;
+SYSTEM STOP MERGES;
+DROP TABLE IF EXISTS clear_column1;
+DROP TABLE IF EXISTS clear_column2;
 CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192);
 CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192);
 
@@ -62,7 +60,9 @@ SELECT sum(data_uncompressed_bytes) FROM system.columns WHERE database=currentDa
 ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200001';
 ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200002';
 
+-- Merges cannot be blocked after all manipulations
 SET optimize_throw_if_noop = 1;
+SYSTEM START MERGES;
 OPTIMIZE TABLE clear_column1 PARTITION '200001';
 OPTIMIZE TABLE clear_column1 PARTITION '200002';
 

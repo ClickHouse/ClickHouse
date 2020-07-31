@@ -9,7 +9,7 @@ namespace DB
 {
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom final : public ext::shared_ptr_helper<StorageGenerateRandom>, public IStorage
+class StorageGenerateRandom : public ext::shared_ptr_helper<StorageGenerateRandom>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageGenerateRandom>;
 public:
@@ -17,7 +17,6 @@ public:
 
     Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,

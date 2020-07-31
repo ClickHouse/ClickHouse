@@ -22,8 +22,6 @@ node2 = cluster.add_instance('node2',
 def started_cluster():
     try:
         cluster.start()
-        node1.query('CREATE DATABASE test ENGINE=Ordinary')
-        node2.query('CREATE DATABASE test ENGINE=Ordinary')
         yield cluster
 
     finally:
@@ -41,10 +39,7 @@ def split_tsv(data):
 def test_merge_simple(started_cluster, replicated):
     try:
         clickhouse_path = "/var/lib/clickhouse"
-        db_name = "test"
-        table_name = "merge_simple"
-        name = db_name + "." + table_name
-        table_path = "data/" + db_name + "/" + table_name
+        name = "test_merge_simple"
         nodes = [node1, node2] if replicated else [node1]
         engine = "ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')" if replicated else "MergeTree()"
         node_check = nodes[-1]
@@ -80,15 +75,15 @@ def test_merge_simple(started_cluster, replicated):
             SELECT database, table, num_parts, source_part_names, source_part_paths, result_part_name, result_part_path, partition_id, is_mutation
                 FROM system.merges
                 WHERE table = '{name}'
-        """.format(name=table_name))) == [
+        """.format(name=name))) == [
             [
-                db_name,
-                table_name,
+                "default",
+                name,
                 "3",
                 "['{}','{}','{}']".format(*parts),
-                "['{clickhouse}/{table_path}/{}/','{clickhouse}/{table_path}/{}/','{clickhouse}/{table_path}/{}/']".format(*parts, clickhouse=clickhouse_path, table_path=table_path),
+                "['{clickhouse}/data/default/{name}/{}/','{clickhouse}/data/default/{name}/{}/','{clickhouse}/data/default/{name}/{}/']".format(*parts, clickhouse=clickhouse_path, name=name),
                 result_part,
-                "{clickhouse}/{table_path}/{}/".format(result_part, clickhouse=clickhouse_path, table_path=table_path),
+                "{clickhouse}/data/default/{name}/{}/".format(result_part, clickhouse=clickhouse_path, name=name),
                 "all",
                 "0"
             ]
@@ -96,7 +91,7 @@ def test_merge_simple(started_cluster, replicated):
         t.join()
         wait.join()
 
-        assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=table_name)) == ""
+        assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
 
     finally:
         for node in nodes:
@@ -110,10 +105,7 @@ def test_merge_simple(started_cluster, replicated):
 def test_mutation_simple(started_cluster, replicated):
     try:
         clickhouse_path = "/var/lib/clickhouse"
-        db_name = "test"
-        table_name = "mutation_simple"
-        name = db_name + "." + table_name
-        table_path = "data/" + db_name + "/" + table_name
+        name = "test_mutation_simple"
         nodes = [node1, node2] if replicated else [node1]
         engine = "ReplicatedMergeTree('/clickhouse/test_mutation_simple', '{replica}')" if replicated else "MergeTree()"
         node_check = nodes[-1]
@@ -144,15 +136,15 @@ def test_mutation_simple(started_cluster, replicated):
             SELECT database, table, num_parts, source_part_names, source_part_paths, result_part_name, result_part_path, partition_id, is_mutation
                 FROM system.merges
                 WHERE table = '{name}'
-        """.format(name=table_name))) == [
+        """.format(name=name))) == [
             [
-                db_name,
-                table_name,
+                "default",
+                name,
                 "1",
                 "['{}']".format(part),
-                "['{clickhouse}/{table_path}/{}/']".format(part, clickhouse=clickhouse_path, table_path=table_path),
+                "['{clickhouse}/data/default/{name}/{}/']".format(part, clickhouse=clickhouse_path, name=name),
                 result_part,
-                "{clickhouse}/{table_path}/{}/".format(result_part, clickhouse=clickhouse_path, table_path=table_path),
+                "{clickhouse}/data/default/{name}/{}/".format(result_part, clickhouse=clickhouse_path, name=name),
                 "all",
                 "1"
             ],
@@ -161,7 +153,7 @@ def test_mutation_simple(started_cluster, replicated):
 
         time.sleep(1.5)
 
-        assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=table_name)) == ""
+        assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
 
     finally:
         for node in nodes:

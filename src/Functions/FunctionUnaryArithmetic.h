@@ -10,16 +10,13 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
-#    include <llvm/IR/IRBuilder.h>
-#    pragma GCC diagnostic pop
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
 #endif
 
 
@@ -115,7 +112,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const Block &) const override { return is_injective; }
+    bool isInjective(const Block &) override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -152,7 +149,7 @@ public:
         return result;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
         {

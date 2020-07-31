@@ -28,7 +28,7 @@ def started_cluster():
         cluster.shutdown()
 
 @cluster_param
-def test_single_file(started_cluster, cluster):
+def test_single_file_new(started_cluster, cluster):
     node.query("create table test.distr_1 (x UInt64, s String) engine = Distributed('{}', database, table)".format(cluster))
     node.query("insert into test.distr_1 values (1, 'a'), (2, 'bb'), (3, 'ccc')", settings={"use_compact_format_in_distributed_parts_names": "1"})
 

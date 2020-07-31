@@ -106,7 +106,7 @@ private:
     UInt64 block_size;
     UInt64 max_counter;
 
-    static Block createHeader()
+    Block createHeader() const
     {
         return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
     }
@@ -115,24 +115,21 @@ private:
 }
 
 
-StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
-    : IStorage(table_id), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
+StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
+    : IStorage({"system", name_}), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
-    setInMemoryMetadata(storage_metadata);
+    setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
 
 Pipes StorageSystemNumbers::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     if (limit && *limit < max_block_size)
     {
@@ -170,7 +167,7 @@ Pipes StorageSystemNumbers::read(
         {
             /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
             res.back().addSimpleTransform(std::make_shared<LimitTransform>(
-                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0));
+                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0, false));
         }
     }
 

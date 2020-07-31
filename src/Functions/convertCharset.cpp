@@ -1,22 +1,20 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
+#include "config_core.h"
 #if USE_ICU
-#    include <Columns/ColumnConst.h>
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/FunctionHelpers.h>
-#    include <Functions/IFunction.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/ObjectPool.h>
-#    include <Common/typeid_cast.h>
-#    include <ext/range.h>
 
-#    include <memory>
-#    include <string>
-#    include <unicode/ucnv.h>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
+#include <Common/ObjectPool.h>
+#include <ext/range.h>
+
+#include <unicode/ucnv.h>
+#include <string>
+#include <memory>
 
 
 namespace DB
@@ -80,13 +78,13 @@ private:
     /// Separate converter is created for each thread.
     using Pool = ObjectPoolMap<Converter, String>;
 
-    static Pool::Pointer getConverter(const String & charset)
+    Pool::Pointer getConverter(const String & charset)
     {
         static Pool pool;
         return pool.get(charset, [&charset] { return new Converter(charset); });
     }
 
-    static void convert(const String & from_charset, const String & to_charset,
+    void convert(const String & from_charset, const String & to_charset,
         const ColumnString::Chars & from_chars, const ColumnString::Offsets & from_offsets,
         ColumnString::Chars & to_chars, ColumnString::Offsets & to_offsets)
     {
@@ -182,7 +180,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg_charset_from = block.getByPosition(arguments[1]);

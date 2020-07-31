@@ -26,7 +26,8 @@ class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayConcat>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayConcat>(context); }
+    FunctionArrayConcat(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -40,7 +41,7 @@ public:
 
         for (auto i : ext::range(0, arguments.size()))
         {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+            auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
                 throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
                                 + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -49,7 +50,7 @@ public:
         return getLeastSupertype(arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const DataTypePtr & return_type = block.getByPosition(result).type;
 
@@ -72,7 +73,7 @@ public:
             ColumnPtr preprocessed_column = arg.column;
 
             if (!arg.type->equals(*return_type))
-                preprocessed_column = castColumn(arg, return_type);
+                preprocessed_column = castColumn(arg, return_type, context);
 
             preprocessed_columns[i] = std::move(preprocessed_column);
         }
@@ -83,13 +84,13 @@ public:
         {
             bool is_const = false;
 
-            if (const auto * argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
             {
                 is_const = true;
                 argument_column = argument_column_const->getDataColumnPtr();
             }
 
-            if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
+            if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
             else
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
@@ -102,6 +103,9 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+private:
+    const Context & context;
 };
 
 

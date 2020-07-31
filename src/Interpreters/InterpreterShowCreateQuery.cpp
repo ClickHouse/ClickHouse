@@ -13,7 +13,7 @@
 #include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
+
 
 namespace DB
 {
@@ -47,39 +47,34 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     ASTQueryWithTableAndOutput * show_query;
     if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()))
     {
-        auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
-        auto table_id = context.resolveStorageID(*show_query, resolve_table_type);
-        context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-        create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
+        if (show_query->temporary)
+            create_query = context.getCreateExternalTableQuery(show_query->table);
+        else
+        {
+            context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
+            create_query = context.getDatabase(show_query->database)->getCreateTableQuery(context, show_query->table);
+        }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        show_query->database = context.resolveDatabase(show_query->database);
-        context.checkAccess(AccessType::SHOW_DATABASES, show_query->database);
-        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDatabaseQuery();
+        context.checkAccess(AccessType::SHOW, show_query->database);
+        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery(context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
-        show_query->database = context.resolveDatabase(show_query->database);
-        context.checkAccess(AccessType::SHOW_DICTIONARIES, show_query->database, show_query->table);
-        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDictionaryQuery(show_query->table);
+        context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
+        create_query = context.getDatabase(show_query->database)->getCreateDictionaryQuery(context, show_query->table);
     }
 
-    if (!create_query)
+    if (!create_query && show_query && show_query->temporary)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
-    if (!context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
-    {
-        auto & create = create_query->as<ASTCreateQuery &>();
-        create.uuid = UUIDHelpers::Nil;
-    }
-
     std::stringstream stream;
-    formatAST(*create_query, stream, false, false);
+    formatAST(*create_query, stream, false, true);
     String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();
