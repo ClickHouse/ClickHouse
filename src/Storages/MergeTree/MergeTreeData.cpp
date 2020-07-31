@@ -185,20 +185,6 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setProperties(metadata_, metadata_, attach);
-    const auto settings = getSettings();
-
-    /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(metadata_);
-
-    if (metadata_.sampling_key.definition_ast != nullptr)
-    {
-        const auto & pk_sample_block = metadata_.getPrimaryKey().sample_block;
-        if (!pk_sample_block.has(metadata_.sampling_key.column_names[0]) && !attach
-            && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
-            throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
-    }
-
     setTTLExpressions(metadata_);
 
     /// format_file always contained on any data path
@@ -554,10 +540,8 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 }
 
 
-void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadata) const
+void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
 {
-    const auto columns = metadata.getColumns().getAllPhysical();
-
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception("Sign column for MergeTree cannot be specified in modes except Collapsing or VersionedCollapsing.",
                         ErrorCodes::LOGICAL_ERROR);
@@ -642,21 +626,6 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 throw Exception(
                         "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
-
-        /// Check that summing columns are not in partition key.
-        if (metadata.isPartitionKeyDefined())
-        {
-            auto partition_key_columns = metadata.getPartitionKey().column_names;
-
-            Names names_intersection;
-            std::set_intersection(columns_to_sum.begin(), columns_to_sum.end(),
-                                  partition_key_columns.begin(), partition_key_columns.end(),
-                                  std::back_inserter(names_intersection));
-
-            if (!names_intersection.empty())
-                throw Exception("Colums: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
-                " listed both in colums to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
-        }
     }
 
     if (mode == MergingParams::Replacing)
@@ -687,6 +656,7 @@ String MergeTreeData::MergingParams::getModeName() const
 
     __builtin_unreachable();
 }
+
 
 Int64 MergeTreeData::getMaxBlockNumber() const
 {
