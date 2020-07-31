@@ -53,6 +53,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/SymbolIndex.h>
 
+#include <Interpreters/CrashLog.h>
+
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
 #endif
@@ -308,16 +310,12 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
+        /// Write crash to system.crash_log table if available.
+        DB::CrashLog::collect(sig, thread_num, query_id, stack_trace);
+
         /// Send crash report to developers (if configured)
-
-        #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
-        #else
-            String build_id_hex{};
-        #endif
-
         if (sig != SanitizerTrap)
-            SentryWriter::onFault(sig, error_message, stack_trace, build_id_hex);
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
