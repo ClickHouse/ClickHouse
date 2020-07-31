@@ -702,7 +702,7 @@ Settings for the [text\_log](../../operations/system-tables/text_log.md#system_t
 
 Parameters:
 
--   `level` — Maximum Message Level (by default `Trace`) which will store in table.
+-   `level` — Maximum Message Level (by default `Trace`) which will be stored in a table.
 -   `database` — Database for storing a table.
 -   `table` — Table name.
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
