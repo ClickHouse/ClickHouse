@@ -23,7 +23,7 @@ Columns:
 
 -   `thread_number`([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id`([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id`([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
 
 -   `trace`([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
