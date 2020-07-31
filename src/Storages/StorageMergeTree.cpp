@@ -417,7 +417,8 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
         mutation_wait_event.wait(lock, check);
     }
 
-    Strings mutation_ids;
+    std::set<String> mutation_ids;
+    mutation_ids.insert(file_name);
     auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids);
     checkMutationStatus(mutation_status, mutation_ids);
 
@@ -449,7 +450,7 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
-std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, Strings * mutation_ids) const
+std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
@@ -467,12 +468,10 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     {
         if (data_part->info.getDataVersion() < mutation_version)
         {
-
             if (!mutation_entry.latest_fail_reason.empty())
             {
                 result.latest_failed_part = mutation_entry.latest_failed_part;
-                result.latest_fail_reason = mutation_entry.latest_fail_reason;
-                result.latest_fail_time = mutation_entry.latest_fail_time;
+                result.latest_fail_reason = mutation_entry.latest_fail_reason; result.latest_fail_time = mutation_entry.latest_fail_time;
 
                 /// Fill all mutations which failed with the same error
                 /// (we can execute several mutations together)
@@ -483,7 +482,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                     for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
                         /// All mutations with the same failure
                         if (it->second.latest_fail_reason == result.latest_fail_reason)
-                            mutation_ids->push_back(it->second.file_name);
+                            mutation_ids->insert(it->second.file_name);
                 }
             }
 

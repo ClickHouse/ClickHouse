@@ -163,7 +163,7 @@ private:
     /// filled mutation status with information about error (latest_fail*) and
     /// is_done. mutation_ids filled with mutations with the same errors, because we
     /// can execute several mutations at once
-    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, Strings * mutation_ids = nullptr) const;
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
 
     void startBackgroundMovesIfNeeded() override;
 
