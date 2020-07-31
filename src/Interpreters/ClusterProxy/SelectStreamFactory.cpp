@@ -80,7 +80,7 @@ QueryPipeline createLocalStream(
     pipeline.addSimpleTransform([&](const Block & source_header)
     {
         return std::make_shared<ConvertingTransform>(
-                source_header, header, ConvertingTransform::MatchColumnsMode::Name);
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name, true);
     });
 
     /** Materialization is needed, since from remote servers the constants come materialized.

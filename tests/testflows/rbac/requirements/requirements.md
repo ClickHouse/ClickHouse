@@ -439,8 +439,8 @@ hosted in a Gitlab repository.
 
 All the updates are tracked using the [Git]'s revision history.
 
-* Gitlab repository: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/blob/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
-* Revision history: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/commits/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
+* GitHub repository: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
+* Revision history: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 
 ## Introduction
 
@@ -3424,15 +3424,15 @@ SHOW [ROW] POLICIES [ON [database.]table]
 ## References
 
 * **ClickHouse:** https://clickhouse.tech
-* **Gitlab repository:** https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/blob/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
-* **Revision history:** https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/commits/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
+* **GitHub repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
+* **Revision history:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 * **Git:** https://git-scm.com/
 * **MySQL:** https://dev.mysql.com/doc/refman/8.0/en/account-management-statements.html
 * **PostgreSQL:** https://www.postgresql.org/docs/12/user-manag.html
 
 [ClickHouse]: https://clickhouse.tech
-[Gitlab repository]: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/blob/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
-[Revision history]: https://gitlab.com/altinity-qa/documents/qa-srs006-clickhouse-role-based-access-control/commits/master/QA_SRS006_ClickHouse_Role_Based_Access_Control.md
+[GitHub repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/rbac/requirements/requirements.md
+[Revision history]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/rbac/requirements/requirements.md
 [Git]: https://git-scm.com/
 [MySQL]: https://dev.mysql.com/doc/refman/8.0/en/account-management-statements.html
 [PostgreSQL]: https://www.postgresql.org/docs/12/user-manag.html

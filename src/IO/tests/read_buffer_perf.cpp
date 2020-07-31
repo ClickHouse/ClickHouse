@@ -1,7 +1,6 @@
 #include <string>
 
 #include <iostream>
-#include <fstream>
 
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
