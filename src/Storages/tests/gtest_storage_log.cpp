@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
