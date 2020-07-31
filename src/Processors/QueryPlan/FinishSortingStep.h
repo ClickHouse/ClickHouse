@@ -20,6 +20,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     SortDescription prefix_description;
     SortDescription result_description;

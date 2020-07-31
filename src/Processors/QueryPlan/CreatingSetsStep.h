@@ -20,6 +20,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     SubqueriesForSets subqueries_for_sets;
     SizeLimits network_transfer_limits;

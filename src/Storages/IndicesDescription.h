@@ -39,8 +39,7 @@ struct IndexDescription
     /// Data types of index columns
     DataTypes data_types;
 
-    /// Sample block with index columns. (NOTE: columns in block are empty, but
-    /// not nullptr)
+    /// Sample block with index columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
 
     /// Index granularity, make sense for skip indices

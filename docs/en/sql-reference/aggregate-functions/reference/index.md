@@ -1,10 +1,10 @@
 ---
-toc_priority: 36
-toc_title: Reference
 toc_folder_title: Reference
+toc_priority: 36
+toc_hidden: true
 ---
 
-# Aggregate Function Reference {#aggregate-functions-reference}
+# List of Aggregate Functions {#aggregate-functions-reference}
 
 Standard aggregate functions:
 
@@ -69,7 +69,6 @@ ClickHouse-specific aggregate functions:
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
-
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

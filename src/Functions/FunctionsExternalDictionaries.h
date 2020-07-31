@@ -29,7 +29,7 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/CacheDictionary.h>
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
 #include <Dictionaries/SSDCacheDictionary.h>
 #include <Dictionaries/SSDComplexKeyCacheDictionary.h>
 #endif
@@ -38,7 +38,7 @@
 #include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
-#include <Dictionaries/PolygonDictionary.h>
+#include <Dictionaries/PolygonDictionaryImplementations.h>
 #include <Dictionaries/DirectDictionary.h>
 
 #include <ext/range.h>
@@ -99,6 +99,10 @@ public:
 
     bool isDictGetFunctionInjective(const Block & sample_block)
     {
+        /// Assume non-injective by default
+        if (!sample_block)
+            return false;
+
         if (sample_block.columns() != 3 && sample_block.columns() != 4)
             throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
@@ -156,7 +160,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /** Do not require existence of the dictionary if the function is called for empty block.
           * This is needed to allow successful query analysis on a server,
@@ -178,25 +182,27 @@ private:
             !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchSimple<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatchSimple(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -219,7 +225,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -319,7 +325,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
         {
@@ -334,26 +340,28 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -384,7 +392,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -421,7 +429,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchRange(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -503,7 +511,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
         {
@@ -518,25 +526,27 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -562,7 +572,7 @@ private:
     template <typename DictionaryType>
     void executeDispatch(
         Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnUInt64 * id_col)
+        const std::string & attr_name, const ColumnUInt64 * id_col) const
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -590,7 +600,7 @@ private:
     template <typename DictionaryType>
     void executeDispatch(
         Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnConst * id_col)
+        const std::string & attr_name, const ColumnConst * id_col) const
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -624,7 +634,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -843,7 +853,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
         {
@@ -858,25 +868,27 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
-    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -932,7 +944,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -975,7 +987,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchRange(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1104,7 +1116,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
         {
@@ -1119,24 +1131,26 @@ private:
             !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
             !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
 #endif
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
             !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
 #endif
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict))
+            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
+            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
             throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
-    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1162,7 +1176,7 @@ private:
     template <typename DictionaryType>
     void executeDispatch(
         Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnUInt64 * id_col)
+        const std::string & attr_name, const ColumnUInt64 * id_col) const
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1201,7 +1215,7 @@ private:
     template <typename DictionaryType>
     void executeDispatch(
         Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnConst * id_col)
+        const std::string & attr_name, const ColumnConst * id_col) const
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1259,7 +1273,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1486,7 +1500,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         impl->executeImpl(block, arguments, result, input_rows_count);
     }
@@ -1628,7 +1642,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         impl->executeImpl(block, arguments, result, input_rows_count);
     }
@@ -1677,7 +1691,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
         {
@@ -1697,7 +1711,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+        const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1834,7 +1848,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
         {
@@ -1854,7 +1868,7 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                         const std::shared_ptr<const IDictionaryBase> & dict_ptr)
+                         const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1879,7 +1893,7 @@ private:
 
     template <typename DictionaryType>
     bool execute(Block & block, const size_t result, const DictionaryType * dict,
-        const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped)
+        const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped) const
     {
         if (const auto ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
         {
@@ -1918,7 +1932,7 @@ private:
 
     template <typename DictionaryType>
     bool execute(Block & block, const size_t result, const DictionaryType * dict,
-        const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped)
+        const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped) const
     {
         if (const auto ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
         {

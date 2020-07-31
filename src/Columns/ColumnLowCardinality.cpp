@@ -257,6 +257,12 @@ void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
     idx.updateWeakHash(hash, dict_hash);
 }
 
+void ColumnLowCardinality::updateHashFast(SipHash & hash) const
+{
+    idx.getPositions()->updateHashFast(hash);
+    getDictionary().getNestedColumn()->updateHashFast(hash);
+}
+
 void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);

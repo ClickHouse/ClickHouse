@@ -18,11 +18,7 @@ FillingTransform::FillingTransform(
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
-    std::vector<bool> is_fill_column(header_.columns());
-    for (const auto & elem : sort_description)
-        is_fill_column[header_.getPositionByName(elem.column_name)] = true;
-
-    auto try_convert_fields = [](FillColumnDescription & descr, const DataTypePtr & type)
+    auto try_convert_fields = [](auto & descr, const auto & type)
     {
         auto max_type = Field::Types::Null;
         WhichDataType which(type);
@@ -49,30 +45,32 @@ FillingTransform::FillingTransform(
         return true;
     };
 
-    for (size_t i = 0; i < header_.columns(); ++i)
+    std::vector<bool> is_fill_column(header_.columns());
+    for (size_t i = 0; i < sort_description.size(); ++i)
     {
-        if (is_fill_column[i])
+        size_t block_position = header_.getPositionByName(sort_description[i].column_name);
+        is_fill_column[block_position] = true;
+        fill_column_positions.push_back(block_position);
+
+        auto & descr = filling_row.getFillDescription(i);
+        const auto & type = header_.getByPosition(block_position).type;
+
+        if (!try_convert_fields(descr, type))
+            throw Exception("Incompatible types of WITH FILL expression values with column type "
+                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (type->isValueRepresentedByUnsignedInteger() &&
+            ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
+                (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
-            size_t pos = fill_column_positions.size();
-            auto & descr = filling_row.getFillDescription(pos);
-            auto type = header_.getByPosition(i).type;
-            if (!try_convert_fields(descr, type))
-                throw Exception("Incompatible types of WITH FILL expression values with column type "
-                    + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-            if (type->isValueRepresentedByUnsignedInteger() &&
-                ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
-                    (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
-            {
-                throw Exception("WITH FILL bound values cannot be negative for unsigned type "
-                    + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-            }
-
-            fill_column_positions.push_back(i);
+            throw Exception("WITH FILL bound values cannot be negative for unsigned type "
+                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
         }
-        else
-            other_column_positions.push_back(i);
     }
+
+    for (size_t i = 0; i < header_.columns(); ++i)
+        if (!is_fill_column[i])
+            other_column_positions.push_back(i);
 }
 
 IProcessor::Status FillingTransform::prepare()

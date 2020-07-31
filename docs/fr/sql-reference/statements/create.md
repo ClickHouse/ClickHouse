@@ -155,7 +155,7 @@ Si un codec est spécifié, le codec par défaut ne s'applique pas. Les Codecs p
 La Compression est prise en charge pour les moteurs de tableau suivants:
 
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) famille. Prend en charge les codecs de compression de colonne et la sélection de la méthode de compression par défaut par [compression](../../operations/server-configuration-parameters/settings.md#server-settings-compression) paramètre.
--   [Journal](../../engines/table-engines/log-family/log-family.md) famille. Utilise le `lz4` méthode de compression par défaut et prend en charge les codecs de compression de colonne.
+-   [Journal](../../engines/table-engines/log-family/index.md) famille. Utilise le `lz4` méthode de compression par défaut et prend en charge les codecs de compression de colonne.
 -   [Définir](../../engines/table-engines/special/set.md). Uniquement pris en charge la compression par défaut.
 -   [Rejoindre](../../engines/table-engines/special/join.md). Uniquement pris en charge la compression par défaut.
 
