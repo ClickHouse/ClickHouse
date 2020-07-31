@@ -248,8 +248,8 @@ def event_processor_dispatcher(headers, body, inserter):
             inserter.insert_event_into(DB, 'issues', result)
         elif headers['X-Github-Event'] == 'pull_request':
             result = process_pull_request_event(body)
-            label_pull_request_event(body)
             inserter.insert_event_into(DB, 'pull_requests', result)
+            label_pull_request_event(body)
         elif headers['X-Github-Event'] == 'pull_request_review':
             result = process_pull_request_review(body)
             inserter.insert_event_into(DB, 'pull_requests', result)
