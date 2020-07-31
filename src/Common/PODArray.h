@@ -287,6 +287,18 @@ public:
     }
 };
 
+
+/** If we can use memcpy instead of a loop with assignment to T from U.
+  * It is Ok if types are the same. And if types are integral and of the same size,
+  *  example: char, signed char, unsigned char.
+  * It's not Ok for int and float.
+  * Don't forget to apply std::decay when using this constexpr.
+  */
+template <typename T, typename U>
+constexpr inline bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
+    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U));
+
+
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
@@ -466,7 +478,7 @@ public:
         if (unlikely(bytes_to_move))
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
 
-        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
+        if constexpr (memcpy_can_be_used_for_assignment<T, std::decay_t<decltype(*from_begin)>>)
         {
             memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         }
@@ -483,7 +495,7 @@ public:
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
+        if constexpr (memcpy_can_be_used_for_assignment<T, std::decay_t<decltype(*from_begin)>>)
         {
             size_t bytes_to_copy = this->byte_size(from_end - from_begin);
             memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
@@ -628,7 +640,7 @@ public:
             this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
-        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
+        if constexpr (memcpy_can_be_used_for_assignment<T, std::decay_t<decltype(*from_begin)>>)
         {
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         }
