@@ -37,8 +37,8 @@ struct DummyJSONParser
         double getDouble() const { return 0; }
         bool getBool() const { return false; }
         std::string_view getString() const { return {}; }
-        Array getArray() const;
-        Object getObject() const;
+        Array getArray() const { return {}; }
+        Object getObject() const { return {}; }
     };
 
     /// References an array in a JSON document.
