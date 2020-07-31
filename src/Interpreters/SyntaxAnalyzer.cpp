@@ -27,7 +27,7 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
-#include <Interpreters/AnyInputOptimize.h>
+#include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -597,9 +597,8 @@ void optimizeAggregationFunctions(ASTPtr & query)
 
 void optimizeAnyInput(ASTPtr & query)
 {
-    /// Removing arithmetic operations from functions
-    AnyInputVisitor::Data data = {};
-    AnyInputVisitor(data).visit(query);
+    RewriteAnyFunctionVisitor::Data data = {};
+    RewriteAnyFunctionVisitor(data).visit(query);
 }
 
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
