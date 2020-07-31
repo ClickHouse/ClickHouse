@@ -64,6 +64,7 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
+/// Recursion is limited in query parser and we did not check for too large depth here.
 static size_t getTypeDepth(const DataTypePtr & type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
