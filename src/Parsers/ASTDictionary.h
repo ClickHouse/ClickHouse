@@ -82,19 +82,19 @@ class ASTDictionary : public IAST
 {
 public:
     /// Dictionary keys -- one or more
-    ASTExpressionList * primary_key;
+    ASTExpressionList * primary_key = nullptr;
     /// Dictionary external source, doesn't have own AST, because
     /// source parameters absolutely different for different sources
-    ASTFunctionWithKeyValueArguments * source;
+    ASTFunctionWithKeyValueArguments * source = nullptr;
 
     /// Lifetime of dictionary (required part)
-    ASTDictionaryLifetime * lifetime;
+    ASTDictionaryLifetime * lifetime = nullptr;
     /// Layout of dictionary (required part)
-    ASTDictionaryLayout * layout;
+    ASTDictionaryLayout * layout = nullptr;
     /// Range for dictionary (only for range-hashed dictionaries)
-    ASTDictionaryRange * range;
+    ASTDictionaryRange * range = nullptr;
     /// Settings for dictionary (optionally)
-    ASTDictionarySettings * dict_settings;
+    ASTDictionarySettings * dict_settings = nullptr;
 
     String getID(char) const override { return "Dictionary definition"; }
 
