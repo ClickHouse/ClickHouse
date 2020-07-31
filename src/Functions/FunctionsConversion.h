@@ -995,7 +995,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         try
         {
@@ -1040,7 +1040,7 @@ public:
     }
 
 private:
-    void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         if (!arguments.size())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
@@ -1223,7 +1223,7 @@ public:
         return res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -1931,7 +1931,7 @@ private:
     }
 
     template <typename FieldType>
-    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
+    WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type, bool source_is_nullable) const
     {
         using EnumType = DataTypeEnum<FieldType>;
         using Function = typename FunctionTo<EnumType>::Type;
@@ -1942,9 +1942,9 @@ private:
             checkEnumToEnumConversion(from_enum16, to_type);
 
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
-            return createStringToEnumWrapper<ColumnString, EnumType>();
+            return createStringToEnumWrapper<ColumnString, EnumType>(source_is_nullable);
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
-            return createStringToEnumWrapper<ColumnFixedString, EnumType>();
+            return createStringToEnumWrapper<ColumnFixedString, EnumType>(source_is_nullable);
         else if (isNativeNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create();
@@ -1987,17 +1987,32 @@ private:
     }
 
     template <typename ColumnStringType, typename EnumType>
-    WrapperType createStringToEnumWrapper() const
+    WrapperType createStringToEnumWrapper(bool source_is_nullable) const
     {
         const char * function_name = name;
-        return [function_name] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+        return [function_name, source_is_nullable] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             const auto first_col = block.getByPosition(arguments.front()).column.get();
 
             auto & col_with_type_and_name = block.getByPosition(result);
             const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
 
-            if (const auto col = typeid_cast<const ColumnStringType *>(first_col))
+            const ColumnStringType * col = typeid_cast<const ColumnStringType *>(first_col);
+            const ColumnNullable * nullable_col = nullptr;
+            if (source_is_nullable)
+            {
+                if (block.columns() <= arguments.front() + 1)
+                    throw Exception("Not enough columns", ErrorCodes::LOGICAL_ERROR);
+
+                size_t nullable_pos = block.columns() - 1;
+                nullable_col = typeid_cast<const ColumnNullable *>(block.getByPosition(nullable_pos).column.get());
+                if (!nullable_col)
+                    throw Exception("Last column should be ColumnNullable", ErrorCodes::LOGICAL_ERROR);
+                if (col && nullable_col->size() != col->size())
+                    throw Exception("ColumnNullable is not compatible with original", ErrorCodes::LOGICAL_ERROR);
+            }
+
+            if (col)
             {
                 const auto size = col->size();
 
@@ -2005,8 +2020,19 @@ private:
                 auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
                 out_data.resize(size);
 
-                for (const auto i : ext::range(0, size))
-                    out_data[i] = result_type.getValue(col->getDataAt(i));
+                if (nullable_col)
+                {
+                    for (const auto i : ext::range(0, size))
+                    {
+                        if (!nullable_col->isNullAt(i))
+                            out_data[i] = result_type.getValue(col->getDataAt(i));
+                    }
+                }
+                else
+                {
+                    for (const auto i : ext::range(0, size))
+                        out_data[i] = result_type.getValue(col->getDataAt(i));
+                }
 
                 col_with_type_and_name.column = std::move(res);
             }
@@ -2141,7 +2167,7 @@ private:
         bool source_is_nullable = from_type->isNullable();
         bool result_is_nullable = to_type->isNullable();
 
-        auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable);
+        auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable, source_is_nullable);
 
         if (result_is_nullable)
         {
@@ -2162,6 +2188,13 @@ private:
 
                 size_t tmp_res_index = block.columns();
                 tmp_block.insert({nullptr, nested_type, ""});
+                /// Add original ColumnNullable for createStringToEnumWrapper()
+                if (source_is_nullable)
+                {
+                    if (arguments.size() != 1)
+                        throw Exception("Invalid number of arguments", ErrorCodes::LOGICAL_ERROR);
+                    tmp_block.insert(block.getByPosition(arguments.front()));
+                }
 
                 /// Perform the requested conversion.
                 wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
@@ -2208,7 +2241,7 @@ private:
 
     /// 'from_type' and 'to_type' are nested types in case of Nullable.
     /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
-    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
+    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable, bool source_is_nullable) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
@@ -2243,7 +2276,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeEnum8> ||
                 std::is_same_v<ToDataType, DataTypeEnum16>)
             {
-                ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
+                ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), source_is_nullable);
                 return true;
             }
             if constexpr (

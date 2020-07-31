@@ -17,7 +17,6 @@ ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-server/users.d/
@@ -32,6 +31,10 @@ ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/conf
 ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
+
+# Retain any pre-existing config and allow ClickHouse to load it if required
+ln -s --backup=simple --suffix=_original.xml \
+    /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -s /usr/share/clickhouse-test/config/polymorphic_parts.xml /etc/clickhouse-server/config.d/

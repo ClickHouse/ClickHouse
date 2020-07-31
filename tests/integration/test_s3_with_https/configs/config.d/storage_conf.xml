@@ -1,0 +1,37 @@
+<yandex>
+    <storage_configuration>
+        <disks>
+            <s3_secure>
+                <type>s3</type>
+                <endpoint>https://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3_secure>
+            <s3_secure_with_proxy>
+                <type>s3</type>
+                <endpoint>https://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <proxy>
+                    <uri>https://proxy1</uri>
+                </proxy>
+            </s3_secure_with_proxy>
+        </disks>
+        <policies>
+            <s3_secure>
+                <volumes>
+                    <main>
+                        <disk>s3_secure</disk>
+                    </main>
+                </volumes>
+            </s3_secure>
+            <s3_secure_with_proxy>
+                <volumes>
+                    <main>
+                        <disk>s3_secure_with_proxy</disk>
+                    </main>
+                </volumes>
+            </s3_secure_with_proxy>
+        </policies>
+    </storage_configuration>
+</yandex>

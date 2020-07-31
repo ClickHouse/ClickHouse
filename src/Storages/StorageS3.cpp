@@ -153,7 +153,7 @@ namespace
             : sample_block(sample_block_)
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, true), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -204,6 +204,7 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
+    , name(uri_.storage_name)
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -329,9 +330,9 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         client, uri.bucket, uri.key);
 }
 
-void registerStorageS3(StorageFactory & factory)
+void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
-    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
+    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
@@ -369,6 +370,16 @@ void registerStorageS3(StorageFactory & factory)
     {
         .source_access_type = AccessType::S3,
     });
+}
+
+void registerStorageS3(StorageFactory & factory)
+{
+    return registerStorageS3Impl("S3", factory);
+}
+
+void registerStorageCOS(StorageFactory & factory)
+{
+    return registerStorageS3Impl("COSN", factory);
 }
 
 NamesAndTypesList StorageS3::getVirtuals() const

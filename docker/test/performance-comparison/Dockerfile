@@ -17,6 +17,7 @@ RUN apt-get update \
             libc6-dbg \
             moreutils \
             ncdu \
+            numactl \
             p7zip-full \
             parallel \
             psmisc \

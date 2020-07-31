@@ -161,14 +161,14 @@ toStartOfSecond(value[, timezone])
 
 **Parameters**
 
--   `value` — Date and time. [DateTime64](../data-types/datetime64.md).
--   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../data-types/string.md). 
+-   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Input value without sub-seconds.
+-   Input value without sub-seconds.
 
-Type: [DateTime64](../data-types/datetime64.md).
+Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Examples**
 
@@ -503,3 +503,34 @@ Supported modifiers for Format:
 | %%       | a % sign                                                | %          |
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+
+## FROM_UNIXTIME
+
+When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
+type.
+
+For example:
+
+```sql
+SELECT FROM_UNIXTIME(423543535)
+```
+
+```text
+┌─FROM_UNIXTIME(423543535)─┐
+│      1983-06-04 10:58:55 │
+└──────────────────────────┘
+```
+
+When there are two arguments, first is integer or DateTime, second is constant format string, it act in the same way as `formatDateTime` and return `String` type.
+
+For example:
+
+```sql
+SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
+```
+
+```text
+┌─DateTime────────────┐
+│ 2009-02-11 14:42:23 │
+└─────────────────────┘
+```

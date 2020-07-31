@@ -105,6 +105,9 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ?
+                                     FormatSettings::Pretty::Charset::ASCII :
+                                     FormatSettings::Pretty::Charset::UTF8;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
