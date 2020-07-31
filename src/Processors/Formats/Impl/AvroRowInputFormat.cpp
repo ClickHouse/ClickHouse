@@ -727,6 +727,11 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
     {
         return false;
     }
+    // skip tombstone records (kafka messages with null value)
+    if (in.available() == 0)
+    {
+        return false;
+    }
     SchemaId schema_id = readConfluentSchemaId(in);
     const auto & deserializer = getOrCreateDeserializer(schema_id);
     deserializer.deserializeRow(columns, *decoder, ext);
