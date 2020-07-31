@@ -63,7 +63,48 @@ p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-
     color: inherit;
     text-decoration: none;
 }}
+
 tr:nth-child(odd) td {{filter: brightness(95%);}}
+
+.all-query-times tr td:nth-child(1),
+.all-query-times tr td:nth-child(2),
+.all-query-times tr td:nth-child(3),
+.all-query-times tr td:nth-child(4),
+.all-query-times tr td:nth-child(5),
+.all-query-times tr td:nth-child(7),
+.changes-in-performance tr td:nth-child(1),
+.changes-in-performance tr td:nth-child(2),
+.changes-in-performance tr td:nth-child(3),
+.changes-in-performance tr td:nth-child(4),
+.changes-in-performance tr td:nth-child(5),
+.changes-in-performance tr td:nth-child(7),
+.unstable-queries tr td:nth-child(1),
+.unstable-queries tr td:nth-child(2),
+.unstable-queries tr td:nth-child(3),
+.unstable-queries tr td:nth-child(4),
+.unstable-queries tr td:nth-child(6),
+.test-performance-changes tr td:nth-child(2),
+.test-performance-changes tr td:nth-child(3),
+.test-performance-changes tr td:nth-child(4),
+.test-performance-changes tr td:nth-child(5),
+.test-performance-changes tr td:nth-child(6),
+.test-times tr td:nth-child(2),
+.test-times tr td:nth-child(3),
+.test-times tr td:nth-child(4),
+.test-times tr td:nth-child(5),
+.test-times tr td:nth-child(6),
+.test-times tr td:nth-child(7),
+.test-times tr td:nth-child(8),
+.concurrent-benchmarks tr td:nth-child(2),
+.concurrent-benchmarks tr td:nth-child(3),
+.concurrent-benchmarks tr td:nth-child(4),
+.concurrent-benchmarks tr td:nth-child(5),
+.metric-changes tr td:nth-child(2),
+.metric-changes tr td:nth-child(3),
+.metric-changes tr td:nth-child(4),
+.metric-changes tr td:nth-child(5)
+{{ text-align: right; }}
+
   </style>
   <title>Clickhouse performance comparison</title>
 </head>
@@ -111,11 +152,14 @@ def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
 
 def tableStart(title):
-    return """
-<h2 id="{anchor}"><a class="cancela" href="#{anchor}">{title}</a></h2>
-<table>""".format(
-        anchor = nextTableAnchor(),
-        title = title)
+    anchor = nextTableAnchor();
+    cls = '-'.join(title.lower().split(' ')[:3]);
+    return f"""
+        <h2 id="{anchor}">
+            <a class="cancela" href="#{anchor}">{title}</a>
+        </h2>
+        <table class="{cls}">
+    """
 
 def tableEnd():
     return '</table>'
@@ -282,7 +326,7 @@ if args.report == 'main':
             'Old,&nbsp;s', #0
             'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'p&nbsp;<&nbsp;0.001 threshold', #3
+            'p&nbsp;&lt;&nbsp;0.001 threshold', #3
             # Failed #4
             'Test', #5
             '#',    #6
@@ -501,7 +545,7 @@ elif args.report == 'all-queries':
             'New,&nbsp;s', #3
             'Times speedup / slowdown',                 #4
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
-            'p&nbsp;<&nbsp;0.001 threshold',          #6
+            'p&nbsp;&lt;&nbsp;0.001 threshold',          #6
             'Test',                                   #7
             '#',                                      #8
             'Query',                                  #9

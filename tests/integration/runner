@@ -21,7 +21,7 @@ DIND_INTEGRATION_TESTS_IMAGE_NAME = "yandex/clickhouse-integration-tests-runner"
 
 def check_args_and_update_paths(args):
     if args.clickhouse_root:
-        if not ps.path.isabs(args.clickhouse_root):
+        if not os.path.isabs(args.clickhouse_root):
             CLICKHOUSE_ROOT = os.path.abspath(args.clickhouse_root)
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
