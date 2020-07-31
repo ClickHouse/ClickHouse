@@ -51,7 +51,7 @@ INSERT INTO test_01037.points VALUES (0.0, -2.0, 774, 'ffd');
 
 declare -a SearchTypes=("POLYGON" "POLYGON_SIMPLE" "POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-for type in ${SearchTypes[@]};
+for type in "${SearchTypes[@]}";
 do
     outputFile="${TMP_DIR}/results${type}.out"
 
