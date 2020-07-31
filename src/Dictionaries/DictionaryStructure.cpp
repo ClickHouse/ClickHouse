@@ -193,6 +193,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
     }
 
     attributes = getAttributes(config, config_prefix);
+
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
 }
@@ -302,6 +303,12 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         checkAttributeKeys(attribute_keys);
 
         const auto name = config.getString(prefix + "name");
+
+        /// Don't include range_min and range_max in attributes list, otherwise
+        /// columns will be duplicated
+        if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
+            continue;
+
         const auto type_string = config.getString(prefix + "type");
         const auto type = DataTypeFactory::instance().get(type_string);
         const auto underlying_type = getAttributeUnderlyingType(type_string);

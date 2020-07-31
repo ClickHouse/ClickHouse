@@ -96,6 +96,7 @@ SRCS(
     array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
+    array/mapOp.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
