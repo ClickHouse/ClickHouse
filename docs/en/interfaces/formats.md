@@ -1015,7 +1015,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 
 Unsupported Avro data types: `record` (non-root), `map`
 
-Unsupported Avro logical data types: `uuid`, `time-millis`, `time-micros`, `duration`
+Unsupported Avro logical data types: `time-millis`, `time-micros`, `duration`
 
 ### Inserting Data {#inserting-data-1}
 

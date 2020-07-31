@@ -9,14 +9,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNFINISHED;
+    extern const int LOGICAL_ERROR;
 }
 
-void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const Strings & mutation_ids)
+void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const std::set<String> & mutation_ids)
 {
+    if (mutation_ids.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check mutation status because no mutation ids provided");
+
     if (!status)
     {
-        assert(mutation_ids.size() == 1);
-        throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed", mutation_ids[0]);
+        throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed", *mutation_ids.begin());
     }
     else if (!status->is_done && !status->latest_fail_reason.empty())
     {

@@ -1,5 +1,3 @@
-#include <iomanip>
-
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Compression/CompressedReadBuffer.h>
