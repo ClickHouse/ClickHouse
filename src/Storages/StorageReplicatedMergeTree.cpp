@@ -398,6 +398,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
         }
 
+        /// At least we have our current mutation
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
 

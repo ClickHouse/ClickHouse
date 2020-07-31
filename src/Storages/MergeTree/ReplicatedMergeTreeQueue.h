@@ -402,8 +402,10 @@ public:
 
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
-    /// is_done. mutation_ids filled with all mutations with same errors, because
-    /// they may be executed simultaneously as one mutation.
+    /// is_done. mutation_ids filled with all mutations with same errors,
+    /// because they may be executed simultaneously as one mutation. Order is
+    /// important for better readability of exception message. If mutation was
+    /// killed doesn't return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids = nullptr) const;
 
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
