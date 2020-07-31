@@ -39,6 +39,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RESTART REPLICAS";
         case Type::RESTART_REPLICA:
             return "RESTART REPLICA";
+        case Type::RESTORE_REPLICA:
+            return "RESTORE REPLICA";
         case Type::DROP_REPLICA:
             return "DROP REPLICA";
         case Type::SYNC_REPLICA:
@@ -161,7 +163,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!table.empty())
             print_database_table();
     }
-    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
+    else if (  type == Type::RESTART_REPLICA
+            || type == Type::RESTORE_REPLICA
+            || type == Type::SYNC_REPLICA
+            || type == Type::FLUSH_DISTRIBUTED)
     {
         print_database_table();
     }

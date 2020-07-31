@@ -30,6 +30,7 @@ public:
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
+        RESTORE_REPLICA,
         DROP_REPLICA,
         SYNC_REPLICA,
         RELOAD_DICTIONARY,

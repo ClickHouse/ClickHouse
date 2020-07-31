@@ -36,6 +36,7 @@ The list of available `SYSTEM` statements:
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [RESTART REPLICA](#query_language-system-restart-replica)
+-   [RESTORE REPLICA](#query_language-system-restore-replica)
 -   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES {#query_language-system-reload-emdedded-dictionaries}
@@ -272,6 +273,18 @@ Initialization replication quene based on ZooKeeper date happens in the same way
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
+
+### RESTORE REPLICA {#query_language-system-restore-replica}
+
+Restores a ZooKeeper replica if the data is present but the ZooKeeper metadata is lost.
+TODO
+
+
+``` sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name
+```
+
+
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 

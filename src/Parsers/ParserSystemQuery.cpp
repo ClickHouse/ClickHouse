@@ -101,6 +101,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         case Type::RESTART_REPLICA:
+        case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
                 return false;

@@ -311,17 +311,20 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.database + "." + query.table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
+        case Type::RESTORE_REPLICA:
+            restoreReplica(query);
+            break;
         case Type::FLUSH_LOGS:
             context.checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(true); },
-                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(true); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(true); },
-                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
-                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(true); },
-                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
-                    [&] () { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
-            );
+                [&] { if (auto query_log = context.getQueryLog()) query_log->flush(true); },
+                [&] { if (auto part_log = context.getPartLog("")) part_log->flush(true); },
+                [&] { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(true); },
+                [&] { if (auto trace_log = context.getTraceLog()) trace_log->flush(true); },
+                [&] { if (auto text_log = context.getTextLog()) text_log->flush(true); },
+                [&] { if (auto metric_log = context.getMetricLog()) metric_log->flush(true); },
+                [&] { if (auto asynchronous_metric_log = context.getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); }
+        );
             break;
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
@@ -333,6 +336,13 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
+void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
+{
+    if (query.replica.empty())
+        throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
+
+    context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
+}
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
 {
