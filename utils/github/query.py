@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import requests
-import time
 
 
 class Query:
@@ -136,7 +135,7 @@ class Query:
         '''
 
         query = _QUERY.format(owner=self._owner, name=self._name, number=number,
-                              pull_request_data = self._PULL_REQUEST, min_page_size=self._min_page_size)
+                              pull_request_data=self._PULL_REQUEST, min_page_size=self._min_page_size)
         return self._run(query)['repository']['pullRequest']
 
     def find_pull_request(self, base, head):
@@ -152,7 +151,7 @@ class Query:
         '''
 
         query = _QUERY.format(owner=self._owner, name=self._name, base=base, head=head,
-                              pull_request_data = self._PULL_REQUEST, min_page_size=self._min_page_size)
+                              pull_request_data=self._PULL_REQUEST, min_page_size=self._min_page_size)
         result = self._run(query)['repository']['pullRequests']
         if result['totalCount'] > 0:
             return result['nodes'][0]
@@ -257,7 +256,7 @@ class Query:
 
         query = _QUERY.format(target=target, source=source, id=self._id, title=title, body=description,
                               draft="true" if draft else "false", modify="true" if can_modify else "false",
-                              pull_request_data = self._PULL_REQUEST)
+                              pull_request_data=self._PULL_REQUEST)
         return self._run(query, is_mutation=True)['createPullRequest']['pullRequest']
 
     def merge_pull_request(self, id):
@@ -271,7 +270,7 @@ class Query:
             }}
         '''
 
-        query = _QUERY.format(id=id, pull_request_data = self._PULL_REQUEST)
+        query = _QUERY.format(id=id, pull_request_data=self._PULL_REQUEST)
         return self._run(query, is_mutation=True)['mergePullRequest']['pullRequest']
 
     # FIXME: figure out how to add more assignees at once
@@ -340,10 +339,10 @@ class Query:
         if not labels:
             return
 
-        query = _SET_LABEL.format(pr_id = pull_request['id'], label_id = labels[0]['id'])
+        query = _SET_LABEL.format(pr_id=pull_request['id'], label_id=labels[0]['id'])
         self._run(query, is_mutation=True)
 
-    ### OLD METHODS
+    # OLD METHODS
 
     # _LABELS = '''
     #     repository(owner: "ClickHouse" name: "ClickHouse") {{

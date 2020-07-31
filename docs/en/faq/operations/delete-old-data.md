@@ -27,16 +27,16 @@ ClickHouse doesn’t have real-time point deletes like in [OLTP](https://en.wiki
 
 This is the most common approach to make your system based on ClickHouse [GDPR](https://gdpr-info.eu)-compliant.
 
-More details on [mutations](../../sql-reference/statements/alter.md#alter-mutations).
+More details on [mutations](../../sql-reference/statements/alter/index.md#alter-mutations).
 
 ## DROP PARTITION {#drop-partition}
 
 `ALTER TABLE ... DROP PARTITION` provides a cost-efficient way to drop a whole partition. It’s not that flexible and needs proper partitioning scheme configured on table creation, but still covers most common cases. Like mutations need to be executed from an external system for regular use.
 
-More details on [manipulating partitions](../../sql-reference/statements/alter.md#alter_drop-partition).
+More details on [manipulating partitions](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
 
 ## TRUNCATE {#truncate}
 
 It’s rather radical to drop all data from a table, but in some cases it might be exactly what you need.
 
-More details on [table truncation](../../sql-reference/statements/alter.md#alter_drop-partition).
+More details on [table truncation](../../sql-reference/statements/alter/partition.md#alter_drop-partition).

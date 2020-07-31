@@ -216,7 +216,7 @@ private:
     ConnectionParameters connection_parameters;
 
     QueryFuzzer fuzzer;
-    int query_fuzzer_runs;
+    int query_fuzzer_runs = 0;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -1041,10 +1041,12 @@ private:
                 begin - text.data());
 
             ASTPtr fuzz_base = orig_ast;
-            for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
+            // Don't repeat inserts, the tables grow too big.
+            const int this_query_runs = as_insert ? 1 : query_fuzzer_runs;
+            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
             {
-                fprintf(stderr, "fuzzing step %d for query at pos %zd\n",
-                    fuzz_step, this_query_begin - text.data());
+                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
+                    fuzz_step, this_query_runs, this_query_begin - text.data());
 
                 ASTPtr ast_to_process;
                 try
@@ -1054,7 +1056,15 @@ private:
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
-                    fuzzer.fuzzMain(ast_to_process);
+
+                    std::stringstream dump_of_cloned_ast;
+                    ast_to_process->dumpTree(dump_of_cloned_ast);
+
+                    // Run the original query as well.
+                    if (fuzz_step > 0)
+                    {
+                        fuzzer.fuzzMain(ast_to_process);
+                    }
 
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
@@ -1066,6 +1076,8 @@ private:
                             base_after_fuzz.c_str());
                         fprintf(stderr, "dump before fuzz:\n%s\n",
                             dump_before_fuzz.str().c_str());
+                        fprintf(stderr, "dump of cloned ast:\n%s\n",
+                            dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
                         fuzz_base->dumpTree(std::cerr);
                         assert(false);
@@ -1088,6 +1100,13 @@ private:
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
                     std::cerr << "Error on processing query: " << ast_to_process->formatForErrorMessage() << std::endl << last_exception_received_from_server->message();
+                }
+
+                if (!connection->isConnected())
+                {
+                    // Probably the server is dead because we found an assertion
+                    // failure. Fail fast.
+                    return begin;
                 }
 
                 if (received_exception_from_server)

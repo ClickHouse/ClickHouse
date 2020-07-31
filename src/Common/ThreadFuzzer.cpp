@@ -1,5 +1,4 @@
 #include <signal.h>
-#include <time.h>
 #include <sys/time.h>
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
@@ -8,9 +7,7 @@
 
 #include <random>
 
-#include <common/defines.h>
 #include <common/sleep.h>
-#include <common/getThreadId.h>
 
 #include <IO/ReadHelpers.h>
 

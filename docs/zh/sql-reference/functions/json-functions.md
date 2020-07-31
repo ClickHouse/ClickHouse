@@ -9,11 +9,11 @@
 3.  函数可以随意的在多层嵌套结构下查找字段。如果存在多个匹配字段，则返回第一个匹配字段。
 4.  JSON除字符串文本外不存在空格字符。
 
-## ﾂ环板(ｮﾂ嘉ｯﾂ偲青visｬﾂ静ｬﾂ青ｻﾂ催ｬﾂ渉) {#visitparamhasparams-name}
+## visitParamHas(参数，名称) {#visitparamhasparams-name}
 
 检查是否存在«name»名称的字段
 
-## 访问paramextractuint(参数，名称) {#visitparamextractuintparams-name}
+## visitParamExtractUInt(参数，名称) {#visitparamextractuintparams-name}
 
 将名为«name»的字段的值解析成UInt64。如果这是一个字符串字段，函数将尝试从字符串的开头解析一个数字。如果该字段不存在，或无法从它中解析到数字，则返回0。
 
@@ -21,15 +21,15 @@
 
 与visitParamExtractUInt相同，但返回Int64。
 
-## 访问paramextractfloat(参数，名称) {#visitparamextractfloatparams-name}
+## visitParamExtractFloat(参数，名称) {#visitparamextractfloatparams-name}
 
 与visitParamExtractUInt相同，但返回Float64。
 
-## ﾂ环板(ｮﾂ嘉ｯﾂ偲青妥-ﾂ姪(不ﾂ督ｮﾂ産) {#visitparamextractboolparams-name}
+## visitParamExtractBool(参数，名称) {#visitparamextractboolparams-name}
 
 解析true/false值。其结果是UInt8类型的。
 
-## 掳胫((禄脢鹿脷露胫鲁隆鹿((酶-11-16""\[脪陆(,,,) {#visitparamextractrawparams-name}
+## visitParamExtractRaw(参数，名称) {#visitparamextractrawparams-name}
 
 返回字段的值，包含空格符。
 

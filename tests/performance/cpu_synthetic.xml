@@ -52,17 +52,13 @@ PageCharset тоже почти всегда непуст, но его сред�
 <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(cutQueryString(URL)) SETTINGS max_threads = 1</query>
 <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(cutQueryString(URL))</query>
 <!-- 38. Разные алгоритмы вычисления квантилей. -->
-<query>SELECT quantilesIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_10m_single SETTINGS max_threads = 1</query>
-<query>SELECT quantilesIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single</query>
+<query>SELECT quantilesIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single SETTINGS max_threads = 1</query>
 <!-- 39. Разные алгоритмы вычисления квантилей. -->
-<query>SELECT quantilesTimingIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_10m_single SETTINGS max_threads = 1</query>
-<query>SELECT quantilesTimingIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single</query>
+<query>SELECT quantilesTimingIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single SETTINGS max_threads = 1</query>
 <!-- 40. Разные алгоритмы вычисления квантилей. -->
-<query>SELECT quantilesExactIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_10m_single SETTINGS max_threads = 1</query>
-<query>SELECT quantilesExactIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single</query>
+<query>SELECT quantilesExactIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single SETTINGS max_threads = 1</query>
 <!-- 41. Разные алгоритмы вычисления квантилей. -->
-<query>SELECT quantilesTDigestIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_10m_single SETTINGS max_threads = 1</query>
-<query>SELECT quantilesTDigestIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single</query>
+<query>SELECT quantilesTDigestIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM hits_100m_single SETTINGS max_threads = 1</query>
 <!-- 42. Разные алгоритмы вычисления кардинальности. -->
 <query>SELECT uniq(UserID) FROM hits_10m_single SETTINGS max_threads = 1</query>
 <query>SELECT uniq(UserID) FROM hits_100m_single</query>

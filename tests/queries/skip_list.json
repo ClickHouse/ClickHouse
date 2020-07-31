@@ -132,7 +132,6 @@
         "00933_ttl_simple",
         "00753_system_columns_and_system_tables",
         "01343_min_bytes_to_use_mmap_io",
-        "01344_min_bytes_to_use_mmap_io_index",
-        "01213_alter_rename_with_default_zookeeper"
+        "01344_min_bytes_to_use_mmap_io_index"
     ]
 }

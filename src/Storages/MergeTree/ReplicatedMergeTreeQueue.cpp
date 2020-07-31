@@ -25,7 +25,18 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
-{}
+{
+    zookeeper_path = storage.zookeeper_path;
+    replica_path = storage.replica_path;
+    logger_name = storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)";
+    log = &Poco::Logger::get(logger_name);
+}
+
+
+void ReplicatedMergeTreeQueue::initialize(const MergeTreeData::DataParts & parts)
+{
+    addVirtualParts(parts);
+}
 
 
 void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts)
@@ -106,19 +117,6 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
     LOG_TRACE(log, "Loaded queue");
     return updated;
-}
-
-
-void ReplicatedMergeTreeQueue::initialize(
-    const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-    const MergeTreeData::DataParts & parts)
-{
-    zookeeper_path = zookeeper_path_;
-    replica_path = replica_path_;
-    logger_name = logger_name_;
-    log = &Poco::Logger::get(logger_name);
-
-    addVirtualParts(parts);
 }
 
 
@@ -1070,20 +1068,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    /// TODO: it makes sense to check DROP_RANGE also
-    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::REPLACE_RANGE)
-    {
-        String conflicts_description;
-        String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
-        auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
-
-        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
-        {
-            LOG_DEBUG(log, conflicts_description);
-            return false;
-        }
-    }
-
     /// Alters must be executed one by one. First metadata change, and after that data alter (MUTATE_PART entries with).
     /// corresponding alter_version.
     if (entry.type == LogEntry::ALTER_METADATA)
@@ -1553,6 +1537,43 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
     out_max_processed_insert_time = max_processed_insert_time;
 }
 
+
+std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, Strings * mutation_ids) const
+{
+
+    std::lock_guard lock(state_mutex);
+    auto current_mutation_it = mutations_by_znode.find(znode_name);
+    /// killed
+    if (current_mutation_it == mutations_by_znode.end())
+        return {};
+
+    const MutationStatus & status = current_mutation_it->second;
+    MergeTreeMutationStatus result
+    {
+        .is_done = status.is_done,
+        .latest_failed_part = status.latest_failed_part,
+        .latest_fail_time = status.latest_fail_time,
+        .latest_fail_reason = status.latest_fail_reason,
+    };
+
+    if (mutation_ids && !status.latest_fail_reason.empty())
+    {
+        const auto & latest_failed_part_info = status.latest_failed_part_info;
+        auto in_partition = mutations_by_partition.find(latest_failed_part_info.partition_id);
+        if (in_partition != mutations_by_partition.end())
+        {
+            const auto & version_to_status = in_partition->second;
+            auto begin_it = version_to_status.upper_bound(latest_failed_part_info.getDataVersion());
+            for (auto it = begin_it; it != version_to_status.end(); ++it)
+            {
+                /// All mutations with the same failure
+                if (!it->second->is_done && it->second->latest_fail_reason == status.latest_fail_reason)
+                    mutation_ids->push_back(it->second->entry->znode_name);
+            }
+        }
+    }
+    return result;
+}
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
 {

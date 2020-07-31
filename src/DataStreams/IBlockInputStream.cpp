@@ -9,6 +9,8 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
 }
 
 
@@ -18,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
-    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
@@ -26,10 +27,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_PIPELINE;
 }
 
-const SortDescription & IBlockInputStream::getSortDescription() const
-{
-    throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
-}
 
 /// It's safe to access children without mutex as long as these methods are called before first call to `read()` or `readPrefix()`.
 
@@ -268,6 +265,9 @@ void IBlockInputStream::progressImpl(const Progress & value)
         if (quota && limits.mode == LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
+
+    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
 }
 
 

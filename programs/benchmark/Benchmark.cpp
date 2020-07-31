@@ -84,7 +84,8 @@ public:
             UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
-            connections.emplace_back(std::make_unique<ConnectionPool>(concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
+            connections.emplace_back(std::make_unique<ConnectionPool>(
+                concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
             comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
@@ -563,7 +564,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         desc.add_options()
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
-            ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("delay,d",       value<double>()->default_value(1), "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
@@ -600,8 +601,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         print_stacktrace = options.count("stacktrace");
 
+        /// NOTE Maybe clickhouse-benchmark should also respect .xml configuration of clickhouse-client.
+
+        UInt16 default_port = options.count("secure") ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT;
+
         UseSSL use_ssl;
-        Ports ports = options.count("port") ? options["port"].as<Ports>() : Ports({9000});
+        Ports ports = options.count("port")
+            ? options["port"].as<Ports>()
+            : Ports({default_port});
+
         Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         Benchmark benchmark(

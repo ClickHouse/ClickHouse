@@ -30,10 +30,10 @@ Function:
 
 -   Provides the determinate result (it doesn’t depend on the query processing order).
 
-We don’t recommend using this function. In most cases, use the [uniq](uniq.md#agg_function-uniq) or [uniqCombined](uniqcombined.md#agg_function-uniqcombined) function.
+We don’t recommend using this function. In most cases, use the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) or [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) function.
 
 **See Also**
 
--   [uniq](uniq.md#agg_function-uniq)
--   [uniqCombined](uniqcombined.md#agg_function-uniqcombined)
--   [uniqExact](uniqexact.md#agg_function-uniqexact)
+-   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+-   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)

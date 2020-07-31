@@ -40,21 +40,24 @@ struct StaticVisitor
 template <typename Visitor, typename F>
 auto applyVisitor(Visitor && visitor, F && field)
 {
-    return Field::dispatch(visitor, field);
+    return Field::dispatch(std::forward<Visitor>(visitor),
+        std::forward<F>(field));
 }
 
 template <typename Visitor, typename F1, typename F2>
 auto applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
-    return Field::dispatch([&](auto & field1_value)
+    return Field::dispatch(
+        [&field2, &visitor](auto & field1_value)
         {
-            return Field::dispatch([&](auto & field2_value)
+            return Field::dispatch(
+                [&field1_value, &visitor](auto & field2_value)
                 {
                     return visitor(field1_value, field2_value);
                 },
-                field2);
+                std::forward<F2>(field2));
         },
-        field1);
+        std::forward<F1>(field1));
 }
 
 
@@ -121,9 +124,9 @@ public:
         throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const UInt64 & x) const { return x; }
-    T operator() (const Int64 & x) const { return x; }
-    T operator() (const Float64 & x) const { return x; }
+    T operator() (const UInt64 & x) const { return T(x); }
+    T operator() (const Int64 & x) const { return T(x); }
+    T operator() (const Float64 & x) const { return T(x); }
 
     T operator() (const UInt128 &) const
     {
@@ -136,7 +139,7 @@ public:
         if constexpr (std::is_floating_point_v<T>)
             return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
         else
-            return x.getValue() / x.getScaleMultiplier();
+            return static_cast<T>(x.getValue() / x.getScaleMultiplier());
     }
 
     T operator() (const AggregateFunctionStateData &) const

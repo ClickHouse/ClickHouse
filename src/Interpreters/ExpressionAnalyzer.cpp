@@ -130,7 +130,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
-    const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+    const TreeRewriterResultPtr & syntax_analyzer_result_,
     const Context & context_,
     size_t subquery_depth_,
     bool do_global)
@@ -523,7 +523,7 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 static ExpressionActionsPtr createJoinedBlockActions(const Context & context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
+    auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
@@ -1159,7 +1159,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
             auto join_algo = join->getTableJoinAlgo();
-            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !join_algo->hasStreamWithNonJoinedRows();
+            bool has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join_algo.get()) && !has_delayed_stream;
         }
 
         optimize_read_in_order =
