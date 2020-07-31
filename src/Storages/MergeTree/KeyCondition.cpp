@@ -1125,6 +1125,83 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
+// Returns whether the condition is one continuous range of the primary key,
+// where every field is matched by range or a single element set.
+// This allows to use a more efficient lookup with no extra reads.
+bool KeyCondition::matchesExactContinuousRange() const
+{
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
+
+    enum Constraint
+    {
+        POINT,
+        RANGE,
+        UNKNOWN,
+    };
+
+    std::vector<Constraint> column_constraints(key_columns.size(), Constraint::UNKNOWN);
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::Function::FUNCTION_AND)
+        {
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
+        {
+            column_constraints[element.key_column] = Constraint::POINT;
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
+        {
+            if (element.range.left == element.range.right)
+            {
+                column_constraints[element.key_column] = Constraint::POINT;
+            }
+            if (column_constraints[element.key_column] != Constraint::POINT)
+            {
+                column_constraints[element.key_column] = Constraint::RANGE;
+            }
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
+            continue;
+        }
+
+        return false;
+    }
+
+    auto min_constraint = column_constraints[0];
+
+    if (min_constraint > Constraint::RANGE)
+    {
+        return false;
+    }
+
+    for (size_t i = 1; i < key_columns.size(); ++i)
+    {
+        if (column_constraints[i] < min_constraint)
+        {
+            return false;
+        }
+
+        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
+        {
+            return false;
+        }
+
+        min_constraint = column_constraints[i];
+    }
+
+    return true;
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<Range> & hyperrectangle,
     const DataTypes & data_types) const
