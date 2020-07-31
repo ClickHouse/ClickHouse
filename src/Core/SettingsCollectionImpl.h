@@ -345,9 +345,9 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
     static String NAME##_valueToString(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
     static Field NAME##_valueToCorrespondingType(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 
-
+/// Wrapped in lambda to avoid large stack frame if having too many invocations.
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    { add({StringRef(#NAME, strlen(#NAME)), \
+    [&]{ add({StringRef(#NAME, strlen(#NAME)), \
          StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
          StringRef(#TYPE, strlen(#TYPE)), \
          FLAGS & IMPORTANT, \
@@ -355,5 +355,5 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
-         &Functions::NAME##_valueToString, &Functions::NAME##_valueToCorrespondingType}); }
+         &Functions::NAME##_valueToString, &Functions::NAME##_valueToCorrespondingType}); }();
 }
