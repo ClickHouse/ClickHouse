@@ -52,6 +52,6 @@ CurrentMetric_ReplicatedChecks:                             0
 -   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 -   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
--   [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+-   [Мониторинг](../monitoring.md) — основы мониторинга в ClickHouse.
 
 [Original article](https://clickhouse.tech/docs/ru/operations/system_tables/metric_log) <!--hide-->
