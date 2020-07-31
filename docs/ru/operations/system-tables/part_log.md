@@ -1,6 +1,6 @@
 # system.part_log {#system_tables-part-log}
 
-Системная таблица `system.part_log` создается только в том случае, если задана серверная настройка [part\_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log).
+Системная таблица `system.part_log` создается только в том случае, если задана серверная настройка [part_log](../server-configuration-parameters/settings.md#server_configuration_parameters-part-log).
 
 Содержит информацию о всех событиях, произошедших с [кусками данных](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) (например, события добавления, удаления или слияния данных).
 

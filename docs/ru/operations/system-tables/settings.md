@@ -8,8 +8,8 @@
 -   `value` ([String](../../sql-reference/data-types/string.md)) — значение настройки.
 -   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
 -   `description` ([String](../../sql-reference/data-types/string.md)) — краткое описание настройки.
--   `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../../sql-reference/syntax.md#null-literal).
--   `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../../sql-reference/syntax.md#null-literal).
+-   `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — минимальное значение настройки, если задано [ограничение](../settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../../sql-reference/syntax.md#null-literal).
+-   `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — максимальное значение настройки, если задано [ограничение](../settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../../sql-reference/syntax.md#null-literal).
 -   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
     -   `0` — Текущий пользователь может изменять настройку.
     -   `1` — Текущий пользователь не может изменять настройку.
@@ -45,8 +45,8 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **Cм. также**
 
--   [Настройки](settings/index.md#settings)
--   [Разрешения для запросов](settings/permissions-for-queries.md#settings_readonly)
--   [Ограничения для значений настроек](settings/constraints-on-settings.md)
+-   [Настройки](../settings/index.md#settings)
+-   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
+-   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
 
 [Original article](https://clickhouse.tech/docs/ru/operations/system_tables/settings) <!--hide-->

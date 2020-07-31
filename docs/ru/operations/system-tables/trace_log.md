@@ -2,7 +2,7 @@
 
 Contains stack traces collected by the sampling query profiler.
 
-ClickHouse creates this table when the [trace\_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+ClickHouse creates this table when the [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
 To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
 
