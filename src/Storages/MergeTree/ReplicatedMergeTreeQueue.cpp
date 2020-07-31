@@ -1538,6 +1538,43 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 }
 
 
+std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, Strings * mutation_ids) const
+{
+
+    std::lock_guard lock(state_mutex);
+    auto current_mutation_it = mutations_by_znode.find(znode_name);
+    /// killed
+    if (current_mutation_it == mutations_by_znode.end())
+        return {};
+
+    const MutationStatus & status = current_mutation_it->second;
+    MergeTreeMutationStatus result
+    {
+        .is_done = status.is_done,
+        .latest_failed_part = status.latest_failed_part,
+        .latest_fail_time = status.latest_fail_time,
+        .latest_fail_reason = status.latest_fail_reason,
+    };
+
+    if (mutation_ids && !status.latest_fail_reason.empty())
+    {
+        const auto & latest_failed_part_info = status.latest_failed_part_info;
+        auto in_partition = mutations_by_partition.find(latest_failed_part_info.partition_id);
+        if (in_partition != mutations_by_partition.end())
+        {
+            const auto & version_to_status = in_partition->second;
+            auto begin_it = version_to_status.upper_bound(latest_failed_part_info.getDataVersion());
+            for (auto it = begin_it; it != version_to_status.end(); ++it)
+            {
+                /// All mutations with the same failure
+                if (!it->second->is_done && it->second->latest_fail_reason == status.latest_fail_reason)
+                    mutation_ids->push_back(it->second->entry->znode_name);
+            }
+        }
+    }
+    return result;
+}
+
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
 {
     std::lock_guard lock(state_mutex);

@@ -106,7 +106,7 @@ void ClusterCopierApp::mainImpl()
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);
-    context->setPath(process_path);
+    context->setPath(process_path + "/");
 
     registerFunctions();
     registerAggregateFunctions();
