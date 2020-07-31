@@ -358,7 +358,7 @@ The server will need an access to public Internet via IPv4 (at the time of writi
 Keys:
 
 -   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports. 
--   `endpoint` – You can Overrides the Sentry endpoint URL for sending crash reports and use your self-hosted Sentry installation. Use [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
+-   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
 -   `anonymize` - Avoid attaching the server hostname to crash report.
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
