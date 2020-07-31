@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/cl
 echo -e '\n---\n';
 
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE r2"
-$CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA r2"
+$CLICKHOUSE_CLIENT --receive_timeout 600 --query "SYSTEM SYNC REPLICA r2" # Need to increase timeout, otherwise it timed out in debug build
 
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2' AND name = 'is_lost'";
 
