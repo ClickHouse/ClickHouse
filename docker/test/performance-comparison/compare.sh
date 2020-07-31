@@ -514,7 +514,12 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     ;
 
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
-    select left, right, diff, stat_threshold, changed_fail, test, query_index, query_display_name
+    select
+        left, right,
+        left > right
+            ? '- ' || toString(floor(left / right, 3)) || 'x'
+            : '+ ' || toString(floor(right / left, 3)) || 'x',
+         diff, stat_threshold, changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
@@ -592,9 +597,11 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
     select changed_fail, unstable_fail,
-        left, right, diff,
-        floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_index, query_display_name
+        left, right,
+        left > right
+            ? '- ' || toString(floor(left / right, 3)) || 'x'
+            : '+ ' || toString(floor(right / left, 3)) || 'x',
+        diff, stat_threshold, test, query_index, query_display_name
     from queries order by test, query_index;
 
 -- queries for which we will build flamegraphs (see below)
