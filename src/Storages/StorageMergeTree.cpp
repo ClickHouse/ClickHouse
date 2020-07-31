@@ -471,7 +471,8 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             if (!mutation_entry.latest_fail_reason.empty())
             {
                 result.latest_failed_part = mutation_entry.latest_failed_part;
-                result.latest_fail_reason = mutation_entry.latest_fail_reason; result.latest_fail_time = mutation_entry.latest_fail_time;
+                result.latest_fail_reason = mutation_entry.latest_fail_reason;
+                result.latest_fail_time = mutation_entry.latest_fail_time;
 
                 /// Fill all mutations which failed with the same error
                 /// (we can execute several mutations together)
