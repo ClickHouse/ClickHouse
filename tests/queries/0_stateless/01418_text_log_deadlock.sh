@@ -9,28 +9,28 @@ set -e
 function thread1()
 {
     while true; do 
-    	$CLICKHOUSE_CLIENT --query "SELECT printLog('thread1', toUInt64(10)) FORMAT Null;"
+    	$CLICKHOUSE_CLIENT --query "SELECT printToLog('thread1', toUInt64(10)) FORMAT Null;"
     done
 }
 
 function thread2()
 {
     while true; do 
-    	$CLICKHOUSE_CLIENT --query "SELECT printLog('thread2', toUInt64(10)) FORMAT Null;"
+    	$CLICKHOUSE_CLIENT --query "SELECT printToLog('thread2', toUInt64(10)) FORMAT Null;"
     done
 }
 
 function thread3()
 {
     while true; do 
-        $CLICKHOUSE_CLIENT --query "SELECT printLog('thread3', toUInt64(10)) FORMAT NULL;"
+        $CLICKHOUSE_CLIENT --query "SELECT printToLog('thread3', toUInt64(10)) FORMAT NULL;"
     done
 }
 
 function thread4()
 {
     while true; do 
-        $CLICKHOUSE_CLIENT --query "SELECT printLog('thread4', toUInt64(10)) FORMAT NULL;"
+        $CLICKHOUSE_CLIENT --query "SELECT printToLog('thread4', toUInt64(10)) FORMAT NULL;"
     done
 }
 

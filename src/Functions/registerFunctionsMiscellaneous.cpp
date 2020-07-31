@@ -60,7 +60,7 @@ void registerFunctionIsConstant(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
 void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
-void registerFunctionPrintLog(FunctionFactory &);
+void registerFunctionPrintToLog(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -121,7 +121,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGlobalVariable(factory);
     registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);
-    registerFunctionPrintLog(factory);
+    registerFunctionPrintToLog(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

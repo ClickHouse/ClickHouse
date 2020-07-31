@@ -17,14 +17,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionPrintLog : public IFunction
+class FunctionPrintToLog : public IFunction
 {
 public:
-    static constexpr auto name = "printLog";
+    static constexpr auto name = "printToLog";
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionPrintLog>();
+        return std::make_shared<FunctionPrintToLog>();
     }
 
     String getName() const override
@@ -57,16 +57,18 @@ public:
         else
             throw Exception("Second argument for function " + getName() + " must be Constant UInt64 number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        static auto * log = &Poco::Logger::get("printToLog");
+
         for (size_t i = 0; i < quantity; ++i)
-            LOG_INFO(&Poco::Logger::get("printLog"), message);
+            LOG_INFO(log, message);
 
         block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, static_cast<String>("Ok."));
     }
 };
 
-void registerFunctionPrintLog(FunctionFactory & factory)
+void registerFunctionPrintToLog(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPrintLog>();
+    factory.registerFunction<FunctionPrintToLog>();
 }
 
 }

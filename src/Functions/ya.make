@@ -307,6 +307,7 @@ SRCS(
     position.cpp
     positionUTF8.cpp
     pow.cpp
+    printLog.cpp
     rand64.cpp
     randConstant.cpp
     rand.cpp
