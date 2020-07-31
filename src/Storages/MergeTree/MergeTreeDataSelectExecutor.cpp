@@ -1343,7 +1343,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
     {
-        LOG_TRACE(log, "Not using index on part {}", part->name);
+        LOG_TRACE(log, "Not using primary index on part {}", part->name);
 
         if (has_final_mark)
             res.push_back(MarkRange(0, marks_count - 1));
