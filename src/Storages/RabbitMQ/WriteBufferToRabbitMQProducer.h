@@ -14,13 +14,11 @@
 namespace DB
 {
 
-using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
-
 class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
 public:
     WriteBufferToRabbitMQProducer(
-            std::pair<String, UInt16> & parsed_address,
+            std::pair<String, UInt16> & parsed_address_,
             Context & global_context,
             const std::pair<String, String> & login_password_,
             const Names & routing_keys_,
@@ -46,7 +44,10 @@ private:
     void nextImpl() override;
     void iterateEventLoop();
     void writingFunc();
+    void setupConnection(bool remove_prev_connection);
+    void setupChannel(bool remove_prev_channel);
 
+    std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
     const Names routing_keys;
     const String exchange_name;
@@ -61,12 +62,15 @@ private:
     std::unique_ptr<uv_loop_t> loop;
     std::unique_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection;
-    ChannelPtr producer_channel;
+    std::unique_ptr<AMQP::TcpChannel> producer_channel;
 
     ConcurrentBoundedQueue<String> payloads;
     UInt64 delivery_tag = 0;
     std::atomic<bool> wait_all = true;
-    std::atomic<UInt64> wait_num = 0, last_processed = 0;
+    std::atomic<UInt64> wait_num = 0;
+    std::set<UInt64> delivery_tags_record;
+    std::mutex mutex;
+    std::function<void(uint64_t received_delivery_tag, bool multiple)> remove_confirmed_tag;
 
     Poco::Logger * log;
     const std::optional<char> delim;
