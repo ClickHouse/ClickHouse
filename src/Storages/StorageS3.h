@@ -22,7 +22,7 @@ namespace DB
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 final : public ext::shared_ptr_helper<StorageS3>, public IStorage
+class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
 {
 public:
     StorageS3(const S3::URI & uri,
@@ -38,7 +38,7 @@ public:
 
     String getName() const override
     {
-        return "S3";
+        return name;
     }
 
     Pipes read(
@@ -62,6 +62,7 @@ private:
     UInt64 min_upload_part_size;
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
+    String name;
 };
 
 }

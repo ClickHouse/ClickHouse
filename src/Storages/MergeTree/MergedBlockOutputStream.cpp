@@ -44,8 +44,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
 {
-    MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
-        data_part->storage.canUseAdaptiveGranularity(), aio_threshold, blocks_are_granules_size);
+    MergeTreeWriterSettings writer_settings(
+        storage.global_context.getSettings(),
+        data_part->index_granularity_info.is_adaptive,
+        aio_threshold,
+        blocks_are_granules_size);
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
     {
@@ -57,7 +60,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    volume->getDisk()->createDirectories(part_path);
+    if (!part_path.empty())
+        volume->getDisk()->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
     writer->initPrimaryIndex();
@@ -105,6 +109,24 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     else
         part_columns = *total_columns_list;
 
+    if (new_part->isStoredOnDisk())
+        finalizePartOnDisk(new_part, part_columns, checksums);
+
+    new_part->setColumns(part_columns);
+    new_part->rows_count = rows_count;
+    new_part->modification_time = time(nullptr);
+    new_part->index = writer->releaseIndexColumns();
+    new_part->checksums = checksums;
+    new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
+    new_part->index_granularity = writer->getIndexGranularity();
+    new_part->calculateColumnsSizesOnDisk();
+}
+
+void MergedBlockOutputStream::finalizePartOnDisk(
+    const MergeTreeData::MutableDataPartPtr & new_part,
+    NamesAndTypesList & part_columns,
+    MergeTreeData::DataPart::Checksums & checksums)
+{
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
         new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
@@ -145,15 +167,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
     }
-
-    new_part->setColumns(part_columns);
-    new_part->rows_count = rows_count;
-    new_part->modification_time = time(nullptr);
-    new_part->index = writer->releaseIndexColumns();
-    new_part->checksums = checksums;
-    new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
-    new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsSizesOnDisk();
 }
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
@@ -173,8 +186,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
 
     writer->write(block, permutation, primary_key_block, skip_indexes_block);
-    writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
-    writer->calculateAndSerializePrimaryIndex(primary_key_block, rows);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
+    writer->calculateAndSerializePrimaryIndex(primary_key_block);
     writer->next();
 
     rows_count += rows;

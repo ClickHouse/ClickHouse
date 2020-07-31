@@ -1,6 +1,7 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
     ConnectionParameters.cpp
+    QueryFuzzer.cpp
     Suggest.cpp
 )
 

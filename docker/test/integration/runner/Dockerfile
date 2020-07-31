@@ -63,6 +63,7 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
+COPY compose/ /compose/
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -75,4 +76,3 @@ VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
-

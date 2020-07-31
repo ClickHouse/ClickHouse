@@ -21,6 +21,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     ExpressionActionsPtr expression;
 };
@@ -35,6 +37,8 @@ public:
     String getName() const override { return "InflatingExpression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     ExpressionActionsPtr expression;

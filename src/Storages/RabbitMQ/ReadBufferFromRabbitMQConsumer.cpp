@@ -51,14 +51,14 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , exchange_name(exchange_name_)
         , routing_keys(routing_keys_)
         , channel_id(channel_id_)
-        , log(log_)
-        , row_delimiter(row_delimiter_)
         , bind_by_id(bind_by_id_)
         , num_queues(num_queues_)
         , exchange_type(exchange_type_)
         , local_exchange(local_exchange_)
         , local_default_exchange(local_exchange + "_" + ExchangeType::DIRECT)
         , local_hash_exchange(local_exchange + "_" + ExchangeType::HASH)
+        , log(log_)
+        , row_delimiter(row_delimiter_)
         , stopped(stopped_)
         , messages(QUEUE_SIZE * num_queues)
 {
@@ -146,16 +146,18 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
      * in current case we use hash exchange for binding to another exchange of some other type, which needs its own routing keys
      * of other types: headers, patterns and string-keys. This means that hash property must be changed.
      */
-    AMQP::Table binding_arguments;
-    binding_arguments["hash-property"] = "message_id";
-
-    /// Declare exchange for sharding.
-    consumer_channel->declareExchange(local_hash_exchange, AMQP::consistent_hash, binding_arguments)
-    .onError([&](const char * message)
     {
-        local_exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare {} exchange: {}", exchange_type, message);
-    });
+        AMQP::Table binding_arguments;
+        binding_arguments["hash-property"] = "message_id";
+
+        /// Declare exchange for sharding.
+        consumer_channel->declareExchange(local_hash_exchange, AMQP::consistent_hash, binding_arguments)
+        .onError([&](const char * message)
+        {
+            local_exchange_declared = false;
+            LOG_ERROR(log, "Failed to declare {} exchange: {}", exchange_type, message);
+        });
+    }
 
     /// Then bind client's exchange to sharding exchange (by keys, specified by the client):
 
@@ -325,7 +327,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
      * It is important at this moment to make sure that queue bindings are created before any publishing can happen because
      * otherwise messages will be routed nowhere.
      */
-    while (!default_bindings_created && !default_bindings_error || (exchange_type_set && !bindings_created && !bindings_error))
+    while ((!default_bindings_created && !default_bindings_error) || (exchange_type_set && !bindings_created && !bindings_error))
     {
         iterateEventLoop();
     }

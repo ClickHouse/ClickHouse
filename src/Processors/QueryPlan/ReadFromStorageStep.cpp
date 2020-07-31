@@ -68,6 +68,7 @@ ReadFromStorageStep::ReadFromStorageStep(
     }
 
     pipeline = std::make_unique<QueryPipeline>();
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     /// Table lock is stored inside pipeline here.
     pipeline->addTableLock(table_lock);
@@ -113,9 +114,6 @@ ReadFromStorageStep::ReadFromStorageStep(
         }
     }
 
-    if (pipes.size() == 1 && !storage->isView())
-        pipeline->setMaxThreads(1);
-
     for (auto & pipe : pipes)
         pipe.enableQuota();
 
@@ -123,6 +121,8 @@ ReadFromStorageStep::ReadFromStorageStep(
 
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));
+
+    processors = collector.detachProcessors();
 
     output_stream = DataStream{.header = pipeline->getHeader(), .has_single_port = pipeline->getNumStreams() == 1};
 }
@@ -132,6 +132,11 @@ ReadFromStorageStep::~ReadFromStorageStep() = default;
 QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
 {
     return std::move(pipeline);
+}
+
+void ReadFromStorageStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }

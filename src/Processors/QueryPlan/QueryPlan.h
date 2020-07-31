@@ -15,6 +15,7 @@ class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 class Context;
+class WriteBuffer;
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -22,6 +23,7 @@ class Context;
 class QueryPlan
 {
 public:
+    QueryPlan();
     ~QueryPlan();
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans);
@@ -32,6 +34,25 @@ public:
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
     QueryPipelinePtr buildQueryPipeline();
+
+    struct ExplainPlanOptions
+    {
+        /// Add output header to step.
+        bool header = false;
+        /// Add description of step.
+        bool description = true;
+        /// Add detailed information about step actions.
+        bool actions = false;
+    };
+
+    struct ExplainPipelineOptions
+    {
+        /// Show header of output ports.
+        bool header = false;
+    };
+
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
+    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.

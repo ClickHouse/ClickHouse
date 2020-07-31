@@ -49,7 +49,7 @@
 	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = https://github.com/powturbo/Turbo-Base64.git
+	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/apache/arrow
@@ -76,7 +76,7 @@
 	url = https://github.com/google/snappy
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/ClickHouse-Extras/cppkafka.git
+	url = https://github.com/mfontanini/cppkafka.git
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
@@ -174,3 +174,9 @@
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/getsentry/sentry-native.git
+[submodule "contrib/gcem"]
+	path = contrib/gcem
+	url = https://github.com/kthohr/gcem.git
+[submodule "contrib/stats"]
+	path = contrib/stats
+	url = https://github.com/kthohr/stats.git

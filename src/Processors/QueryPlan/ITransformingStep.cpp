@@ -4,7 +4,8 @@
 namespace DB
 {
 
-ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits)
+ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_)
+    : collect_processors(collect_processors_)
 {
     output_stream = DataStream{.header = std::move(output_header)};
 
@@ -19,7 +20,15 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
 
 QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines)
 {
-    transformPipeline(*pipelines.front());
+    if (collect_processors)
+    {
+        QueryPipelineProcessorsCollector collector(*pipelines.front(), this);
+        transformPipeline(*pipelines.front());
+        processors = collector.detachProcessors();
+    }
+    else
+        transformPipeline(*pipelines.front());
+
     return std::move(pipelines.front());
 }
 
@@ -36,6 +45,11 @@ void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet 
             break;
         }
     }
+}
+
+void ITransformingStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }

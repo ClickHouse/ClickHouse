@@ -3,6 +3,11 @@
 #include <Storages/DataDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Processors/Chunk.h>
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -95,6 +100,91 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     }
     else
         return {};
+}
+
+std::string PartitionCommand::typeToString() const
+{
+    switch (type)
+    {
+    case PartitionCommand::Type::ATTACH_PARTITION:
+        if (part)
+            return "ATTACH PART";
+        else
+            return "ATTACH PARTITION";
+    case PartitionCommand::Type::MOVE_PARTITION:
+        return "MOVE PARTITION";
+    case PartitionCommand::Type::DROP_PARTITION:
+        if (detach)
+            return "DETACH PARTITION";
+        else
+            return "DROP PARTITION";
+    case PartitionCommand::Type::DROP_DETACHED_PARTITION:
+        if (part)
+            return "DROP DETACHED PART";
+        else
+            return "DROP DETACHED PARTITION";
+    case PartitionCommand::Type::FETCH_PARTITION:
+        return "FETCH PARTITION";
+    case PartitionCommand::Type::FREEZE_ALL_PARTITIONS:
+        return "FREEZE ALL";
+    case PartitionCommand::Type::FREEZE_PARTITION:
+        return "FREEZE PARTITION";
+    case PartitionCommand::Type::REPLACE_PARTITION:
+        return "REPLACE PARTITION";
+    }
+    __builtin_unreachable();
+}
+
+Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
+{
+    Block header {
+         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "command_type"),
+         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "partition_id"),
+         ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "part_name"),
+    };
+
+    for (const auto & command_result : commands_result)
+    {
+        if (!command_result.old_part_name.empty() && !header.has("old_part_name"))
+            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "old_part_name"));
+
+        if (!command_result.backup_name.empty() && !header.has("backup_name"))
+            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "backup_name"));
+
+        if (!command_result.backup_path.empty() && !header.has("backup_path"))
+            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "backup_path"));
+    }
+
+    MutableColumns res_columns = header.cloneEmptyColumns();
+
+    for (const auto & command_result : commands_result)
+    {
+        res_columns[0]->insert(command_result.command_type);
+        res_columns[1]->insert(command_result.partition_id);
+        res_columns[2]->insert(command_result.part_name);
+        if (header.has("old_part_name"))
+        {
+            size_t pos = header.getPositionByName("old_part_name");
+            res_columns[pos]->insert(command_result.old_part_name);
+        }
+        if (header.has("backup_name"))
+        {
+            size_t pos = header.getPositionByName("backup_name");
+            res_columns[pos]->insert(command_result.backup_name);
+        }
+        if (header.has("backup_path"))
+        {
+            size_t pos = header.getPositionByName("backup_path");
+            res_columns[pos]->insert(command_result.backup_path);
+        }
+    }
+
+    Chunk chunk(std::move(res_columns), commands_result.size());
+
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    Pipes result;
+    result.emplace_back(std::move(pipe));
+    return result;
 }
 
 }

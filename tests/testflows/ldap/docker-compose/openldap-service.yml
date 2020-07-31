@@ -1,0 +1,40 @@
+version: '2.3'
+
+services:
+  openldap:
+    image: osixia/openldap:1.4.0
+    command: "--copy-service --loglevel debug"
+    environment:
+      LDAP_ORGANIZATION: "company"
+      LDAP_DOMAIN: "company.com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_TLS: "false"
+    expose:
+      - "389"
+      - "636"
+    healthcheck:
+      test: echo 1
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    security_opt:
+      - label:disable
+
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: phpldapadmin
+    environment:
+      PHPLDAPADMIN_HTTPS=false:
+    ports:
+      - "8080:80"      
+    healthcheck:
+      test: echo 1
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    security_opt:
+      - label:disable
+

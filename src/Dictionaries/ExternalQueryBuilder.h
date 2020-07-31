@@ -18,8 +18,8 @@ struct ExternalQueryBuilder
 {
     const DictionaryStructure & dict_struct;
     std::string db;
-    std::string table;
     std::string schema;
+    std::string table;
     const std::string & where;
 
     IdentifierQuotingStyle quoting_style;
@@ -28,6 +28,7 @@ struct ExternalQueryBuilder
     ExternalQueryBuilder(
         const DictionaryStructure & dict_struct_,
         const std::string & db_,
+        const std::string & schema_,
         const std::string & table_,
         const std::string & where_,
         IdentifierQuotingStyle quoting_style_);

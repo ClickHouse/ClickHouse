@@ -227,7 +227,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) const override
     {
         const auto & time_column = block.getByPosition(arguments[0]);
         const auto & interval_column = block.getByPosition(arguments[1]);
@@ -248,7 +248,7 @@ public:
 
 private:
     ColumnPtr dispatchForColumns(
-        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
+        const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone) const
     {
         const auto & from_datatype = *time_column.type.get();
         const auto which_type = WhichDataType(from_datatype);
@@ -277,7 +277,7 @@ private:
 
     template <typename ColumnType, typename FromDataType>
     ColumnPtr dispatchForIntervalColumn(
-        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
+        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -317,7 +317,7 @@ private:
 
 
     template <typename FromDataType, typename ToType, IntervalKind::Kind unit, typename ColumnType>
-    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
+    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone) const
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();

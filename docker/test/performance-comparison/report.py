@@ -63,7 +63,48 @@ p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-
     color: inherit;
     text-decoration: none;
 }}
+
 tr:nth-child(odd) td {{filter: brightness(95%);}}
+
+.all-query-times tr td:nth-child(1),
+.all-query-times tr td:nth-child(2),
+.all-query-times tr td:nth-child(3),
+.all-query-times tr td:nth-child(4),
+.all-query-times tr td:nth-child(5),
+.all-query-times tr td:nth-child(7),
+.changes-in-performance tr td:nth-child(1),
+.changes-in-performance tr td:nth-child(2),
+.changes-in-performance tr td:nth-child(3),
+.changes-in-performance tr td:nth-child(4),
+.changes-in-performance tr td:nth-child(5),
+.changes-in-performance tr td:nth-child(7),
+.unstable-queries tr td:nth-child(1),
+.unstable-queries tr td:nth-child(2),
+.unstable-queries tr td:nth-child(3),
+.unstable-queries tr td:nth-child(4),
+.unstable-queries tr td:nth-child(6),
+.test-performance-changes tr td:nth-child(2),
+.test-performance-changes tr td:nth-child(3),
+.test-performance-changes tr td:nth-child(4),
+.test-performance-changes tr td:nth-child(5),
+.test-performance-changes tr td:nth-child(6),
+.test-times tr td:nth-child(2),
+.test-times tr td:nth-child(3),
+.test-times tr td:nth-child(4),
+.test-times tr td:nth-child(5),
+.test-times tr td:nth-child(6),
+.test-times tr td:nth-child(7),
+.test-times tr td:nth-child(8),
+.concurrent-benchmarks tr td:nth-child(2),
+.concurrent-benchmarks tr td:nth-child(3),
+.concurrent-benchmarks tr td:nth-child(4),
+.concurrent-benchmarks tr td:nth-child(5),
+.metric-changes tr td:nth-child(2),
+.metric-changes tr td:nth-child(3),
+.metric-changes tr td:nth-child(4),
+.metric-changes tr td:nth-child(5)
+{{ text-align: right; }}
+
   </style>
   <title>Clickhouse performance comparison</title>
 </head>
@@ -111,11 +152,14 @@ def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
 
 def tableStart(title):
-    return """
-<h2 id="{anchor}"><a class="cancela" href="#{anchor}">{title}</a></h2>
-<table>""".format(
-        anchor = nextTableAnchor(),
-        title = title)
+    anchor = nextTableAnchor();
+    cls = '-'.join(title.lower().split(' ')[:3]);
+    return f"""
+        <h2 id="{anchor}">
+            <a class="cancela" href="#{anchor}">{title}</a>
+        </h2>
+        <table class="{cls}">
+    """
 
 def tableEnd():
     return '</table>'
@@ -196,6 +240,12 @@ if args.report == 'main':
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
 
+    unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
+    error_tests += len(unmarked_short_rows)
+    printSimpleTable('Short queries not marked as short',
+        ['New client time, s', 'Test', '#', 'Query'],
+        unmarked_short_rows)
+
     def print_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
         if not rows:
@@ -232,12 +282,13 @@ if args.report == 'main':
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
-            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
-            'p&nbsp;<&nbsp;0.001 threshold',                   # 3
-            # Failed                                           # 4
-            'Test',                                            # 5
-            '#',                                               # 6
-            'Query',                                           # 7
+            'Times speedup / slowdown',                 # 2
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
+            'p&nbsp;<&nbsp;0.001 threshold',                   # 4
+            # Failed                                           # 5
+            'Test',                                            # 6
+            '#',                                               # 7
+            'Query',                                           # 8
             ]
 
         print(tableHeader(columns))
@@ -245,15 +296,15 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         attrs[4] = None
         for row in rows:
-            if int(row[4]):
-                if float(row[2]) < 0.:
+            if int(row[5]):
+                if float(row[3]) < 0.:
                     faster_queries += 1
-                    attrs[2] = f'style="background: {color_good}"'
+                    attrs[2] = attrs[3] = f'style="background: {color_good}"'
                 else:
                     slower_queries += 1
-                    attrs[2] = f'style="background: {color_bad}"'
+                    attrs[2] = attrs[3] = f'style="background: {color_bad}"'
             else:
-                attrs[2] = ''
+                attrs[2] = attrs[3] = ''
 
             print(tableRow(row, attrs))
 
@@ -275,7 +326,7 @@ if args.report == 'main':
             'Old,&nbsp;s', #0
             'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'p&nbsp;<&nbsp;0.001 threshold', #3
+            'p&nbsp;&lt;&nbsp;0.001 threshold', #3
             # Failed #4
             'Test', #5
             '#',    #6
@@ -492,9 +543,9 @@ elif args.report == 'all-queries':
             # Unstable #1
             'Old,&nbsp;s', #2
             'New,&nbsp;s', #3
-            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
-            'Times speedup / slowdown',                 #5
-            'p&nbsp;<&nbsp;0.001 threshold',          #6
+            'Times speedup / slowdown',                 #4
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
+            'p&nbsp;&lt;&nbsp;0.001 threshold',          #6
             'Test',                                   #7
             '#',                                      #8
             'Query',                                  #9
@@ -513,12 +564,12 @@ elif args.report == 'all-queries':
                 attrs[6] = ''
 
             if int(r[0]):
-                if float(r[4]) > 0.:
-                    attrs[4] = f'style="background: {color_bad}"'
+                if float(r[5]) > 0.:
+                    attrs[4] = attrs[5] = f'style="background: {color_bad}"'
                 else:
-                    attrs[4] = f'style="background: {color_good}"'
+                    attrs[4] = attrs[5] = f'style="background: {color_good}"'
             else:
-                attrs[4] = ''
+                attrs[4] = attrs[5] = ''
 
             if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
                 attrs[2] = f'style="background: {color_bad}"'

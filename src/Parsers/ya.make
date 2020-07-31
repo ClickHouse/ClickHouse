@@ -84,6 +84,7 @@ SRCS(
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
+    ParserExplainQuery.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp
@@ -115,6 +116,7 @@ SRCS(
     parseUserName.cpp
     queryToString.cpp
     TokenIterator.cpp
+    QueryWithOutputSettingsPushDownVisitor.cpp
 )
 
 END()

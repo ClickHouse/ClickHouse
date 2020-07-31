@@ -87,7 +87,6 @@ def test_dependency_via_explicit_table(node):
     check()
 
 
-@pytest.mark.skip(reason="TODO: should be fixed")
 @pytest.mark.parametrize("node", nodes)
 def test_dependency_via_dictionary_database(node):
     node.query("CREATE DATABASE dict_db ENGINE=Dictionary")
