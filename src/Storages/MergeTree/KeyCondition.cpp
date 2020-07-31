@@ -1,13 +1,13 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -348,7 +348,7 @@ inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisi
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context)
+    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
@@ -463,7 +463,7 @@ static Field applyFunctionForField(
     return (*block.safeGetByPosition(1).column)[0];
 }
 
-static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+static FieldRef applyFunction(FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     /// Fallback for fields without block reference.
     if (field.isExplicit())
@@ -841,7 +841,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notIlike" ||
                          func_name == "startsWith")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
@@ -850,8 +849,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             }
 
             bool cast_not_needed =
-                is_set_const /// Set args are already casted inside Set::createFromAST
-                || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+                    is_set_const /// Set args are already casted inside Set::createFromAST
+                    || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
             if (!cast_not_needed)
                 castValueToType(key_expr_type, const_value, const_type, node);
@@ -866,23 +865,17 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
 
         return atom_it->second(out, const_value);
     }
-    else if (getConstant(node, block_with_constants, const_value, const_type))
+    else if (getConstant(node, block_with_constants, const_value, const_type))    /// For cases where it says, for example, `WHERE 0 AND something`
     {
-        /// For cases where it says, for example, `WHERE 0 AND something`
+        if (const_value.getType() == Field::Types::UInt64
+            || const_value.getType() == Field::Types::Int64
+            || const_value.getType() == Field::Types::Float64)
+        {
+            /// Zero in all types is represented in memory the same way as in UInt64.
+            out.function = const_value.get<UInt64>()
+                ? RPNElement::ALWAYS_TRUE
+                : RPNElement::ALWAYS_FALSE;
 
-        if (const_value.getType() == Field::Types::UInt64)
-        {
-            out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        else if (const_value.getType() == Field::Types::Int64)
-        {
-            out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-            return true;
-        }
-        else if (const_value.getType() == Field::Types::Float64)
-        {
-            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }
@@ -1098,10 +1091,10 @@ BoolMask KeyCondition::checkInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    const MonotonicFunctionsChain & functions,
+    MonotonicFunctionsChain & functions,
     DataTypePtr current_type)
 {
-    for (const auto & func : functions)
+    for (auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
         IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
@@ -1133,83 +1126,6 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             key_range.swapLeftAndRight();
     }
     return key_range;
-}
-
-// Returns whether the condition is one continuous range of the primary key,
-// where every field is matched by range or a single element set.
-// This allows to use a more efficient lookup with no extra reads.
-bool KeyCondition::matchesExactContinuousRange() const
-{
-    // Not implemented yet.
-    if (hasMonotonicFunctionsChain())
-        return false;
-
-    enum Constraint
-    {
-        POINT,
-        RANGE,
-        UNKNOWN,
-    };
-
-    std::vector<Constraint> column_constraints(key_columns.size(), Constraint::UNKNOWN);
-
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::Function::FUNCTION_AND)
-        {
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
-        {
-            column_constraints[element.key_column] = Constraint::POINT;
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
-        {
-            if (element.range.left == element.range.right)
-            {
-                column_constraints[element.key_column] = Constraint::POINT;
-            }
-            if (column_constraints[element.key_column] != Constraint::POINT)
-            {
-                column_constraints[element.key_column] = Constraint::RANGE;
-            }
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
-        {
-            continue;
-        }
-
-        return false;
-    }
-
-    auto min_constraint = column_constraints[0];
-
-    if (min_constraint > Constraint::RANGE)
-    {
-        return false;
-    }
-
-    for (size_t i = 1; i < key_columns.size(); ++i)
-    {
-        if (column_constraints[i] < min_constraint)
-        {
-            return false;
-        }
-
-        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
-        {
-            return false;
-        }
-
-        min_constraint = column_constraints[i];
-    }
-
-    return true;
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(

@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_COLUMN;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -59,11 +59,7 @@ ConvertingTransform::ConvertingTransform(
                 break;
 
             case MatchColumnsMode::Name:
-                /// It may seem strange, but sometimes block may have columns with the same name.
-                /// For this specific case, try to get column from the same position if it has correct name first.
-                if (result_col_num < source.columns() && source.getByPosition(result_col_num).name == res_elem.name)
-                    conversion[result_col_num] = result_col_num;
-                else if (source.has(res_elem.name))
+                if (source.has(res_elem.name))
                     conversion[result_col_num] = source.getPositionByName(res_elem.name);
                 else
                     throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
@@ -82,12 +78,12 @@ ConvertingTransform::ConvertingTransform(
                 if (res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
             }
             else
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
         }
 
         /// Check conversion by dry run CAST function.

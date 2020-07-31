@@ -133,7 +133,6 @@ enum class AccessType
     M(SYSTEM_REPLICATED_SENDS, "SYSTEM STOP REPLICATED SENDS, SYSTEM START REPLICATED SENDS, STOP_REPLICATED_SENDS, START REPLICATED SENDS", TABLE, SYSTEM_SENDS) \
     M(SYSTEM_SENDS, "SYSTEM STOP SENDS, SYSTEM START SENDS, STOP SENDS, START SENDS", GROUP, SYSTEM) \
     M(SYSTEM_REPLICATION_QUEUES, "SYSTEM STOP REPLICATION QUEUES, SYSTEM START REPLICATION QUEUES, STOP_REPLICATION_QUEUES, START REPLICATION QUEUES", TABLE, SYSTEM) \
-    M(SYSTEM_DROP_REPLICA, "DROP REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_SYNC_REPLICA, "SYNC REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_FLUSH_DISTRIBUTED, "FLUSH DISTRIBUTED", TABLE, SYSTEM_FLUSH) \
@@ -151,7 +150,6 @@ enum class AccessType
     M(FILE, "", GLOBAL, SOURCES) \
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \
-    M(MONGO, "", GLOBAL, SOURCES) \
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(ODBC, "", GLOBAL, SOURCES) \
     M(JDBC, "", GLOBAL, SOURCES) \
@@ -169,48 +167,50 @@ enum class AccessType
 #undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
 
+std::string_view toString(AccessType type);
+
 
 namespace impl
 {
     template <typename = void>
-    class AccessTypeToStringConverter
+    class AccessTypeToKeywordConverter
     {
     public:
-        static const AccessTypeToStringConverter & instance()
+        static const AccessTypeToKeywordConverter & instance()
         {
-            static const AccessTypeToStringConverter res;
+            static const AccessTypeToKeywordConverter res;
             return res;
         }
 
         std::string_view convert(AccessType type) const
         {
-            return access_type_to_string_mapping[static_cast<size_t>(type)];
+            return access_type_to_keyword_mapping[static_cast<size_t>(type)];
         }
 
     private:
-        AccessTypeToStringConverter()
+        AccessTypeToKeywordConverter()
         {
-#define ACCESS_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING(name, aliases, node_type, parent_group_name) \
-            addToMapping(AccessType::name, #name);
+#define INSERT_ACCESS_TYPE_KEYWORD_PAIR_TO_MAPPING(name, aliases, node_type, parent_group_name) \
+            insertToMapping(AccessType::name, #name);
 
-            APPLY_FOR_ACCESS_TYPES(ACCESS_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
+            APPLY_FOR_ACCESS_TYPES(INSERT_ACCESS_TYPE_KEYWORD_PAIR_TO_MAPPING)
 
-#undef ACCESS_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
+#undef INSERT_ACCESS_TYPE_KEYWORD_PAIR_TO_MAPPING
         }
 
-        void addToMapping(AccessType type, const std::string_view & str)
+        void insertToMapping(AccessType type, const std::string_view & str)
         {
             String str2{str};
             boost::replace_all(str2, "_", " ");
             size_t index = static_cast<size_t>(type);
-            access_type_to_string_mapping.resize(std::max(index + 1, access_type_to_string_mapping.size()));
-            access_type_to_string_mapping[index] = str2;
+            access_type_to_keyword_mapping.resize(std::max(index + 1, access_type_to_keyword_mapping.size()));
+            access_type_to_keyword_mapping[index] = str2;
         }
 
-        Strings access_type_to_string_mapping;
+        Strings access_type_to_keyword_mapping;
     };
 }
 
-inline std::string_view toString(AccessType type) { return impl::AccessTypeToStringConverter<>::instance().convert(type); }
+inline std::string_view toKeyword(AccessType type) { return impl::AccessTypeToKeywordConverter<>::instance().convert(type); }
 
 }

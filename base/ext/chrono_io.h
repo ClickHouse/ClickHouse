@@ -1,16 +1,18 @@
 #pragma once
 
 #include <chrono>
+#include <ctime>
 #include <string>
-#include <sstream>
-#include <cctz/time_zone.h>
+#include <iomanip>
 
 
 namespace ext
 {
     inline std::string to_string(const std::time_t & time)
     {
-        return cctz::format("%Y-%m-%d %H:%M:%S", std::chrono::system_clock::from_time_t(time), cctz::local_time_zone());
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&time), "%Y-%m-%d %X");
+        return ss.str();
     }
 
     template <typename Clock, typename Duration = typename Clock::duration>

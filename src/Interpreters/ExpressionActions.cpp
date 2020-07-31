@@ -4,7 +4,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -323,20 +322,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
     }
 }
 
-void ExpressionAction::execute(Block & block, ExtraBlockPtr & not_processed) const
-{
-    switch (type)
-    {
-        case JOIN:
-            join->joinBlock(block, not_processed);
-            break;
 
-        default:
-            throw Exception("Unexpected expression call", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-void ExpressionAction::execute(Block & block, bool dry_run) const
+void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const
 {
     size_t input_rows_count = block.rows();
 
@@ -374,7 +361,10 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
         }
 
         case JOIN:
-            throw Exception("Unexpected JOIN expression call", ErrorCodes::LOGICAL_ERROR);
+        {
+            join->joinBlock(block, not_processed);
+            break;
+        }
 
         case PROJECT:
         {
@@ -514,33 +504,6 @@ std::string ExpressionAction::toString() const
 
     return ss.str();
 }
-
-ExpressionActions::ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
-    : input_columns(input_columns_), settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns)
-        sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
-
-#if USE_EMBEDDED_COMPILER
-compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-/// For constant columns the columns themselves can be contained in `input_columns_`.
-ExpressionActions::ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
-    : settings(context_.getSettingsRef())
-{
-    for (const auto & input_elem : input_columns_)
-    {
-        input_columns.emplace_back(input_elem.name, input_elem.type);
-        sample_block.insert(input_elem);
-    }
-#if USE_EMBEDDED_COMPILER
-    compilation_cache = context_.getCompiledExpressionCache();
-#endif
-}
-
-ExpressionActions::~ExpressionActions() = default;
 
 void ExpressionActions::checkLimits(Block & block) const
 {
@@ -685,22 +648,19 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
-void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed) const
+/// @warning It's a tricky method that allows to continue ONLY ONE action in reason of one-to-many ALL JOIN logic.
+void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const
 {
-    if (actions.size() != 1)
-        throw Exception("Continuation over multiple expressions is not supported", ErrorCodes::LOGICAL_ERROR);
+    size_t i = start_action;
+    start_action = 0;
+    for (; i < actions.size(); ++i)
+    {
+        actions[i].execute(block, false, not_processed);
+        checkLimits(block);
 
-    actions[0].execute(block, not_processed);
-    checkLimits(block);
-}
-
-bool ExpressionActions::hasJoinOrArrayJoin() const
-{
-    for (const auto & action : actions)
-        if (action.type == ExpressionAction::JOIN || action.type == ExpressionAction::ARRAY_JOIN)
-            return true;
-
-    return false;
+        if (not_processed)
+            start_action = i;
+    }
 }
 
 bool ExpressionActions::hasTotalsInJoin() const
@@ -1309,7 +1269,7 @@ void ExpressionActionsChain::finalize()
     }
 }
 
-std::string ExpressionActionsChain::dumpChain() const
+std::string ExpressionActionsChain::dumpChain()
 {
     std::stringstream ss;
 
