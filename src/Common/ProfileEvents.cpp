@@ -117,6 +117,8 @@
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
+    M(SelectedRows, "Number of rows SELECTed from all tables.") \
+    M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
@@ -202,6 +204,8 @@
     M(PerfDataTLBMisses, "Data TLB misses") \
     M(PerfInstructionTLBReferences, "Instruction TLB references") \
     M(PerfInstructionTLBMisses, "Instruction TLB misses") \
+    M(PerfLocalMemoryReferences, "Local NUMA node memory reads") \
+    M(PerfLocalMemoryMisses, "Local NUMA node memory read misses") \
     \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \

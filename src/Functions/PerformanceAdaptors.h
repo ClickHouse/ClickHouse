@@ -204,7 +204,7 @@ public:
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
      * and "execute" otherwise.
      */
-    void selectAndExecute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    void selectAndExecute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         if (implementations.empty())
             throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
@@ -257,7 +257,7 @@ public:
 private:
     const Context & context;
     std::vector<ImplementationPtr> implementations;
-    detail::PerformanceStatistics statistics;
+    mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
 };
 
 }
