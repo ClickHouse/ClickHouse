@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEac
 
 rm ${CURDIR}/01037_polygon_data
 
-for type in ${SearchTypes[@]};
+for type in "${SearchTypes[@]}";
 do
    outputFile="${TMP_DIR}/results${type}.out"
 
