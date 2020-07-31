@@ -162,7 +162,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
         {
             Field value = extractValueFromNode(elem, *types[0], context);
 
-            if (!value.isNull() || context.getSettingsRef().transform_null_in)
+            if (!value.isNull())
                 columns[0]->insert(value);
         }
         else if (elem->as<ASTFunction>() || elem->as<ASTLiteral>())
@@ -209,7 +209,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
                                     : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
-                if (value.isNull() && !context.getSettings().transform_null_in)
+                if (value.isNull())
                     break;
 
                 tuple_values[i] = value;
@@ -363,7 +363,7 @@ SetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
+    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
     set->setHeader(block.cloneEmpty());
     set->insertFromBlock(block);
     set->finishInsert();
