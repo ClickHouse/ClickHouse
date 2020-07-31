@@ -40,3 +40,5 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 │ [999,998,997,996,995,994,993,992,991,990] │
 └───────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topkweighted/) <!--hide-->
