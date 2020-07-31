@@ -272,3 +272,4 @@ def test_clickhouse_remote(started_cluster):
         """)
 
     node3.query("select dictGetUInt8('test.clickhouse_remote', 'SomeValue1', toUInt64(17))") == '17\n'
+    
