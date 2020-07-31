@@ -474,7 +474,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     /// We must guarantee that result structure is the same as in getSampleBlock()
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
-        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header);
+        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header, true);
         query_plan.addStep(std::move(converting));
     }
 }
