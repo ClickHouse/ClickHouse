@@ -417,8 +417,10 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
         mutation_wait_event.wait(lock, check);
     }
 
+    /// At least we have our current mutation
     std::set<String> mutation_ids;
     mutation_ids.insert(file_name);
+
     auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids);
     checkMutationStatus(mutation_status, mutation_ids);
 
