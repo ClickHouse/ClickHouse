@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
+#include <mutex>
 
 namespace DB
 {
