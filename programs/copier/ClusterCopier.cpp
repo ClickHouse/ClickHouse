@@ -1323,7 +1323,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     /// Try start processing, create node about it
     {
         String start_state = TaskStateWithOwner::getData(TaskState::Started, host_id);
-        CleanStateClock new_clean_state_clock (zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
+        CleanStateClock new_clean_state_clock(zookeeper, piece_is_dirty_flag_path, piece_is_dirty_cleaned_path);
         if (clean_state_clock != new_clean_state_clock)
         {
             LOG_INFO(log, "Partition {} piece {} clean state changed, cowardly bailing", task_partition.name, toString(current_piece_number));
@@ -1360,7 +1360,8 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
-        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
+        LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}",
+            getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
     }
 
     /// Do the copying
@@ -1392,17 +1393,17 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         try
         {
             /// Custom INSERT SELECT implementation
-            Context context_select = context;
-            context_select.setSettings(task_cluster->settings_pull);
-
-            Context context_insert = context;
-            context_insert.setSettings(task_cluster->settings_push);
-
             BlockInputStreamPtr input;
             BlockOutputStreamPtr output;
             {
-                BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
-                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+                std::unique_ptr<Context> context_select = std::make_unique<Context>(context);
+                context_select->setSettings(task_cluster->settings_pull);
+
+                std::unique_ptr<Context> context_insert = std::make_unique<Context>(context);
+                context_insert->setSettings(task_cluster->settings_push);
+
+                BlockIO io_select = InterpreterFactory::get(query_select_ast, *context_select)->execute();
+                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, *context_insert)->execute();
 
                 input = io_select.getInputStream();
                 output = io_insert.out;
