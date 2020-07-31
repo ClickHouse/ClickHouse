@@ -52,6 +52,7 @@ def test_write_is_cached(cluster):
         """
     )
 
+    node.query("SYSTEM FLUSH LOGS")
     node.query("TRUNCATE TABLE system.query_log")
 
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
@@ -79,6 +80,7 @@ def test_read_after_cache_is_wiped(cluster):
         """
     )
 
+    node.query("SYSTEM FLUSH LOGS")
     node.query("TRUNCATE TABLE system.query_log")
 
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
