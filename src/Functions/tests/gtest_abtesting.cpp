@@ -1,3 +1,5 @@
+#include <gtest/gtest.h>
+
 #include <Functions/abtesting.h>
 #include <iostream>
 #include <stdio.h>
@@ -61,34 +63,37 @@ Variants test_bayesab(std::string dist, PODArray<Float64> xs, PODArray<Float64> 
 }
 
 
-int main(int, char **)
+TEST(BayesAB, beta)
 {
     size_t max = 0, min = 0;
 
     auto variants = test_bayesab("beta", {10000, 1000, 900}, {600, 110, 90}, max, min);
-    if (max != 1) exit(1);
+    ASSERT_EQ(1, max);
 
     variants = test_bayesab("beta", {3000, 3000, 3000}, {600, 100, 90}, max, min);
-    if (max != 0) exit(1);
+    ASSERT_EQ(0, max);
 
     variants = test_bayesab("beta", {3000, 3000, 3000}, {100, 90, 110}, max, min);
-    if (max != 2) exit(1);
+    ASSERT_EQ(2, max);
 
     variants = test_bayesab("beta", {3000, 3000, 3000}, {110, 90, 100}, max, min);
-    if (max != 0) exit(1);
+    ASSERT_EQ(0, max);
+}
 
-    variants = test_bayesab("gamma", {10000, 1000, 900}, {600, 110, 90}, max, min);
-    if (max != 1) exit(1);
+
+TEST(BayesAB, gamma)
+{
+    size_t max = 0, min = 0;
+    auto variants = test_bayesab("gamma", {10000, 1000, 900}, {600, 110, 90}, max, min);
+    ASSERT_EQ(1, max);
 
     variants = test_bayesab("gamma", {3000, 3000, 3000}, {600, 100, 90}, max, min);
-    if (max != 0) exit(1);
+    ASSERT_EQ(0, max);
 
     variants = test_bayesab("gamma", {3000, 3000, 3000}, {100, 90, 110}, max, min);
-    if (max != 2) exit(1);
+    ASSERT_EQ(2, max);
 
     variants = test_bayesab("gamma", {3000, 3000, 3000}, {110, 90, 100}, max, min);
-    if (max != 0) exit(1);
-
-    std::cout << "Successfully done\n";
-    return 0;
+    ASSERT_EQ(0, max);
 }
+

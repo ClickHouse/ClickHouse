@@ -44,3 +44,5 @@ SELECT groupBitOr(num) FROM t
 binary     decimal
 01111101 = 125
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitor/) <!--hide-->

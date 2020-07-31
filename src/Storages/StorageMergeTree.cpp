@@ -134,7 +134,7 @@ void StorageMergeTree::shutdown()
 
     /// Unlock all waiting mutations
     {
-        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
 
@@ -284,9 +284,6 @@ struct CurrentlyMergingPartsTagger
     FutureMergedMutatedPart future_part;
     ReservationPtr reserved_space;
 
-    bool is_successful = false;
-    String exception_message;
-
     StorageMergeTree & storage;
 
 public:
@@ -339,40 +336,6 @@ public:
             storage.currently_merging_mutating_parts.erase(part);
         }
 
-        /// Update the information about failed parts in the system.mutations table.
-
-        Int64 sources_data_version = future_part.parts.at(0)->info.getDataVersion();
-        Int64 result_data_version = future_part.part_info.getDataVersion();
-        auto mutations_begin_it = storage.current_mutations_by_version.end();
-        auto mutations_end_it = storage.current_mutations_by_version.end();
-        if (sources_data_version != result_data_version)
-        {
-            mutations_begin_it = storage.current_mutations_by_version.upper_bound(sources_data_version);
-            mutations_end_it = storage.current_mutations_by_version.upper_bound(result_data_version);
-        }
-
-        for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
-        {
-            MergeTreeMutationEntry & entry = it->second;
-            if (is_successful)
-            {
-                if (!entry.latest_failed_part.empty() && future_part.part_info.contains(entry.latest_failed_part_info))
-                {
-                    entry.latest_failed_part.clear();
-                    entry.latest_failed_part_info = MergeTreePartInfo();
-                    entry.latest_fail_time = 0;
-                    entry.latest_fail_reason.clear();
-                }
-            }
-            else
-            {
-                entry.latest_failed_part = future_part.parts.at(0)->name;
-                entry.latest_failed_part_info = future_part.parts.at(0)->info;
-                entry.latest_fail_time = time(nullptr);
-                entry.latest_fail_reason = exception_message;
-            }
-        }
-
         storage.currently_processing_in_background_condition.notify_all();
     }
 };
@@ -398,12 +361,66 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     return version;
 }
 
+
+void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPart result_part, bool is_successful, const String & exception_message)
+{
+    /// Update the information about failed parts in the system.mutations table.
+
+    Int64 sources_data_version = result_part.parts.at(0)->info.getDataVersion();
+    Int64 result_data_version = result_part.part_info.getDataVersion();
+    if (sources_data_version != result_data_version)
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto mutations_begin_it = current_mutations_by_version.upper_bound(sources_data_version);
+        auto mutations_end_it = current_mutations_by_version.upper_bound(result_data_version);
+
+        for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
+        {
+            MergeTreeMutationEntry & entry = it->second;
+            if (is_successful)
+            {
+                if (!entry.latest_failed_part.empty() && result_part.part_info.contains(entry.latest_failed_part_info))
+                {
+                    entry.latest_failed_part.clear();
+                    entry.latest_failed_part_info = MergeTreePartInfo();
+                    entry.latest_fail_time = 0;
+                    entry.latest_fail_reason.clear();
+                }
+            }
+            else
+            {
+                entry.latest_failed_part = result_part.parts.at(0)->name;
+                entry.latest_failed_part_info = result_part.parts.at(0)->info;
+                entry.latest_fail_time = time(nullptr);
+                entry.latest_fail_reason = exception_message;
+            }
+        }
+    }
+
+    std::unique_lock lock(mutation_wait_mutex);
+    mutation_wait_event.notify_all();
+}
+
 void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
 {
     LOG_INFO(log, "Waiting mutation: {}", file_name);
-    auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
-    std::unique_lock lock(mutation_wait_mutex);
-    mutation_wait_event.wait(lock, check);
+    {
+        auto check = [version, this]()
+        {
+            if (shutdown_called)
+                return true;
+            auto mutation_status = getIncompleteMutationsStatus(version);
+            return !mutation_status || mutation_status->is_done || !mutation_status->latest_fail_reason.empty();
+        };
+
+        std::unique_lock lock(mutation_wait_mutex);
+        mutation_wait_event.wait(lock, check);
+    }
+
+    Strings mutation_ids;
+    auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids);
+    checkMutationStatus(mutation_status, mutation_ids);
+
     LOG_INFO(log, "Mutation {} done", file_name);
 }
 
@@ -432,20 +449,50 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
-
-bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
+std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, Strings * mutation_ids) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
+    auto current_mutation_it = current_mutations_by_version.find(mutation_version);
     /// Killed
-    if (!current_mutations_by_version.count(mutation_version))
-        return true;
+    if (current_mutation_it == current_mutations_by_version.end())
+        return {};
+
+    MergeTreeMutationStatus result{.is_done = false};
+
+    const auto & mutation_entry = current_mutation_it->second;
 
     auto data_parts = getDataPartsVector();
     for (const auto & data_part : data_parts)
+    {
         if (data_part->info.getDataVersion() < mutation_version)
-            return false;
-    return true;
+        {
+
+            if (!mutation_entry.latest_fail_reason.empty())
+            {
+                result.latest_failed_part = mutation_entry.latest_failed_part;
+                result.latest_fail_reason = mutation_entry.latest_fail_reason;
+                result.latest_fail_time = mutation_entry.latest_fail_time;
+
+                /// Fill all mutations which failed with the same error
+                /// (we can execute several mutations together)
+                if (mutation_ids)
+                {
+                    auto mutations_begin_it = current_mutations_by_version.upper_bound(data_part->info.getDataVersion());
+
+                    for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
+                        /// All mutations with the same failure
+                        if (it->second.latest_fail_reason == result.latest_fail_reason)
+                            mutation_ids->push_back(it->second.file_name);
+                }
+            }
+
+            return result;
+        }
+    }
+
+    result.is_done = true;
+    return result;
 }
 
 
@@ -474,7 +521,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
-
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
         const PartVersionWithName needle{mutation_version, ""};
@@ -500,7 +546,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
-                parts_to_do_names.empty(),
+                /* is_done = */parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
@@ -686,12 +732,10 @@ bool StorageMergeTree::merge(
             merging_tagger->reserved_space, deduplicate, force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
-        merging_tagger->is_successful = true;
         write_part_log({});
     }
     catch (...)
     {
-        merging_tagger->exception_message = getCurrentExceptionMessage(false);
         write_part_log(ExecutionStatus::fromCurrentException());
         throw;
     }
@@ -835,18 +879,12 @@ bool StorageMergeTree::tryMutatePart()
 
         renameTempPartAndReplace(new_part);
 
-        tagger->is_successful = true;
+        updateMutationEntriesErrors(future_part, true, "");
         write_part_log({});
-
-        /// Notify all, who wait for this or previous mutations
-        {
-            std::lock_guard<std::mutex> lock(mutation_wait_mutex);
-            mutation_wait_event.notify_all();
-        }
     }
     catch (...)
     {
-        tagger->exception_message = getCurrentExceptionMessage(false);
+        updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
         write_part_log(ExecutionStatus::fromCurrentException());
         throw;
     }

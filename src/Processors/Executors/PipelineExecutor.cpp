@@ -447,8 +447,14 @@ void PipelineExecutor::finalizeExecution()
 
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
-        if (node->status != ExecutingGraph::ExecStatus::Finished)  /// Single thread, do not hold mutex
+    {
+        if (node->status != ExecutingGraph::ExecStatus::Finished)
+        {
+            /// Single thread, do not hold mutex
             all_processors_finished = false;
+            break;
+        }
+    }
 
     if (!all_processors_finished)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
