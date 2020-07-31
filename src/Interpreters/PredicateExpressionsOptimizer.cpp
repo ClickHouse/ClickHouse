@@ -21,6 +21,7 @@ PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     const Context & context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
     : enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
     , enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery)
+    , allow_push_predicate_when_subquery_contains_with(settings.allow_push_predicate_when_subquery_contains_with)
     , context(context_)
     , tables_with_columns(tables_with_columns_)
 {
@@ -151,7 +152,8 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_e
     if (!table_predicates.empty())
     {
         auto optimize_final = enable_optimize_predicate_expression_to_final_subquery;
-        PredicateRewriteVisitor::Data data(context, table_predicates, std::move(table_columns), optimize_final);
+        auto optimize_with = allow_push_predicate_when_subquery_contains_with;
+        PredicateRewriteVisitor::Data data(context, table_predicates, std::move(table_columns), optimize_final, optimize_with);
 
         PredicateRewriteVisitor(data).visit(table_element);
         return data.is_rewrite;

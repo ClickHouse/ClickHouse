@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
 #include <Common/PODArray_fwd.h>
-#include <Common/PODArray.h>
 
 #include <gtest/gtest.h>
 

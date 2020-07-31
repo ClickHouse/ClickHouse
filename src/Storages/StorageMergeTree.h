@@ -61,7 +61,7 @@ public:
         bool deduplicate,
         const Context & context) override;
 
-    void alterPartition(
+    Pipes alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,
@@ -149,13 +149,21 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, bool part, const Context & context);
+
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
+    /// Update mutation entries after part mutation execution. May reset old
+    /// errors if mutation was successful. Otherwise update last_failed* fields
+    /// in mutation entries.
+    void updateMutationEntriesErrors(FutureMergedMutatedPart result_part, bool is_successful, const String & exception_message);
 
-    /// Just checks versions of each active data part
-    bool isMutationDone(Int64 mutation_version) const;
+    /// Return empty optional if mutation was killed. Otherwise return partially
+    /// filled mutation status with information about error (latest_fail*) and
+    /// is_done. mutation_ids filled with mutations with the same errors, because we
+    /// can execute several mutations at once
+    std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, Strings * mutation_ids = nullptr) const;
 
     void startBackgroundMovesIfNeeded() override;
 

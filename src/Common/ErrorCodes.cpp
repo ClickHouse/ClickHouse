@@ -175,7 +175,6 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST = 168;
     extern const int BAD_TYPE_OF_FIELD = 169;
     extern const int BAD_GET = 170;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE = 171;
     extern const int CANNOT_CREATE_DIRECTORY = 172;
     extern const int CANNOT_ALLOCATE_MEMORY = 173;
     extern const int CYCLIC_ALIASES = 174;
@@ -336,7 +335,6 @@ namespace ErrorCodes
     extern const int CURRENT_WRITE_BUFFER_IS_EXHAUSTED = 362;
     extern const int CANNOT_CREATE_IO_BUFFER = 363;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS = 364;
-    extern const int OUTPUT_IS_NOT_SORTED = 365;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT = 366;
     extern const int TOO_MANY_FETCHES = 367;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
@@ -499,6 +497,9 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ = 530;
     extern const int CANNOT_FSTAT = 531;
     extern const int LDAP_ERROR = 532;
+    extern const int INCONSISTENT_RESERVATIONS = 533;
+    extern const int NO_RESERVATIONS_PROVIDED = 534;
+    extern const int UNKNOWN_RAID_TYPE = 535;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
