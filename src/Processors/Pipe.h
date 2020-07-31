@@ -6,10 +6,83 @@ namespace DB
 {
 
 class Pipe;
-using Pipes = std::vector<Pipe>;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
+
+/// Pipes is a set of processors which represents the part of pipeline.
+/// Pipes contains a list of output ports, with specified port for totals and specified port for extremes.
+/// All output ports have same header.
+/// All other ports are connected, all connections are inside processors set.
+class Pipes
+{
+public:
+    /// Create from source. Source must have no input ports and single output.
+    explicit Pipes(ProcessorPtr source);
+    /// Create from processors. Use all not-connected output ports as output_ports. Check invariants.
+    explicit Pipes(Processors processors_);
+
+    Pipes(const Pipes & other) = delete;
+    Pipes(Pipes && other) = default;
+    Pipes & operator=(const Pipes & other) = delete;
+    Pipes & operator=(Pipes && other) = default;
+
+    const Block & getHeader() const { return header; }
+    bool empty() const { return output_ports.empty(); }
+    size_t size() const { return output_ports.size(); }
+    OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
+    OutputPort * getTotalsPort() const { return totals_port; }
+    OutputPort * getExtremesPort() const { return extremes_port; }
+
+    /// Add processor to list, add it output ports to output_ports.
+    /// Processor shouldn't have input ports, output ports shouldn't be connected.
+    /// Output headers should have same structure and be compatible with current header (if not empty()).
+    /// void addSource(ProcessorPtr source);
+
+    /// Add processor to list. It should have size() input ports with compatible header.
+    /// Output ports should have same headers.
+    /// If totals or extremes are not empty, transform shouldn't change header.
+    void addTransform(ProcessorPtr transform);
+
+    enum class StreamType
+    {
+        Main = 0, /// Stream for query data. There may be several streams of this type.
+        Totals,  /// Stream for totals. No more then one.
+        Extremes, /// Stream for extremes. No more then one.
+    };
+
+    using ProcessorGetter = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
+
+    /// Add transform with single input and single output for each port.
+    void addSimpleTransform(const ProcessorGetter & port);
+
+    /// Destroy pipes and get processors.
+    static Processors detachProcessors(Pipes pipes) { return std::move(pipes.processors); }
+
+private:
+    Processors processors;
+
+    /// Header is common for all output below.
+    Block header;
+
+    /// Output ports. Totals and extremes are allowed to be empty.
+    std::vector<OutputPort *> output_ports;
+    OutputPort * totals_port = nullptr;
+    OutputPort * extremes_port = nullptr;
+
+    /// It is the max number of processors which can be executed in parallel for each step. See QueryPipeline::Streams.
+    /// Usually, it's the same as the number of output ports.
+    size_t max_parallel_streams = 0;
+
+    std::vector<TableLockHolder> table_locks;
+
+    /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
+};
+
 
 /// Pipe is a set of processors which represents the part of pipeline with single output.
 /// All processors in pipe are connected. All ports are connected except the output one.

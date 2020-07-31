@@ -151,9 +151,6 @@ public:
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
 
-    /// Check if resize transform was used. (In that case another distinct transform will be added).
-    bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
-
     /// Changes the number of input ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
@@ -167,7 +164,6 @@ public:
 
     size_t getNumStreams() const { return streams.size(); }
 
-    bool hasMoreThanOneStream() const { return getNumStreams() > 1; }
     bool hasTotals() const { return totals_having_port != nullptr; }
 
     const Block & getHeader() const { return current_header; }
