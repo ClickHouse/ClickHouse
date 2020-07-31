@@ -21,12 +21,12 @@ $CLICKHOUSE_CLIENT --max_block_size 1 --min_insert_block_size_rows 1 --min_inser
 
 for i in {1..60}; do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-    [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || currentDatabase() || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%'") -gt 9000 ]] && break;
+    [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || currentDatabase() || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%'") -gt 9900 ]] && break;
     sleep 1
 done
 
 
-$CLICKHOUSE_CLIENT --query "SELECT numChildren < 1000 FROM system.zookeeper WHERE path = '/clickhouse/tables/r' AND name = 'log'";
+$CLICKHOUSE_CLIENT --query "SELECT numChildren < 2500 FROM system.zookeeper WHERE path = '/clickhouse/tables/r' AND name = 'log'";
 echo -e '\n---\n';
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/1' AND name = 'is_lost'";
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2' AND name = 'is_lost'";
