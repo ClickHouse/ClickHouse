@@ -54,6 +54,149 @@ static void checkSource(const IProcessor & source)
                         toString(source.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
+Pipes::Pipes(ProcessorPtr source)
+{
+    checkSource(*source);
+    output_ports.push_back(&source->getOutputs().front());
+    header = output_ports.front()->getHeader();
+    processors.emplace_back(std::move(source));
+    max_parallel_streams = 1;
+}
+
+Pipes::Pipes(Processors processors_) : processors(std::move(processors_))
+{
+    /// Create hash table with processors.
+    std::unordered_set<const IProcessor *> set;
+    for (const auto & processor : processors)
+        set.emplace(processor.get());
+
+    for (auto & processor : processors)
+    {
+        for (const auto & port : processor->getInputs())
+        {
+            if (!port.isConnected())
+                throw Exception("Cannot create Pipes because processor " + processor->getName() +
+                                " has not connected input port", ErrorCodes::LOGICAL_ERROR);
+
+            const auto * connected_processor = &port.getOutputPort().getProcessor();
+            if (set.count(connected_processor) == 0)
+                throw Exception("Cannot create Pipes because processor " + processor->getName() +
+                                " has input port which is connected with unknown processor " +
+                                connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
+        }
+
+        for (auto & port : processor->getOutputs())
+        {
+            if (!port.isConnected())
+            {
+                output_ports.push_back(&port);
+                continue;
+            }
+
+            const auto * connected_processor = &port.getInputPort().getProcessor();
+            if (set.count(connected_processor) == 0)
+                throw Exception("Cannot create Pipes because processor " + processor->getName() +
+                                " has output port which is connected with unknown processor " +
+                                connected_processor->getName(), ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+
+    if (output_ports.empty())
+        throw Exception("Cannot create Pipes because processors don't have any not-connected output ports",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    header = output_ports.front()->getHeader();
+    for (size_t i = 1; i < output_ports.size(); ++i)
+        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+
+    max_parallel_streams = output_ports.size();
+}
+
+void Pipes::addTransform(ProcessorPtr transform)
+{
+    auto & inputs = transform->getInputs();
+    if (inputs.size() != output_ports.size())
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "Processor has " + std::to_string(inputs.size()) + " input ports, "
+                        "but " + std::to_string(output_ports.size()) + " expected", ErrorCodes::LOGICAL_ERROR);
+
+    size_t next_output = 0;
+    for (auto & input : inputs)
+    {
+        connect(*output_ports[next_output], input);
+        ++next_output;
+    }
+
+    auto & outputs = transform->getOutputs();
+    if (outputs.empty())
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because it has no outputs",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    output_ports.clear();
+    output_ports.reserve(outputs.size());
+
+    for (auto & output : outputs)
+        output_ports.emplace_back(&output);
+
+    header = output_ports.front()->getHeader();
+    for (size_t i = 1; i < output_ports.size(); ++i)
+        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+
+    if (totals_port)
+        assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
+
+    if (extremes_port)
+        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
+}
+
+void Pipes::addSimpleTransform(const ProcessorGetter & getter)
+{
+    Block new_header;
+
+    auto add_transform = [&](OutputPort *& port, StreamType stream_type)
+    {
+        if (!port)
+            return;
+
+        auto transform = getter(port->getHeader(), stream_type);
+
+        if (transform)
+        {
+            if (transform->getInputs().size() != 1)
+                throw Exception("Processor for query pipeline transform should have single input, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
+
+            if (transform->getOutputs().size() != 1)
+                throw Exception("Processor for query pipeline transform should have single output, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        const auto & out_header = transform ? transform->getOutputs().front().getHeader()
+                                            : port->getHeader();
+
+        if (new_header)
+            assertBlocksHaveEqualStructure(new_header, out_header, "QueryPipeline");
+        else
+            new_header = out_header;
+
+        if (transform)
+        {
+            connect(*port, transform->getInputs().front());
+            port = &transform->getOutputs().front();
+            processors.emplace_back(std::move(transform));
+        }
+    };
+
+    for (auto & port : output_ports)
+        add_transform(port, StreamType::Main);
+
+    add_transform(totals_port, StreamType::Totals);
+    add_transform(extremes_port, StreamType::Extremes);
+
+    header = std::move(new_header);
+}
 
 Pipe::Pipe(ProcessorPtr source)
 {
