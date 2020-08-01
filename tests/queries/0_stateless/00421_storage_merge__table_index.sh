@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 for i in `seq -w 0 2 20`; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS merge_item_$i"

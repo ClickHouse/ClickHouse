@@ -2,7 +2,7 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 function test()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 if [ $CLICKHOUSE_HOST == "localhost" ]; then
     $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('127.0.0.1',          system, one);"

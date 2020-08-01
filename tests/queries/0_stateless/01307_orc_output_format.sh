@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS orc";
 
@@ -11,9 +11,9 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO orc VALUES (255, 65535, 4294967295, 1000
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM orc FORMAT ORC" > $CURDIR/tmp_orc_test_all_types.orc;
 
-cat $CURDIR/tmp_orc_test_all_types.orc | $CLICKHOUSE_CLIENT --query="INSERT INTO orc FORMAT ORC";
+cat "$CURDIR/tmp_orc_test_all_types.orc" | $CLICKHOUSE_CLIENT --query="INSERT INTO orc FORMAT ORC";
 
-rm  $CURDIR/tmp_orc_test_all_types.orc
+rm "$CURDIR/tmp_orc_test_all_types.orc"
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM orc";
 
