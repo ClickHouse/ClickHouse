@@ -199,12 +199,20 @@ struct ValueGetterBuilderImpl<Type, Types...>
 {
     static TernaryValueGetter build(const IColumn * x)
     {
-        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
+        if (x->onlyNull())
+        {
+            return [](size_t){ return Ternary::Null; };
+        }
+        else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
             if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
-                return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
-                { return Ternary::makeValue(column_data[i], null_data[i]); };
+                return [
+                    &null_data = nullable_column->getNullMapData(),
+                    &column_data = nested_column->getData()](size_t i)
+                {
+                    return Ternary::makeValue(column_data[i], null_data[i]);
+                };
             }
             else
                 return ValueGetterBuilderImpl<Types...>::build(x);
