@@ -9,13 +9,19 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::Traits getTraits(size_t limit)
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
+        {
             .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
+            .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = limit == 0,
+        }
     };
 }
 
@@ -25,12 +31,24 @@ FinishSortingStep::FinishSortingStep(
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
+    /// TODO: check input_stream is sorted by prefix_description.
+    output_stream->sort_description = result_description;
+    output_stream->sort_mode = DataStream::SortMode::Stream;
+}
+
+void FinishSortingStep::updateLimit(size_t limit_)
+{
+    if (limit_ && (limit == 0 || limit_ < limit))
+    {
+        limit = limit_;
+        transform_traits.preserves_number_of_rows = limit == 0;
+    }
 }
 
 void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)

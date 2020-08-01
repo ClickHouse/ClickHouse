@@ -141,7 +141,8 @@ void TraceCollector::run()
 
         if (trace_log)
         {
-            TraceLogElement element{std::time(nullptr), clock_gettime_ns(), trace_type, thread_id, query_id, trace, size};
+            UInt64 time = clock_gettime_ns(CLOCK_REALTIME);
+            TraceLogElement element{time_t(time / 1000000000), time, trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }
     }
