@@ -20,7 +20,8 @@ function ch_url() {
 exception_pattern="displayText() = DB::Exception:[[:print:]]*"
 
 function check_only_exception() {
-    local res=`ch_url "$1" "$2"`
+    local res
+    res=`ch_url "$1" "$2"`
     #(echo "$res")
     #(echo "$res" | wc -l)
     #(echo "$res" | grep -c "$exception_pattern")
@@ -29,7 +30,8 @@ function check_only_exception() {
 }
 
 function check_last_line_exception() {
-    local res=`ch_url "$1" "$2"`
+    local res
+    res=`ch_url "$1" "$2"`
     #echo "$res" > res
     #echo "$res" | wc -c
     #echo "$res" | tail -n -2

@@ -5,7 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CB_DIR=$(dirname "$CLICKHOUSE_CLIENT_BINARY")
 [ "$CB_DIR" == "." ] && ROOT_DIR=$CUR_DIR/../../../..
-[ "$CB_DIR" != "." ] && BUILD_DIR=$CB_DIR/../..
 [ -z "$ROOT_DIR" ] && ROOT_DIR=$CB_DIR/../../..
 
 DATA_FILE=$CUR_DIR/data_arrow/test.arrow

@@ -12,7 +12,7 @@ function wait_for_query_to_start()
 }
 
 
-$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d 'SELECT 1, count() FROM system.numbers' 2>&1 > /dev/null &
+$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d 'SELECT 1, count() FROM system.numbers' > /dev/null 2>&1 &
 wait_for_query_to_start 'hello'
 
 # Replace it

@@ -45,7 +45,7 @@ echo $QUERY
 URL=$(python -c 'print "'${CLICKHOUSE_URL}'&query=" + __import__("urllib").quote("'"$QUERY"'")')
 
 set +e
-for i in 1 2 3; do
+for _ in 1 2 3; do
     echo run by native protocol
     printf "$DATA" | $CLICKHOUSE_CLIENT --query "$QUERY"
 

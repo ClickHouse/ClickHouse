@@ -37,7 +37,7 @@ sleep 1
 timeout 20 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
 
 # Both queries have to be killed, doesn't matter with SYNC or ASYNC kill
-for run in {1..15}
+for _ in {1..15}
 do
     sleep 1
     no_first_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'"`

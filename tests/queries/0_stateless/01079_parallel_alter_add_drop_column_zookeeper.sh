@@ -23,7 +23,6 @@ done
 
 function alter_thread()
 {
-    TYPES=(Float64 String UInt8 UInt32)
     while true; do
         REPLICA=$(($RANDOM % 3 + 1))
         ADD=$(($RANDOM % 5 + 1))

@@ -31,7 +31,7 @@ DATA_DIR=$CUR_DIR/data_parquet
 # BUG! nulls.snappy.parquet - parquet-reader shows wrong structure. Actual structure is {"type":"struct","fields":[{"name":"b_struct","type":{"type":"struct","fields":[{"name":"b_c_int","type":"integer","nullable":true,"metadata":{}}]},"nullable":true,"metadata":{}}]}
 # why? repeated_no_annotation.parquet
 
-for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do
+for NAME in `find $DATA_DIR/*.parquet -print0 | xargs -0 -n 1 basename | sort`; do
     echo === Try load data from $NAME
 
     JSON=$DATA_DIR/$NAME.json
