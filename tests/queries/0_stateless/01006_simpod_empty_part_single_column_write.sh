@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE table_with_empty_part DELETE WHERE id 
 
 sleep 0.5
 
-mutation_id=`${CLICKHOUSE_CLIENT} --query="SELECT max(mutation_id) FROM system.mutations WHERE table='table_with_empty_part'"`
+mutation_id=$(${CLICKHOUSE_CLIENT} --query="SELECT max(mutation_id) FROM system.mutations WHERE table='table_with_empty_part'")
 
 wait_for_mutation "table_with_empty_part" "$mutation_id"
 

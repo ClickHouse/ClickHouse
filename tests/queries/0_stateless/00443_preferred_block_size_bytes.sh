@@ -35,8 +35,8 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS nullable_prewhere"
 
 # Depend on 00282_merging test
 
-pushd "`dirname "$0"`" > /dev/null
-SCRIPTPATH=`pwd`
+pushd "$(dirname "$0")" > /dev/null
+SCRIPTPATH=$(pwd)
 popd > /dev/null
 #SCRIPTDIR=`dirname "$SCRIPTPATH"`
 SCRIPTDIR=$SCRIPTPATH

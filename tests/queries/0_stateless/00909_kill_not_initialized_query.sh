@@ -40,8 +40,8 @@ timeout 20 "$CLICKHOUSE_CLIENT" -q "KILL QUERY WHERE query='$query_for_pending' 
 for _ in {1..15}
 do
     sleep 1
-    no_first_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'"`
-    no_second_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_to_kill'"`
+    no_first_query=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'")
+    no_second_query=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_to_kill'")
     if [ "$no_first_query" == "0" ] && [ "$no_second_query" == "0" ]; then
         echo "killed"
         break

@@ -55,7 +55,7 @@ check "$url$session&session_timeout=60" "$select" "Exception" 0 "60 second timeo
 check "$url""$session" "$select" "7777777" 1 "Failed to reuse session."
 # Workaround here
 # TODO: move the test to integration test or add readonly user to test environment
-if [[ -z `request "$url?user=readonly" "SELECT ''"` ]]; then
+if [[ -z $(request "$url?user=readonly" "SELECT ''") ]]; then
     # We have readonly user
     check "$url$session&user=readonly&session_check=1" "$select" "Exception.*Session not found" 1 "Session is accessable for another user."
 else
