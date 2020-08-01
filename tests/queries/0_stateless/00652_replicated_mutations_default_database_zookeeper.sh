@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-. $CURDIR/mergetree_mutations.lib
+. "$CURDIR"/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --multiquery << EOF
 DROP TABLE IF EXISTS mutations_r1;
