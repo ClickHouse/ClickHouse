@@ -36,7 +36,7 @@ public:
     struct TransformTraits
     {
         /// Won't change the total number of rows.
-        /// Examples: true ExpressionStep (without join or array join), false for FilterStep
+        /// Examples: true for ExpressionStep (without join or array join), false for FilterStep
         bool preserves_number_of_rows;
     };
 
