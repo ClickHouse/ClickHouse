@@ -145,7 +145,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, const Context & context)
 {
-     /// Will form a block with values from the set.
+    /// Will form a block with values from the set.
 
     Block header;
     size_t num_columns = types.size();
@@ -275,7 +275,7 @@ static Block createBlockForSet(
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-  * 
+  *
   *  We need special implementation for ASTFunction, because in case, when we interpret
   *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
   */
