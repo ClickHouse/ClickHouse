@@ -664,7 +664,8 @@ def test_kafka_issue11308(kafka_cluster):
         FROM test.kafka;
         ''')
 
-    time.sleep(9)
+    while int(instance.query('SELECT count() FROM test.persistent_kafka')) < 3:
+        time.sleep(1)
 
     result = instance.query('SELECT * FROM test.persistent_kafka ORDER BY time;')
 
@@ -1431,7 +1432,8 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
 
-    time.sleep(10)
+    while int(instance.query("SELECT count() FROM test.view")) < 5:
+        time.sleep(1)
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -1535,7 +1537,9 @@ def test_kafka_flush_by_block_size(kafka_cluster):
         messages.append(json.dumps({'key': 0, 'value': 0}))
     kafka_produce('flush_by_block_size', messages)
 
-    time.sleep(1)
+    # Wait for Kafka engine to consume this data
+    while 1 != int(instance.query("SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'")):
+        time.sleep(1)
 
     # TODO: due to https://github.com/ClickHouse/ClickHouse/issues/11216
     # second flush happens earlier than expected, so we have 2 parts here instead of one
