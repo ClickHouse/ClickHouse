@@ -14,7 +14,8 @@
 #include <Common/tests/gtest_global_context.h>
 
 #include <memory>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/QueryPipeline.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
@@ -115,8 +116,9 @@ std::string readData(DB::StoragePtr & table, const DB::Context & context)
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(
-        std::move(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1)[0]));
+    QueryPipeline pipeline;
+    pipeline.init(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1));
+    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;
     {
