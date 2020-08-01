@@ -14,7 +14,6 @@ SRCS(
     Executors/PipelineExecutor.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
-    Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
