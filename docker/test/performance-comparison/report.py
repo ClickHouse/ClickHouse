@@ -322,7 +322,7 @@ if args.report == 'main':
         print(tableHeader(columns))
 
         attrs = ['' for c in columns]
-        attrs[4] = None
+        attrs[5] = None
         for row in rows:
             if int(row[5]):
                 if float(row[3]) < 0.:
