@@ -1392,16 +1392,16 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         try
         {
+            std::unique_ptr<Context> context_select = std::make_unique<Context>(context);
+            context_select->setSettings(task_cluster->settings_pull);
+
+            std::unique_ptr<Context> context_insert = std::make_unique<Context>(context);
+            context_insert->setSettings(task_cluster->settings_push);
+
             /// Custom INSERT SELECT implementation
             BlockInputStreamPtr input;
             BlockOutputStreamPtr output;
             {
-                std::unique_ptr<Context> context_select = std::make_unique<Context>(context);
-                context_select->setSettings(task_cluster->settings_pull);
-
-                std::unique_ptr<Context> context_insert = std::make_unique<Context>(context);
-                context_insert->setSettings(task_cluster->settings_push);
-
                 BlockIO io_select = InterpreterFactory::get(query_select_ast, *context_select)->execute();
                 BlockIO io_insert = InterpreterFactory::get(query_insert_ast, *context_insert)->execute();
 
