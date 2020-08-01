@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_CONNECT_RABBITMQ;
-}
-
 /* The object of this class is shared between concurrent consumers (who share the same connection == share the same
  * event loop and handler).
  */
@@ -20,19 +15,26 @@ RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
 {
 }
 
+///Method that is called when the connection ends up in an error state.
 void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message)
 {
+    connection_running.store(false);
     LOG_ERROR(log, "Library error report: {}", message);
 
-    if (!connection->usable() || !connection->ready())
-        throw Exception("Connection error", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    if (connection)
+        connection->close();
+}
+
+void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
+{
+    connection_running.store(true);
 }
 
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
     /// stop_loop variable is updated in a separate thread
-    while (!stop_loop.load())
+    while (!stop_loop.load() && connection_running.load())
         uv_run(loop, UV_RUN_NOWAIT);
 }
 

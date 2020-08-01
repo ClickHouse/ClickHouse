@@ -58,6 +58,10 @@ public:
     bool checkBridge() const { return !exchange_removed.load(); }
     void unbindExchange();
 
+    bool connectionRunning() { return event_handler->connectionRunning(); }
+    bool restoreConnection();
+    ChannelPtr getChannel();
+
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
@@ -109,11 +113,11 @@ private:
 
     String local_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag;
-    AMQP::Table bind_headers;
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;
     std::atomic<bool> loop_started = false, exchange_removed = false;
     ChannelPtr setup_channel;
+    std::mutex connection_mutex, restore_connection;
 
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder heartbeat_task;

@@ -39,7 +39,7 @@ namespace DB
 {
 
 static const auto CONNECT_SLEEP = 200;
-static const auto RETRIES_MAX = 1000;
+static const auto RETRIES_MAX = 20;
 static const auto HEARTBEAT_RESCHEDULE_MS = 3000;
 
 namespace ErrorCodes
@@ -98,7 +98,6 @@ StorageRabbitMQ::StorageRabbitMQ(
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
-
     event_handler = std::make_shared<RabbitMQHandler>(loop.get(), log);
     connection = std::make_shared<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
@@ -138,16 +137,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         exchange_type = AMQP::ExchangeType::fanout;
     }
 
-    if (exchange_type == AMQP::ExchangeType::headers)
-    {
-        for (const auto & header : routing_keys)
-        {
-            std::vector<String> matching;
-            boost::split(matching, header, [](char c){ return c == '='; });
-            bind_headers[matching[0]] = matching[1];
-        }
-    }
-
     auto table_id = getStorageID();
     String table_name = table_id.table_name;
 
@@ -163,7 +152,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
 void StorageRabbitMQ::heartbeatFunc()
 {
-    if (!stream_cancelled)
+    if (!stream_cancelled && event_handler->connectionRunning())
     {
         LOG_TRACE(log, "Sending RabbitMQ heartbeat");
         connection->heartbeat();
@@ -174,8 +163,11 @@ void StorageRabbitMQ::heartbeatFunc()
 
 void StorageRabbitMQ::loopingFunc()
 {
-    LOG_DEBUG(log, "Starting event looping iterations");
-    event_handler->startLoop();
+    if (event_handler->connectionRunning())
+    {
+        LOG_DEBUG(log, "Starting event looping iterations");
+        event_handler->startLoop();
+    }
 }
 
 
@@ -231,6 +223,14 @@ void StorageRabbitMQ::bindExchange()
 
     if (exchange_type == AMQP::ExchangeType::headers)
     {
+        AMQP::Table bind_headers;
+        for (const auto & header : routing_keys)
+        {
+            std::vector<String> matching;
+            boost::split(matching, header, [](char c){ return c == '='; });
+            bind_headers[matching[0]] = matching[1];
+        }
+
         setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
         .onSuccess([&]()
         {
@@ -299,7 +299,63 @@ void StorageRabbitMQ::unbindExchange()
 
         event_handler->stop();
         looping_task->deactivate();
+        heartbeat_task->deactivate();
     });
+}
+
+
+bool StorageRabbitMQ::restoreConnection()
+{
+    if (restore_connection.try_lock())
+    {
+        /// This lock is to synchronize with getChannel().
+        std::lock_guard lk(connection_mutex);
+
+        if (!connection->usable() || !connection->ready())
+        {
+            LOG_TRACE(log, "Trying to restore consumer connection");
+
+            if (!connection->closed())
+                connection->close();
+
+            connection = std::make_shared<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+
+            size_t cnt_retries = 0;
+            while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
+            {
+                event_handler->iterateLoop();
+                std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
+            }
+        }
+
+        if (event_handler->connectionRunning())
+        {
+            LOG_TRACE(log, "Connection restored");
+
+            heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
+            looping_task->activateAndSchedule();
+        }
+        else
+        {
+            LOG_TRACE(log, "Connection refused");
+        }
+
+        restore_connection.unlock();
+    }
+    else
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
+    }
+
+    return event_handler->connectionRunning();
+}
+
+
+ChannelPtr StorageRabbitMQ::getChannel()
+{
+    std::lock_guard lk(connection_mutex);
+    ChannelPtr new_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    return new_channel;
 }
 
 
