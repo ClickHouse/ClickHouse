@@ -98,10 +98,15 @@ static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
     {
-        if (!isColumnConst(*in[i]))
+        UInt8 x;
+
+        if (in[i]->onlyNull())
+            x = func(Null());
+        else if (isColumnConst(*in[i]))
+            x = func((*in[i])[0]);
+        else
             continue;
 
-        UInt8 x = func((*in[i])[0]);
         if (has_res)
         {
             res = Op::apply(res, x);
