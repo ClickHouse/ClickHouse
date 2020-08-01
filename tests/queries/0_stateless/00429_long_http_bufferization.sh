@@ -11,7 +11,7 @@ function query {
 }
 
 function ch_url() {
-    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "`query $2`"
+    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "`query "$2"`"
 }
 
 
@@ -65,11 +65,11 @@ corner_sizes="1048576 `seq 500000 1000000 3500000`"
 # Check HTTP results with $CLICKHOUSE_CLIENT in normal case
 
 function cmp_cli_and_http() {
-    $CLICKHOUSE_CLIENT -q "`query $1`" > ${CLICKHOUSE_TMP}/res1
-    ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > ${CLICKHOUSE_TMP}/res2
-    ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > ${CLICKHOUSE_TMP}/res3
-    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 && cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3 || echo FAIL 5 "$@"
-    rm -rf ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 ${CLICKHOUSE_TMP}/res3
+    $CLICKHOUSE_CLIENT -q "`query "$1"`" > "${CLICKHOUSE_TMP}"/res1
+    ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > "${CLICKHOUSE_TMP}"/res2
+    ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > "${CLICKHOUSE_TMP}"/res3
+    cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 && cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res3 || echo FAIL 5 "$@"
+    rm -rf "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 "${CLICKHOUSE_TMP}"/res3
 }
 
 function check_cli_and_http() {
@@ -87,14 +87,14 @@ check_cli_and_http
 # Check HTTP internal compression in normal case
 
 function cmp_http_compression() {
-    $CLICKHOUSE_CLIENT -q "`query $1`" > ${CLICKHOUSE_TMP}/res0
-    ch_url 'compress=1' $1 | ${CLICKHOUSE_BINARY}-compressor --decompress > ${CLICKHOUSE_TMP}/res1
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | ${CLICKHOUSE_BINARY}-compressor --decompress > ${CLICKHOUSE_TMP}/res2
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | ${CLICKHOUSE_BINARY}-compressor --decompress > ${CLICKHOUSE_TMP}/res3
-    cmp ${CLICKHOUSE_TMP}/res0 ${CLICKHOUSE_TMP}/res1
-    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2
-    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3
-    rm -rf ${CLICKHOUSE_TMP}/res0 ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 ${CLICKHOUSE_TMP}/res3
+    $CLICKHOUSE_CLIENT -q "`query "$1"`" > "${CLICKHOUSE_TMP}"/res0
+    ch_url 'compress=1' "$1" | "${CLICKHOUSE_BINARY}"-compressor --decompress > "${CLICKHOUSE_TMP}"/res1
+    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" "$1" | "${CLICKHOUSE_BINARY}"-compressor --decompress > "${CLICKHOUSE_TMP}"/res2
+    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" "$1" | "${CLICKHOUSE_BINARY}"-compressor --decompress > "${CLICKHOUSE_TMP}"/res3
+    cmp "${CLICKHOUSE_TMP}"/res0 "${CLICKHOUSE_TMP}"/res1
+    cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2
+    cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res3
+    rm -rf "${CLICKHOUSE_TMP}"/res0 "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 "${CLICKHOUSE_TMP}"/res3
 }
 
 function check_http_compression() {

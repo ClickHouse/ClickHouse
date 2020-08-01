@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CUR_DIR/../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 
 for _ in $(seq 1 10); do
