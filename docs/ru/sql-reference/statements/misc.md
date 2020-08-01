@@ -13,3 +13,6 @@
 -   [SET ROLE](../../sql-reference/statements/set-role.md)
 -   [TRUNCATE](../../sql-reference/statements/truncate.md)
 -   [USE](../../sql-reference/statements/use.md)
+
+
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/misc/) <!--hide-->
