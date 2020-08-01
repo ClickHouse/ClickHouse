@@ -157,6 +157,7 @@ SRCS(
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
+    formatRow.cpp
     formatString.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
