@@ -1,5 +1,8 @@
 # Прочие виды запросов {#prochie-vidy-zaprosov}
 
+-   ATTACH
+-   CHECK TABLE
+
 ## ATTACH {#attach}
 
 Запрос полностью аналогичен запросу `CREATE`, но:
