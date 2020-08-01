@@ -11,8 +11,6 @@
 #include <Common/quoteString.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
-
 
 namespace DB
 {

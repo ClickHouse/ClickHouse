@@ -116,8 +116,9 @@ case "$stage" in
         # Run the testing script from the repository
         echo Using the testing script from the repository
         export stage=download
+        time ch/docker/test/fuzzer/run-fuzzer.sh
         # Keep the error code
-        time ch/docker/test/fuzzer/run-fuzzer.sh || exit $?
+        exit $?
     fi
     ;&
 "download")
@@ -160,7 +161,7 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -a "Received signal \|Logical error" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed" server.log > description.txt
         then
             echo "Lost connection to server. See the logs" > description.txt
         fi

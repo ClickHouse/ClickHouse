@@ -6,7 +6,6 @@
 #include <Core/Defines.h>
 
 #include <ext/shared_ptr_helper.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB

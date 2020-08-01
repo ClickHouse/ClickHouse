@@ -1538,7 +1538,7 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 }
 
 
-std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, Strings * mutation_ids) const
+std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
 {
 
     std::lock_guard lock(state_mutex);
@@ -1568,7 +1568,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
             {
                 /// All mutations with the same failure
                 if (!it->second->is_done && it->second->latest_fail_reason == status.latest_fail_reason)
-                    mutation_ids->push_back(it->second->entry->znode_name);
+                    mutation_ids->insert(it->second->entry->znode_name);
             }
         }
     }

@@ -1,6 +1,5 @@
 #include <array>
 #include <math.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
