@@ -213,8 +213,8 @@ void DiskCacheWrapper::moveFile(const String & from_path, const String & to_path
     if (cache_disk->exists(from_path))
     {
         auto dir_path = getDirectoryPath(to_path);
-        if (!cache_disk->exists(to_path))
-            cache_disk->createDirectories(to_path);
+        if (!cache_disk->exists(dir_path))
+            cache_disk->createDirectories(dir_path);
 
         cache_disk->moveFile(from_path, to_path);
     }
@@ -226,8 +226,8 @@ void DiskCacheWrapper::replaceFile(const String & from_path, const String & to_p
     if (cache_disk->exists(from_path))
     {
         auto dir_path = getDirectoryPath(to_path);
-        if (!cache_disk->exists(to_path))
-            cache_disk->createDirectories(to_path);
+        if (!cache_disk->exists(dir_path))
+            cache_disk->createDirectories(dir_path);
 
         cache_disk->replaceFile(from_path, to_path);
     }
@@ -239,8 +239,8 @@ void DiskCacheWrapper::copyFile(const String & from_path, const String & to_path
     if (cache_disk->exists(from_path))
     {
         auto dir_path = getDirectoryPath(to_path);
-        if (!cache_disk->exists(to_path))
-            cache_disk->createDirectories(to_path);
+        if (!cache_disk->exists(dir_path))
+            cache_disk->createDirectories(dir_path);
 
         cache_disk->copyFile(from_path, to_path);
     }
