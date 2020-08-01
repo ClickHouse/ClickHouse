@@ -14,7 +14,7 @@ function query_with_retry
     retry=0
     until [ $retry -ge 5 ]
     do
-        result=`$CLICKHOUSE_CLIENT "$2" --query="$1" 2>&1`
+        result=$($CLICKHOUSE_CLIENT "$2" --query="$1" 2>&1)
         if [ "$?" == 0 ]; then
             echo -n "$result"
             return

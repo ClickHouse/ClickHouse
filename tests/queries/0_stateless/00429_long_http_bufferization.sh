@@ -11,7 +11,7 @@ function query {
 }
 
 function ch_url() {
-    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "`query "$2"`"
+    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "$(query "$2")"
 }
 
 
@@ -21,17 +21,17 @@ exception_pattern="displayText() = DB::Exception:[[:print:]]*"
 
 function check_only_exception() {
     local res
-    res=`ch_url "$1" "$2"`
+    res=$(ch_url "$1" "$2")
     #(echo "$res")
     #(echo "$res" | wc -l)
     #(echo "$res" | grep -c "$exception_pattern")
-    [[ `echo "$res" | wc -l` -eq 1 ]] || echo FAIL 1 "$@"
+    [[ $(echo "$res" | wc -l) -eq 1 ]] || echo FAIL 1 "$@"
     [[ $(echo "$res" | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 2 "$@"
 }
 
 function check_last_line_exception() {
     local res
-    res=`ch_url "$1" "$2"`
+    res=$(ch_url "$1" "$2")
     #echo "$res" > res
     #echo "$res" | wc -c
     #echo "$res" | tail -n -2
@@ -59,13 +59,13 @@ check_exception_handling
 
 # Tune setting to speed up combinatorial test
 max_block_size=500000
-corner_sizes="1048576 `seq 500000 1000000 3500000`"
+corner_sizes="1048576 $(seq 500000 1000000 3500000)"
 
 
 # Check HTTP results with $CLICKHOUSE_CLIENT in normal case
 
 function cmp_cli_and_http() {
-    $CLICKHOUSE_CLIENT -q "`query "$1"`" > "${CLICKHOUSE_TMP}"/res1
+    $CLICKHOUSE_CLIENT -q "$(query "$1")" > "${CLICKHOUSE_TMP}"/res1
     ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > "${CLICKHOUSE_TMP}"/res2
     ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > "${CLICKHOUSE_TMP}"/res3
     cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res2 && cmp "${CLICKHOUSE_TMP}"/res1 "${CLICKHOUSE_TMP}"/res3 || echo FAIL 5 "$@"
@@ -87,7 +87,7 @@ check_cli_and_http
 # Check HTTP internal compression in normal case
 
 function cmp_http_compression() {
-    $CLICKHOUSE_CLIENT -q "`query "$1"`" > "${CLICKHOUSE_TMP}"/res0
+    $CLICKHOUSE_CLIENT -q "$(query "$1")" > "${CLICKHOUSE_TMP}"/res0
     ch_url 'compress=1' "$1" | "${CLICKHOUSE_BINARY}"-compressor --decompress > "${CLICKHOUSE_TMP}"/res1
     ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" "$1" | "${CLICKHOUSE_BINARY}"-compressor --decompress > "${CLICKHOUSE_TMP}"/res2
     ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" "$1" | "${CLICKHOUSE_BINARY}"-compressor --decompress > "${CLICKHOUSE_TMP}"/res3

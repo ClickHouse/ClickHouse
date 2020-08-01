@@ -24,11 +24,11 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table UPDATE key = k
 
 check_query="SELECT count() FROM system.mutations WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and mutation_id='0000000000'"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 
 while [ "$query_result" != "1" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
     sleep 0.5
 done
 
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE table='replicated_mutation_table
 
 while [ "$query_result" != "0" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
     sleep 0.5
 done
 
@@ -46,11 +46,11 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table MODIFY COLUMN 
 
 check_query="SELECT count() FROM system.mutations WHERE table='replicated_mutation_table' and database='$CLICKHOUSE_DATABASE' and mutation_id='0000000001'"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 
 while [ "$query_result" != "1" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
     sleep 0.5
 done
 
@@ -60,7 +60,7 @@ $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE table='replicated_mutation_table
 
 while [ "$query_result" != "0" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
     sleep 0.5
 done
 

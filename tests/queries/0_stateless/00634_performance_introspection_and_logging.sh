@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT "$settings" -n -q "
 SELECT count() FROM null_00634;
 DROP TABLE null_00634;"
 
-(( `cat "$server_logs_file" | wc -l` >= 110 )) || echo Fail
+(( $(cat "$server_logs_file" | wc -l) >= 110 )) || echo Fail
 
 
 # Check ProfileEvents in query_log

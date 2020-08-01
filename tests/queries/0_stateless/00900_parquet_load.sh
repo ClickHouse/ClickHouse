@@ -31,7 +31,7 @@ DATA_DIR=$CUR_DIR/data_parquet
 # BUG! nulls.snappy.parquet - parquet-reader shows wrong structure. Actual structure is {"type":"struct","fields":[{"name":"b_struct","type":{"type":"struct","fields":[{"name":"b_c_int","type":"integer","nullable":true,"metadata":{}}]},"nullable":true,"metadata":{}}]}
 # why? repeated_no_annotation.parquet
 
-for NAME in `find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | sort`; do
+for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | sort); do
     echo === Try load data from "$NAME"
 
     JSON=$DATA_DIR/$NAME.json
@@ -45,7 +45,7 @@ for NAME in `find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | sort`
     # [ -n "$BUILD_DIR" ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader $DATA_DIR/$NAME > $DATA_DIR/$NAME.dump
 
     #COLUMNS=`$CUR_DIR/00900_parquet_create_table_columns.pl $JSON` 2>&1 || continue
-    COLUMNS=`cat "$COLUMNS_FILE"` || continue
+    COLUMNS=$(cat "$COLUMNS_FILE") || continue
 
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
     ${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory"

@@ -19,11 +19,11 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation DELETE WHERE toUInt
 
 check_query1="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation' AND is_done = 0"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query1" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
 
 while [ "$query_result" == "0" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query1" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
     sleep 0.5
 done
 
@@ -45,11 +45,11 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation DELETE WHERE x = 1 
 
 check_query2="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query2" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query2" 2>&1)
 
 while [ "$query_result" == "0" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query2" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query2" 2>&1)
     sleep 0.5
 done
 

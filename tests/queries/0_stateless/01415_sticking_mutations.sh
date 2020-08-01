@@ -30,11 +30,11 @@ function check_sticky_mutations()
     ##### wait mutation to start #####
     check_query="SELECT count() FROM system.mutations WHERE table='sticking_mutations' and database='$CLICKHOUSE_DATABASE' and is_done = 0"
 
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 
     while [ "$query_result" == "0" ]
     do
-        query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+        query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
         sleep 0.5
     done
     ##### wait mutation to start #####

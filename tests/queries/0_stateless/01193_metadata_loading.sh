@@ -19,7 +19,7 @@ threads=10
 count_multiplier=1
 max_time_ms=1000
 
-debug_or_sanitizer_build=`$CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%' OR hasThreadFuzzer()"`
+debug_or_sanitizer_build=$($CLICKHOUSE_CLIENT -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%' OR hasThreadFuzzer()")
 
 if [[ debug_or_sanitizer_build -eq 1 ]]; then tables=100; count_multiplier=10; max_time_ms=1500; fi
 
@@ -41,12 +41,12 @@ wait
 $CLICKHOUSE_CLIENT -q "CREATE TABLE $db.table_merge (i UInt64, d Date, s String, n Nested(i UInt8, f Float32)) ENGINE=Merge('$db', '^table_')"
 $CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
-db_engine=`$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$db'"`
+db_engine=$($CLICKHOUSE_CLIENT -q "SELECT engine FROM system.databases WHERE name='$db'")
 
 $CLICKHOUSE_CLIENT -q "DETACH DATABASE $db"
 
 # get real time, grep seconds, remove point, remove leading zeros
-elapsed_ms=`{ time $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $db ENGINE=$db_engine"; } 2>&1 | grep real | grep -Po "0m\K[0-9\.]*" | tr -d '.' | sed "s/^0*//"`
+elapsed_ms=$({ time $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $db ENGINE=$db_engine"; } 2>&1 | grep real | grep -Po "0m\K[0-9\.]*" | tr -d '.' | sed "s/^0*//")
 $CLICKHOUSE_CLIENT -q "SELECT '01193_metadata_loading', $elapsed_ms FORMAT Null" # it will be printed to server log
 
 if [[ $elapsed_ms -le $max_time_ms ]]; then echo ok; fi
