@@ -3,6 +3,7 @@ import random
 import threading
 import time
 import pytest
+import io
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -16,6 +17,11 @@ from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnecti
 from kafka.admin import NewTopic
 from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
+
+import avro.schema
+from confluent.schemaregistry.client import CachedSchemaRegistryClient
+from confluent.schemaregistry.serializers import MessageSerializer
+
 import socket
 from google.protobuf.internal.encoder import _VarintBytes
 
@@ -102,6 +108,28 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
     producer.flush()
     print("Produced {} messages for topic {}".format(num_messages, topic))
 
+def avro_confluent_message(schema_registry_client, value):
+    # type: (CachedSchemaRegistryClient, dict) -> str
+
+    serializer = MessageSerializer(schema_registry_client)
+    schema = avro.schema.make_avsc_object({
+        'name': 'row',
+        'type': 'record',
+        'fields': [
+            {'name': 'id', 'type': 'long'},
+            {'name': 'blockNo', 'type': 'int'},
+            {'name': 'val1', 'type': 'string'},
+            {'name': 'val2', 'type': 'float'},
+            {'name': 'val3', 'type': 'int'}
+        ]
+    })
+
+    buf = io.BytesIO()
+    message = serializer.encode_record_with_schema(
+        'test_subject', schema, value
+    )
+    buf.write(message)
+    return buf.getvalue()
 
 @pytest.mark.timeout(180)
 def test_kafka_json_as_string(kafka_cluster):
@@ -407,7 +435,21 @@ def test_kafka_formats(kafka_cluster):
         #         # ''
         #     ],
         # },
-        # TODO: test for AvroConfluence
+        'AvroConfluent' : {
+            'data_sample': [
+                avro_confluent_message(cluster.schema_registry_client, {'id':0L,'blockNo':0,'val1':unicode('AM'),'val2':0.5,"val3":1}),
+
+                ''.join(map(lambda id: avro_confluent_message(cluster.schema_registry_client, {'id':id,'blockNo':0,'val1':unicode('AM'),'val2':0.5,"val3":1}), range(1,16))),
+
+                avro_confluent_message(cluster.schema_registry_client, {'id':0L,'blockNo':0,'val1':unicode('AM'),'val2':0.5,"val3":1}),
+
+                '',
+            ],
+            'extra_settings': ", format_avro_schema_registry_url='http://{}:{}'".format(
+                cluster.schema_registry_host,
+                cluster.schema_registry_port
+            )
+        }
         # 'Arrow' : {
         #     # Not working at all: DB::Exception: Error while opening a table: Invalid: File is too small: 0, Stack trace (when copying this message, always include the lines below):
         #     # /src/Common/Exception.cpp:37: DB::Exception::Exception(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, int) @ 0x15c2d2a3 in /usr/bin/clickhouse
