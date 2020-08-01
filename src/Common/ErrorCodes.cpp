@@ -497,6 +497,9 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ = 530;
     extern const int CANNOT_FSTAT = 531;
     extern const int LDAP_ERROR = 532;
+    extern const int INCONSISTENT_RESERVATIONS = 533;
+    extern const int NO_RESERVATIONS_PROVIDED = 534;
+    extern const int UNKNOWN_RAID_TYPE = 535;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
