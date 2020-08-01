@@ -7,7 +7,7 @@ export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 #export CLICKHOUSE_CLIENT_BINARY='../../../../cmake-build-debug/programs/clickhouse client'
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
 tmp_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"

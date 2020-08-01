@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 echo 'DROP TABLE IF EXISTS long_insert' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-
 echo 'CREATE TABLE long_insert (a String) ENGINE = Memory' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-

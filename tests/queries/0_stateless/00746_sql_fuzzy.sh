@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 export SQL_FUZZY_FILE_FUNCTIONS=${CLICKHOUSE_TMP}/clickhouse-functions
 $CLICKHOUSE_CLIENT -q "select name from system.functions format TSV;" > $SQL_FUZZY_FILE_FUNCTIONS

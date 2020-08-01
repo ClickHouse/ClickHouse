@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tskv";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE tskv (tskv_format String, timestamp DateTime('UTC'), timezone String, text String, binary_data String) ENGINE = Memory";

@@ -2,7 +2,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 echo 'DROP TABLE IF EXISTS table_for_insert'                            | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-
 echo 'CREATE TABLE table_for_insert (a UInt8, b UInt8) ENGINE = Memory' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-

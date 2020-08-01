@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS template";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE template (s1 String, s2 String, \`s 3\` String, \"s 4\" String, n UInt64, d Date) ENGINE = Memory";

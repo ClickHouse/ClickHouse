@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # If we run sanitized binary under qemu, it will try to slowly allocate 20 TiB until OOM.
 # Don't even try to do that. This test should be disabled for sanitizer builds.

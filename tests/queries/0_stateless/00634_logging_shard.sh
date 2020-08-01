@@ -5,7 +5,7 @@ set -e
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
 server_logs_file="${CLICKHOUSE_TMP}/${cur_name}_server.logs"

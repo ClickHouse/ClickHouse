@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 for i in `seq 4`; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i"
