@@ -53,8 +53,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/SymbolIndex.h>
 
-#include <Interpreters/CrashLog.h>
-
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
 #endif
@@ -151,6 +149,11 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     errno = saved_errno;
 }
+
+
+/// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
+__attribute__((__weak__)) void collectCrashLog(
+    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 
 
 /** The thread that read info about signal or std::terminate from pipe.
@@ -311,7 +314,8 @@ private:
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
         /// Write crash to system.crash_log table if available.
-        DB::CrashLog::collect(sig, thread_num, query_id, stack_trace);
+        if (collectCrashLog)
+            collectCrashLog(sig, thread_num, query_id, stack_trace);
 
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
