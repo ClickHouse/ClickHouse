@@ -2,6 +2,11 @@
 
 #include <Interpreters/SystemLog.h>
 
+
+/// Call this function on crash.
+void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
+
+
 namespace DB
 {
 
@@ -26,6 +31,7 @@ struct CrashLogElement
 class CrashLog : public SystemLog<CrashLogElement>
 {
     using SystemLog<CrashLogElement>::SystemLog;
+    friend void ::collectCrashLog(Int32, UInt64, const String &, const StackTrace &);
 
     static std::weak_ptr<CrashLog> crash_log;
 
@@ -34,9 +40,6 @@ public:
     {
         crash_log = std::move(crash_log_);
     }
-
-    static void collect(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 };
 
 }
-

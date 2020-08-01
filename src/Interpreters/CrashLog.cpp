@@ -58,11 +58,16 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(build_id_hex);
 }
 
-void CrashLog::collect(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace)
+}
+
+
+void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace)
 {
-    if (auto crash_log_owned = crash_log.lock())
+    using namespace DB;
+
+    if (auto crash_log_owned = CrashLog::crash_log.lock())
     {
-        UInt64 time = clock_gettime_ns();
+        UInt64 time = clock_gettime_ns(CLOCK_REALTIME);
 
         size_t stack_trace_size = stack_trace.getSize();
         size_t stack_trace_offset = stack_trace.getOffset();
@@ -82,6 +87,4 @@ void CrashLog::collect(Int32 signal, UInt64 thread_id, const String & query_id, 
         CrashLogElement element{time_t(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
         crash_log_owned->add(element);
     }
-}
-
 }
