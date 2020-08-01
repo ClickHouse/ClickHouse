@@ -27,7 +27,7 @@ public:
         bool preserves_number_of_streams;
 
         /// Doesn't change row order.
-        /// Examples: true FilterStep, false for PartialSortingStep
+        /// Examples: true for FilterStep, false for PartialSortingStep
         bool preserves_sorting;
     };
 
