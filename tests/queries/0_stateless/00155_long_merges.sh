@@ -32,17 +32,17 @@ function test {
 
     SETTINGS="--min_insert_block_size_rows=0 --min_insert_block_size_bytes=0"
 
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
 
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
 
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $1) GROUP BY number"
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $2) GROUP BY number"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $1) GROUP BY number"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $2) GROUP BY number"
 
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 0) FROM system.numbers LIMIT $1"
-    $CLICKHOUSE_CLIENT "$SETTINGS" --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 1) FROM system.numbers LIMIT $2"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 0) FROM system.numbers LIMIT $1"
+    $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 1) FROM system.numbers LIMIT $2"
 
     $CLICKHOUSE_CLIENT --query="SELECT count() = $SUM, sum(s) = $SUM FROM summing_00155"
     $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE summing_00155"

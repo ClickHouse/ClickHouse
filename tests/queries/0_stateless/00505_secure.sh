@@ -15,7 +15,7 @@ fi
 CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
 if [[ $CLICKHOUSE_CLIENT != *"--port"* ]]; then
     # Auto port detect. Cant test with re-defined via command line ports
-    $CLICKHOUSE_CLIENT_BINARY "$USE_CONFIG" --secure -q "SELECT 1";
+    $CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure -q "SELECT 1";
 else
     echo 1
 fi
