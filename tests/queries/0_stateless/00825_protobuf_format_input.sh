@@ -43,7 +43,7 @@ EOF
 # To generate the file 00825_protobuf_format_input.insh use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
-source $CURDIR/00825_protobuf_format_input.insh
+source "$CURDIR"/00825_protobuf_format_input.insh
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
