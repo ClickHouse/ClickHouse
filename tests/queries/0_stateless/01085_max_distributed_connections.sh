@@ -10,4 +10,4 @@ opts=(
 )
 # 1.8 less then 2 seconds, but long enough to cover possible load peaks
 # "$@" left to pass manual options (like --experimental_use_processors 0) during manual testing
-timeout 1.8s $CLICKHOUSE_CLIENT "${opts[@]}" "$@"
+timeout 1.8s "$CLICKHOUSE_CLIENT" "${opts[@]}" "$@"

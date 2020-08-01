@@ -22,7 +22,7 @@ function thread()
 }
 
 for REPLICA in $SEQ; do
-    thread $REPLICA $DATA_SIZE &
+    thread "$REPLICA" $DATA_SIZE &
 done
 
 wait

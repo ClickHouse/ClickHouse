@@ -7,7 +7,7 @@ TMP_DIR="/tmp"
 
 declare -a SearchTypes=("POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-tar -xf ${CURDIR}/01037_test_data_perf.tar.gz -C ${CURDIR}
+tar -xf "${CURDIR}"/01037_test_data_perf.tar.gz -C "${CURDIR}"
 
 $CLICKHOUSE_CLIENT -n --query="
 DROP DATABASE IF EXISTS test_01037;
@@ -18,7 +18,7 @@ CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "${CURDIR}/01037_point_data"
 
-rm ${CURDIR}/01037_point_data
+rm "${CURDIR}"/01037_point_data
 
 $CLICKHOUSE_CLIENT -n --query="
 DROP TABLE IF EXISTS test_01037.polygons_array;
@@ -34,7 +34,7 @@ ENGINE = Memory;
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --max_insert_block_size=100000 < "${CURDIR}/01037_polygon_data"
 
-rm ${CURDIR}/01037_polygon_data
+rm "${CURDIR}"/01037_polygon_data
 
 for type in "${SearchTypes[@]}";
 do
@@ -56,7 +56,7 @@ do
 
    select 'dictGet', 'test_01037.dict_array' as dict_name, tuple(x, y) as key,
       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
-   " > $outputFile
+   " > "$outputFile"
 
    diff -q "${CURDIR}/01037_polygon_dicts_correctness_fast.ans" "$outputFile"
 done

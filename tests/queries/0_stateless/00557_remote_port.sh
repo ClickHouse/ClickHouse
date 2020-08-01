@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-if [ $CLICKHOUSE_HOST == "localhost" ]; then
+if [ "$CLICKHOUSE_HOST" == "localhost" ]; then
     $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('127.0.0.1',          system, one);"
     $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('127.0.0.{1,1}',      system, one);"
     $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}',     system, one);"

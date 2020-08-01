@@ -42,7 +42,7 @@ function check()
 
     query_result=`$CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('database_for_dict.dict_with_zero_min_lifetime', 'value', toUInt64(2))"`
 
-    while [ $query_result != "2.2" ]
+    while [ "$query_result" != "2.2" ]
     do
         query_result=`$CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('database_for_dict.dict_with_zero_min_lifetime', 'value', toUInt64(2))"`
     done

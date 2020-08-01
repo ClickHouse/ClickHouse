@@ -44,7 +44,7 @@ do
     sleep 0.5
 done
 
-echo $query_result
+echo "$query_result"
 
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id'"
 

@@ -34,7 +34,7 @@ create_tables() {
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $db"
 
 for i in $(seq 1 $threads); do
-  create_tables $i &
+  create_tables "$i" &
 done
 wait
 
