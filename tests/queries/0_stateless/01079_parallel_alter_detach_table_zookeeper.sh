@@ -90,7 +90,7 @@ for i in $(seq $REPLICAS); do
 done
 
 # This alter will finish all previous, but replica 1 maybe still not up-to-date
-while [[ $(timeout 120 "$CLICKHOUSE_CLIENT" --query "ALTER TABLE concurrent_alter_detach_1 MODIFY COLUMN value1 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
+while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_detach_1 MODIFY COLUMN value1 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
     sleep 1
     # just try to attach table if it failed for some reason in the code above
     for i in $(seq $REPLICAS); do

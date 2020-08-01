@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Don't even try to do that. This test should be disabled for sanitizer builds.
 ${CLICKHOUSE_LOCAL} --query "SELECT max(value LIKE '%sanitize%') FROM system.build_options" | grep -q '1' && echo 'Skip test for sanitizer build' && exit
 
-command=$(command -v "${CLICKHOUSE_LOCAL}")
+command=$(command -v ${CLICKHOUSE_LOCAL})
 
 function run_with_cpu()
 {
