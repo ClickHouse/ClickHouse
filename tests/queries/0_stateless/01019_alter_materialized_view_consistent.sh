@@ -32,7 +32,7 @@ function insert_thread() {
 
     while true; do
         # trigger 50 concurrent inserts at a time
-        for i in {0..50}; do
+        for _ in {0..50}; do
             # ignore `Possible deadlock avoided. Client should retry`
             $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
         done

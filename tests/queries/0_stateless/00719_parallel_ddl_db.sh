@@ -8,13 +8,13 @@ ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
 
 function query()
 {
-    for i in {1..100}; do
+    for _ in {1..100}; do
         ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS parallel_ddl"
-        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"  
+        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
     done
 }
 
-for i in {1..2}; do
+for _ in {1..2}; do
     query &
 done
 

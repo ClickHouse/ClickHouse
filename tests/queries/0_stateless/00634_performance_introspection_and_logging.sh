@@ -50,29 +50,5 @@ SELECT
         (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
-# Check per-thread and per-query ProfileEvents consistency
-
-$CLICKHOUSE_CLIENT $settings --any_join_distinct_right_table_keys=1 -q "
-SELECT PN, PVq, PVt FROM
-(
-    SELECT PN, sum(PV) AS PVt
-    FROM system.query_thread_log
-    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-    WHERE event_date >= today()-1 AND query_id='$query_id'
-    GROUP BY PN
-) js1
-ANY INNER JOIN
-(
-    SELECT PN, PV AS PVq
-    FROM system.query_log
-    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-    WHERE event_date >= today()-1 AND query_id='$query_id'
-) js2
-USING PN
-WHERE
-    NOT PN IN ('ContextLock') AND
-    NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
-"
-
 # Clean
 rm "$server_logs_file"

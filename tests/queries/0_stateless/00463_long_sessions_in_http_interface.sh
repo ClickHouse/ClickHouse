@@ -91,7 +91,7 @@ sleep 3
 check "$url$session&session_check=1" "$select" "Exception.*Session not found" 1 "Session did not expire on time."
 
 create_temporary_table "$url$session&session_timeout=2"
-for i in $(seq 1 3); do
+for _ in $(seq 1 3); do
     check "$url$session&session_timeout=2" "$select_from_temporary_table" "Hello" 1 "Session expired too early."
     sleep 1
 done
@@ -99,7 +99,7 @@ sleep 3
 check "$url$session&session_check=1" "$select" "Exception.*Session not found" 1 "Session did not expire on time."
 
 create_temporary_table "$url$session&session_timeout=2"
-for i in $(seq 1 5); do
+for _ in $(seq 1 5); do
     check "$url$session&session_timeout=2" "$select_from_non_existent_table" "Exception.*Table .* doesn't exist." 1 "Session expired too early."
     sleep 1
 done

@@ -3,11 +3,6 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CUR_DIR/../shell_config.sh
 
-CB_DIR=$(dirname "$CLICKHOUSE_CLIENT_BINARY")
-[ "$CB_DIR" == "." ] && ROOT_DIR=$CUR_DIR/../../../..
-[ "$CB_DIR" != "." ] && BUILD_DIR=$CB_DIR/../..
-[ -z "$ROOT_DIR" ] && ROOT_DIR=$CB_DIR/../../..
-
 DATA_FILE=$CUR_DIR/data_orc/test.orc
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS orc_load"

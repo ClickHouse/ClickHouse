@@ -20,7 +20,7 @@ done | $CLICKHOUSE_CLIENT -n --max_block_size 5
 # Randomized test
 
 ITERATIONS=1000
-for i in $(seq $ITERATIONS); do
+for _ in $(seq $ITERATIONS); do
     SIZE=$(($RANDOM % 100))
     OFFSET=$(($RANDOM % 111))
     LIMIT=$(($RANDOM % 111))
