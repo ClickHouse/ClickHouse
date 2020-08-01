@@ -1120,7 +1120,7 @@ def test_kafka_virtual_columns(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp FROM test.kafka', ignore_error=True)
+        result += instance.query('''SELECT _key, key, _topic, value, _offset, _partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) AS _timestamp FROM test.kafka''', ignore_error=True)
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
 
@@ -1139,11 +1139,11 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
                      kafka_group_name = 'virt2',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime))
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')))
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp as timestamp FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
     ''')
 
     messages = []
@@ -1407,7 +1407,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1415,7 +1415,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
 
-        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1619,7 +1619,7 @@ def test_kafka_rebalance(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -1839,7 +1839,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -2037,7 +2037,7 @@ def test_premature_flush_on_eof(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
