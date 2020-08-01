@@ -47,7 +47,16 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
         bindQueue(queue_id);
 
-    consumer_channel->onReady([&]() { subscribe(); });
+    consumer_channel->onReady([&]()
+    {
+        consumer_channel->onError([&](const char * message)
+        {
+            LOG_ERROR(log, "Consumer {} error: {}", consumer_tag, message);
+            channel_error.store(true);
+        });
+
+        subscribe();
+    });
 }
 
 
@@ -62,16 +71,16 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
 {
     std::atomic<bool> bindings_created = false, bindings_error = false;
 
-    auto success_callback = [&](const std::string &  queue_name_, int msgcount, int /* consumercount */)
+    auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
     {
-        queues.emplace_back(queue_name_);
-        LOG_DEBUG(log, "Queue " + queue_name_ + " is declared");
+        queues.emplace_back(queue_name);
+        LOG_DEBUG(log, "Queue {} is declared", queue_name);
 
         if (msgcount)
-            LOG_TRACE(log, "Queue " + queue_name_ + " is non-empty. Non-consumed messaged will also be delivered.");
+            LOG_TRACE(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
 
         /// Binding key must be a string integer in case of hash exchange (here it is either hash or fanout).
-        setup_channel->bindQueue(exchange_name, queue_name_, std::to_string(channel_id))
+        setup_channel->bindQueue(exchange_name, queue_name, std::to_string(channel_id))
         .onSuccess([&]
         {
             bindings_created = true;
@@ -114,22 +123,13 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
 
 void ReadBufferFromRabbitMQConsumer::subscribe()
 {
-    count_subscribed = 0;
     for (const auto & queue_name : queues)
     {
         consumer_channel->consume(queue_name)
         .onSuccess([&](const std::string & consumer)
         {
-            ++count_subscribed;
             LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
-
-            consumer_error = false;
             consumer_tag = consumer;
-
-            consumer_channel->onError([&](const char * message)
-            {
-                LOG_ERROR(log, "Consumer {} error: {}", consumer_tag, message);
-            });
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
@@ -144,33 +144,9 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         })
         .onError([&](const char * message)
         {
-            consumer_error = true;
             LOG_ERROR(log, "Consumer {} failed. Reason: {}", channel_id, message);
         });
     }
-}
-
-
-void ReadBufferFromRabbitMQConsumer::checkSubscription()
-{
-    if (count_subscribed == num_queues || !consumer_channel->usable())
-        return;
-
-    wait_subscribed = num_queues;
-
-    /// These variables are updated in a separate thread.
-    while (count_subscribed != wait_subscribed && !consumer_error)
-    {
-        iterateEventLoop();
-    }
-
-    LOG_TRACE(log, "Consumer {} is subscribed to {} queues", channel_id, count_subscribed);
-
-    /// Updated in callbacks which are run by the loop.
-    if (count_subscribed == num_queues)
-        return;
-
-    subscribe();
 }
 
 
@@ -208,5 +184,27 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
 
     return false;
 }
+
+
+void ReadBufferFromRabbitMQConsumer::restoreChannel(ChannelPtr new_channel)
+{
+    if (consumer_channel->usable())
+        return;
+
+    consumer_channel = std::move(new_channel);
+    consumer_channel->onReady([&]()
+    {
+        LOG_TRACE(log, "Channel {} is restored", channel_id);
+        channel_error.store(false);
+        consumer_channel->onError([&](const char * message)
+        {
+            LOG_ERROR(log, "Consumer {} error: {}", consumer_tag, message);
+            channel_error.store(true);
+        });
+
+        subscribe();
+    });
+}
+
 
 }

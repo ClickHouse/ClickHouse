@@ -52,7 +52,8 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     if (!buffer || finished)
         return;
 
-    buffer->checkSubscription();
+    if (!buffer->channelUsable() && (storage.connectionRunning() || storage.restoreConnection()))
+        buffer->restoreChannel(storage.getChannel());
 }
 
 

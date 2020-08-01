@@ -46,7 +46,8 @@ public:
     };
 
     void allowNext() { allowed = true; } // Allow to read next message.
-    void checkSubscription();
+    bool channelUsable() { return !channel_error.load(); }
+    void restoreChannel(ChannelPtr new_channel);
     void updateNextDeliveryTag(UInt64 delivery_tag) { last_inserted_delivery_tag = delivery_tag; }
     void ackMessages();
 
@@ -71,15 +72,13 @@ private:
     const std::atomic<bool> & stopped;
 
     const String deadletter_exchange;
-    std::atomic<bool> consumer_error = false;
-    std::atomic<size_t> count_subscribed = 0, wait_subscribed;
+    std::atomic<bool> channel_error = false;
 
     String consumer_tag;
     ConcurrentBoundedQueue<MessageData> received;
     UInt64 last_inserted_delivery_tag = 0, prev_tag = 0;
     MessageData current;
     std::vector<String> queues;
-    std::unordered_map<String, bool> subscribed_queue;
 
     bool nextImpl() override;
 
