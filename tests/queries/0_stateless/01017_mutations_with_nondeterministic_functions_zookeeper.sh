@@ -38,16 +38,16 @@ ${CLICKHOUSE_CLIENT} -n -q "
 
 # Check that in mutations of replicated tables predicates do not contain non-deterministic functions
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE ignore(rand())" 2>&1 \
-| fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+| grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = y + rand() % 1 WHERE not ignore()" 2>&1 \
-| fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+| grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = x + arrayCount(x -> (x + y) % 2, range(y)) WHERE not ignore()" > /dev/null 2>&1 \
 && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = x + arrayCount(x -> (rand() + x) % 2, range(y)) WHERE not ignore()" 2>&1 \
-| fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+| grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
 
 # For regular tables we do not enforce deterministic functions
@@ -62,7 +62,7 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = joinGet('${CLICKHOUSE_D
 && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" 2>&1 \
-| fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+| grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" --allow_nondeterministic_mutations=1 2>&1 \
 && echo 'OK' || echo 'FAIL'
