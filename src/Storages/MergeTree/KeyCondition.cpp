@@ -530,7 +530,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         return false;
 
     bool found_transformation = false;
-    for (const ExpressionAction & a : key_expr->getActions())
+    for (const ExpressionAction & action : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
           * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
@@ -542,21 +542,21 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
           * Instead, we can qualify only functions that do not transform the range (for example rounding),
           * which while not strictly monotonic, are monotonic everywhere on the input range.
           */
-        const auto & action = a.argument_names;
-        if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
+        const auto & argument_names = action.argument_names;
+        if (action.type == ExpressionAction::Type::APPLY_FUNCTION && argument_names.size() == 1 && argument_names[0] == expr_name)
         {
-            if (!a.function_base->hasInformationAboutMonotonicity())
+            if (!action.function_base->hasInformationAboutMonotonicity())
                 return false;
 
             // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = action.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             // Apply the next transformation step
-            out_value = applyFunctionForField(a.function_base, out_type, out_value);
-            out_type = a.function_base->getReturnType();
-            expr_name = a.result_name;
+            out_value = applyFunctionForField(action.function_base, out_type, out_value);
+            out_type = action.function_base->getReturnType();
+            expr_name = action.result_name;
 
             // Transformation results in a key expression, accept
             auto it = key_columns.find(expr_name);
