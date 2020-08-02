@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <climits>
 #include <type_traits>
+#include <common/defines.h>
 
 
 /** Returns log2 of number, rounded down.
@@ -15,11 +17,15 @@ inline unsigned int bitScanReverse(unsigned int x)
 
 
 /** For zero argument, result is zero.
-  * For arguments with most significand bit set, result is zero.
+  * For arguments with most significand bit set, result is n.
   * For other arguments, returns value, rounded up to power of two.
   */
 inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 {
+    // if MSB is set, return n, to avoid return zero
+    if (unlikely(n & 1ULL<<(sizeof(size_t)*CHAR_BIT-1)))
+        return n;
+
     --n;
     n |= n >> 1;
     n |= n >> 2;
