@@ -160,7 +160,9 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
 
     if (static_cast<int32_t>(scale) + exponent < 0)
     {
-        if (-exponent >= std::numeric_limits<typename T::NativeType>::digits10)
+        auto divisor_exp = -exponent - static_cast<int32_t>(scale);
+
+        if (divisor_exp >= std::numeric_limits<typename T::NativeType>::digits10)
         {
             /// Too big negative exponent
             x.value = 0;
@@ -170,7 +172,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
         else
         {
             /// Too many digits after point. Just cut off excessive digits.
-            auto divisor = intExp10OfSize<T>(-exponent - static_cast<int32_t>(scale));
+            auto divisor = intExp10OfSize<T>(divisor_exp);
             x.value /= divisor;
             scale = 0;
             return;
