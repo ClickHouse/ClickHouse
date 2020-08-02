@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -17,6 +18,7 @@ SRCS(
     StoragePolicy.cpp
     VolumeJBOD.cpp
     VolumeRAID1.cpp
+
 )
 
 END()
