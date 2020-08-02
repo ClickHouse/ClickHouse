@@ -202,9 +202,10 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.select)
         {
             auto optimize_trivial_insert_select = settings.optimize_trivial_insert_select;
-			if(optimize_trivial_insert_select)
-			{
-                auto is_trivial_select = [](const auto query_) {
+            if (optimize_trivial_insert_select)
+            {
+                auto is_trivial_select = [](const auto query_)
+                {
                     if (query_.tables())
                     {
                         const auto & tables_in_select_query = query_.tables()->template as<ASTTablesInSelectQuery &>();
