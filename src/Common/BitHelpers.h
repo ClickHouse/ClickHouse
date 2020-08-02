@@ -23,7 +23,7 @@ inline unsigned int bitScanReverse(unsigned int x)
 inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 {
     // if MSB is set, return n, to avoid return zero
-    if (unlikely(n & 1ULL<<(sizeof(size_t)*CHAR_BIT-1)))
+    if (unlikely(n >= 0x8000000000000000ULL))
         return n;
 
     --n;
