@@ -464,7 +464,7 @@ static Field applyFunctionForField(
 }
 
 /// The case when arguments may have types different than in the primary key.
-static Field applyFunctionForField(
+static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
     const FunctionOverloadResolverPtr & func,
     const DataTypePtr & arg_type,
     const Field & arg_value)
@@ -473,14 +473,19 @@ static Field applyFunctionForField(
 
     FunctionBasePtr func_base = func->build({argument});
 
+    DataTypePtr return_type = func_base->getReturnType();
+
     Block block
     {
         std::move(argument),
-        { nullptr, func_base->getReturnType(), "y" }
+        { nullptr, return_type, "result" }
     };
 
     func_base->execute(block, {0}, 1, 1);
-    return (*block.safeGetByPosition(1).column)[0];
+
+    Field result = (*block.safeGetByPosition(1).column)[0];
+
+    return {std::move(result), std::move(return_type)};
 }
 
 
@@ -577,11 +582,10 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 return false;
 
             /// Apply the next transformation step.
-            out_value = applyFunctionForField(
+            std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(
                 action.function_builder,
                 out_type, out_value);
 
-            out_type = action.function_base->getReturnType();
             expr_name = action.result_name;
 
             /// Transformation results in a key expression, accept.
@@ -818,23 +822,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 is_set_const = true;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                     && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
             {
                 key_arg_pos = 0;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                     && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
             {
                 key_arg_pos = 0;
                 is_constant_transformed = true;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                     && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+                && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
             {
                 key_arg_pos = 1;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                     && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
             {
                 key_arg_pos = 1;
                 is_constant_transformed = true;
