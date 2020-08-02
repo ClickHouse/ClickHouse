@@ -130,7 +130,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
-    const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
+    const TreeRewriterResultPtr & syntax_analyzer_result_,
     const Context & context_,
     size_t subquery_depth_,
     bool do_global)
@@ -523,7 +523,7 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 static ExpressionActionsPtr createJoinedBlockActions(const Context & context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
+    auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 

@@ -11,9 +11,12 @@ namespace DB
 enum class VolumeType
 {
     JBOD,
+    RAID1,
     SINGLE_DISK,
     UNKNOWN
 };
+
+String volumeTypeToString(VolumeType t);
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -33,7 +36,10 @@ using Volumes = std::vector<VolumePtr>;
 class IVolume : public Space
 {
 public:
-    IVolume(String name_, Disks disks_): disks(std::move(disks_)), name(name_)
+    IVolume(String name_, Disks disks_, size_t max_data_part_size_ = 0)
+        : disks(std::move(disks_))
+        , name(name_)
+        , max_data_part_size(max_data_part_size_)
     {
     }
 
@@ -53,12 +59,35 @@ public:
     /// Return biggest unreserved space across all disks
     UInt64 getMaxUnreservedFreeSpace() const;
 
-    DiskPtr getDisk(size_t i = 0) const { return disks[i]; }
+    DiskPtr getDisk() const { return getDisk(0); }
+    virtual DiskPtr getDisk(size_t i) const { return disks[i]; }
     const Disks & getDisks() const { return disks; }
 
 protected:
     Disks disks;
     const String name;
+
+public:
+    /// Max size of reservation, zero means unlimited size
+    UInt64 max_data_part_size = 0;
+};
+
+/// Reservation for multiple disks at once. Can be used in RAID1 implementation.
+class MultiDiskReservation : public IReservation
+{
+public:
+    MultiDiskReservation(Reservations & reservations, UInt64 size);
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk(size_t i) const override { return reservations[i]->getDisk(); }
+
+    Disks getDisks() const override;
+
+    void update(UInt64 new_size) override;
+private:
+    Reservations reservations;
+    UInt64 size;
 };
 
 }

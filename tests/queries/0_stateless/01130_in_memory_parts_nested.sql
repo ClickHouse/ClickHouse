@@ -9,6 +9,7 @@ INSERT INTO nested SELECT number, number % 2, range(number % 10) FROM system.num
 ALTER TABLE nested ADD COLUMN n.b Array(UInt64);
 SELECT DISTINCT n.b FROM nested PREWHERE filter;
 SELECT DISTINCT n.b FROM nested PREWHERE filter SETTINGS max_block_size = 10;
+SELECT DISTINCT n.b FROM nested PREWHERE filter SETTINGS max_block_size = 123;
 
 ALTER TABLE nested ADD COLUMN n.c Array(UInt64) DEFAULT arrayMap(x -> x * 2, n.a);
 SELECT DISTINCT n.c FROM nested PREWHERE filter;
