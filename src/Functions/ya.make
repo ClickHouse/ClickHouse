@@ -203,6 +203,7 @@ SRCS(
     geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
+    getSetting.cpp
     getSizeOfEnumType.cpp
     globalVariable.cpp
     greatCircleDistance.cpp

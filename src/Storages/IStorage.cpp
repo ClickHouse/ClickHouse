@@ -29,22 +29,22 @@ bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadata
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
 {
-    auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
+    auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
                 type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
-                "\" has timed out! (" + toString(acquire_timeout.totalMilliseconds()) + "ms) "
+                "\" has timed out! (" + std::to_string(acquire_timeout.count()) + "ms) "
                 "Possible deadlock avoided. Client should retry.",
                 ErrorCodes::DEADLOCK_AVOIDED);
     }
     return lock_holder;
 }
 
-TableLockHolder IStorage::lockForShare(const String & query_id, const SettingSeconds & acquire_timeout)
+TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
@@ -54,7 +54,7 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const SettingSec
     return result;
 }
 
-TableLockHolder IStorage::lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout)
+TableLockHolder IStorage::lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
@@ -65,7 +65,7 @@ TableLockHolder IStorage::lockForAlter(const String & query_id, const SettingSec
 }
 
 
-TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout)
+TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableExclusiveLockHolder result;
     result.alter_lock = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);

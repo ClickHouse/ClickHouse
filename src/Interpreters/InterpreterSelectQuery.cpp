@@ -1527,8 +1527,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     const Settings & settings = context->getSettingsRef();
 
     Aggregator::Params params(header_before_transform, keys, query_analyzer->aggregates(),
-                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              SettingUInt64(0), SettingUInt64(0),
+                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
