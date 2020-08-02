@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Not default server config needed
 
 
-if [ -n $CLICKHOUSE_CONFIG_CLIENT ]; then
+if [ -n "$CLICKHOUSE_CONFIG_CLIENT" ]; then
     USE_CONFIG="--config-file $CLICKHOUSE_CONFIG_CLIENT"
 fi
 

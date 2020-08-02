@@ -3356,7 +3356,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
         result.push_back(PartitionCommandResultInfo{
             .partition_id = part->info.partition_id,
             .part_name = part->name,
-            .backup_path = backup_path,
+            .backup_path = part->volume->getDisk()->getPath() + backup_path,
+            .part_backup_path = part->volume->getDisk()->getPath() + backup_part_path,
             .backup_name = backup_name,
         });
         ++parts_processed;
