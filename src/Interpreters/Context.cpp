@@ -968,7 +968,7 @@ void Context::setSetting(const StringRef & name, const String & value)
         setProfile(value);
         return;
     }
-    settings.set(name, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -983,7 +983,7 @@ void Context::setSetting(const StringRef & name, const Field & value)
         setProfile(value.safeGet<String>());
         return;
     }
-    settings.set(name, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -1025,11 +1025,10 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes) const
         settings_constraints->check(settings, changes);
 }
 
-
-void Context::clampToSettingsConstraints(SettingChange & change) const
+void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
     if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->clamp(settings, change);
+        settings_constraints->check(settings, changes);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
@@ -1037,7 +1036,6 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, changes);
 }
-
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
