@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <climits>
 #include <type_traits>
 #include <common/defines.h>
 
