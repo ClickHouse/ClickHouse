@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL (
@@ -25,13 +26,13 @@ SRCS(
     AlignedBuffer.cpp
     Allocator.cpp
     checkStackSize.cpp
+    clearPasswordFromCommandLine.cpp
     ClickHouseRevision.cpp
     Config/AbstractConfigurationComparison.cpp
     Config/ConfigProcessor.cpp
     Config/configReadClient.cpp
     Config/ConfigReloader.cpp
     createHardLink.cpp
-    clearPasswordFromCommandLine.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
@@ -47,6 +48,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getMemoryUsage.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
     hasLinuxCapability.cpp
@@ -59,6 +61,7 @@ SRCS(
     MemoryStatisticsOS.cpp
     MemoryTracker.cpp
     new_delete.cpp
+    OpenSSLHelpers.cpp
     OptimizedRegularExpression.cpp
     parseAddress.cpp
     parseGlobs.cpp
@@ -87,10 +90,10 @@ SRCS(
     SymbolIndex.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
-    thread_local_rng.cpp
     ThreadFuzzer.cpp
-    ThreadProfileEvents.cpp
+    thread_local_rng.cpp
     ThreadPool.cpp
+    ThreadProfileEvents.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
@@ -102,6 +105,7 @@ SRCS(
     ZooKeeper/ZooKeeperHolder.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
+
 )
 
 END()
