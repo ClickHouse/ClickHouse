@@ -3,7 +3,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
-#include <Core/SettingsCollectionImpl.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_COLLECTION(RabbitMQSettings, LIST_OF_RABBITMQ_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS)
 
 void RabbitMQSettings::loadFromQuery(ASTStorage & storage_def)
 {
