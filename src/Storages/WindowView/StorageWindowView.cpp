@@ -61,8 +61,6 @@ namespace ErrorCodes
 
 namespace
 {
-    const auto RESCHEDULE_MS = 500;
-
     struct MergeableQueryMatcher
     {
         using Visitor = InDepthNodeVisitor<MergeableQueryMatcher, true>;
@@ -737,35 +735,31 @@ void StorageWindowView::threadFuncCleanup()
             break;
         }
     }
-    if (!shutdown_called)
-        clean_cache_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 void StorageWindowView::threadFuncFireProc()
 {
     std::unique_lock lock(fire_signal_mutex);
-    while (!shutdown_called)
+    UInt32 timestamp_now = std::time(nullptr);
+    while (next_fire_signal <= timestamp_now)
     {
-        UInt32 timestamp_now = std::time(nullptr);
-        while (next_fire_signal <= timestamp_now)
+        try
         {
-            try
-            {
-                fire(next_fire_signal);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-            max_fired_watermark = next_fire_signal;
-            next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, *time_zone);
+            fire(next_fire_signal);
         }
-
-        UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-        fire_signal_condition.wait_for(lock, std::chrono::microseconds(static_cast<UInt64>(next_fire_signal) * 1000000 - timestamp_usec));
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        max_fired_watermark = next_fire_signal;
+        next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, *time_zone);
     }
+
+    UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
     if (!shutdown_called)
-        fire_task->scheduleAfter(RESCHEDULE_MS);
+    {
+        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
+    }
 }
 
 void StorageWindowView::threadFuncFireEvent()
@@ -783,8 +777,6 @@ void StorageWindowView::threadFuncFireEvent()
             fire_signal.pop_front();
         }
     }
-    if (!shutdown_called)
-        fire_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 BlockInputStreams StorageWindowView::watch(
