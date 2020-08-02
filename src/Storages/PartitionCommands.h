@@ -89,8 +89,10 @@ struct PartitionCommandResultInfo
     String part_name;
     /// Part name in /detached directory, filled in ATTACH
     String old_part_name;
-    /// Path to backup directory, filled in FREEZE
+    /// Absolute path to backup directory, filled in FREEZE
     String backup_path;
+    /// Absolute path part backup, filled in FREEZE
+    String part_backup_path;
     /// Name of the backup (specified by user or increment value), filled in
     /// FREEZE
     String backup_name;

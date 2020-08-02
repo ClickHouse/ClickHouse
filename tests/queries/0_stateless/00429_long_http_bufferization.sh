@@ -24,8 +24,8 @@ function check_only_exception() {
     #(echo "$res")
     #(echo "$res" | wc -l)
     #(echo "$res" | grep -c "$exception_pattern")
-    [[ `echo "$res" | wc -l` -eq 1 ]] || echo FAIL 1 $@
-    [[ $(echo "$res" | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 2 $@
+    [[ `echo "$res" | wc -l` -eq 1 ]] || echo FAIL 1 "$@"
+    [[ $(echo "$res" | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 2 "$@"
 }
 
 function check_last_line_exception() {
@@ -33,8 +33,8 @@ function check_last_line_exception() {
     #echo "$res" > res
     #echo "$res" | wc -c
     #echo "$res" | tail -n -2
-    [[ $(echo "$res" | tail -n -1 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 3 $@
-    [[ $(echo "$res" | head -n -1 | grep -c "$exception_pattern") -eq 0 ]] || echo FAIL 4 $@
+    [[ $(echo "$res" | tail -n -1 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 3 "$@"
+    [[ $(echo "$res" | head -n -1 | grep -c "$exception_pattern") -eq 0 ]] || echo FAIL 4 "$@"
 }
 
 function check_exception_handling() {
@@ -66,7 +66,7 @@ function cmp_cli_and_http() {
     $CLICKHOUSE_CLIENT -q "`query $1`" > ${CLICKHOUSE_TMP}/res1
     ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > ${CLICKHOUSE_TMP}/res2
     ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > ${CLICKHOUSE_TMP}/res3
-    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 && cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3 || echo FAIL 5 $@
+    cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 && cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3 || echo FAIL 5 "$@"
     rm -rf ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2 ${CLICKHOUSE_TMP}/res3
 }
 
