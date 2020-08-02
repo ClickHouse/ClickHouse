@@ -5,7 +5,6 @@
 #include <Common/typeid_cast.h>
 #include <string.h>
 #include <boost/program_options/options_description.hpp>
-#include <Core/SettingsCollectionImpl.h>
 
 namespace DB
 {
@@ -17,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-IMPLEMENT_SETTINGS_COLLECTION(Settings, LIST_OF_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -64,27 +63,24 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     auto * column_names = (column_names_) ? &typeid_cast<ColumnArray &>(*column_names_) : nullptr;
     auto * column_values = (column_values_) ? &typeid_cast<ColumnArray &>(*column_values_) : nullptr;
 
-    size_t size = 0;
+    size_t count = 0;
 
-    for (const auto & setting : *this)
+    for (auto setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
     {
-        if (!changed_only || setting.isChanged())
+        if (column_names)
         {
-            if (column_names)
-            {
-                StringRef name = setting.getName();
-                column_names->getData().insertData(name.data, name.size);
-            }
-            if (column_values)
-                column_values->getData().insert(setting.getValueAsString());
-            ++size;
+            auto name = setting.getName();
+            column_names->getData().insertData(name.data(), name.size());
         }
+        if (column_values)
+            column_values->getData().insert(setting.getValueString());
+        ++count;
     }
 
     if (column_names)
     {
         auto & offsets = column_names->getOffsets();
-        offsets.push_back(offsets.back() + size);
+        offsets.push_back(offsets.back() + count);
     }
 
     /// Nested columns case
@@ -93,20 +89,21 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     if (column_values && !the_same_offsets)
     {
         auto & offsets = column_values->getOffsets();
-        offsets.push_back(offsets.back() + size);
+        offsets.push_back(offsets.back() + count);
     }
 }
 
 void Settings::addProgramOptions(boost::program_options::options_description & options)
 {
-    for (size_t index = 0; index != Settings::size(); ++index)
+    for (auto field : all())
     {
+        const std::string_view name = field.getName();
         auto on_program_option
-            = boost::function1<void, const std::string &>([this, index](const std::string & value) { set(index, value); });
+            = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
         options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            Settings::getName(index).data,
+            name.data(),
             boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            Settings::getDescription(index).data)));
+            field.getDescription())));
     }
 }
 }
