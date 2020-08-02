@@ -152,7 +152,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     std::atomic<size_t> tables_processed{0};
     std::atomic<size_t> dictionaries_processed{0};
 
-    ThreadPool pool(SettingMaxThreads().getAutoValue());
+    ThreadPool pool;
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
