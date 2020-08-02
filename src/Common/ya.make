@@ -75,6 +75,7 @@ SRCS(
     RWLock.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp
+    SettingsChanges.cpp
     SharedLibrary.cpp
     ShellCommand.cpp
     StackTrace.cpp
