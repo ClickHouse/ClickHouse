@@ -86,7 +86,7 @@ public:
     void get(size_t n, Field & res) const override
     {
         assert(n < size());
-        res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
+        res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
     StringRef getDataAt(size_t n) const override
