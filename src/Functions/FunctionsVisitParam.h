@@ -89,9 +89,9 @@ struct ExtractParamImpl
         const ColumnPtr & start_pos,
         PaddedPODArray<ResultType> & res)
     {
-        if (start_pos != nullptr) {
+        if (start_pos != nullptr)
             throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support start_pos argument", ErrorCodes::ILLEGAL_COLUMN);
-        }
+
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 

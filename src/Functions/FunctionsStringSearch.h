@@ -50,14 +50,12 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override {
-        return Impl::supports_start_pos;
-    }
+    bool isVariadic() const override { return Impl::supports_start_pos; }
 
-    size_t getNumberOfArguments() const override {
-        if (Impl::supports_start_pos) {
+    size_t getNumberOfArguments() const override
+    {
+        if (Impl::supports_start_pos)
             return 0;
-        }
         return 2;
     }
 
@@ -82,11 +80,11 @@ public:
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() >= 3) {
-            if (!isUnsignedInteger(arguments[2])) {
+        if (arguments.size() >= 3)
+        {
+            if (!isUnsignedInteger(arguments[2]))
                 throw Exception(
                     "Illegal type " + arguments[2]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
         }
 
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
@@ -100,9 +98,8 @@ public:
         const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
 
         ColumnPtr column_start_pos = nullptr;
-        if (arguments.size() >= 3) {
+        if (arguments.size() >= 3)
             column_start_pos = block.getByPosition(arguments[2]).column;
-        }
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -122,12 +119,11 @@ public:
                     column_start_pos,
                     vec_res);
 
-                if (is_col_start_pos_const) {
+                if (is_col_start_pos_const)
                     block.getByPosition(result).column
                         = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(vec_res[0]));
-                } else {
+                else
                     block.getByPosition(result).column = std::move(col_res);
-                }
 
                 return;
             }

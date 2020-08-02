@@ -42,7 +42,8 @@ struct PositionCaseSensitiveASCII
         return MultiSearcherInBigHaystack(needles);
     }
 
-    static const char * advancePos(const char * pos, const char * end, size_t n) {
+    static const char * advancePos(const char * pos, const char * end, size_t n)
+    {
         return std::min(pos + n, end);
     }
 
@@ -77,7 +78,8 @@ struct PositionCaseInsensitiveASCII
         return MultiSearcherInBigHaystack(needles);
     }
 
-    static const char * advancePos(const char * pos, const char * end, size_t n) {
+    static const char * advancePos(const char * pos, const char * end, size_t n)
+    {
         return std::min(pos + n, end);
     }
 
@@ -110,11 +112,12 @@ struct PositionCaseSensitiveUTF8
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        for (auto it = pos; it != end; ++it) {
-            if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it))) {
-                if (n == 0) {
+        for (auto it = pos; it != end; ++it)
+        {
+            if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
+            {
+                if (n == 0)
                     return it;
-                }
                 n--;
             }
         }
@@ -208,9 +211,11 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + offsets[i]) {
+            if (pos + needle.size() < begin + offsets[i])
+            {
                 auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
-                if (res_pos < start) {
+                if (res_pos < start)
+                {
                     pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
                         reinterpret_cast<const char *>(pos),
                         reinterpret_cast<const char *>(begin + offsets[i]),
@@ -219,7 +224,8 @@ struct PositionImpl
                 }
                 res[i] = res_pos;
             }
-            else {
+            else
+            {
                 res[i] = 0;
             }
             pos = begin + offsets[i];
@@ -239,7 +245,8 @@ struct PositionImpl
     {
         auto start = std::max(start_pos, 1ul);
 
-        if (needle.size() == 0) {
+        if (needle.size() == 0)
+        {
             size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
             res = start <= haystack_size + 1 ? start : 0;
             return;
@@ -263,7 +270,8 @@ struct PositionImpl
         Impl::toLowerIfNeed(data);
         Impl::toLowerIfNeed(needle);
 
-        if (start_pos == nullptr) {
+        if (start_pos == nullptr)
+        {
             constantConstantScalar(data, needle, 0, res[0]);
             return;
         }
@@ -271,10 +279,12 @@ struct PositionImpl
         size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
 
         size_t size = start_pos != nullptr ? start_pos->size() : 0;
-        for (size_t i = 0; i < size; ++i) {
+        for (size_t i = 0; i < size; ++i)
+        {
             auto start = start_pos->getUInt(i);
 
-            if (start > haystack_size + 1) {
+            if (start > haystack_size + 1)
+            {
                 res[i] = 0;
                 continue;
             }
@@ -303,7 +313,8 @@ struct PositionImpl
 
             auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), 1ul) : 1ul;
 
-            if (start > haystack_size + 1) {
+            if (start > haystack_size + 1)
+            {
                 res[i] = 0;
             }
             else if (0 == needle_size)
@@ -362,7 +373,8 @@ struct PositionImpl
 
             auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), 1ul) : 1ul;
 
-            if (start > haystack.size() + 1) {
+            if (start > haystack.size() + 1)
+            {
                 res[i] = 0;
             }
             else if (0 == needle_size)
