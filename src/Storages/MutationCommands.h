@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
 
@@ -70,6 +71,8 @@ class MutationCommands : public std::vector<MutationCommand>
 {
 public:
     std::shared_ptr<ASTAlterCommandList> ast() const;
+
+    bool isPartitionAffected(const String & partition_id, const MergeTreeData & storage, const Context & context) const;
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
