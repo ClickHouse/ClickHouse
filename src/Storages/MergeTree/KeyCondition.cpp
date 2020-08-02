@@ -15,6 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <cassert>
 
@@ -453,10 +454,14 @@ static Field applyFunctionForField(
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
+    auto return_type = func->getReturnType();
+    if (arg_type->isNullable())
+        return_type = makeNullable(return_type);
+
     Block block
     {
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-        { nullptr, func->getReturnType(), "y" }
+        { nullptr, return_type, "y" }
     };
 
     func->execute(block, {0}, 1, 1);
