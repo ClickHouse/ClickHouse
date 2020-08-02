@@ -3822,7 +3822,8 @@ void StorageReplicatedMergeTree::alter(
                 zookeeper_path + "/block_numbers", "block-", zookeeper_path + "/temp", *zookeeper);
 
             for (const auto & lock : lock_holder->getLocks())
-                mutation_entry.block_numbers[lock.partition_id] = lock.number;
+                if (mutation_entry.commands.isPartitionAffected(lock.partition_id, *this, query_context))
+                    mutation_entry.block_numbers[lock.partition_id] = lock.number;
 
             mutation_entry.create_time = time(nullptr);
 
