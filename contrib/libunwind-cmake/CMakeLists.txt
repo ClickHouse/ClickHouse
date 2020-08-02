@@ -54,7 +54,7 @@ endif ()
 # Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
 check_cxx_compiler_flag(-Wregister HAVE_WARNING_REGISTER)
 if (HAVE_WARNING_REGISTER)
-    target_compile_options(unwind PRIVATE -Wno-register)
+    target_compile_options(unwind PRIVATE "$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:-Wno-register>")
 endif ()
 
 install(
