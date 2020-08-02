@@ -397,9 +397,9 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
-        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                          : SettingsBinaryFormat::OLD;
-        settings->serialize(*out, settings_format);
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                          : SettingsWriteFormat::BINARY;
+        settings->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
