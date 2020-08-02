@@ -1382,8 +1382,8 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     for consumer_id in range(num_tables_to_receive + num_tables_to_ignore):
         instance.query('''
-            DROP TABLE IF EXISTS test.direct_exchange_{0};
-            DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
+            DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
+            DROP TABLE IF EXISTS test.headers_exchange_{0};
         '''.format(consumer_id))
 
     instance.query('''

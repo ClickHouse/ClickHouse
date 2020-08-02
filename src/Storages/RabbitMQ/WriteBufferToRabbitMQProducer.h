@@ -37,7 +37,7 @@ public:
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }
     void commit();
-    void updateMaxWait() { wait_num.store(delivery_tag); }
+    void updateMaxWait() { wait_num.store(payload_counter); }
 
 private:
     void nextImpl() override;
@@ -46,6 +46,7 @@ private:
     bool setupConnection();
     void setupChannel();
     void removeConfirmed(UInt64 received_delivery_tag, bool multiple);
+    void publish(ConcurrentBoundedQueue<String> & message);
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
@@ -63,12 +64,14 @@ private:
     std::unique_ptr<AMQP::TcpConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
 
-    ConcurrentBoundedQueue<String> payloads;
+    ConcurrentBoundedQueue<String> payloads, returned;
     UInt64 delivery_tag = 0;
     std::atomic<bool> wait_all = true;
     std::atomic<UInt64> wait_num = 0;
     std::set<UInt64> delivery_tags_record;
     std::mutex mutex;
+    UInt64 payload_counter = 0;
+    std::function<void(const AMQP::Message &, int16_t, const std::string &)> returned_callback;
 
     Poco::Logger * log;
     const std::optional<char> delim;

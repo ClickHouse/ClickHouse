@@ -18,10 +18,9 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_RABBITMQ;
 }
 
-static const auto QUEUE_SIZE = 50000;
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
-static const auto BATCH = 10000;
+static const auto BATCH = 512;
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address_,
@@ -44,7 +43,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , exchange_type(exchange_type_)
         , use_transactional_channel(use_transactional_channel_)
         , persistent(persistent_)
-        , payloads(QUEUE_SIZE)
+        , payloads(BATCH)
+        , returned(BATCH << 6)
         , log(log_)
         , delim(delimiter)
         , max_rows(rows_per_message)
@@ -56,8 +56,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
 
     /// New coonection for each publisher because cannot publish from different threads with the same connection.(https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086)
-    setupConnection();
-    setupChannel();
+    if (setupConnection())
+        setupChannel();
 
     writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
     writing_task->deactivate();
@@ -104,11 +104,8 @@ void WriteBufferToRabbitMQProducer::countRow()
         chunks.clear();
         set(nullptr, 0);
 
-        ++delivery_tag;
         payloads.push(payload);
-
-        std::lock_guard lock(mutex);
-        delivery_tags_record.insert(delivery_tags_record.end(), delivery_tag);
+        ++payload_counter;
     }
 }
 
@@ -117,7 +114,9 @@ bool WriteBufferToRabbitMQProducer::setupConnection()
 {
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
+    LOG_TRACE(log, "Trying to set up connection");
     size_t cnt_retries = 0;
+
     while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
     {
         event_handler->iterateLoop();
@@ -136,14 +135,20 @@ void WriteBufferToRabbitMQProducer::setupChannel()
     producer_channel = std::make_unique<AMQP::TcpChannel>(connection.get());
     producer_channel->onError([&](const char * message)
     {
+        LOG_DEBUG(log, "Producer error: {}. Currently {} messages have not been confirmed yet, {} messages are waiting to be published",
+                message, delivery_tags_record.size(), payloads.size());
+
         /// Means channel ends up in an error state and is not usable anymore.
-        LOG_ERROR(log, "Producer error: {}", message);
         producer_channel->close();
     });
 
     producer_channel->onReady([&]()
     {
-        LOG_TRACE(log, "Producer channel is ready");
+        LOG_DEBUG(log, "Producer channel is ready");
+
+        /// Delivery tags are scoped per channel.
+        delivery_tags_record.clear();
+        delivery_tag = 0;
 
         if (use_transactional_channel)
         {
@@ -151,11 +156,11 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         }
         else
         {
-            /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails, it
-             * will be requed in returned_callback. If persistent == false, message is confirmed the moment it is enqueued. If fails, it is
-             * not requeued. First option is two times slower than the second, so default is second and the first is turned on in table setting.
-             * Persistent message is not requeued if it is unroutable, i.e. no queues are bound to given exchange with the given routing key -
-             * this is a responsibility of a client. It can be requeued in this case if AMQP::mandatory is set, but it is pointless. Probably
+            /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
+             * it will be requed in returned_callback. If persistent == false, message is confirmed the moment it is enqueued. If fails, it
+             * is not requeued. First option is two times slower than the second, so default is second and the first is turned on in table
+             * setting. Persistent message is not requeued if it is unroutable, i.e. no queues are bound to given exchange with the given
+             * routing key - this is a responsibility of a client. It can be requeued in this case if AMQP::mandatory is set, but pointless.
              */
             producer_channel->confirmSelect()
             .onAck([&](uint64_t acked_delivery_tag, bool multiple)
@@ -184,90 +189,110 @@ void WriteBufferToRabbitMQProducer::removeConfirmed(UInt64 received_delivery_tag
         {
             ++found_tag_pos;
             delivery_tags_record.erase(delivery_tags_record.begin(), found_tag_pos);
-            LOG_TRACE(log, "Confirmed all delivery tags up to {}", received_delivery_tag);
+            //LOG_DEBUG(log, "Confirmed all delivery tags up to {}", received_delivery_tag);
         }
         else
         {
             delivery_tags_record.erase(found_tag_pos);
-            LOG_TRACE(log, "Confirmed delivery tag {}", received_delivery_tag);
+            //LOG_DEBUG(log, "Confirmed delivery tag {}", received_delivery_tag);
         }
     }
 }
 
 
-void WriteBufferToRabbitMQProducer::writingFunc()
+void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<String> & messages)
 {
     String payload;
-    UInt64 message_id = 0;
-
-    auto returned_callback = [&](const AMQP::Message & message, int16_t code, const std::string & description)
+    while (!messages.empty())
     {
-        payloads.push(std::string(message.body(), message.size()));
+        messages.pop(payload);
+        AMQP::Envelope envelope(payload.data(), payload.size());
+
+        /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse.
+        if (persistent)
+            envelope.setDeliveryMode(2);
+
+        if (exchange_type == AMQP::ExchangeType::consistent_hash)
+        {
+            producer_channel->publish(exchange_name, std::to_string(delivery_tag), envelope).onReturned(returned_callback);
+        }
+        else if (exchange_type == AMQP::ExchangeType::headers)
+        {
+            envelope.setHeaders(key_arguments);
+            producer_channel->publish(exchange_name, "", envelope).onReturned(returned_callback);
+        }
+        else
+        {
+            producer_channel->publish(exchange_name, routing_keys[0], envelope).onReturned(returned_callback);
+        }
+
+        if (producer_channel->usable())
+        {
+            ++delivery_tag;
+            delivery_tags_record.insert(delivery_tags_record.end(), delivery_tag);
+
+            if (delivery_tag % BATCH == 0)
+                break;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    iterateEventLoop();
+}
+
+/* Currently implemented “asynchronous publisher confirms” - does not stop after each publish to wait for each individual confirm. An
+ * asynchronous publisher may have any number of messages in-flight (unconfirmed) at a time.
+ * Synchronous publishing is where after each publish need to wait for the acknowledgement (ack/nack - see confirmSelect() in channel
+ * declaration), which is very slow because takes starting event loop and waiting for corresponding callback - can really take a while.
+ *
+ * Async publishing works well in all failure cases except for connection failure, because if connection fails - not all Ack/Nack might be
+ * receieved from the server (and even if all messages were successfully delivered, publisher will not be able to know it). Also in this
+ * case onReturned callback will not be received, so loss is possible for messages that were published but have not received confirm from
+ * server before connection loss, because then publisher won't know if message was delivered or not.
+ *
+ * To make it a delivery with no loss and minimal possible amount of duplicates - need to use synchronous publishing (which is too slow).
+ * With async publishing at-least-once delivery is achieved with (batch) publishing and manual republishing in case when not all delivery
+ * tags were confirmed (ack/nack) before connection loss. Here the maximum number of possible duplicates is no more than batch size.
+ * (Manual last batch republishing is only for case of connection loss, in all other failure cases - onReturned callback will be received.)
+ *
+ * So currently implemented async batch publishing, but for now without manual republishing (because still in doubt how to do it nicely,
+ * but current idea is to store in delivery_tags_record not just delivery tags, but pair: (delivery_tag, message). As currently once the
+ * publisher receives acknowledgement from the server that the message was sucessfully delivered - a "confirmListener" will delete its
+ * delivery tag from the set of pending acknowledgemens, then we can as well delete the payload. If connection fails, undeleted delivery
+ * tags indicate messages, whose fate is unknown, so corresponding payloads should be republished.)
+*/
+void WriteBufferToRabbitMQProducer::writingFunc()
+{
+    returned_callback = [&](const AMQP::Message & message, int16_t code, const std::string & description)
+    {
+        returned.tryPush(std::string(message.body(), message.size()));
         LOG_DEBUG(log, "Message returned with code: {}, description: {}. Republishing", code, description);
+
+        /* Here can be added a value to AMQP::Table field of AMQP::Envelope (and then it should be queue<AMQP::Envelope> instead of
+         * queue<String>) - to indicate that message was republished. Later a consumer will be able to extract this field and understand
+         * that this message was republished and can probably be a duplicate (as RabbitMQ does not guarantee exactly-once delivery).
+         */
     };
 
     while (!payloads.empty() || wait_all)
     {
-        while (!payloads.empty() && producer_channel->usable())
-        {
-            payloads.pop(payload);
-            AMQP::Envelope envelope(payload.data(), payload.size());
+        if (!returned.empty() && producer_channel->usable())
+            publish(returned);
+        else if (!payloads.empty() && delivery_tags_record.empty() && producer_channel->usable())
+            publish(payloads);
 
-            ++message_id;
-            if (wait_num)
-                message_id %= wait_num;
+        iterateEventLoop();
 
-            /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse.
-            if (persistent)
-                envelope.setDeliveryMode(2);
-
-            if (exchange_type == AMQP::ExchangeType::consistent_hash)
-            {
-                producer_channel->publish(exchange_name, std::to_string(message_id), envelope).onReturned(returned_callback);
-            }
-            else if (exchange_type == AMQP::ExchangeType::headers)
-            {
-                envelope.setHeaders(key_arguments);
-                producer_channel->publish(exchange_name, "", envelope).onReturned(returned_callback);
-            }
-            else
-            {
-                producer_channel->publish(exchange_name, routing_keys[0], envelope).onReturned(returned_callback);
-            }
-
-            if (message_id % BATCH == 0)
-                iterateEventLoop();
-        }
-
-        if (wait_num.load() && delivery_tags_record.empty())
-        {
+        if (wait_num.load() && delivery_tags_record.empty() && payloads.empty())
             wait_all.store(false);
-            LOG_TRACE(log, "All messages are successfully published");
-        }
-        else
-        {
-            iterateEventLoop();
-        }
-
-        /// Most channel based errors result in channel closure, which is very likely to trigger connection closure.
-        if (connection->usable() && connection->ready() && !producer_channel->usable())
-        {
-            LOG_TRACE(log, "Channel is not usable. Creating a new one");
+        else if ((!producer_channel->usable() && connection->usable()) || (!connection->usable() && setupConnection()))
             setupChannel();
-        }
-        else if (!connection->usable() || !connection->ready())
-        {
-            LOG_TRACE(log, "Trying to restore connection");
-
-            if (setupConnection())
-            {
-                LOG_TRACE(log, "Connection restored. Creating a channel");
-                setupChannel();
-            }
-
-            LOG_DEBUG(log, "Currently {} messages have not been confirmed yet, {} messages are waiting to be published", delivery_tags_record.size(), payloads.size());
-        }
     }
+
+    LOG_DEBUG(log, "Processing ended");
 }
 
 
