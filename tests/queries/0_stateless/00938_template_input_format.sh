@@ -13,7 +13,7 @@ echo "==== check escaping ===="
 echo -ne '{prefix} \n${data}\n $$ suffix $$\n' > "$CURDIR"/00938_template_input_format_resultset.tmp
 echo -ne 'n:\t${n:Escaped}, s1:\t${0:Escaped}\t, s2:\t${1:Quoted}, s3:\t${s3:JSON}, s4:\t${3:CSV}, d:\t${d:Escaped}\t' > "$CURDIR"/00938_template_input_format_row.tmp
 
-echo "{prefix}
+echo "{prefix}"' '"
 n:	123, s1:	qwe,rty	, s2:	'as\"df\\'gh', s3:	\"\", s4:	\"zx
 cv	bn m\", d:	2016-01-01	;
 n:	456, s1:	as\"df\\'gh	, s2:	'', s3:	\"zx\\ncv\\tbn m\", s4:	\"qwe,rty\", d:	2016-01-02	;
