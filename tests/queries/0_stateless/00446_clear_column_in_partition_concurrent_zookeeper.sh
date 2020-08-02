@@ -14,7 +14,7 @@ $ch "ALTER TABLE clear_column1 CLEAR COLUMN VasyaUnexistingColumn IN PARTITION '
 rc=$?
 if [ $rc -eq 0 ]; then
     echo "An unexisisting column was ALTERed. Code: $rc"
-    exit -1
+    exit 1
 fi
 
 set -e
