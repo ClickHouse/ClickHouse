@@ -591,7 +591,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             WriteBufferFromOwnString header_buf;
             writeVarUInt(ClickHouseRevision::get(), header_buf);
             writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().serialize(header_buf);
+            context.getSettingsRef().write(header_buf);
             context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
             /// Add new fields here, for example:
