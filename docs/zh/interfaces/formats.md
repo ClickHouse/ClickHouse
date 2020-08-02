@@ -61,7 +61,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
     2014-03-22      1031592
     2014-03-23      1046491
 
-    0000-00-00      8873898
+    1970-01-01      8873898
 
     2014-03-17      1031592
     2014-03-23      1406958
@@ -556,7 +556,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
     Totals:
     ┌──EventDate─┬───────c─┐
-    │ 0000-00-00 │ 8873898 │
+    │ 1970-01-01 │ 8873898 │
     └────────────┴─────────┘
 
     Extremes:

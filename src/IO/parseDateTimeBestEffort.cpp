@@ -345,8 +345,6 @@ ReturnType parseDateTimeBestEffortImpl(
                         }
                         else
                           return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
-
-
                     }
 
                     if (month > 12)
