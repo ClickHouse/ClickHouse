@@ -827,9 +827,10 @@ bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
     \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
+/// Wrapped in lambda to avoid too large stack frame.
 //-V:IMPLEMENT_SETTINGS:501
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    res.field_infos.emplace_back( \
+    [&]{ res.field_infos.emplace_back( \
         FieldInfo{#NAME, #TYPE, DESCRIPTION, FLAGS & IMPORTANT, \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
@@ -842,5 +843,5 @@ bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
             [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
             [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
             [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); } \
-        });
+        }); }();
 }
