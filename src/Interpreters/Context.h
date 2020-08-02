@@ -108,8 +108,8 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 
 
@@ -227,14 +227,14 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
-    VolumeJBODPtr getTemporaryVolume() const;
+    VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
 
-    VolumeJBODPtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -377,7 +377,7 @@ public:
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
-    void clampToSettingsConstraints(SettingChange & change) const;
+    void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).

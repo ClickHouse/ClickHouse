@@ -39,6 +39,9 @@ void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
 void registerFunctionsWindow(FunctionFactory &);
+#if !defined(ARCADIA_BUILD)
+void registerFunctionBayesAB(FunctionFactory &);
+#endif
 
 
 void registerFunctions()
@@ -82,6 +85,9 @@ void registerFunctions()
     registerFunctionsConsistentHashing(factory);
     registerFunctionsUnixTimestamp64(factory);
     registerFunctionsWindow(factory);
+#if !defined(ARCADIA_BUILD)
+    registerFunctionBayesAB(factory);
+#endif
 }
 
 }

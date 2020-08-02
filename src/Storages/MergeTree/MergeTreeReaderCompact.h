@@ -10,6 +10,9 @@ namespace DB
 class MergeTreeDataPartCompact;
 using DataPartCompactPtr = std::shared_ptr<const MergeTreeDataPartCompact>;
 
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
 /// Reader for compact parts
 class MergeTreeReaderCompact : public IMergeTreeReader
 {
@@ -42,7 +45,8 @@ private:
     MergeTreeMarksLoader marks_loader;
 
     /// Positions of columns in part structure.
-    std::vector<ColumnPosition> column_positions;
+    using ColumnPositions = std::vector<ColumnPosition>;
+    ColumnPositions column_positions;
     /// Should we read full column or only it's offsets
     std::vector<bool> read_only_offsets;
 
@@ -53,6 +57,14 @@ private:
 
     void readData(const String & name, IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
+
+    /// Returns maximal value of granule size in compressed file from @mark_ranges.
+    /// This value is used as size of read buffer.
+    static size_t getReadBufferSize(
+        const DataPartPtr & part,
+        MergeTreeMarksLoader & marks_loader,
+        const ColumnPositions & column_positions,
+        const MarkRanges & mark_ranges);
 };
 
 }
