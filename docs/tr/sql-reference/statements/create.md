@@ -78,7 +78,7 @@ Sonra başka maddeler olabilir `ENGINE` sorguda yan tümcesi. Açıklamalarda ta
 Sütun açıklaması, aşağıdaki yollardan biriyle varsayılan değer için bir ifade belirtebilir:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Örnek: `URLDomain String DEFAULT domain(URL)`.
 
-Varsayılan değer için bir ifade tanımlanmamışsa, varsayılan değerler sayılar için sıfırlar, dizeler için boş dizeler, diziler için boş diziler ve `0000-00-00` tarihler için veya `0000-00-00 00:00:00` zamanla tarihler için. Boş alanlar desteklenmez.
+Varsayılan değer için bir ifade tanımlanmamışsa, varsayılan değerler sayılar için sıfırlar, dizeler için boş dizeler, diziler için boş diziler ve `1970-01-01` tarihler için veya zero unix timestamp zamanla tarihler için. Boş alanlar desteklenmez.
 
 Varsayılan ifade tanımlanmışsa, sütun türü isteğe bağlıdır. Açıkça tanımlanmış bir tür yoksa, varsayılan ifade türü kullanılır. Örnek: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ türü için kullanılacak ‘EventDate’ sütun.
 
