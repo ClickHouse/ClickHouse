@@ -1,7 +1,8 @@
 <yandex>
     <profiles>
         <default>
-            <background_pool_size>0</background_pool_size>
+            <max_bytes_to_merge_at_min_space_in_pool>1</max_bytes_to_merge_at_min_space_in_pool>
+            <max_bytes_to_merge_at_max_space_in_pool>2</max_bytes_to_merge_at_max_space_in_pool>
         </default>
     </profiles>
 </yandex>
