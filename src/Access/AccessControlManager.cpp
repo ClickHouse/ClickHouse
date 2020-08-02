@@ -11,12 +11,19 @@
 #include <Access/SettingsProfilesCache.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
+#include <common/find_symbols.h>
 #include <Poco/ExpireCache.h>
+#include <boost/algorithm/string/join.hpp>
 #include <mutex>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_SETTING;
+}
+
 namespace
 {
     std::vector<std::unique_ptr<IAccessStorage>> createStorages()
@@ -59,6 +66,53 @@ private:
 };
 
 
+class AccessControlManager::CustomSettingsPrefixes
+{
+public:
+    void registerPrefixes(const Strings & prefixes_)
+    {
+        std::lock_guard lock{mutex};
+        registered_prefixes = prefixes_;
+    }
+
+    bool isSettingNameAllowed(const std::string_view & setting_name) const
+    {
+        if (Settings::hasBuiltin(setting_name))
+            return true;
+
+        std::lock_guard lock{mutex};
+        for (const auto & prefix : registered_prefixes)
+        {
+            if (setting_name.starts_with(prefix))
+                return true;
+        }
+
+        return false;
+    }
+
+    void checkSettingNameIsAllowed(const std::string_view & setting_name) const
+    {
+        if (isSettingNameAllowed(setting_name))
+            return;
+
+        std::lock_guard lock{mutex};
+        if (!registered_prefixes.empty())
+        {
+            throw Exception(
+                "Setting " + String{setting_name} + " is neither a builtin setting nor started with the prefix '"
+                    + boost::algorithm::join(registered_prefixes, "' or '") + "' registered for user-defined settings",
+                ErrorCodes::UNKNOWN_SETTING);
+        }
+        else
+            BaseSettingsHelpers::throwSettingNotFound(setting_name);
+    }
+
+private:
+    Strings registered_prefixes;
+    mutable std::mutex mutex;
+};
+
+
 AccessControlManager::AccessControlManager()
     : MultipleAccessStorage(createStorages()),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
@@ -66,7 +120,8 @@ AccessControlManager::AccessControlManager()
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
-      external_authenticators(std::make_unique<ExternalAuthenticators>())
+      external_authenticators(std::make_unique<ExternalAuthenticators>()),
+      custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>())
 {
 }
 
@@ -97,6 +152,29 @@ void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguratio
 void AccessControlManager::setDefaultProfileName(const String & default_profile_name)
 {
     settings_profiles_cache->setDefaultProfileName(default_profile_name);
+}
+
+
+void AccessControlManager::setCustomSettingsPrefixes(const Strings & prefixes)
+{
+    custom_settings_prefixes->registerPrefixes(prefixes);
+}
+
+void AccessControlManager::setCustomSettingsPrefixes(const String & comma_separated_prefixes)
+{
+    Strings prefixes;
+    splitInto<','>(prefixes, comma_separated_prefixes);
+    setCustomSettingsPrefixes(prefixes);
+}
+
+bool AccessControlManager::isSettingNameAllowed(const std::string_view & setting_name) const
+{
+    return custom_settings_prefixes->isSettingNameAllowed(setting_name);
+}
+
+void AccessControlManager::checkSettingNameIsAllowed(const std::string_view & setting_name) const
+{
+    custom_settings_prefixes->checkSettingNameIsAllowed(setting_name);
 }
 
 

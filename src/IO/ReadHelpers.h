@@ -638,7 +638,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(const String & str)
+inline T parseFromString(const std::string_view & str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -858,6 +858,13 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 {
     assertChar('\'', buf);
     readDateTimeText(x, buf);
+    assertChar('\'', buf);
+}
+
+inline void readQuoted(UUID & x, ReadBuffer & buf)
+{
+    assertChar('\'', buf);
+    readUUIDText(x, buf);
     assertChar('\'', buf);
 }
 
@@ -1096,7 +1103,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(const String & s)
+inline T parseWithSizeSuffix(const std::string_view & s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }
