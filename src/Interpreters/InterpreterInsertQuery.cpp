@@ -204,7 +204,7 @@ BlockIO InterpreterInsertQuery::execute()
             auto optimize_trivial_insert_select = settings.optimize_trivial_insert_select;
             if (optimize_trivial_insert_select)
             {
-                auto is_trivial_select = [](const auto query_)
+                auto is_trivial_select = [](const auto && query_)
                 {
                     if (query_.tables())
                     {
@@ -219,10 +219,8 @@ BlockIO InterpreterInsertQuery::execute()
                             }
                         }
                     }
-                    if (!query_.distinct && !query_.limit_with_ties && !query_.prewhere() && !query_.where() && !query_.groupBy()
-                        && !query_.having() && !query_.orderBy() && !query_.limitBy())
-                        return true;
-                    return false;
+                    return (!query_.distinct && !query_.limit_with_ties && !query_.prewhere() && !query_.where() && !query_.groupBy()
+                        && !query_.having() && !query_.orderBy() && !query_.limitBy());
                 };
 
                 const auto & ast = query.select->as<ASTSelectWithUnionQuery &>();
@@ -231,7 +229,7 @@ BlockIO InterpreterInsertQuery::execute()
                 for (size_t query_num = 0; query_num < num_selects; ++query_num)
                 {
                     const auto & query_select = ast.list_of_selects->children.at(query_num)->as<ASTSelectQuery &>();
-                    if (!is_trivial_select(query_select))
+                    if (!is_trivial_select(std::move(query_select)))
                     {
                         is_trivial_query = false;
                         break;
