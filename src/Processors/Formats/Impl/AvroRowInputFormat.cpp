@@ -739,6 +739,12 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
     return true;
 }
 
+void AvroConfluentRowInputFormat::syncAfterError()
+{
+    // skip until the end of current kafka message
+    in.tryIgnore(in.available());
+}
+
 const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(SchemaId schema_id)
 {
     auto it = deserializer_cache.find(schema_id);
