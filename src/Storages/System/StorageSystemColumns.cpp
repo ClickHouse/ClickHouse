@@ -236,7 +236,7 @@ private:
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
     String query_id;
-    SettingSeconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout;
 };
 
 

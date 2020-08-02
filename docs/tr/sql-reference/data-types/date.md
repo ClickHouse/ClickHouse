@@ -8,7 +8,6 @@ toc_title: Tarihli
 # Tarihli {#date}
 
 Tarihli. 1970-01-01 (imzasız) gün sayısı olarak iki bayt olarak saklanır. Unix döneminin başlangıcından hemen sonra, derleme aşamasında bir sabit tarafından tanımlanan üst eşiğe kadar değerlerin depolanmasına izin verir (şu anda, bu 2106 yılına kadar, ancak tam olarak desteklenen son yıl 2105'tir).
-Minimum değer 0000-00-00 olarak çıktıdır.
 
 Tarih değeri saat dilimi olmadan depolanır.
 
