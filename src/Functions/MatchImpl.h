@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -91,9 +92,8 @@ struct MatchImpl
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt8> & res)
     {
-        if (start_pos != nullptr) {
+        if (start_pos != nullptr)
             throw Exception("Functions 'like' and 'match' don't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
 
         if (offsets.empty())
             return;

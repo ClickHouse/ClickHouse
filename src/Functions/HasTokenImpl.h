@@ -8,6 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -28,9 +29,8 @@ struct HasTokenImpl
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt8> & res)
     {
-        if (start_pos != nullptr) {
+        if (start_pos != nullptr)
             throw Exception("Function 'hasToken' does not support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
 
         if (offsets.empty())
             return;
