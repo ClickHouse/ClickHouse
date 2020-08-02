@@ -473,6 +473,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, output_format_enable_streaming, false, "Enable streaming in output formats that support it.", 0) \
     M(SettingBool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0) \
     M(SettingBool, allow_non_metadata_alters, true, "Allow to execute alters which affects not only tables metadata, but also data on disk", 0) \
+    M(SettingBool, optimize_trivial_insert_select, true, "Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query", 0) \
 
     #define LIST_OF_SETTINGS(M)    \
         COMMON_SETTINGS(M)         \
