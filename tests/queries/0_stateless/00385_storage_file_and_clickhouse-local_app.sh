@@ -54,4 +54,4 @@ ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 ) ENGINE = Memory; SELECT count() FROM system.tables WHERE name='sophisticated_default';"
 
 # Help is not skipped
-[[ `${CLICKHOUSE_LOCAL} --help | wc -l` > 100 ]]
+[[ `${CLICKHOUSE_LOCAL} --help | wc -l` -gt 100 ]]
