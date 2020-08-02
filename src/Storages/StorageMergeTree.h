@@ -169,6 +169,8 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    void dropPart(const DataPartPtr & part) override;
+
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;

@@ -206,6 +206,14 @@ def test_ttl_double_delete_rule_returns_error(started_cluster):
     except:
         assert False
 
+def optimize_with_retry(node, table_name, retry=20):
+    for i in range(retry):
+        try:
+            node.query("OPTIMIZE TABLE {name} FINAL SETTINGS optimize_throw_if_noop = 1".format(name=table_name), settings={"optimize_throw_if_noop": "1"})
+            break
+        except e:
+            time.sleep(0.5)
+
 @pytest.mark.parametrize("name,engine", [
     ("test_ttl_alter_delete", "MergeTree()"),
     ("test_replicated_ttl_alter_delete", "ReplicatedMergeTree('/clickhouse/test_replicated_ttl_alter_delete', '1')"),
@@ -231,13 +239,6 @@ limitations under the License."""
     """
     drop_table([node1], name)
 
-    def optimize_with_retry(retry=20):
-        for i in range(retry):
-            try:
-                node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name), settings={"optimize_throw_if_noop": "1"})
-                break
-            except:
-                time.sleep(0.5)
     node1.query(
     """
         CREATE TABLE {name} (
@@ -256,7 +257,7 @@ limitations under the License."""
 
     time.sleep(1)
 
-    optimize_with_retry()
+    optimize_with_retry(node1, name)
     r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
     assert r == ["\t1", "hello2\t2"]
 
@@ -265,7 +266,39 @@ limitations under the License."""
 
     time.sleep(1)
 
-    optimize_with_retry()
+    optimize_with_retry(node1, name)
 
     r = node1.query("SELECT s1, b1 FROM {name} ORDER BY b1, s1".format(name=name)).splitlines()
     assert r == ["\t0", "\t0", "hello2\t2"]
+
+
+def test_ttl_empty_parts(started_cluster):
+    drop_table([node1, node2], "test_ttl_empty_parts")
+    for node in [node1, node2]:
+        node.query(
+        '''
+            CREATE TABLE test_ttl_empty_parts(date Date, id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+            ORDER BY id
+            SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1
+        '''.format(replica=node.name))
+
+    for i in range (1, 6):
+        node1.query("INSERT INTO test_ttl_empty_parts SELECT '2{}00-01-0{}', number FROM numbers(1000)".format(i % 2, i))
+
+    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "5000\n"
+    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == \
+        "all_0_0_0\nall_1_1_0\nall_2_2_0\nall_3_3_0\nall_4_4_0\n"
+
+    node1.query("ALTER TABLE test_ttl_empty_parts MODIFY TTL date")
+
+    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
+    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == \
+        "all_0_0_0_5\nall_2_2_0_5\nall_4_4_0_5\n"
+
+    for node in [node1, node2]:
+        node.query("ALTER TABLE test_ttl_empty_parts MODIFY SETTING max_bytes_to_merge_at_min_space_in_pool = 1000000000")
+        node.query("ALTER TABLE test_ttl_empty_parts MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 1000000000")
+
+    optimize_with_retry(node1, 'test_ttl_empty_parts')
+    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_4_1_5\n"

@@ -543,7 +543,6 @@ public:
       */
     PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
 
-
 public:
     /// Moves partition to specified Disk
     void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
@@ -866,6 +865,14 @@ protected:
     bool selectPartsAndMove();
 
     bool areBackgroundMovesNeeded() const;
+
+    virtual void dropPart(const DataPartPtr & part) = 0;
+
+    void dropPartIfEmpty(const DataPartPtr & part)
+    {
+        if (part->rows_count == 0)
+            dropPart(part);
+    }
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts

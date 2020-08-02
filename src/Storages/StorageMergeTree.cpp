@@ -742,6 +742,8 @@ bool StorageMergeTree::merge(
         throw;
     }
 
+    dropPartIfEmpty(new_part);
+
     return true;
 }
 
@@ -890,6 +892,8 @@ bool StorageMergeTree::tryMutatePart()
         write_part_log(ExecutionStatus::fromCurrentException());
         throw;
     }
+
+    dropPartIfEmpty(new_part);
 
     return true;
 }
@@ -1428,6 +1432,16 @@ MutationCommands StorageMergeTree::getFirtsAlterMutationCommandsForPart(const Da
     if (it == current_mutations_by_version.end())
         return {};
     return it->second.commands;
+}
+
+void StorageMergeTree::dropPart(const DataPartPtr & part)
+{
+    /// If part is assigned to merge or mutation, it will be anyway removed after that operation.
+    if (partIsAssignedToBackgroundOperation(part))
+        return;
+
+    removePartsFromWorkingSet({part}, true);
+    clearOldPartsFromFilesystem();
 }
 
 }

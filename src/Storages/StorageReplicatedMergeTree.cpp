@@ -1411,7 +1411,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
         write_part_log({});
-
+        dropPartIfEmpty(part);
         return true;
     }
     catch (...)
@@ -1531,6 +1531,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         merge_selecting_task->schedule();
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
         write_part_log({});
+        dropPartIfEmpty(new_part);
 
         return true;
     }
@@ -5653,7 +5654,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
 
 bool StorageReplicatedMergeTree::dropPartsInPartition(
-    zkutil::ZooKeeper & zookeeper, String & partition_id, StorageReplicatedMergeTree::LogEntry & entry, bool detach)
+    zkutil::ZooKeeper & zookeeper, const String & partition_id, StorageReplicatedMergeTree::LogEntry & entry, bool detach)
 {
     MergeTreePartInfo drop_range_info;
     if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
@@ -5662,6 +5663,14 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
         return false;
     }
 
+    return dropPartsInPartition(zookeeper, partition_id, drop_range_info, entry, detach);
+}
+
+bool StorageReplicatedMergeTree::dropPartsInPartition(
+    zkutil::ZooKeeper & zookeeper, const String & partition_id,
+    const MergeTreePartInfo & drop_range_info,
+    StorageReplicatedMergeTree::LogEntry & entry, bool detach)
+{
     clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
     /** Forbid to choose the parts to be deleted for merging.
@@ -5743,6 +5752,18 @@ void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
         move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
         pool.startTask(move_parts_task_handle);
     }
+}
+
+void StorageReplicatedMergeTree::dropPart(const DataPartPtr & part)
+{
+    assertNotReadonly();
+    /// If part is assigned to merge or mutation, it will be anyway removed after that operation.
+    if (!is_leader || partIsAssignedToBackgroundOperation(part))
+        return;
+
+    LogEntry entry;
+    auto zookeeper = getZooKeeper();
+    dropPartsInPartition(*zookeeper, part->info.partition_id, part->info, entry, false);
 }
 
 }

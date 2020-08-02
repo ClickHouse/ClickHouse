@@ -529,8 +529,12 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
-    bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
+    bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, const String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
+
+    bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper,
+      const String & partition_id, const MergeTreePartInfo & drop_range_info,
+      StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
     // Partition helpers
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
@@ -550,6 +554,8 @@ private:
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
+
+    void dropPart(const DataPartPtr & part) override;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
