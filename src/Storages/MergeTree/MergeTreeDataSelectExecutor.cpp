@@ -44,7 +44,6 @@ namespace std
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/ConcatProcessor.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>

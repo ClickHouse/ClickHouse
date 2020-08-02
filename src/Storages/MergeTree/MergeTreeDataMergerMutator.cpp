@@ -23,7 +23,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/SimpleIncrement.h>
@@ -799,8 +799,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             break;
     }
 
-    Pipe merged_pipe(std::move(pipes), std::move(merged_transform));
-    BlockInputStreamPtr merged_stream = std::make_shared<TreeExecutorBlockInputStream>(std::move(merged_pipe));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
+    pipeline.setMaxThreads(1);
+    BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
@@ -915,8 +917,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
 
-                column_part_streams[part_num] = std::make_shared<TreeExecutorBlockInputStream>(
-                        Pipe(std::move(column_part_source)));
+                QueryPipeline column_part_pipeline;
+                column_part_pipeline.init(Pipe(std::move(column_part_source)));
+                column_part_pipeline.setMaxThreads(1);
+
+                column_part_streams[part_num] =
+                        std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
             }
 
             rows_sources_read_buf.seek(0, 0);

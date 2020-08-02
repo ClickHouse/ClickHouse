@@ -1,6 +1,4 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
