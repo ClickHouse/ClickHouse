@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
-#include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/Progress.h>
 
