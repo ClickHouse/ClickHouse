@@ -163,6 +163,10 @@ select 1 = positionCaseInsensitive(materialize('abc'), 'aBc') from system.number
 select 2 = positionCaseInsensitive(materialize('abc'), 'Bc') from system.numbers limit 10;
 select 3 = positionCaseInsensitive(materialize('abc'), 'C') from system.numbers limit 10;
 
+select 6 = positionCaseInsensitive(materialize('abcabc'), 'C', 4);
+select 6 = positionCaseInsensitive(materialize('abcabc'), 'C', 4) from system.numbers limit 10;
+select 6 = positionCaseInsensitive(materialize('abcabc'), 'C', materialize(4)) from system.numbers limit 10;
+
 select 1 = positionCaseInsensitive('', '');
 select 1 = positionCaseInsensitive('абв', '');
 select 0 = positionCaseInsensitive('', 'аБв');
@@ -204,6 +208,10 @@ select 0 = positionCaseInsensitiveUTF8(materialize(''), 'аБв') from system.nu
 select 1 = positionCaseInsensitiveUTF8(materialize('абв'), 'аБв') from system.numbers limit 10;
 select 2 = positionCaseInsensitiveUTF8(materialize('абв'), 'Бв') from system.numbers limit 10;
 select 3 = positionCaseInsensitiveUTF8(materialize('абв'), 'В') from system.numbers limit 10;
+
+select 6 = positionCaseInsensitiveUTF8(materialize('абвабв'), 'В', 4);
+select 6 = positionCaseInsensitiveUTF8(materialize('абвабв'), 'В', 4) from system.numbers limit 10;
+select 6 = positionCaseInsensitiveUTF8(materialize('абвабв'), 'В', materialize(4)) from system.numbers limit 10;
 
 select position('' as h, '' as n) = positionCaseInsensitive(h, n);
 select position('abc' as h, '' as n) = positionCaseInsensitive(n, n);
