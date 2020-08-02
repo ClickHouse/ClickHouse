@@ -24,6 +24,8 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
+#include <Disks/SingleDiskVolume.h>
+
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -44,9 +46,6 @@ namespace ErrorCodes
 }
 
 class IBlockOutputStream;
-
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -69,8 +68,8 @@ using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 using AggregatedDataWithoutKey = AggregateDataPtr;
 
-using AggregatedDataWithUInt8Key = FixedHashMap<UInt8, AggregateDataPtr>;
-using AggregatedDataWithUInt16Key = FixedHashMap<UInt16, AggregateDataPtr>;
+using AggregatedDataWithUInt8Key = FixedImplicitZeroHashMap<UInt8, AggregateDataPtr>;
+using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDataPtr>;
 
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
@@ -878,7 +877,7 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set;
 
-        VolumeJBODPtr tmp_volume;
+        VolumePtr tmp_volume;
 
         /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
@@ -891,7 +890,7 @@ public:
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            VolumeJBODPtr tmp_volume_, size_t max_threads_,
+            VolumePtr tmp_volume_, size_t max_threads_,
             size_t min_free_disk_space_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),

@@ -664,7 +664,8 @@ def test_kafka_issue11308(kafka_cluster):
         FROM test.kafka;
         ''')
 
-    time.sleep(9)
+    while int(instance.query('SELECT count() FROM test.persistent_kafka')) < 3:
+        time.sleep(1)
 
     result = instance.query('SELECT * FROM test.persistent_kafka ORDER BY time;')
 
@@ -1119,7 +1120,7 @@ def test_kafka_virtual_columns(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp FROM test.kafka', ignore_error=True)
+        result += instance.query('''SELECT _key, key, _topic, value, _offset, _partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) AS _timestamp FROM test.kafka''', ignore_error=True)
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
 
@@ -1138,11 +1139,11 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
                      kafka_group_name = 'virt2',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime))
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime('UTC')))
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp as timestamp FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp = 0 ? '0000-00-00 00:00:00' : toString(_timestamp) as timestamp FROM test.kafka;
     ''')
 
     messages = []
@@ -1406,7 +1407,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1414,7 +1415,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
 
-        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime('UTC'))
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'insert3',
@@ -1431,7 +1432,8 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
     instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
 
-    time.sleep(10)
+    while int(instance.query("SELECT count() FROM test.view")) < 5:
+        time.sleep(1)
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -1535,7 +1537,9 @@ def test_kafka_flush_by_block_size(kafka_cluster):
         messages.append(json.dumps({'key': 0, 'value': 0}))
     kafka_produce('flush_by_block_size', messages)
 
-    time.sleep(1)
+    # Wait for Kafka engine to consume this data
+    while 1 != int(instance.query("SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'")):
+        time.sleep(1)
 
     # TODO: due to https://github.com/ClickHouse/ClickHouse/issues/11216
     # second flush happens earlier than expected, so we have 2 parts here instead of one
@@ -1615,7 +1619,7 @@ def test_kafka_rebalance(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -1835,7 +1839,7 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -2033,7 +2037,7 @@ def test_premature_flush_on_eof(kafka_cluster):
             _key String,
             _offset UInt64,
             _partition UInt64,
-            _timestamp Nullable(DateTime),
+            _timestamp Nullable(DateTime('UTC')),
             _consumed_by LowCardinality(String)
         )
         ENGINE = MergeTree()
@@ -2074,6 +2078,47 @@ def test_premature_flush_on_eof(kafka_cluster):
         DROP TABLE test.kafka_consumer;
         DROP TABLE test.destination;
     ''')
+
+
+@pytest.mark.timeout(180)
+def test_kafka_unavailable(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(20000)]
+    kafka_produce('test_bad_reschedule', messages)
+
+    kafka_cluster.pause_container('kafka1')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'test_bad_reschedule',
+                    kafka_group_name = 'test_bad_reschedule',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 1000;
+
+        CREATE MATERIALIZED VIEW test.destination Engine=Log AS
+        SELECT
+            key,
+            now() as consume_ts,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+    instance.query("SELECT * FROM test.kafka")
+    instance.query("SELECT count() FROM test.destination")
+
+    # enough to trigger issue
+    time.sleep(30)
+    kafka_cluster.unpause_container('kafka1')
+
+    while int(instance.query("SELECT count() FROM test.destination")) < 20000:
+        print("Waiting for consume")
+        time.sleep(1)
 
 if __name__ == '__main__':
     cluster.start()

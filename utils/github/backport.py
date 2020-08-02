@@ -12,7 +12,7 @@ import sys
 
 class Backport:
     def __init__(self, token, owner, name, team):
-        self._gh = RemoteRepo(token, owner=owner, name=name, team=team, max_page_size=30)
+        self._gh = RemoteRepo(token, owner=owner, name=name, team=team, max_page_size=30, min_page_size=7)
         self._token = token
         self.default_branch_name = self._gh.default_branch
         self.ssh_url = self._gh.ssh_url
@@ -39,11 +39,15 @@ class Backport:
 
         RE_MUST_BACKPORT = re.compile(r'^v(\d+\.\d+)-must-backport$')
         RE_NO_BACKPORT = re.compile(r'^v(\d+\.\d+)-no-backport$')
+        RE_BACKPORTED = re.compile(r'^v(\d+\.\d+)-backported$')
 
         # pull-requests are sorted by ancestry from the least recent.
         for pr in prs:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
+                logging.info("PR #{} is already inside {}. Dropping this branch for futher PRs".format(pr['number'], branches[-1][0]))
                 branches.pop()
+
+            logging.info("Processing PR #{}".format(pr['number']))
 
             assert len(branches)
 
@@ -65,14 +69,19 @@ class Backport:
                 if label['name'] == 'pr-no-backport' and pr['number'] in backport_map:
                     del backport_map[pr['number']]
                     break
-                m = RE_NO_BACKPORT.match(label['name'])
-                if m and pr['number'] in backport_map and m.group(1) in backport_map[pr['number']]:
-                    backport_map[pr['number']].remove(m.group(1))
+                m1 = RE_NO_BACKPORT.match(label['name'])
+                m2 = RE_BACKPORTED.match(label['name'])
+                if m1 and pr['number'] in backport_map and m1.group(1) in backport_map[pr['number']]:
+                    backport_map[pr['number']].remove(m1.group(1))
+                    logging.info('\tskipping %s because of forced no-backport', m1.group(1))
+                elif m2 and pr['number'] in backport_map and m2.group(1) in backport_map[pr['number']]:
+                    backport_map[pr['number']].remove(m2.group(1))
+                    logging.info('\tskipping %s because it\'s already backported manually', m2.group(1))
 
         for pr, branches in backport_map.items():
             logging.info('PR #%s needs to be backported to:', pr)
             for branch in branches:
-                logging.info('\t%s %s', branch, run_cherrypick(self._token, pr, branch))
+                logging.info('\t%s, and the status is: %s', branch, run_cherrypick(self._token, pr, branch))
 
         # print API costs
         logging.info('\nGitHub API total costs per query:')

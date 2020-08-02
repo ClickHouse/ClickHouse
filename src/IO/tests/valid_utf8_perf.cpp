@@ -2,9 +2,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/Stopwatch.h>
 #include <string>
-#include <streambuf>
 #include <iostream>
-#include <cstdio>
 
 int main(int argc, char ** argv)
 {

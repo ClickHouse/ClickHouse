@@ -8,7 +8,7 @@ namespace DB
 class ConvertingStep : public ITransformingStep
 {
 public:
-    ConvertingStep(const DataStream & input_stream_, Block result_header_);
+    ConvertingStep(const DataStream & input_stream_, Block result_header_, bool ignore_constant_values_ = false);
 
     String getName() const override { return "Converting"; }
 
@@ -18,6 +18,8 @@ public:
 
 private:
     Block result_header;
+    /// Do not check that constants are same. Use value from result_header.
+    bool ignore_constant_values;
 };
 
 }

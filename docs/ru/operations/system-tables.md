@@ -78,7 +78,7 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 ```
 
 **Смотрите также**
-- [system.asynchronous_metrics](../../operations/system-tables/asynchronous-metrics.md) — Содержит метрики, которые периодически вычисляются в фоновом режиме. 
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Содержит метрики, которые периодически вычисляются в фоновом режиме. 
 - [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 
 ## system.clusters {#system-clusters}
@@ -621,12 +621,12 @@ data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
-remove_time:                           0000-00-00 00:00:00
+remove_time:                           1970-01-01 00:00:00
 refcount:                              1
-min_date:                              0000-00-00
-max_date:                              0000-00-00
-min_time:                              0000-00-00 00:00:00
-max_time:                              0000-00-00 00:00:00
+min_date:                              1970-01-01
+max_date:                              1970-01-01
+min_time:                              1970-01-01 00:00:00
+max_time:                              1970-01-01 00:00:00
 partition_id:                          all
 min_block_number:                      1
 max_block_number:                      4
@@ -643,8 +643,8 @@ path:                                  /var/lib/clickhouse/data/default/months/a
 hash_of_all_files:                     2d0657a16d9430824d35e327fcbd87bf
 hash_of_uncompressed_files:            84950cc30ba867c77a408ae21332ba29
 uncompressed_hash_of_compressed_files: 1ad78f1c6843bbfb99a2c931abe7df7d
-delete_ttl_info_min:                   0000-00-00 00:00:00
-delete_ttl_info_max:                   0000-00-00 00:00:00
+delete_ttl_info_min:                   1970-01-01 00:00:00
+delete_ttl_info_max:                   1970-01-01 00:00:00
 move_ttl_info.expression:              []
 move_ttl_info.min:                     []
 move_ttl_info.max:                     []
@@ -983,7 +983,8 @@ ProfileEvents.Values: [1,97,81,5,81]
 
 - [system.query_log](#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
 
-## system.trace\_log {#system_tables-trace_log}
+
+## system.trace_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
@@ -1029,6 +1030,93 @@ thread_number: 48
 query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
 trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
 ```
+## system.stack_trace {#system-tables_stack_trace}
+
+Содержит трассировки стека всех серверных потоков. Позволяет разработчикам анализировать состояние сервера.
+
+Для анализа логов используйте [функции интроспекции](../sql-reference/functions/introspection.md): `addressToLine`, `addressToSymbol` и `demangle`.
+
+Столбцы:
+
+-   `thread_id` ([UInt64](../sql-reference/data-types/int-uint.md)) — Идентификатор потока.
+-   `query_id` ([String](../sql-reference/data-types/string.md)) — Идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](#system_tables-query_log).
+-   `trace` ([Array(UInt64)](../sql-reference/data-types/array.md)) — [Трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
+
+**Пример**
+
+Включение функций интроспекции:
+
+``` sql
+SET allow_introspection_functions = 1;
+```
+
+Получение символов из объектных файлов ClickHouse:
+
+``` sql
+WITH arrayMap(x -> demangle(addressToSymbol(x)), trace) AS all SELECT thread_id, query_id, arrayStringConcat(all, '\n') AS res FROM system.stack_trace LIMIT 1 \G
+```
+
+``` text
+Row 1:
+──────
+thread_id: 686
+query_id:  1a11f70b-626d-47c1-b948-f9c7b206395d
+res:       sigqueue
+DB::StorageSystemStackTrace::fillData(std::__1::vector<COW<DB::IColumn>::mutable_ptr<DB::IColumn>, std::__1::allocator<COW<DB::IColumn>::mutable_ptr<DB::IColumn> > >&, DB::Context const&, DB::SelectQueryInfo const&) const
+DB::IStorageSystemOneBlock<DB::StorageSystemStackTrace>::read(std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > > > const&, DB::SelectQueryInfo const&, DB::Context const&, DB::QueryProcessingStage::Enum, unsigned long, unsigned int)
+DB::InterpreterSelectQuery::executeFetchColumns(DB::QueryProcessingStage::Enum, DB::QueryPipeline&, std::__1::shared_ptr<DB::PrewhereInfo> const&, std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > > > const&)
+DB::InterpreterSelectQuery::executeImpl(DB::QueryPipeline&, std::__1::shared_ptr<DB::IBlockInputStream> const&, std::__1::optional<DB::Pipe>)
+DB::InterpreterSelectQuery::execute()
+DB::InterpreterSelectWithUnionQuery::execute()
+DB::executeQueryImpl(char const*, char const*, DB::Context&, bool, DB::QueryProcessingStage::Enum, bool, DB::ReadBuffer*)
+DB::executeQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, DB::Context&, bool, DB::QueryProcessingStage::Enum, bool)
+DB::TCPHandler::runImpl()
+DB::TCPHandler::run()
+Poco::Net::TCPServerConnection::start()
+Poco::Net::TCPServerDispatcher::run()
+Poco::PooledThread::run()
+Poco::ThreadImpl::runnableEntry(void*)
+start_thread
+__clone
+```
+
+Получение имен файлов и номеров строк в исходном коде ClickHouse:
+
+``` sql
+WITH arrayMap(x -> addressToLine(x), trace) AS all, arrayFilter(x -> x LIKE '%/dbms/%', all) AS dbms SELECT thread_id, query_id, arrayStringConcat(notEmpty(dbms) ? dbms : all, '\n') AS res FROM system.stack_trace LIMIT 1 \G
+```
+
+``` text
+Row 1:
+──────
+thread_id: 686
+query_id:  cad353e7-1c29-4b2e-949f-93e597ab7a54
+res:       /lib/x86_64-linux-gnu/libc-2.27.so
+/build/obj-x86_64-linux-gnu/../src/Storages/System/StorageSystemStackTrace.cpp:182
+/build/obj-x86_64-linux-gnu/../contrib/libcxx/include/vector:656
+/build/obj-x86_64-linux-gnu/../src/Interpreters/InterpreterSelectQuery.cpp:1338
+/build/obj-x86_64-linux-gnu/../src/Interpreters/InterpreterSelectQuery.cpp:751
+/build/obj-x86_64-linux-gnu/../contrib/libcxx/include/optional:224
+/build/obj-x86_64-linux-gnu/../src/Interpreters/InterpreterSelectWithUnionQuery.cpp:192
+/build/obj-x86_64-linux-gnu/../src/Interpreters/executeQuery.cpp:384
+/build/obj-x86_64-linux-gnu/../src/Interpreters/executeQuery.cpp:643
+/build/obj-x86_64-linux-gnu/../src/Server/TCPHandler.cpp:251
+/build/obj-x86_64-linux-gnu/../src/Server/TCPHandler.cpp:1197
+/build/obj-x86_64-linux-gnu/../contrib/poco/Net/src/TCPServerConnection.cpp:57
+/build/obj-x86_64-linux-gnu/../contrib/libcxx/include/atomic:856
+/build/obj-x86_64-linux-gnu/../contrib/poco/Foundation/include/Poco/Mutex_POSIX.h:59
+/build/obj-x86_64-linux-gnu/../contrib/poco/Foundation/include/Poco/AutoPtr.h:223
+/lib/x86_64-linux-gnu/libpthread-2.27.so
+/lib/x86_64-linux-gnu/libc-2.27.so
+```
+
+**См. также**
+
+-   [Функции интроспекции](../sql-reference/functions/introspection.md) — Что такое функции интроспекции и как их использовать.
+-   [system.trace_log](system-tables.md#system_tables-trace_log) — Содержит трассировки стека, собранные профилировщиком выборочных запросов.
+-   [arrayMap](../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) — Описание и пример использования функции `arrayMap`.
+-   [arrayFilter](../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-filter) — Описание и пример использования функции `arrayFilter`.
+
 
 ## system.replicas {#system_tables-replicas}
 
@@ -1065,9 +1153,9 @@ inserts_in_queue:           0
 merges_in_queue:            1
 part_mutations_in_queue:    0
 queue_oldest_time:          2020-02-20 08:34:30
-inserts_oldest_time:        0000-00-00 00:00:00
+inserts_oldest_time:        1970-01-01 00:00:00
 merges_oldest_time:         2020-02-20 08:34:30
-part_mutations_oldest_time: 0000-00-00 00:00:00
+part_mutations_oldest_time: 1970-01-01 00:00:00
 oldest_part_to_get:
 oldest_part_to_merge_to:    20200220_20284_20840_7
 oldest_part_to_mutate_to:
@@ -1359,7 +1447,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.mutations {#system_tables-mutations}
 
-Таблица содержит информацию о ходе выполнения [мутаций](../sql-reference/statements/alter.md#alter-mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы. 
+Таблица содержит информацию о ходе выполнения [мутаций](../sql-reference/statements/alter.md#mutations) таблиц семейства MergeTree. Каждой команде мутации соответствует одна строка таблицы. 
 
 Столбцы:
 
@@ -1400,7 +1488,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 **См. также**
 
--   [Мутации](../sql-reference/statements/alter.md#alter-mutations)
+-   [Мутации](../sql-reference/statements/alter.md#mutations)
 -   [Движок MergeTree](../engines/table-engines/mergetree-family/mergetree.md)
 -   [Репликация данных](../engines/table-engines/mergetree-family/replication.md) (семейство ReplicatedMergeTree)
 
