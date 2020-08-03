@@ -291,6 +291,8 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
                             exitcode=exitcode, message=message)
             with And("I grant insert privilege on cluster including all nodes"):
                 node.query("GRANT ON CLUSTER sharded_cluster INSERT ON merge_tree TO user0")
+            with And("I revoke insert privilege on cluster without the table node"):
+                node.query("REVOKE ON CLUSTER cluster23 INSERT ON merge_tree FROM user0")
             with And("I insert into the table"):
                 node.query("INSERT INTO merge_tree (d) VALUES ('2020-01-01')", settings=[("user","user0")])
             with Then("I check that I can read inserted data"):
