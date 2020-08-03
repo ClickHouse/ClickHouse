@@ -104,7 +104,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Кодеки сжатия столбцов {#codecs}
 
-По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../../../operations/server-configuration-parameters/settings.md#server-settings-compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
+По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../../../operations/server-configuration-parameters/settings.md). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
 
 ``` sql
 CREATE TABLE codec_example

@@ -22,7 +22,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 Роли по умолчанию применяются при входе пользователя в систему. Установить роли по умолчанию можно с помощью выражений [SET DEFAULT ROLE](../misc.md#set-default-role-statement) или [ALTER USER](../alter.md#alter-user-statement).
 
-Для отзыва роли используется выражение [REVOKE](../revoke.md).
+Для отзыва роли используется выражение [REVOKE](../../../sql-reference/statements/revoke.md).
 
 Для удаления роли используется выражение [DROP ROLE](../misc.md#drop-role-statement). Удаленная роль автоматически отзывается у всех пользователей, которым была назначена.
 
