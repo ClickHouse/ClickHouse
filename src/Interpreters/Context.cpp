@@ -1800,10 +1800,12 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
     }
 
+#if !defined(ARCADIA_BUILD)
     if (shared->storage_s3_settings)
     {
         shared->storage_s3_settings->loadFromConfig("s3", config);
     }
+#endif
 }
 
 
