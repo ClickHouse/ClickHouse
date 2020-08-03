@@ -22,54 +22,6 @@ class QueryPipelineProcessorsCollector;
 
 class QueryPipeline
 {
-private:
-    /// It's a wrapper over std::vector<OutputPort *>
-    /// Is needed to support invariant for max_parallel_streams (see comment below).
-    class Streams
-    {
-    public:
-        auto size() const { return data.size(); }
-        bool empty() const { return size() == 0; }
-        auto begin() { return data.begin(); }
-        auto end() { return data.end(); }
-        auto & front() { return data.front(); }
-        auto & back() { return data.back(); }
-        auto & at(size_t pos) { return data.at(pos); }
-        auto & operator[](size_t pos) { return data[pos]; }
-
-        void clear() { data.clear(); }
-        void reserve(size_t size_) { data.reserve(size_); }
-
-        void addStream(OutputPort * port, size_t port_max_parallel_streams)
-        {
-            data.push_back(port);
-            max_parallel_streams = std::max<size_t>(max_parallel_streams + port_max_parallel_streams, data.size());
-        }
-
-        void addStreams(Streams & other)
-        {
-            data.insert(data.end(), other.begin(), other.end());
-            max_parallel_streams = std::max<size_t>(max_parallel_streams + other.max_parallel_streams, data.size());
-        }
-
-        void assign(std::initializer_list<OutputPort *> list)
-        {
-            data = list;
-            max_parallel_streams = std::max<size_t>(max_parallel_streams, data.size());
-        }
-
-        size_t maxParallelStreams() const { return max_parallel_streams; }
-
-    private:
-        std::vector<OutputPort *> data;
-
-        /// It is the max number of processors which can be executed in parallel for each step.
-        /// Logically, it is the upper limit on the number of threads needed to execute this pipeline.
-        /// Initially, it is the number of sources. It may be increased after resize, aggregation, etc.
-        /// This number is never decreased, and it is calculated as max(streams.size()) over all streams while building.
-        size_t max_parallel_streams = 0;
-    };
-
 public:
 
     class ProcessorsContainer
@@ -101,7 +53,7 @@ public:
     QueryPipeline & operator= (QueryPipeline && rhs);
 
     /// All pipes must have same header.
-    void init(Pipes pipes);
+    void init(Pipe pipe);
     bool initialized() { return !processors.empty(); }
     bool isCompleted() { return initialized() && streams.empty(); }
 

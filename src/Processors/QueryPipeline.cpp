@@ -123,7 +123,7 @@ static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const B
     return totals_port;
 }
 
-void QueryPipeline::init(Pipes pipes)
+void QueryPipeline::init(Pipe pipe)
 {
     if (initialized())
         throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);

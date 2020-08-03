@@ -134,6 +134,9 @@ Pipe::Pipe(ProcessorPtr source)
     else if (source->getOutputs().size() != 1)
         checkSource(*source);
 
+    if (collected_processors)
+        collected_processors->emplace_back(source.get());
+
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getHeader();
     processors.emplace_back(std::move(source));
@@ -187,6 +190,10 @@ Pipe::Pipe(Processors processors_) : processors(std::move(processors_))
         assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipe");
 
     max_parallel_streams = output_ports.size();
+
+    if (collected_processors)
+        for (const auto & processor : processors)
+            collected_processors->emplace_back(processor.get());
 }
 
 static Pipes removeEmptyPipes(Pipes pipes)
@@ -205,6 +212,11 @@ static Pipes removeEmptyPipes(Pipes pipes)
 
 Pipe Pipe::unitePipes(Pipes pipes)
 {
+    return Pipe::unitePipes(std::move(pipes), nullptr);
+}
+
+Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors)
+{
     pipes = removeEmptyPipes(std::move(pipes));
 
     if (pipes.empty())
@@ -217,6 +229,7 @@ Pipe Pipe::unitePipes(Pipes pipes)
     OutputPortRawPtrs totals;
     OutputPortRawPtrs extremes;
     res.header = pipes.front().header;
+    res.collected_processors = collected_processors;
 
     for (auto & pipe : pipes)
     {
@@ -237,8 +250,16 @@ Pipe Pipe::unitePipes(Pipes pipes)
             extremes.emplace_back(pipe.extremes_port);
     }
 
+    size_t num_processors = res.processors.size();
+
     res.totals_port = uniteTotals(totals, res.header, res.processors);
     res.extremes_port = uniteExtremes(extremes, res.header, res.processors);
+
+    if (res.collected_processors)
+    {
+        for (; num_processors < res.processors.size(); ++num_processors)
+            res.collected_processors->emplace_back(res.processors[num_processors]);
+    }
 }
 
 //void Pipe::addPipes(Pipe pipes)
@@ -300,6 +321,9 @@ void Pipe::addTotalsSource(ProcessorPtr source)
 
     assertBlocksHaveEqualStructure(header, source_header, "Pipes");
 
+    if (collected_processors)
+        collected_processors->emplace_back(source.get());
+
     totals_port = &source->getOutputs().front();
     processors.emplace_back(std::move(source));
 }
@@ -316,6 +340,9 @@ void Pipe::addExtremesSource(ProcessorPtr source)
     const auto & source_header = output_ports.front()->getHeader();
 
     assertBlocksHaveEqualStructure(header, source_header, "Pipes");
+
+    if (collected_processors)
+        collected_processors->emplace_back(source.get());
 
     extremes_port = &source->getOutputs().front();
     processors.emplace_back(std::move(source));
@@ -360,6 +387,11 @@ void Pipe::addTransform(ProcessorPtr transform)
     if (extremes_port)
         assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
 
+    if (collected_processors)
+        collected_processors->emplace_back(transform.get());
+
+    processors.emplace_back(std::move(transform));
+
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
@@ -402,6 +434,10 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
         {
             connect(*port, transform->getInputs().front());
             port = &transform->getOutputs().front();
+
+            if (collected_processors)
+                collected_processors->emplace_back(transform.get());
+
             processors.emplace_back(std::move(transform));
         }
     };
@@ -487,7 +523,42 @@ void Pipe::transform(const Transformer & transformer)
     if (extremes_port)
         assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
 
+    if (collected_processors)
+    {
+        for (const auto & processor : processors)
+            collected_processors->emplace_back(processor.get());
+    }
+
+    processors.insert(processors.end(), new_processors.begin(), new_processors.end());
+
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
+void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLimits(limits);
+    }
+}
+
+void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setQuota(quota);
+    }
+}
+
+void Pipe::enableQuota()
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            source->enableQuota();
+    }
 }
 
 /*
@@ -553,40 +624,6 @@ void Pipe::addSimpleTransform(ProcessorPtr transform)
     processors.emplace_back(std::move(transform));
 }
 
-void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
-{
-    for (auto & processor : processors)
-    {
-        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source_with_progress->setLimits(limits);
-    }
-}
 
-void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
-{
-    for (auto & processor : processors)
-    {
-        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source_with_progress->setQuota(quota);
-    }
-}
-
-void Pipe::pinSources(size_t executor_number)
-{
-    for (auto & processor : processors)
-    {
-        if (auto * source = dynamic_cast<ISource *>(processor.get()))
-            source->setStream(executor_number);
-    }
-}
-
-void Pipe::enableQuota()
-{
-    for (auto & processor : processors)
-    {
-        if (auto * source = dynamic_cast<ISource *>(processor.get()))
-            source->enableQuota();
-    }
-}
 */
 }
