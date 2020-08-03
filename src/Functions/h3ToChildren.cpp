@@ -12,6 +12,9 @@
 #include <h3api.h>
 
 
+static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
+
+
 namespace DB
 {
 
@@ -19,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 class FunctionH3ToChildren : public IFunction
@@ -72,7 +76,12 @@ public:
                 throw Exception("The argument 'resolution' (" + toString(child_resolution) + ") of function " + getName()
                     + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            const auto vec_size = maxH3ToChildrenSize(parent_hindex, child_resolution);
+            const size_t vec_size = maxH3ToChildrenSize(parent_hindex, child_resolution);
+            if (vec_size > MAX_ARRAY_SIZE)
+                throw Exception("The result of function" + getName()
+                    + " (array of " + toString(vec_size) + " elements) will be too large with resolution argument = "
+                    + toString(child_resolution), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
             hindex_vec.resize(vec_size);
             h3ToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
