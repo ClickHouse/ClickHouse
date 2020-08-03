@@ -286,7 +286,7 @@ public:
         return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON

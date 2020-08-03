@@ -7,13 +7,13 @@ toc_title: VIEW
 
 Creates a new view. There are two types of views: normal and materialized.
 
+## Normal {#normal}
+
 Syntax:
 
 ``` sql
-CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
 ```
-
-## Normal {#normal}
 
 Normal views don’t store any data, they just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
@@ -36,6 +36,11 @@ SELECT a, b, c FROM (SELECT ...)
 ```
 
 ## Materialized {#materialized}
+
+``` sql
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+```
+
 
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.
 
