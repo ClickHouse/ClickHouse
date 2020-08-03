@@ -3,9 +3,9 @@ toc_priority: 52
 toc_title: System Tables
 ---
 
-# System Tables {#system-tables}
+# Системные таблицы {#system-tables}
 
-## Introduction {#system-tables-introduction}
+## Введение {#system-tables-introduction}
 
 Системные таблицы используются для реализации части функциональности системы, а также предоставляют доступ к информации о работе системы.
 Вы не можете удалить системную таблицу (хотя можете сделать DETACH).

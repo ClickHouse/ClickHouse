@@ -29,6 +29,6 @@ SELECT * FROM system.events LIMIT 5
 -   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 -   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 -   [system.metric\_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
--   [Мониторинг](../monitoring.md) — основы мониторинга в ClickHouse.
+-   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
 
 [Original article](https://clickhouse.tech/docs/ru/operations/system_tables/events) <!--hide-->
