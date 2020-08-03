@@ -184,6 +184,7 @@ void StorageMySQLReplica::startup() {
 void StorageMySQLReplica::shutdown()
 {
     task->deactivate();
+    slave_client.disconnect();
 }
 
 MySQLClickHouseEvent StorageMySQLReplica::readOneBinlogEvent() {
