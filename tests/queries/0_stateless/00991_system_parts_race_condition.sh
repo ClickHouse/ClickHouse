@@ -5,7 +5,7 @@
 # https://github.com/google/sanitizers/issues/950
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e
 

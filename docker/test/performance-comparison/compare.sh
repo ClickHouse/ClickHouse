@@ -467,8 +467,8 @@ create view partial_query_times as select * from
 -- Report for partial queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
-    as select floor(time_median, 3) time,
-        floor(time_stddev / time_median, 3) relative_time_stddev,
+    as select toDecimal64(time_median, 3) time,
+        toDecimal64(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
     from partial_query_times
     join query_display_names using (test, query_index)
@@ -514,11 +514,22 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     ;
 
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
-    select left, right, diff, stat_threshold, changed_fail, test, query_index, query_display_name
+    select
+        toDecimal64(left, 3), toDecimal64(right, 3),
+        -- server_time is sometimes reported as zero (if it's less than 1 ms),
+        -- so we have to work around this to not get an error about conversion
+        -- of NaN to decimal.
+        left > right
+            ? '- ' || toString(toDecimal64(left / (right + 0.001), 3)) || 'x'
+            : '+ ' || toString(toDecimal64(right / (left + 0.001), 3)) || 'x',
+         toDecimal64(diff, 3), toDecimal64(stat_threshold, 3),
+         changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
-    select left, right, diff, stat_threshold, unstable_fail, test, query_index, query_display_name
+    select
+        toDecimal64(left, 3), toDecimal64(right, 3), toDecimal64(diff, 3),
+        toDecimal64(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
 create table test_time_changes engine File(TSV, 'report/test-time-changes.tsv') as
@@ -545,7 +556,7 @@ create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes
         coalesce(total_unstable, 0) total_unstable,
         coalesce(total_changed, 0) total_changed,
         total_unstable + total_changed total_bad,
-        coalesce(toString(floor(average_time_change, 3)), '??') average_time_change_str
+        coalesce(toString(toDecimal64(average_time_change, 3)), '??') average_time_change_str
     from test_time_changes
     full join unstable_tests
     using test
@@ -560,9 +571,10 @@ create view total_client_time_per_query as select *
         'test text, query_index int, client float, server float');
 
 create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv') as
-    select client, server, floor(client/server, 3) p, test, query_display_name
+    select client, server, toDecimal64(client/server, 3) p,
+        test, query_display_name
     from total_client_time_per_query left join query_display_names using (test, query_index)
-    where p > 1.02 order by p desc;
+    where p > toDecimal64(1.02, 3) order by p desc;
 
 create table wall_clock_time_per_test engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
@@ -577,12 +589,12 @@ create table test_time engine Memory as
 
 create table test_times_report engine File(TSV, 'report/test-times.tsv') as
     select wall_clock_time_per_test.test, real,
-        floor(total_client_time, 3),
+        toDecimal64(total_client_time, 3),
         queries,
         short_queries,
-        floor(query_max, 3),
-        floor(real / queries, 3) avg_real_per_query,
-        floor(query_min, 3)
+        toDecimal64(query_max, 3),
+        toDecimal64(real / queries, 3) avg_real_per_query,
+        toDecimal64(query_min, 3)
     from test_time
     -- wall clock times are also measured for skipped tests, so don't
     -- do full join
@@ -592,9 +604,13 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
     select changed_fail, unstable_fail,
-        left, right, diff,
-        floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query_index, query_display_name
+        toDecimal64(left, 3), toDecimal64(right, 3),
+        left > right
+            ? '- ' || toString(toDecimal64(left / (right + 0.001), 3)) || 'x'
+            : '+ ' || toString(toDecimal64(right / (left + 0.001), 3)) || 'x',
+        toDecimal64(isFinite(diff) ? diff : 0, 3),
+        toDecimal64(isFinite(stat_threshold) ? stat_threshold : 0, 3),
+        test, query_index, query_display_name
     from queries order by test, query_index;
 
 -- queries for which we will build flamegraphs (see below)
@@ -742,17 +758,17 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
         'report/metric-deviation.$version.tsv') as
     -- first goes the key used to split the file with grep
     select test, query_index, query_display_name,
-        d, q, metric
+        toDecimal64(d, 3) d, q, metric
     from (
         select
             test, query_index,
-            floor((q[3] - q[1])/q[2], 3) d,
+            (q[3] - q[1])/q[2] d,
             quantilesExact(0, 0.5, 1)(value) q, metric
         from (select * from unstable_run_metrics
             union all select * from unstable_run_traces
             union all select * from unstable_run_metrics_2) mm
         group by test, query_index, metric
-        having d > 0.5 and q[3] > 5
+        having isFinite(d) and d > 0.5 and q[3] > 5
     ) metrics
     left join query_display_names using (test, query_index)
     order by test, query_index, d desc
@@ -776,7 +792,7 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
     group by test, query_index, trace_type, trace
     order by test, query_index, trace_type, trace
     ;
-" 2> >(tee -a report/errors.log 1>&2) # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
+" 2> >(tee -a report/errors.log 1>&2) &
 done
 wait
 
@@ -847,7 +863,7 @@ function report_metrics
 rm -rf metrics ||:
 mkdir metrics
 
-clickhouse-local --stacktrace --verbose --query "
+clickhouse-local --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
         'event_date Date, event_time DateTime, name String, value Float64')
@@ -866,15 +882,20 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
 
 -- Show metrics that have changed
 create table changes engine File(TSV, 'metrics/changes.tsv') as
-    select metric, median(left) as left, median(right) as right,
-        floor((right - left) / left, 3) diff,
-        floor(if(left > right, left / right, right / left), 3) times_diff
-    from metrics
-    group by metric
-    having abs(diff) > 0.05 and isFinite(diff)
+    select metric, left, right,
+        toDecimal64(diff, 3), toDecimal64(times_diff, 3)
+    from (
+        select metric, median(left) as left, median(right) as right,
+            (right - left) / left diff,
+            if(left > right, left / right, right / left) times_diff
+        from metrics
+        group by metric
+        having abs(diff) > 0.05 and isFinite(diff)
+    )
     order by diff desc
     ;
 "
+2> >(tee -a metrics/errors.log 1>&2)
 
 IFS=$'\n'
 for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
@@ -911,6 +932,8 @@ case "$stage" in
     time configure
     ;&
 "restart")
+    numactl --hardware ||:
+    lscpu ||:
     time restart
     ;&
 "run_tests")
@@ -946,7 +969,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart || get_profiles ||: )
+    ( get_profiles || restart && get_profiles ||: )
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
@@ -964,6 +987,7 @@ case "$stage" in
     ;&
 "report_metrics")
     time report_metrics ||:
+    cat metrics/errors.log >> report/errors.log ||:
     ;&
 "report_html")
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:

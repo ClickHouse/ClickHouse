@@ -67,6 +67,7 @@ ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/conf
 ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/custom_settings_prefixes.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/access_management.xml /etc/clickhouse-server/users.d/
@@ -90,9 +91,67 @@ do
     sleep 0.1
 done
 
-TESTS_TO_SKIP="parquet avro h3 odbc mysql sha256 _orc_ arrow 01098_temporary_and_external_tables 01083_expressions_in_engine_arguments hdfs 00911_tautological_compare protobuf capnproto java_hash hashing secure 00490_special_line_separators_and_characters_outside_of_bmp 00436_convert_charset 00105_shard_collations 01354_order_by_tuple_collate_const 01292_create_user 01098_msgpack_format 00929_multi_match_edit_distance 00926_multimatch 00834_cancel_http_readonly_queries_on_client_close brotli parallel_alter 00302_http_compression 00417_kill_query 01294_lazy_database_concurrent 01193_metadata_loading base64 01031_mutations_interpreter_and_context json client 01305_replica_create_drop_zookeeper 01092_memory_profiler 01355_ilike 01281_unsucceeded_insert_select_queries_counter live_view limit_memory memory_limit memory_leak 00110_external_sort 00682_empty_parts_merge 00701_rollup 00109_shard_totals_after_having ddl_dictionaries 01251_dict_is_in_infinite_loop 01259_dictionary_custom_settings_ddl 01268_dictionary_direct_layout 01280_ssd_complex_key_dictionary 00652_replicated_mutations_zookeeper 01411_bayesian_ab_testing"
+TESTS_TO_SKIP=(
+    parquet
+    avro
+    h3
+    odbc
+    mysql
+    sha256
+    _orc_
+    arrow
+    01098_temporary_and_external_tables
+    01083_expressions_in_engine_arguments
+    hdfs
+    00911_tautological_compare
+    protobuf
+    capnproto
+    java_hash
+    hashing
+    secure
+    00490_special_line_separators_and_characters_outside_of_bmp
+    00436_convert_charset
+    00105_shard_collations
+    01354_order_by_tuple_collate_const
+    01292_create_user
+    01098_msgpack_format
+    00929_multi_match_edit_distance
+    00926_multimatch
+    00834_cancel_http_readonly_queries_on_client_close
+    brotli
+    parallel_alter
+    00302_http_compression
+    00417_kill_query
+    01294_lazy_database_concurrent
+    01193_metadata_loading
+    base64
+    01031_mutations_interpreter_and_context
+    json
+    client
+    01305_replica_create_drop_zookeeper
+    01092_memory_profiler
+    01355_ilike
+    01281_unsucceeded_insert_select_queries_counter
+    live_view
+    limit_memory
+    memory_limit
+    memory_leak
+    00110_external_sort
+    00682_empty_parts_merge
+    00701_rollup
+    00109_shard_totals_after_having
+    ddl_dictionaries
+    01251_dict_is_in_infinite_loop
+    01259_dictionary_custom_settings_ddl
+    01268_dictionary_direct_layout
+    01280_ssd_complex_key_dictionary
+    00652_replicated_mutations_zookeeper
+    01411_bayesian_ab_testing
+    # TRUNCATE TABLE system.query_log -- conflicts with other tests
+    01413_rows_events
+)
 
-clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip $TESTS_TO_SKIP 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
+clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip ${TESTS_TO_SKIP[*]} 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 
 kill_clickhouse () {
