@@ -54,6 +54,7 @@ public:
 
     void flush() override final
     {
+        std::cout << "flush()" << std::endl;
         ///FIXME
         while(writer_unit_number - collector_unit_number > 1)
         {

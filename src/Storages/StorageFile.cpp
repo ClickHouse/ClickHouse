@@ -326,12 +326,10 @@ public:
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
-                read_buf = wrapReadBufferWithCompressionMethod(
-                    std::move(nested_buffer), method);
-                reader = FormatFactory::instance().getInput(storage->format_name,
-                    *read_buf, metadata_snapshot->getSampleBlock(), context,
-                    max_block_size, storage->format_settings);
 
+                read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+                auto format = FormatFactory::instance().getInput(
+                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
