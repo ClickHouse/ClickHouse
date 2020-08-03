@@ -102,7 +102,6 @@ public:
 
     /// All pipes must have same header.
     void init(Pipes pipes);
-    void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
     bool isCompleted() { return initialized() && streams.empty(); }
 
@@ -197,9 +196,8 @@ public:
             max_threads = max_threads_;
     }
 
-    /// Convert query pipeline to single or several pipes.
+    /// Convert query pipeline to pipe.
     Pipe getPipe() &&;
-    Pipes getPipes() &&;
 
     /// Get internal processors.
     const Processors & getProcessors() const { return processors.get(); }

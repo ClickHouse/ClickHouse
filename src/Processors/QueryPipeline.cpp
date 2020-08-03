@@ -793,13 +793,7 @@ void QueryPipeline::initRowsBeforeLimit()
 
 Pipe QueryPipeline::getPipe() &&
 {
-    resize(1);
-    return std::move(std::move(*this).getPipes()[0]);
-}
-
-Pipes QueryPipeline::getPipes() &&
-{
-    Pipe pipe(processors.detach(), streams.at(0), totals_having_port, extremes_port);
+    Pipes pipes(processors.detach(), streams.at(0), totals_having_port, extremes_port);
     pipe.max_parallel_streams = streams.maxParallelStreams();
 
     for (auto & lock : table_locks)
