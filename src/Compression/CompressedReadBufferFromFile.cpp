@@ -2,7 +2,6 @@
 
 #include "CompressedReadBufferFromFile.h"
 
-#include <Compression/CompressionInfo.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/WriteHelpers.h>
 #include <IO/createReadBufferFromFileBase.h>

@@ -5,6 +5,7 @@
 #include <Storages/Kafka/Buffer_fwd.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Interpreters/Context.h>
+#include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
