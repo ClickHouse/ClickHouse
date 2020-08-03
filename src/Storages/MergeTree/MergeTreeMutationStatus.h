@@ -33,6 +33,6 @@ struct MergeTreeMutationStatus
 /// (latest_fail_reason not empty) or if mutation was killed (status empty
 /// optional). mutation_ids passed separately, because status may be empty and
 /// we can execute multiple mutations at once
-void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const Strings & mutation_ids);
+void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const std::set<String> & mutation_ids);
 
 }
