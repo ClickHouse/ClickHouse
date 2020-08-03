@@ -68,7 +68,7 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(T && x) { return x == 0; }
+bool check(const T x) { return x == 0; }
 
 template <typename T>
 void set(T & x) { x = 0; }
