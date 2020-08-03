@@ -146,6 +146,10 @@ MergeTreeData::MergeTreeData(
     if (relative_data_path.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
+    /// Check sanity of MergeTreeSettings. Only when table is created.
+    if (!attach)
+        settings->sanityCheck(global_context.getSettingsRef());
+
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
     {
@@ -1608,6 +1612,7 @@ void MergeTreeData::changeSettings(
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
 
         for (const auto & change : new_changes)
+        {
             if (change.name == "storage_policy")
             {
                 StoragePolicyPtr new_storage_policy = global_context.getStoragePolicy(change.value.safeGet<String>());
@@ -1642,9 +1647,13 @@ void MergeTreeData::changeSettings(
                     has_storage_policy_changed = true;
                 }
             }
+        }
 
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
+
+        copy.sanityCheck(global_context.getSettingsRef());
+
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
