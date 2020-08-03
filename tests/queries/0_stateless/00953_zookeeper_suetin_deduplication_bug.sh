@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS elog;"
@@ -27,35 +27,35 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 3, 'h
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 3 rows
 
-count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
+count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'")
 
 while [[ $count != 2 ]]
 do
     sleep 1
-    count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
+    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'")
 done
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 1, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 4 rows
-count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
+count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'")
 
 while [[ $count != 2 ]]
 do
     sleep 1
-    count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
+    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'")
 done
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 5 rows
 
-count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
+count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'")
 
 while [[ $count != 2 ]]
 do
     sleep 1
-    count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
+    count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'")
 done
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"
