@@ -15,13 +15,18 @@ class Identifier : public INode
 
         const auto & getName() const { return name; }
 
+        ASTPtr convertToOld() const override;
+
+        virtual String getQualifiedName() const { return name; };
+
     private:
         const std::string name;
 };
 
 class DatabaseIdentifier : public Identifier
 {
-
+    public:
+        explicit DatabaseIdentifier(PtrTo<Identifier> name);
 };
 
 class TableIdentifier : public Identifier
@@ -29,7 +34,7 @@ class TableIdentifier : public Identifier
     public:
         TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Identifier> name);
 
-        ASTPtr convertToOld() const override;
+        String getQualifiedName() const override { return (db ? db->getQualifiedName() + "." : String()) + getName(); }
 
     private:
         PtrTo<DatabaseIdentifier> db;
@@ -37,7 +42,13 @@ class TableIdentifier : public Identifier
 
 class ColumnIdentifier : public Identifier
 {
+    public:
+        ColumnIdentifier(PtrTo<TableIdentifier> table, PtrTo<Identifier> name);
 
+        String getQualifiedName() const override { return (table ? table->getQualifiedName() + "." : String()) + getName(); }
+
+    private:
+        PtrTo<TableIdentifier> table;
 };
 
 }

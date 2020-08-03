@@ -86,6 +86,7 @@ class ColumnExpr : public INode
         enum ChildIndex : UInt8
         {
             LITERAL = 0,
+            IDENTIFIER = 0,
         };
         enum class ExprType
         {

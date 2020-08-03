@@ -49,13 +49,19 @@ public:
 
     // Column expressions
 
+    antlrcpp::Any visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx) override;
     antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext *ctx) override;
     antlrcpp::Any visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *ctx) override;
+    antlrcpp::Any visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *ctx) override;
 
     // Table expressions
 
     antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx) override;
     antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx) override;
+
+    // Database expressions
+
+    antlrcpp::Any visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx) override;
 
     // Basic expressions
 
