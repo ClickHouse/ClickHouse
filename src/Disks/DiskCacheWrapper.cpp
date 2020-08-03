@@ -143,9 +143,13 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
                 if (!cache_disk->exists(dir_path))
                     cache_disk->createDirectories(dir_path);
 
-                auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
-                auto dst_buffer = cache_disk->writeFile(path, buf_size, WriteMode::Rewrite, estimated_size, aio_threshold);
-                copyData(*src_buffer, *dst_buffer);
+                auto tmp_path = path + ".tmp";
+                {
+                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
+                    auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite, estimated_size, aio_threshold);
+                    copyData(*src_buffer, *dst_buffer);
+                }
+                cache_disk->moveFile(tmp_path, path);
 
                 LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File {} downloaded to cache", backQuote(path));
             }
