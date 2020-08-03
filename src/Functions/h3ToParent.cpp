@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 
 #include <constants.h>
