@@ -241,7 +241,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
         /// Handle system.* tables for which there are no table.sql files.
         bool has_dictionary = isDictionaryExist(context, dictionary_name);
 
-        auto msg = has_dictionary ? "There is no CREATE DICTIONARY query for table " : "There is no metadata file for dictionary ";
+        const auto *msg = has_dictionary ? "There is no CREATE DICTIONARY query for table " : "There is no metadata file for dictionary ";
 
         throw Exception(msg + backQuote(dictionary_name), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
     }

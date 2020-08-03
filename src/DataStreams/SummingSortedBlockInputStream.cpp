@@ -31,7 +31,7 @@ namespace
 {
     bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
     {
-        for (auto & desc : description)
+        for (const auto & desc : description)
             if (desc.column_name == name || (desc.column_name.empty() && desc.column_number == number))
                 return true;
 

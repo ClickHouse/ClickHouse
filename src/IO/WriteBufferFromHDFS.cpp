@@ -54,7 +54,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 
 
-    int write(const char * start, size_t size)
+    int write(const char * start, size_t size) const
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, size);
         if (bytes_written < 0)
@@ -63,7 +63,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         return bytes_written;
     }
 
-    void sync()
+    void sync() const
     {
         int result = hdfsSync(fs.get(), fout);
         if (result < 0)

@@ -82,7 +82,7 @@ SystemLogs::~SystemLogs()
     shutdown();
 }
 
-void SystemLogs::shutdown()
+void SystemLogs::shutdown() const
 {
     if (query_log)
         query_log->shutdown();

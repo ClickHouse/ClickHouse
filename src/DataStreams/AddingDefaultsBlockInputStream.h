@@ -28,11 +28,11 @@ private:
     const ColumnDefaults column_defaults;
     const Context & context;
 
-    void checkCalculated(const ColumnWithTypeAndName & col_read, const ColumnWithTypeAndName & col_defaults, size_t needed) const;
-    MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read, const ColumnWithTypeAndName & col_defaults,
-                                const BlockMissingValues::RowsBitMask & defaults_mask) const;
-    void mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & col_defaults,
-                          const BlockMissingValues::RowsBitMask & defaults_mask) const;
+    static void checkCalculated(const ColumnWithTypeAndName & col_read, const ColumnWithTypeAndName & col_defaults, size_t needed) ;
+    static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read, const ColumnWithTypeAndName & col_defaults,
+                                const BlockMissingValues::RowsBitMask & defaults_mask) ;
+    static void mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & col_defaults,
+                          const BlockMissingValues::RowsBitMask & defaults_mask) ;
 };
 
 }

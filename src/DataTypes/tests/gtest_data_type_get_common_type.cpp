@@ -71,7 +71,7 @@ public:
             expected_type.reset();
     }
 
-public:
+
     DataTypes from_types;
     DataTypePtr expected_type;
 };

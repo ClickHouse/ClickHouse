@@ -96,7 +96,7 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
         ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), bytes_size);
 }
 
-void MergeTreeIndexGranuleBloomFilter::assertGranuleBlocksStructure(const Blocks & granule_index_blocks) const
+void MergeTreeIndexGranuleBloomFilter::assertGranuleBlocksStructure(const Blocks & granule_index_blocks) 
 {
     Block prev_block;
     for (size_t index = 0; index < granule_index_blocks.size(); ++index)
@@ -110,11 +110,11 @@ void MergeTreeIndexGranuleBloomFilter::assertGranuleBlocksStructure(const Blocks
     }
 }
 
-void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column)
+void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column) const
 {
     const auto & column = granule_index_block.getByPosition(index_hash_column);
 
-    if (const auto hash_column = typeid_cast<const ColumnUInt64 *>(column.column.get()))
+    if (const auto *const hash_column = typeid_cast<const ColumnUInt64 *>(column.column.get()))
     {
         const auto & hash_column_vec = hash_column->getData();
 

@@ -47,9 +47,9 @@ private:
     template <typename T>
     bool executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
 
-    bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
-    bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
-    bool executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
+    static bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
+    static bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
+    static bool executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
 };
 
 
@@ -142,7 +142,7 @@ bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnA
             if (src == src_end)
                 continue;
 
-            auto dst = &res_vec[src_offsets[i] - 1];
+            auto *dst = &res_vec[src_offsets[i] - 1];
 
             while (src < src_end)
             {

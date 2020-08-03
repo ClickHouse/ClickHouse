@@ -36,7 +36,7 @@ public:
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(context); }
     FunctionMultiIf(const Context & context_) : context(context_) {}
 
-public:
+
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }

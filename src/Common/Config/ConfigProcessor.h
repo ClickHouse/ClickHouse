@@ -98,7 +98,7 @@ public:
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
     /// Set path of main config.xml . It will be cutted from all configs placed to preprocessed_configs/
-    void setConfigPath(const std::string & config_path);
+    static void setConfigPath(const std::string & config_path);
 
 public:
     using Files = std::vector<std::string>;
@@ -131,7 +131,7 @@ private:
 
     void merge(XMLDocumentPtr config, XMLDocumentPtr with);
 
-    std::string layerFromHost();
+    static std::string layerFromHost();
 
     void doIncludesRecursive(
             XMLDocumentPtr config,

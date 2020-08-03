@@ -519,7 +519,7 @@ public:
         CODEC_WITHOUT_DATA_TYPE,
     };
 
-    CompressionCodecPtr makeCodec(MakeCodecParam with_data_type)
+    static CompressionCodecPtr makeCodec(MakeCodecParam with_data_type)
     {
         const auto & codec_string = std::get<0>(GetParam()).codec_statement;
         const auto & data_type = with_data_type == CODEC_WITH_DATA_TYPE ? std::get<1>(GetParam()).data_type : nullptr;
@@ -527,7 +527,7 @@ public:
         return ::makeCodec(codec_string, data_type);
     }
 
-    void testTranscoding(ICompressionCodec & codec)
+    static void testTranscoding(ICompressionCodec & codec)
     {
         NoOpTimer timer;
         ::testTranscoding(timer, codec, std::get<1>(GetParam()), std::get<0>(GetParam()).expected_compression_ratio);

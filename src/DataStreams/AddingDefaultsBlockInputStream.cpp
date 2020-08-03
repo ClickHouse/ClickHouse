@@ -126,7 +126,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
 
 void AddingDefaultsBlockInputStream::checkCalculated(const ColumnWithTypeAndName & col_read,
                                                      const ColumnWithTypeAndName & col_defaults,
-                                                     size_t defaults_needed) const
+                                                     size_t defaults_needed) 
 {
     size_t column_size = col_read.column->size();
 
@@ -141,7 +141,7 @@ void AddingDefaultsBlockInputStream::checkCalculated(const ColumnWithTypeAndName
 }
 
 void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, MutableColumnPtr & column_mixed, const ColumnPtr & col_defaults,
-                                                      const BlockMissingValues::RowsBitMask & defaults_mask) const
+                                                      const BlockMissingValues::RowsBitMask & defaults_mask) 
 {
     auto call = [&](const auto & types) -> bool
     {
@@ -189,7 +189,7 @@ void AddingDefaultsBlockInputStream::mixNumberColumns(TypeIndex type_idx, Mutabl
 
 MutableColumnPtr AddingDefaultsBlockInputStream::mixColumns(const ColumnWithTypeAndName & col_read,
                                                             const ColumnWithTypeAndName & col_defaults,
-                                                            const BlockMissingValues::RowsBitMask & defaults_mask) const
+                                                            const BlockMissingValues::RowsBitMask & defaults_mask) 
 {
     size_t column_size = col_read.column->size();
     size_t defaults_needed = defaults_mask.size();

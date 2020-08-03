@@ -61,7 +61,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         return;
     }
 
-    if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
     {
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
         MutableColumnPtr mutable_holder = (*std::move(nested_column)).mutate();

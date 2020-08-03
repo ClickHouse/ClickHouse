@@ -24,7 +24,7 @@ void MySQLOutputFormat::initialize()
         return;
 
     initialized = true;
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
 
     if (header.columns())

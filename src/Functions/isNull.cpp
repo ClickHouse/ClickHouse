@@ -39,7 +39,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Merely return the embedded null map.
             block.getByPosition(result).column = nullable->getNullMapColumnPtr();

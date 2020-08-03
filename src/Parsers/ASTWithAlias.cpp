@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void ASTWithAlias::writeAlias(const String & name, const FormatSettings & settings) const
+void ASTWithAlias::writeAlias(const String & name, const FormatSettings & settings) 
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_alias : "");
     settings.writeIdentifier(name);

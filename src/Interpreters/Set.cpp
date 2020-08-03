@@ -127,7 +127,7 @@ void Set::setHeader(const Block & header)
         set_elements_types.emplace_back(header.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
-        if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());

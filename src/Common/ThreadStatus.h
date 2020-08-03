@@ -163,7 +163,7 @@ protected:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
-    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr);
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
     ThreadGroupStatusPtr thread_group;
 

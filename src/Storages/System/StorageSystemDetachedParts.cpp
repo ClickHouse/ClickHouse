@@ -60,7 +60,7 @@ protected:
         while (StoragesInfo info = stream.next())
         {
             const auto parts = info.data->getDetachedParts();
-            for (auto & p : parts)
+            for (const auto & p : parts)
             {
                 size_t i = 0;
                 new_columns[i++]->insert(info.database);

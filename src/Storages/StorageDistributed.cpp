@@ -331,7 +331,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     return getQueryProcessingStage(context, cluster);
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) 
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -605,19 +605,19 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : global_context.getCluster(cluster_name);
 }
 
-void StorageDistributed::ClusterNodeData::flushAllData()
+void StorageDistributed::ClusterNodeData::flushAllData() const
 {
     directory_monitor->flushAllData();
 }
 
-void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
 {
     directory_monitor->shutdownAndDropAllData();
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info) const
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 

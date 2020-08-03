@@ -88,7 +88,7 @@ private:
         data.new_select_expression_list = std::make_shared<ASTExpressionList>();
         data.new_select_expression_list->children.reserve(node.children.size());
 
-        for (auto & child : node.children)
+        for (const auto & child : node.children)
         {
             if (child->as<ASTAsterisk>())
             {
@@ -227,7 +227,7 @@ struct ColumnAliasesMatcher
 
         if (auto table_pos = IdentifierSemantic::chooseTable(node, data.tables))
         {
-            auto & table = data.tables[*table_pos];
+            const auto & table = data.tables[*table_pos];
             IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
             long_name = node.name;
             if (&table == &data.tables.back())

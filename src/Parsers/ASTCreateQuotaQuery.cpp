@@ -84,7 +84,7 @@ namespace
     void formatAllLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
-        for (auto & limits : all_limits)
+        for (const auto & limits : all_limits)
         {
             if (need_comma)
                 settings.ostr << ",";

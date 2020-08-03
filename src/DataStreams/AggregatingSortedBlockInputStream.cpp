@@ -82,7 +82,7 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
             continue;
         }
 
-        if (auto simple_aggr = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+        if (const auto *simple_aggr = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
         {
             // simple aggregate function
             SimpleAggregateDescription desc{simple_aggr->getFunction(), i};

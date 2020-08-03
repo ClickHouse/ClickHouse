@@ -95,7 +95,7 @@ try
         size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
 
-        auto & sample = reader->getColumns();
+        const auto & sample = reader->getColumns();
         Columns columns(sample.size());
         size_t rows_readed = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
 

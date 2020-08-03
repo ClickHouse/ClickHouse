@@ -60,14 +60,14 @@ private:
     bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
         ArrayImpl::NullMapBuilder & builder);
 
-    bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+    static bool executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
     bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
         ArrayImpl::NullMapBuilder & builder);
 
-    bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
+    static bool executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>

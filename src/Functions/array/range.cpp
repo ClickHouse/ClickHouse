@@ -328,7 +328,7 @@ private:
     {
         if (arguments.size() == 1)
         {
-            const auto col = block.getByPosition(arguments[0]).column.get();
+            const auto *const col = block.getByPosition(arguments[0]).column.get();
             if (!executeInternal<UInt8>(block, col, result) &&
                 !executeInternal<UInt16>(block, col, result) &&
                 !executeInternal<UInt32>(block, col, result) &&

@@ -114,7 +114,7 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description)
+void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
 {
     for (auto permitted_state : permitted_states)
     {

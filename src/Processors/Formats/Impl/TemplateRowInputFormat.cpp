@@ -364,7 +364,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
         skipSpaces();
         if (row_format.format_idx_to_column_idx[i])
         {
-            auto & header = getPort().getHeader();
+            const auto & header = getPort().getHeader();
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
             if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx],
                                                         *columns[col_idx], out, i))

@@ -28,7 +28,7 @@ namespace ErrorCodes
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-        for (auto val : data)
+        for (auto *val : data)
             func->destroy(val);
 }
 
@@ -80,7 +80,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
-    for (auto val : data)
+    for (auto *val : data)
         func->insertResultInto(val, *res);
 
     return res;
@@ -91,7 +91,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto ML_function = func.get();
+    auto *ML_function = func.get();
     if (ML_function)
     {
         if (data.size() == 1)
@@ -103,7 +103,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         {
             /// Case for non-constant column. Use different aggregate function for each row.
             size_t row_num = 0;
-            for (auto val : data)
+            for (auto *val : data)
             {
                 ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
@@ -404,7 +404,7 @@ void ColumnAggregateFunction::insert(const Field & x)
         throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
                         "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
 
-    auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

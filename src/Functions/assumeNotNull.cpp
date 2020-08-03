@@ -43,7 +43,7 @@ public:
         const ColumnPtr & col = block.getByPosition(arguments[0]).column;
         ColumnPtr & res_col = block.getByPosition(result).column;
 
-        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
             res_col = nullable_col->getNestedColumnPtr();
         else
             res_col = col;

@@ -266,7 +266,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
             continue;
         }
 
-        if (auto * join = t.tableJoin())
+        if (const auto * join = t.tableJoin())
         {
             if (join->kind == ASTTableJoin::Kind::Cross ||
                 join->kind == ASTTableJoin::Kind::Comma)

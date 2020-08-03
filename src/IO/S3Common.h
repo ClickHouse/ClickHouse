@@ -23,9 +23,9 @@ public:
 
     static ClientFactory & instance();
 
-    std::shared_ptr<Aws::S3::S3Client> create(const String & endpoint,
-                                              const String & access_key_id,
-                                              const String & secret_access_key);
+    static std::shared_ptr<Aws::S3::S3Client> create(const String & endpoint,
+                                                     const String & access_key_id,
+                                                     const String & secret_access_key);
 
 private:
     ClientFactory();

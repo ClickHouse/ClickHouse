@@ -22,7 +22,7 @@ protected:
     void updateDiagnosticInfo();
     bool deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type, IColumn & column,
                                                 WriteBuffer & out, size_t file_column);
-    String alignedName(const String & name, size_t max_length) const;
+    static String alignedName(const String & name, size_t max_length) ;
 
     virtual bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) = 0;
     virtual void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) = 0;

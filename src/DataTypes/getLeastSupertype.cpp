@@ -262,7 +262,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
             for (const auto & t : types)
             {
-                if (auto dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
+                if (const auto *dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
                 {
                     const auto scale = dt64->getScale();
                     if (scale > max_scale)

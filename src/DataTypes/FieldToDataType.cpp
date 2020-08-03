@@ -106,7 +106,7 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const
 {
-    auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
+    const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
     return DataTypeFactory::instance().get(name);
 }
 

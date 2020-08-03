@@ -92,7 +92,7 @@ public:
     Poco::Timestamp getLastModified(const String & path) override;
 
 private:
-    String getRandomName() const;
+    static String getRandomName() ;
 
     bool tryReserve(UInt64 bytes);
 

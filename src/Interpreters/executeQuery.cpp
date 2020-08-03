@@ -79,7 +79,7 @@ static String prepareQueryForLogging(const String & query, Context & context)
 
     // wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto *masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
         if (matches > 0)
@@ -327,7 +327,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else
             res = interpreter->execute();
 
-        if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+        if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
             auto db_table = insert_interpreter->getDatabaseTable();
@@ -384,7 +384,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (res.out)
             {
-                if (auto stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+                if (auto *stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
                 {
                     stream->setProcessListElement(context.getProcessListElement());
                 }
@@ -459,7 +459,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
-                    if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
+                    if (const auto *counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().read_rows;

@@ -19,7 +19,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     types.resize(columns);
     for (size_t i = 0; i < columns; ++i)

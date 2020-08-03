@@ -128,7 +128,7 @@ public:
     /// close all process FDs except
     /// 0-2 -- stdin, stdout, stderr
     /// also doesn't close global internal pipes for signal handling
-    void closeFDs();
+    static void closeFDs();
 
 protected:
     /// Возвращает TaskManager приложения
@@ -203,7 +203,7 @@ private:
 
     /// Check SSE and others instructions availability
     /// Calls exit on fail
-    void checkRequiredInstructions();
+    static void checkRequiredInstructions();
 };
 
 

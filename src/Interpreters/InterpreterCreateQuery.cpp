@@ -178,8 +178,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         String type_name = column.type->getName();
-        auto pos = type_name.data();
-        const auto end = pos + type_name.size();
+        auto *pos = type_name.data();
+        auto *const end = pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         columns_list->children.emplace_back(column_declaration);
     }
@@ -204,8 +204,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         String type_name = column.type->getName();
-        auto type_name_pos = type_name.data();
-        const auto type_name_end = type_name_pos + type_name.size();
+        auto *type_name_pos = type_name.data();
+        auto *const type_name_end = type_name_pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
 
         if (column.default_desc.expression)
@@ -223,8 +223,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         {
             String codec_desc = column.codec->getCodecDesc();
             codec_desc = "CODEC(" + codec_desc + ")";
-            auto codec_desc_pos = codec_desc.data();
-            const auto codec_desc_end = codec_desc_pos + codec_desc.size();
+            auto *codec_desc_pos = codec_desc.data();
+            auto *const codec_desc_end = codec_desc_pos + codec_desc.size();
             ParserIdentifierWithParameters codec_p;
             column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
         }
@@ -294,7 +294,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
             {
                 const auto & final_column_name = col_decl.name;
                 const auto tmp_column_name = final_column_name + "_tmp";
-                const auto data_type_ptr = column_names_and_types.back().type.get();
+                const auto *const data_type_ptr = column_names_and_types.back().type.get();
 
 
                 default_expr_list->children.emplace_back(

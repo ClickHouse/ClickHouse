@@ -395,7 +395,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     context.checkAccess(AccessType::SYNC_REPLICA, database_name, table_name);
     StoragePtr table = context.getTable(database_name, table_name);
 
-    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (auto *storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
@@ -417,7 +417,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     String & table_name = query.table;
     context.checkAccess(AccessType::FLUSH_DISTRIBUTED, database_name, table_name);
 
-    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+    if (auto *storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
         storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

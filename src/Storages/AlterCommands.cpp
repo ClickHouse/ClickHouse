@@ -669,7 +669,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (size_t i = 0; i < size(); ++i)
     {
-        auto & command = (*this)[i];
+        const auto & command = (*this)[i];
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
