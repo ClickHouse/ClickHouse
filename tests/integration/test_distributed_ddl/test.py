@@ -296,6 +296,7 @@ def test_socket_timeout(test_cluster):
         instance.query("select hostName() as host, count() from cluster('cluster', 'system', 'settings') group by host")
 
 def test_replicated_without_arguments(test_cluster):
+    rules = test_cluster.pm_random_drops.pop_rules()
     instance = test_cluster.instances['ch1']
     test_cluster.ddl_check_query(instance, "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic",
                                  settings={'show_table_uuid_in_table_create_query_if_not_nil': 1})
@@ -308,6 +309,7 @@ def test_replicated_without_arguments(test_cluster):
     test_cluster.ddl_check_query(instance, "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n",
                                  settings={'show_table_uuid_in_table_create_query_if_not_nil': 1})
     test_cluster.ddl_check_query(instance, "EXCHANGE TABLES test_atomic.rmt AND test_atomic.rmt_renamed ON CLUSTER cluster")
+    test_cluster.pm_random_drops.push_rules(rules)
 
 if __name__ == '__main__':
     with contextmanager(test_cluster)() as ctx_cluster:
