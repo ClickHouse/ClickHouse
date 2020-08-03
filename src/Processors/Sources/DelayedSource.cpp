@@ -127,6 +127,9 @@ Processors DelayedSource::expandPipeline()
     /// Add new inputs. They must have the same header as output.
     for (const auto & output : {main_output, totals_output, extremes_output})
     {
+        if (!output)
+            continue;
+
         inputs.emplace_back(outputs.front().getHeader(), this);
         /// Connect checks that header is same for ports.
         connect(*output, inputs.back());
