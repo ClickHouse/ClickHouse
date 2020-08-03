@@ -721,7 +721,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (use_sampling)
     {
-        res.addSimpleTransform([&filter_expression, &filter_function](const Block & header, Pipe::StreamType)
+        res.addSimpleTransform([&filter_expression, &filter_function](const Block & header)
         {
             return std::make_shared<FilterTransform>(
                     header, filter_expression, filter_function->getColumnName(), false);
@@ -730,7 +730,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (result_projection)
     {
-        res.addSimpleTransform([&result_projection](const Block & header, Pipe::StreamType)
+        res.addSimpleTransform([&result_projection](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, result_projection);
         });
@@ -739,7 +739,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     /// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
     if (sample_factor_column_queried)
     {
-        res.addSimpleTransform([used_sample_factor](const Block & header, Pipe::StreamType)
+        res.addSimpleTransform([used_sample_factor](const Block & header)
         {
             return std::make_shared<AddingConstColumnTransform<Float64>>(
                     header, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
@@ -748,7 +748,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
     {
-        res.addSimpleTransform([&query_info](const Block & header, Pipe::StreamType)
+        res.addSimpleTransform([&query_info](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->remove_columns_actions);
         });
@@ -1114,7 +1114,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
         if (input_order_info->direction == 1)
         {
-            pipe.addSimpleTransform([](const Block & header, Pipe::StreamType)
+            pipe.addSimpleTransform([](const Block & header)
             {
                 return std::make_shared<ReverseTransform>(header);
             });
@@ -1129,10 +1129,10 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
             out_projection = createProjection(pipe, data);
-            pipe.addSimpleTransform([sorting_key_prefix_expr](const Block & header, Pipe::StreamType)
-                                    {
-                                        return std::make_shared<ExpressionTransform>(header, sorting_key_prefix_expr);
-                                    });
+            pipe.addSimpleTransform([sorting_key_prefix_expr](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, sorting_key_prefix_expr);
+            });
 
             pipe.addTransform(std::make_shared<MergingSortedTransform>(
                     pipe.getHeader(), pipe.numOutputPorts(), sort_description, max_block_size));
@@ -1207,7 +1207,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     if (!out_projection)
         out_projection = createProjection(pipe, data);
 
-    pipe.addSimpleTransform([&metadata_snapshot](const Block & header, Pipe::StreamType)
+    pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
     });
@@ -1280,7 +1280,7 @@ Pipe MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             key_columns.emplace_back(desc.column_number);
     }
 
-    pipe.addSimpleTransform([&](const Block & header, Pipe::StreamType)
+    pipe.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<AddingSelectorTransform>(header, num_streams, key_columns);
     });

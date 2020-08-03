@@ -284,7 +284,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 }
 
 
-Pipes StorageS3::read(
+Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -319,7 +319,9 @@ Pipes StorageS3::read(
             uri.bucket,
             key));
 
-    return narrowPipes(std::move(pipes), num_streams);
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    narrowPipe(pipe, num_streams);
+    return pipe;
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
