@@ -1800,10 +1800,12 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
     }
 
+#if !defined(ARCADIA_BUILD)
     if (shared->storage_s3_settings)
     {
         shared->storage_s3_settings->loadFromConfig("s3", config);
     }
+#endif
 }
 
 
@@ -1824,6 +1826,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
 const StorageS3Settings & Context::getStorageS3Settings() const
 {
+#if !defined(ARCADIA_BUILD)
     auto lock = getLock();
 
     if (!shared->storage_s3_settings)
@@ -1833,6 +1836,9 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     }
 
     return *shared->storage_s3_settings;
+#else
+    throw Exception("S3 is unavailable in Arcadia", ErrorCodes::NOT_IMPLEMENTED);
+#endif
 }
 
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const

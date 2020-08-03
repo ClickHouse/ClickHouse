@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -o errexit
 set -o pipefail
@@ -18,29 +18,29 @@ echo "
     insert into tableB select number, number % 100000, addDays(toDate('2020-01-01'), number % 90) from numbers(50000000);
 " | $CLICKHOUSE_CLIENT -n
 
-for i in {1..1}; do echo "
+echo "
 SELECT tableName
-FROM 
+FROM
     (
-        SELECT 
-            col1, 
-            'T1_notJoin1' AS tableName, 
+        SELECT
+            col1,
+            'T1_notJoin1' AS tableName,
             count(*) AS c
         FROM tableA
         GROUP BY col1
         UNION ALL
-        SELECT 
-            a.col1, 
-            'T2_filteredAfterJoin1' AS tableName, 
+        SELECT
+            a.col1,
+            'T2_filteredAfterJoin1' AS tableName,
             count(*) AS c
         FROM tableB AS b
         INNER JOIN tableA AS a ON a.id = b.Aid
         WHERE b.colDate = '2020-01-01'
         GROUP BY a.col1
         UNION ALL
-        SELECT 
-            a.col1, 
-            'T3_filteredAfterJoin2' AS tableName, 
+        SELECT
+            a.col1,
+            'T3_filteredAfterJoin2' AS tableName,
             count(*) AS c
         FROM tableB AS b
             INNER JOIN
@@ -49,58 +49,58 @@ FROM
         WHERE b.colDate = '2020-01-02'
         GROUP BY a.col1
         UNION ALL
-        SELECT 
-            a.col1, 
-            'T4_filteredBeforeJoin1' AS tableName, 
+        SELECT
+            a.col1,
+            'T4_filteredBeforeJoin1' AS tableName,
             count(*) AS c
         FROM tableA AS a
-        INNER JOIN 
+        INNER JOIN
         (
-            SELECT 
+            SELECT
                 Aid
             FROM tableB
             WHERE colDate = '2020-01-01'
         ) AS b ON a.id = b.Aid
         GROUP BY a.col1
         UNION ALL
-        SELECT 
-            a.col1, 
-            'T5_filteredBeforeJoin2' AS tableName, 
+        SELECT
+            a.col1,
+            'T5_filteredBeforeJoin2' AS tableName,
             count(*) AS c
         FROM tableA AS a
-        INNER JOIN 
+        INNER JOIN
         (
-            SELECT 
+            SELECT
                 Aid
             FROM tableB
             WHERE colDate = '2020-01-02'
         ) AS b ON a.id = b.Aid
         GROUP BY a.col1
         UNION ALL
-        SELECT 
-            a.col1, 
-            'T6_filteredAfterJoin3' AS tableName, 
+        SELECT
+            a.col1,
+            'T6_filteredAfterJoin3' AS tableName,
             count(*) AS c
         FROM tableB AS b
         INNER JOIN tableA AS a ON a.id = b.Aid
         WHERE b.colDate = '2020-01-03'
         GROUP BY a.col1
         UNION ALL
-        SELECT 
-            col1, 
-            'T7_notJoin2' AS tableName, 
+        SELECT
+            col1,
+            'T7_notJoin2' AS tableName,
             count(*) AS c
         FROM tableA
         GROUP BY col1
         UNION ALL
-        SELECT 
-            a.col1, 
-            'T8_filteredBeforeJoin3' AS tableName, 
+        SELECT
+            a.col1,
+            'T8_filteredBeforeJoin3' AS tableName,
             count(*) AS c
         FROM tableA AS a
-        INNER JOIN 
+        INNER JOIN
         (
-            SELECT 
+            SELECT
                 Aid
             FROM tableB
             WHERE colDate = '2020-01-03'
@@ -109,7 +109,7 @@ FROM
     ) AS a
 GROUP BY tableName
 ORDER BY tableName ASC;
-" | $CLICKHOUSE_CLIENT -n | wc -l ; done;
+" | $CLICKHOUSE_CLIENT -n | wc -l
 
 echo "
     DROP TABLE tableA;

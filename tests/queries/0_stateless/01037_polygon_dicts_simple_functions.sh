@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 TMP_DIR="/tmp"
 
@@ -103,7 +103,7 @@ do
         dictHas(dict_name, key) from test_01037.points order by x, y;
     select 'dictHas', 'test_01037.dict_tuple' as dict_name, tuple(x, y) as key,
         dictHas(dict_name, key) from test_01037.points order by x, y;
-    "  > $outputFile
+    "  > "$outputFile"
 
     diff -q "${CURDIR}/01037_polygon_dicts_simple_functions.ans" "$outputFile"
 done
