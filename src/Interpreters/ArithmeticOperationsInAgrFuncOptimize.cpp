@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -316,7 +317,7 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTPtr & current_ast, Dat
         visit(function_node, data);
 }
 
-bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
+bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
     return !node->as<ASTSubquery>() &&
         !node->as<ASTTableExpression>() &&
