@@ -25,7 +25,6 @@ public:
             const String & exchange_name_,
             const AMQP::ExchangeType exchange_type_,
             Poco::Logger * log_,
-            size_t num_queues_,
             const bool use_transactional_channel_,
             const bool persistent_,
             std::optional<char> delimiter,
@@ -37,22 +36,22 @@ public:
 
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }
-    void finilizeProducer();
+    void commit();
     void updateMaxWait() { wait_num.store(delivery_tag); }
 
 private:
     void nextImpl() override;
     void iterateEventLoop();
     void writingFunc();
-    void setupConnection(bool remove_prev_connection);
-    void setupChannel(bool remove_prev_channel);
+    bool setupConnection();
+    void setupChannel();
+    void removeConfirmed(UInt64 received_delivery_tag, bool multiple);
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
     const Names routing_keys;
     const String exchange_name;
     AMQP::ExchangeType exchange_type;
-    const size_t num_queues;
     const bool use_transactional_channel;
     const bool persistent;
 
@@ -70,7 +69,6 @@ private:
     std::atomic<UInt64> wait_num = 0;
     std::set<UInt64> delivery_tags_record;
     std::mutex mutex;
-    std::function<void(uint64_t received_delivery_tag, bool multiple)> remove_confirmed_tag;
 
     Poco::Logger * log;
     const std::optional<char> delim;
