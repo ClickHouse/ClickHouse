@@ -173,6 +173,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
         {
             /// Too many digits after point. Just cut off excessive digits.
             auto divisor = intExp10OfSize<T>(divisor_exp);
+            assert(divisor > 0);    /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
             x.value /= divisor;
             scale = 0;
             return;
