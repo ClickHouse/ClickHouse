@@ -27,7 +27,7 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
-#include <Interpreters/AnyInputOptimize.h>
+#include <Interpreters/RewriteAnyFunctionVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -577,8 +577,8 @@ void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_
 void optimizeAnyInput(ASTPtr & query)
 {
     /// Removing arithmetic operations from functions
-    AnyInputVisitor::Data data = {};
-    AnyInputVisitor(data).visit(query);
+    RewriteAnyFunctionVisitor::Data data = {};
+    RewriteAnyFunctionVisitor(data).visit(query);
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
