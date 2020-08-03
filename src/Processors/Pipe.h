@@ -79,6 +79,11 @@ public:
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);
 
+    /// Specify quotas and limits for every ISourceWithProgress.
+    void setLimits(const SourceWithProgress::LocalLimits & limits);
+    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
+    void enableQuota();
+
     /// Do not allow to change the table while the processors of pipe are alive.
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
@@ -108,8 +113,13 @@ private:
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
 
-    /// Destroy pipes and get processors.
-    static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
+    /// If is set, all newly created processors will be added to this too.
+    /// It is needed for debug. See QueryPipelineProcessorsCollector.
+    Processors * collected_processors = nullptr;
+
+    static Pipe unitePipes(Pipes pipes, Processors * collected_processors);
+
+    friend class QueryPipeline;
 };
 
 /*
