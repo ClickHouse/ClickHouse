@@ -59,7 +59,7 @@ def test_simple_select(started_cluster):
         age UInt32,
         money UInt32
     )
-    ENGINE = MySQLReplica('mysql1', 3306, 'root', 'clickhouse', 'clickhouse', '{table_name}', 'test_binlog_file')""".format(table_name=table_name))
+    ENGINE = MySQLReplica('mysql1:3306', 'root', 'clickhouse', 'clickhouse', '{table_name}', 'test_binlog_file')""".format(table_name=table_name))
 
     assert node1.query("SELECT * FROM {table_name}".format(table_name=table_name)) == ""
 

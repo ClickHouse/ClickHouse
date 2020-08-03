@@ -9,6 +9,8 @@
 
 #include <Core/Field.h>
 
+#include <Common/parseAddress.h>
+
 namespace DB
 {
 
@@ -295,10 +297,10 @@ void registerStorageMySQLReplica(StorageFactory & factory)
     {
         //TODO: copy some logic from StorageMySQL
         ASTs & engine_args = args.engine_args;
-        if (engine_args.size() < 6 || engine_args.size() > 10) {
-            throw Exception("StorageMySQLReplica requires 8-10 parameters"
+        if (engine_args.size() < 5 || engine_args.size() > 9) {
+            throw Exception("StorageMySQLReplica requires 5-9 parameters"
                 "MySQLReplica("
-                    "'host', port, "
+                    "'hostname:port', "
                     "'user', 'password', "
                     "'replicate_db', 'replicate_table'[, "
                     "'binlog_filename', 'gtid_sets', "
@@ -306,42 +308,44 @@ void registerStorageMySQLReplica(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
-        std::string master_host = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        std::string master_host_and_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        Int32 master_port = DEFAULT_MYSQL_PORT;
+        const auto & [master_host, master_port] = parseAddress(master_host_and_port, DEFAULT_MYSQL_PORT);
+
+        /*Int32 master_port = DEFAULT_MYSQL_PORT;
         {
             const auto * ast = engine_args[1]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64) {
                 master_port = safeGet<UInt64>(ast->value);
             }
-        }
+        }*/
 
-        std::string master_user = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        std::string master_password = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        std::string replicate_db = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        std::string replicate_table = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+        std::string master_user = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        std::string master_password = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        std::string replicate_db = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        std::string replicate_table = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
         std::string binlog_filename = "";
-        if (engine_args.size() > 6) {
-            binlog_filename = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
+        if (engine_args.size() > 5) {
+            binlog_filename = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         std::string gtid_sets = "";
-        if (engine_args.size() > 7) {
-            gtid_sets = engine_args[7]->as<ASTLiteral &>().value.safeGet<String>();
+        if (engine_args.size() > 6) {
+            gtid_sets = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         UInt64 binlog_pos = BIN_LOG_HEADER_SIZE;
-        if (engine_args.size() > 8) {
-            const auto * ast = engine_args[8]->as<ASTLiteral>();
+        if (engine_args.size() > 7) {
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64) {
                 binlog_pos = safeGet<UInt64>(ast->value);
             }
         }
 
         UInt32 slave_id = DEFAULT_SLAVE_ID;
-        if (engine_args.size() > 9) {
-            const auto * ast = engine_args[9]->as<ASTLiteral>();
+        if (engine_args.size() > 8) {
+            const auto * ast = engine_args[8]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64) {
                 slave_id = safeGet<UInt64>(ast->value);
             }
