@@ -12,7 +12,7 @@ namespace DB
 class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
-    ExternalLoaderDatabaseConfigRepository(IDatabase & database_);
+    ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & global_context_);
 
     const std::string & getName() const override { return database_name; }
 
@@ -25,6 +25,7 @@ public:
     LoadablesConfigurationPtr load(const std::string & loadable_definition_name) override;
 
 private:
+    const Context & global_context;
     const String database_name;
     IDatabase & database;
 };

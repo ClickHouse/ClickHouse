@@ -644,6 +644,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
+    /// Check sanity of MergeTreeSettings on server startup
+    global_context->getMergeTreeSettings().sanityCheck(settings);
+
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
 
