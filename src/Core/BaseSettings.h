@@ -279,8 +279,11 @@ template <typename Traits_>
 SettingsChanges BaseSettings<Traits_>::changes() const
 {
     SettingsChanges res;
-    for (const auto & field : *this)
+    for (auto iterator = begin(); iterator != end(); ++iterator)
+    {
+        const auto & field = *iterator;
         res.emplace_back(field.getName(), field.getValue());
+    }
     return res;
 }
 
@@ -300,8 +303,11 @@ void BaseSettings<Traits_>::applyChanges(const SettingsChanges & changes)
 template <typename Traits_>
 void BaseSettings<Traits_>::applyChanges(const BaseSettings & other_settings)
 {
-    for (const auto & field : other_settings)
+    for (auto iterator = other_settings.begin(); iterator != other_settings.end(); ++iterator)
+    {
+        const auto & field = *iterator;
         set(field.getName(), field.getValue());
+    }
 }
 
 template <typename Traits_>
@@ -487,10 +493,12 @@ template <typename Traits_>
 String BaseSettings<Traits_>::toString() const
 {
     String res;
-    for (const auto & field : *this)
+    for (auto iterator = begin(); iterator != end(); ++iterator)
     {
         if (!res.empty())
             res += ", ";
+
+        const auto & field = *iterator;
         res += field.getName() + " = " + field.getValueString();
     }
     return res;
@@ -500,9 +508,9 @@ template <typename Traits_>
 bool operator==(const BaseSettings<Traits_> & left, const BaseSettings<Traits_> & right)
 {
     auto l = left.begin();
-    for (const auto & r : right)
+    for (auto iterator = right.begin(); iterator != right.end(); ++iterator)
     {
-        if ((l == left.end()) || (*l != r))
+        if ((l == left.end()) || (*l != *iterator))
             return false;
         ++l;
     }
