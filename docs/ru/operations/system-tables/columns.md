@@ -21,4 +21,4 @@
 -   `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
 -   `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/columns) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/columns) <!--hide-->
