@@ -32,6 +32,9 @@ Block DistinctSortedBlockInputStream::readImpl()
         if (!block)
             return Block();
 
+        if (block.rows() == 0)
+            continue;
+
         const ColumnRawPtrs column_ptrs(getKeyColumns(block));
         if (column_ptrs.empty())
             return block;
