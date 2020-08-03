@@ -285,7 +285,7 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        res.emplace_back(createDelayedPipe(header, lazily_create_stream));
+        res.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
     }
     else
         emplace_remote_stream();
