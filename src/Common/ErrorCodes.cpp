@@ -502,8 +502,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_RAID_TYPE = 535;
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP = 536;
     extern const int ILLEGAL_MYSQL_VARIABLE = 537;
-    extern const int ILLEGAL_MYSQL_VARIABLE = 538;
-    extern const int MYSQL_SYNTAX_ERROR = 539;
+    extern const int MYSQL_SYNTAX_ERROR = 538;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
