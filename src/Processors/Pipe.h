@@ -6,38 +6,51 @@ namespace DB
 {
 
 class Pipe;
+using Pipes = std::vector<Pipe>;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
+
+using OutputPortRawPtrs = std::vector<OutputPort *>;
 
 /// Pipes is a set of processors which represents the part of pipeline.
 /// Pipes contains a list of output ports, with specified port for totals and specified port for extremes.
 /// All output ports have same header.
 /// All other ports are connected, all connections are inside processors set.
-class Pipes
+class Pipe
 {
 public:
+    /// Default constructor creates empty pipe. Generally, you cannot do anything with it except to check it is empty().
+    /// You cannot get empty pipe in any other way. All transforms check that result pipe is not empty.
+    Pipe() = default;
     /// Create from source. Source must have no input ports and single output.
-    explicit Pipes(ProcessorPtr source);
+    explicit Pipe(ProcessorPtr source);
     /// Create from processors. Use all not-connected output ports as output_ports. Check invariants.
-    explicit Pipes(Processors processors_);
+    explicit Pipe(Processors processors_);
 
-    Pipes(const Pipes & other) = delete;
-    Pipes(Pipes && other) = default;
-    Pipes & operator=(const Pipes & other) = delete;
-    Pipes & operator=(Pipes && other) = default;
+    Pipe(const Pipe & other) = delete;
+    Pipe(Pipe && other) = default;
+    Pipe & operator=(const Pipe & other) = delete;
+    Pipe & operator=(Pipe && other) = default;
 
     const Block & getHeader() const { return header; }
     bool empty() const { return output_ports.empty(); }
-    size_t size() const { return output_ports.size(); }
+    size_t numOutputPorts() const { return output_ports.size(); }
     OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
+
+    /// Add processors form other pipe. It should have same header.
+    //void addPipes(Pipes pipes);
 
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
     /// Output headers should have same structure and be compatible with current header (if not empty()).
     /// void addSource(ProcessorPtr source);
+
+    /// Add totals and extremes.
+    void addTotalsSource(ProcessorPtr source);
+    void addExtremesSource(ProcessorPtr source);
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
@@ -56,8 +69,13 @@ public:
     /// Add transform with single input and single output for each port.
     void addSimpleTransform(const ProcessorGetter & port);
 
-    /// Destroy pipes and get processors.
-    static Processors detachProcessors(Pipes pipes) { return std::move(pipes.processors); }
+    using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
+
+    /// Transform Pipe in general way.
+    void transform(const Transformer & transformer);
+
+    /// Unite several pipes together. They should have same header.
+    static Pipe unitePipes(Pipes pipes);
 
 private:
     Processors processors;
@@ -66,7 +84,7 @@ private:
     Block header;
 
     /// Output ports. Totals and extremes are allowed to be empty.
-    std::vector<OutputPort *> output_ports;
+    OutputPortRawPtrs output_ports;
     OutputPort * totals_port = nullptr;
     OutputPort * extremes_port = nullptr;
 
@@ -81,9 +99,12 @@ private:
     /// because QueryPipeline is alive until query is finished.
     std::vector<std::shared_ptr<Context>> interpreter_context;
     std::vector<StoragePtr> storage_holders;
+
+    /// Destroy pipes and get processors.
+    static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
 };
 
-
+/*
 /// Pipe is a set of processors which represents the part of pipeline with single output.
 /// All processors in pipe are connected. All ports are connected except the output one.
 class Pipe
@@ -170,5 +191,5 @@ private:
 
     friend class QueryPipeline;
 };
-
+*/
 }

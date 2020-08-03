@@ -74,7 +74,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     return new_context;
 }
 
-Pipes executeQuery(
+Pipe executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
     const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {

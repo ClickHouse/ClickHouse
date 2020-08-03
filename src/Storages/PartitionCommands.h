@@ -15,7 +15,6 @@ namespace DB
 class ASTAlterCommand;
 
 class Pipe;
-using Pipes = std::vector<Pipe>;
 
 struct PartitionCommand
 {
