@@ -521,6 +521,17 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions) const
 {
+    /// Optimization for special case when there are no aggregate functions.
+    if (params.aggregates_size == 0)
+    {
+        /// For all rows.
+        AggregateDataPtr place = aggregates_pool->alloc(0);
+        for (size_t i = 0; i < rows; ++i)
+            state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+        return;
+    }
+
+    /// Optimization for special case when aggregating by 8bit key.
     if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
     {
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
@@ -540,6 +551,8 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         return;
     }
+
+    /// Generic case.
 
     PODArray<AggregateDataPtr> places(rows);
 
