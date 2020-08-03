@@ -68,7 +68,7 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == 0; }
+bool check(T && x) { return x == 0; }
 
 template <typename T>
 void set(T & x) { x = 0; }
@@ -80,13 +80,15 @@ void set(T & x) { x = 0; }
   * Complex types are compared by operator== as usual (this is important if there are gaps).
   *
   * This is needed if you use floats as keys. They are compared by bit equality.
-  * Otherwise the invariants in hash table probing do not met.
+  * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
 inline bool bitEquals(T && a, T && b)
 {
-    if constexpr (std::is_floating_point_v<T>)
-        return 0 == memcmp(&a, &b, sizeof(T));
+    using RealT = std::decay_t<T>;
+
+    if constexpr (std::is_floating_point_v<RealT>)
+        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
     else
         return a == b;
 }
