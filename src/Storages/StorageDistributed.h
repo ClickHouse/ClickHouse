@@ -96,6 +96,7 @@ public:
 
     void startup() override;
     void shutdown() override;
+    void drop() override;
 
     Strings getDataPaths() const override;
 
