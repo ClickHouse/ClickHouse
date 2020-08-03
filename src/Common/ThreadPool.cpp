@@ -1,5 +1,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 #include <cassert>
 #include <type_traits>
@@ -21,6 +22,13 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadActive;
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+}
+
+
+template <typename Thread>
+ThreadPoolImpl<Thread>::ThreadPoolImpl()
+    : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
+{
 }
 
 

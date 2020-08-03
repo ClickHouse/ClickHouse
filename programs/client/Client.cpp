@@ -232,10 +232,10 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context.getSettingsRef())
+        for (auto setting : context.getSettingsRef().allUnchanged())
         {
-            const String & name = setting.getName().toString();
-            if (config().has(name) && !setting.isChanged())
+            const auto & name = setting.getName();
+            if (config().has(name))
                 context.setSetting(name, config().getString(name));
         }
 
@@ -2252,9 +2252,9 @@ public:
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (const auto & setting : context.getSettingsRef())
+        for (auto setting : context.getSettingsRef().all())
         {
-            const String name = setting.getName().toString();
+            const auto & name = setting.getName();
             if (options.count(name))
                 config().setString(name, options[name].as<std::string>());
         }

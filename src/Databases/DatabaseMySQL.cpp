@@ -4,7 +4,6 @@
 
 #if USE_MYSQL
 #    include <string>
-#    include <Core/SettingsCollection.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
@@ -42,7 +41,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const SettingSeconds lock_acquire_timeout{10};
+static const std::chrono::seconds lock_acquire_timeout{10};
 
 static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 {
