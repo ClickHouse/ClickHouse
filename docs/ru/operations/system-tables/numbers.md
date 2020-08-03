@@ -4,4 +4,4 @@
 Эту таблицу можно использовать для тестов, а также если вам нужно сделать перебор.
 Чтения из этой таблицы не распараллеливаются.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/numbers) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/numbers) <!--hide-->

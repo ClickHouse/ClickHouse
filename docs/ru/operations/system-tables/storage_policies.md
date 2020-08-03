@@ -13,4 +13,4 @@
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/storage_policies) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/storage_policies) <!--hide-->

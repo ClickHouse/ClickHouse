@@ -137,5 +137,5 @@ Settings.Values:      ['0','random','1','10000000000']
 
 -   [system.query_thread_log](#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/query_log) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_log) <!--hide-->
 

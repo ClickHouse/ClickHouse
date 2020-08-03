@@ -25,4 +25,4 @@
 -   `source_file` (LowCardinality(String)) — Исходный файл, из которого была сделана запись.
 -   `source_line` (UInt64) — Исходная строка, из которой была сделана запись.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/text_log) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/text_log) <!--hide-->

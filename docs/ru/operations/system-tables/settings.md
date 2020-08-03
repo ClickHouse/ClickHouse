@@ -49,4 +49,4 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
 -   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/settings) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/settings) <!--hide-->

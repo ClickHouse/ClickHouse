@@ -4,4 +4,4 @@
 Эта таблица используется, если в `SELECT` запросе не указана секция `FROM`.
 То есть, это - аналог таблицы `DUAL`, которую можно найти в других СУБД.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/one) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/one) <!--hide-->

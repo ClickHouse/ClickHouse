@@ -36,4 +36,4 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 
 ```
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/licenses) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/licenses) <!--hide-->

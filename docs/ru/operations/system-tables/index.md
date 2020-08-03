@@ -1,7 +1,7 @@
 ---
-toc_folder_title: \u0441\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\u0020\u0442\u0430\u0431\u043b\u0438\u0446\u044b
+toc_folder_title: "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\u0020\u0442\u0430\u0431\u043b\u0438\u0446\u044b"
 toc_priority: 52
-toc_title: Системные таблицы
+toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 ---
 
 # Системные таблицы {#system-tables}
@@ -14,4 +14,4 @@ toc_title: Системные таблицы
 В системные таблицы нельзя записывать данные - можно только читать.
 Системные таблицы расположены в базе данных system.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system-tables/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system-tables/) <!--hide-->

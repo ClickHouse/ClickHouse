@@ -14,4 +14,4 @@
     -   1 — Роль обладает привилегией `ADMIN OPTION`.
     -   0 — Роль не обладает привилегией `ADMIN OPTION`. 
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/role-grants) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/role-grants) <!--hide-->

@@ -111,4 +111,4 @@ ProfileEvents.Values: [1,97,81,5,81]
 
 - [system.query_log](#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/query_thread_log) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_thread_log) <!--hide-->

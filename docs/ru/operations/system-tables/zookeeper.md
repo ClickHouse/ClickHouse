@@ -69,4 +69,4 @@ pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/zookeeper) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/zookeeper) <!--hide-->

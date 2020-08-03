@@ -8,4 +8,4 @@
 - `id` ([UUID](../../sql-reference/data-types/uuid.md)) — ID роли.
 - `storage` ([String](../../sql-reference/data-types/string.md)) — Путь к хранилищу ролей. Настраивается в параметре `access_control_path`.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/roles) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/roles) <!--hide-->

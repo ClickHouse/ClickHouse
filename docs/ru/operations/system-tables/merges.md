@@ -18,4 +18,4 @@
 -   `bytes_written_uncompressed UInt64` — Количество записанных байт, несжатых.
 -   `rows_written UInt64` — Количество записанных строк.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/merges) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/merges) <!--hide-->

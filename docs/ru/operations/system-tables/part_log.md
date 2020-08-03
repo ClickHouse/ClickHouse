@@ -31,4 +31,4 @@
 
 Системная таблица `system.part_log` будет создана после первой вставки данных в таблицу `MergeTree`.
 
-[Original article](https://clickhouse.tech/docs/ru/operations/system_tables/part_log) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/part_log) <!--hide-->
