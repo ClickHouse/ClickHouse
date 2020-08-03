@@ -151,7 +151,8 @@ public:
     virtual void addBatchSinglePlaceNotNull(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const = 0;
 
-    virtual void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+    virtual void addBatchSinglePlaceFromInterval(
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
@@ -159,7 +160,24 @@ public:
       *  "places" contains a large number of same values consecutively.
       */
     virtual void addBatchArray(
-        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const UInt64 * offsets,
+        Arena * arena) const = 0;
+
+    /** The case when the aggregation key is UInt8
+      * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
+      */
+    virtual void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
 
     /** By default all NULLs are skipped during aggregation.
      *  If it returns nullptr, the default one will be used.
@@ -204,6 +222,24 @@ public:
             static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
     }
 
+    void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            AggregateDataPtr & place = places[key[i]];
+            if (unlikely(!place))
+                init(place);
+            static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
+        }
+    }
+
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
@@ -218,7 +254,8 @@ public:
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
-    void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    void addBatchSinglePlaceFromInterval(
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = batch_begin; i < batch_end; ++i)
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
