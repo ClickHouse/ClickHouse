@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Core/SettingsCollectionImpl.h>
 
 namespace DB
 {
@@ -13,7 +12,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_COLLECTION(MaterializeMySQLSettings, LIST_OF_MATERIALIZE_MODE_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(MaterializeMySQLSettingsTraits, LIST_OF_MATERIALIZE_MODE_SETTINGS)
 
 void MaterializeMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
