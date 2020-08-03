@@ -213,15 +213,15 @@ def test_mysql_explain(mysql_client, server_address):
         -e "EXPLAIN PLAN SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    
+
     # EXPLAIN PIPELINE graph=1 SELECT 1
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
         -e "EXPLAIN PIPELINE graph=1 SELECT 1;"
     '''.format(host=server_address, port=server_port), demux=True)
     assert code == 0
-    
-    
+
+
 def test_mysql_federated(mysql_server, server_address):
     # For some reason it occasionally fails without retries.
     retries = 100
@@ -455,7 +455,7 @@ def test_types(server_address):
         ('Float32_NaN_column', float('nan')),
         ('Float64_Inf_column', float('-inf')),
         ('Date_column', datetime.date(2019, 12, 8)),
-        ('Date_min_column', '0000-00-00'),
+        ('Date_min_column', datetime.date(1970, 1, 1)),
         ('Date_after_min_column', datetime.date(1970, 1, 2)),
         ('DateTime_column', datetime.datetime(2019, 12, 8, 8, 24, 3)),
     ]

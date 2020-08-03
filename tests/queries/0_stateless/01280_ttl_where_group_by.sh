@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "drop table if exists ttl_01280_1"
 
 function optimize()
 {
-    for i in {0..20}; do
+    for _ in {0..20}; do
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE $1 FINAL SETTINGS optimize_throw_if_noop=1" 2>/dev/null && break
         sleep 0.3
     done
@@ -60,7 +60,7 @@ insert into ttl_01280_3 values (3, 2, 8, 2, now() + 1);
 insert into ttl_01280_3 values (3, 5, 5, 8, now());"
 
 sleep 2
-optimize "ttl_01280_3" 
+optimize "ttl_01280_3"
 $CLICKHOUSE_CLIENT --query "select a, b, x, y from ttl_01280_3"
 
 $CLICKHOUSE_CLIENT --query "drop table if exists ttl_01280_4"

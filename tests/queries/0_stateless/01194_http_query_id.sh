@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 url="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?session_id=test_01194"
 rnd=$RANDOM

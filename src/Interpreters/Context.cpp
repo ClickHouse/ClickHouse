@@ -319,7 +319,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumeJBODPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -547,7 +547,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumeJBODPtr Context::getTemporaryVolume() const
+VolumePtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -572,7 +572,7 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -583,7 +583,7 @@ VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & p
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<VolumeJBOD>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+        shared->tmp_volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk);
     }
     else
     {
@@ -968,7 +968,7 @@ void Context::setSetting(const StringRef & name, const String & value)
         setProfile(value);
         return;
     }
-    settings.set(name, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -983,7 +983,7 @@ void Context::setSetting(const StringRef & name, const Field & value)
         setProfile(value.safeGet<String>());
         return;
     }
-    settings.set(name, value);
+    settings.set(std::string_view{name}, value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -1025,11 +1025,10 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes) const
         settings_constraints->check(settings, changes);
 }
 
-
-void Context::clampToSettingsConstraints(SettingChange & change) const
+void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
     if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->clamp(settings, change);
+        settings_constraints->check(settings, changes);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
@@ -1037,7 +1036,6 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, changes);
 }
-
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
@@ -1802,10 +1800,12 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
     }
 
+#if !defined(ARCADIA_BUILD)
     if (shared->storage_s3_settings)
     {
         shared->storage_s3_settings->loadFromConfig("s3", config);
     }
+#endif
 }
 
 
@@ -1826,6 +1826,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
 const StorageS3Settings & Context::getStorageS3Settings() const
 {
+#if !defined(ARCADIA_BUILD)
     auto lock = getLock();
 
     if (!shared->storage_s3_settings)
@@ -1835,6 +1836,9 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     }
 
     return *shared->storage_s3_settings;
+#else
+    throw Exception("S3 is unavailable in Arcadia", ErrorCodes::NOT_IMPLEMENTED);
+#endif
 }
 
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
