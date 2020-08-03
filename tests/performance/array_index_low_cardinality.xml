@@ -12,11 +12,11 @@
     </query>
 
     <query>SELECT count() FROM perf_lc WHERE str = 'asdf337'</query>
-    <query>SELECT count() FROM perf_lc WHERE a[1] = 'asdf337'</query>
+    <query>SELECT count() FROM perf_lc WHERE arr[1] = 'asdf337'</query>
     <query>SELECT count() FROM perf_lc WHERE has(arr, 'asdf337')</query>
     <query>SELECT count() FROM perf_lc WHERE indexOf(arr, 'asdf337') > 0</query>
 
-    <query>SELECT count() FROM perf_lc WHERE a[1] = str</query>
+    <query>SELECT count() FROM perf_lc WHERE arr[1] = str</query>
     <query>SELECT count() FROM perf_lc WHERE has(arr, str)</query>
     <query>SELECT count() FROM perf_lc WHERE indexOf(arr, str) > 0</query>
 
