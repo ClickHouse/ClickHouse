@@ -363,7 +363,7 @@ void Pipe::addTransform(ProcessorPtr transform)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::addSimpleTransform(const ProcessorGetter & getter)
+void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
 {
     if (output_ports.empty())
         throw Exception("Cannot add simple transform to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
@@ -413,6 +413,11 @@ void Pipe::addSimpleTransform(const ProcessorGetter & getter)
     add_transform(extremes_port, StreamType::Extremes);
 
     header = std::move(new_header);
+}
+
+void Pipe::addSimpleTransform(const ProcessorGetter & getter)
+{
+    addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
 }
 
 void Pipe::transform(const Transformer & transformer)

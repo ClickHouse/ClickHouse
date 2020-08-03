@@ -64,10 +64,12 @@ public:
         Extremes, /// Stream for extremes. No more then one.
     };
 
-    using ProcessorGetter = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
+    using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
+    using ProcessorGetterWithStreamKind = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
 
     /// Add transform with single input and single output for each port.
     void addSimpleTransform(const ProcessorGetter & port);
+    void addSimpleTransform(const ProcessorGetterWithStreamKind & port);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
@@ -76,6 +78,12 @@ public:
 
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);
+
+    /// Do not allow to change the table while the processors of pipe are alive.
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+    /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
+    void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
 
 private:
     Processors processors;

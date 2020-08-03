@@ -106,7 +106,7 @@ Pipe executeQuery(
     for (const auto & shard_info : cluster->getShardsInfo())
         stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
-    return res;
+    return Pipe::unitePipes(std::move(res));
 }
 
 }
