@@ -333,11 +333,11 @@ public:
 
     PODArray(std::initializer_list<T> il)
     {
-        reserve(std::size(il));
+        this->reserve(std::size(il));
 
         for (const auto & x : il)
         {
-            push_back(x);
+            this->push_back(x);
         }
     }
 
