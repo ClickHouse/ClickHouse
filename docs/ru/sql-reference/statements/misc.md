@@ -64,7 +64,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 -   `name` — имя столбца таблицы;
 -   `type`— тип столбца;
--   `default_type` — в каком виде задано [выражение для значения по умолчанию](create.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
+-   `default_type` — в каком виде задано [выражение для значения по умолчанию](create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
 -   `default_expression` — значение, заданное в секции `DEFAULT`;
 -   `comment_expression` — комментарий к столбцу.
 

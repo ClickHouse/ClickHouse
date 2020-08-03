@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
 
-После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../sql-reference/statements/create.md#table_engines).
+После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../engines/table-engines/index.md#table_engines).
 
 ### Значения по умолчанию {#create-default-values}
 
@@ -104,7 +104,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Кодеки сжатия столбцов {#codecs}
 
-По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../../../sql-reference/statements/create.md#compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
+По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../../../operations/server-configuration-parameters/settings.md#server-settings-compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
 
 ``` sql
 CREATE TABLE codec_example
@@ -126,10 +126,10 @@ ENGINE = <Engine>
 
 Сжатие поддерживается для следующих движков таблиц:
 
--   [MergeTree family](../../sql-reference/statements/create.md)
--   [Log family](../../sql-reference/statements/create.md)
--   [Set](../../sql-reference/statements/create.md)
--   [Join](../../sql-reference/statements/create.md)
+-   [MergeTree family](../../../engines/table-engines/mergetree-family/mergetree.md)
+-   [Log family](../../../engines/table-engines/log-family/index.md)
+-   [Set](../../../engines/table-engines/special/set.md)
+-   [Join](../../../engines/table-engines/special/join.md)
 
 ClickHouse поддерживает кодеки общего назначения и специализированные кодеки.
 
@@ -190,7 +190,7 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 В большинстве случаев, временные таблицы создаются не вручную, а при использовании внешних данных для запроса, или при распределённом `(GLOBAL) IN`. Подробнее см. соответствующие разделы
 
-Вместо временных можно использовать обычные таблицы с [ENGINE = Memory](../../sql-reference/statements/create.md).
+Вместо временных можно использовать обычные таблицы с [ENGINE = Memory](../../../engines/table-engines/special/memory.md).
 
 
 

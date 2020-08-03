@@ -19,13 +19,13 @@ LAYOUT(LAYOUT_NAME([param_name param_value]))
 LIFETIME([MIN val1] MAX val2)
 ```
 
-Создаёт [внешний словарь](../../../sql-reference/statements/create.md) с заданной [структурой](../../sql-reference/statements/create.md), [источником](../../../sql-reference/statements/create.md), [способом размещения в памяти](../../../sql-reference/statements/create.md) и [периодом обновления](../../../sql-reference/statements/create.md).
+Создаёт [внешний словарь](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) с заданной [структурой](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [источником](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [способом размещения в памяти](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) и [периодом обновления](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
 Структура внешнего словаря состоит из атрибутов. Атрибуты словаря задаются как столбцы таблицы. Единственным обязательным свойством атрибута является его тип, все остальные свойства могут иметь значения по умолчанию.
 
-В зависимости от [способа размещения словаря в памяти](../../../sql-reference/statements/create.md), ключами словаря могут быть один и более атрибутов.
+В зависимости от [способа размещения словаря в памяти](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md), ключами словаря могут быть один и более атрибутов.
 
-Смотрите [Внешние словари](../../../sql-reference/statements/create.md).
+Смотрите [Внешние словари](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/dictionary) 
 <!--hide-->
