@@ -128,16 +128,8 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   */
 class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
-    static std::unique_ptr<GlobalThreadPool> the_instance;
-
-    GlobalThreadPool(size_t max_threads_, size_t max_free_threads_,
-            size_t queue_size_, const bool shutdown_on_exception_)
-        : FreeThreadPool(max_threads_, max_free_threads_, queue_size_,
-            shutdown_on_exception_)
-    {}
-
 public:
-    static void initialize(size_t max_threads = 10000);
+    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, false) {}
     static GlobalThreadPool & instance();
 };
 
@@ -224,3 +216,18 @@ private:
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
+
+
+/// Allows to save first catched exception in jobs and postpone its rethrow.
+class ExceptionHandler
+{
+public:
+    void setException(std::exception_ptr exception);
+    void throwIfException();
+
+private:
+    std::exception_ptr first_exception;
+    std::mutex mutex;
+};
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler);

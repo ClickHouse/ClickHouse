@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/ClientInfo.h>
-#include <Core/SettingsCollection.h>
 
 
 namespace ProfileEvents
@@ -24,7 +22,13 @@ namespace DB
 /// A struct which will be inserted as row into query_log table
 struct QueryLogElement
 {
-    using Type = QueryLogElementType;
+    enum Type : int8_t // Make it signed for compatibility with DataTypeEnum8
+    {
+        QUERY_START = 1,
+        QUERY_FINISH = 2,
+        EXCEPTION_BEFORE_START = 3,
+        EXCEPTION_WHILE_PROCESSING = 4,
+    };
 
     Type type = QUERY_START;
 
@@ -63,7 +67,7 @@ struct QueryLogElement
     static std::string name() { return "QueryLog"; }
 
     static Block createBlock();
-    void appendToBlock(MutableColumns & columns) const;
+    void appendToBlock(Block & block) const;
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

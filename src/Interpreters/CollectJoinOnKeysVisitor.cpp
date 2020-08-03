@@ -2,7 +2,7 @@
 
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/TableJoin.h>
+#include <Interpreters/AnalyzedJoin.h>
 
 namespace DB
 {

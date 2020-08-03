@@ -31,13 +31,13 @@ namespace ErrorCodes
   * bitmapBuild: integer[] -> bitmap
   *
   * Convert bitmap to integer array:
-  * bitmapToArray:    bitmap -> integer[]
+  * bitmapToArray:	bitmap -> integer[]
   *
   * Retrun the smallest value in the set:
-  * bitmapMin:    bitmap -> integer
+  * bitmapMin:	bitmap -> integer
   *
   * Retrun the greatest value in the set:
-  * bitmapMax:    bitmap -> integer
+  * bitmapMax:	bitmap -> integer
   *
   * Return subset in specified range (not include the range_end):
   * bitmapSubsetInRange:    bitmap,integer,integer -> bitmap
@@ -49,28 +49,28 @@ namespace ErrorCodes
   * bitmapTransform:    bitmap,integer[],integer[] -> bitmap
   *
   * Two bitmap and calculation:
-  * bitmapAnd:    bitmap,bitmap -> bitmap
+  * bitmapAnd:	bitmap,bitmap -> bitmap
   *
   * Two bitmap or calculation:
-  * bitmapOr:    bitmap,bitmap -> bitmap
+  * bitmapOr:	bitmap,bitmap -> bitmap
   *
   * Two bitmap xor calculation:
-  * bitmapXor:    bitmap,bitmap -> bitmap
+  * bitmapXor:	bitmap,bitmap -> bitmap
   *
   * Two bitmap andnot calculation:
-  * bitmapAndnot:    bitmap,bitmap -> bitmap
+  * bitmapAndnot:	bitmap,bitmap -> bitmap
   *
   * Retrun bitmap cardinality:
-  * bitmapCardinality:    bitmap -> integer
+  * bitmapCardinality:	bitmap -> integer
   *
   * Two bitmap and calculation, return cardinality:
-  * bitmapAndCardinality:    bitmap,bitmap -> integer
+  * bitmapAndCardinality:	bitmap,bitmap -> integer
   *
   * Two bitmap or calculation, return cardinality:
-  * bitmapOrCardinality:    bitmap,bitmap -> integer
+  * bitmapOrCardinality:	bitmap,bitmap -> integer
   *
   * Two bitmap xor calculation, return cardinality:
-  * bitmapXorCardinality:    bitmap,bitmap -> integer
+  * bitmapXorCardinality:	bitmap,bitmap -> integer
   *
   * Two bitmap andnot calculation, return cardinality:
   * bitmapAndnotCardinality: bitmap,bitmap -> integer
@@ -113,9 +113,8 @@ public:
         auto nested_type = array_type->getNestedType();
         DataTypes argument_types = {nested_type};
         Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+        AggregateFunctionPtr bitmap_function
+            = AggregateFunctionFactory::instance().get(AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row);
 
         return std::make_shared<DataTypeAggregateFunction>(bitmap_function, argument_types, params_row);
     }
@@ -157,9 +156,8 @@ private:
 
         // output data
         Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+        AggregateFunctionPtr bitmap_function
+            = AggregateFunctionFactory::instance().get(AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
         col_to->reserve(offsets.size());
 

@@ -33,7 +33,7 @@ public:
         return std::make_shared<FunctionGetMacro>(context.getMacros());
     }
 
-    explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
+    FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
 
     String getName() const override
     {

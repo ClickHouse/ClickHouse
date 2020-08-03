@@ -54,7 +54,7 @@ public:
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto * arg = arguments[arg_idx].get();
+            const auto arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
@@ -78,7 +78,7 @@ public:
 
         std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
-        std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
+        std::vector<size_t> fixed_string_N(arguments.size() - 1);
         std::vector<String> constant_strings(arguments.size() - 1);
 
         bool has_column_string = false;
@@ -96,7 +96,7 @@ public:
             {
                 has_column_fixed_string = true;
                 data[i - 1] = &fixed_col->getChars();
-                fixed_string_sizes[i - 1] = fixed_col->getN();
+                fixed_string_N[i - 1] = fixed_col->getN();
             }
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
             {
@@ -113,7 +113,7 @@ public:
             std::move(pattern),
             data,
             offsets,
-            fixed_string_sizes,
+            fixed_string_N,
             constant_strings,
             col_res->getChars(),
             col_res->getOffsets(),

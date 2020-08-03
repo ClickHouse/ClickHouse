@@ -43,7 +43,7 @@ public:
         return 0;
     }
 
-    bool isInjective(const Block &) const override
+    bool isInjective(const Block &) override
     {
         return true;
     }

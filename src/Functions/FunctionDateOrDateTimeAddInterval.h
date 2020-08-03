@@ -249,7 +249,7 @@ struct Adder
     {}
 
     template <typename FromVectorType, typename ToVectorType>
-    void NO_INLINE vectorConstant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
+    void NO_INLINE vector_constant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -259,7 +259,7 @@ struct Adder
     }
 
     template <typename FromVectorType, typename ToVectorType>
-    void vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -268,11 +268,11 @@ struct Adder
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ vectorVector(vec_from, vec_to, column, time_zone, size); return true; });
+            &delta, [&](const auto & column){ vector_vector(vec_from, vec_to, column, time_zone, size); return true; });
     }
 
     template <typename FromType, typename ToVectorType>
-    void constantVector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = delta.size();
         vec_to.resize(size);
@@ -281,19 +281,19 @@ struct Adder
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ constantVector(from, vec_to, column, time_zone, size); return true; });
+            &delta, [&](const auto & column){ constant_vector(from, vec_to, column, time_zone, size); return true; });
     }
 
 private:
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
-    void NO_INLINE vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    void NO_INLINE vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
-    void NO_INLINE constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    void NO_INLINE constant_vector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);
@@ -324,16 +324,13 @@ struct DateTimeAddIntervalImpl
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getInt(0), time_zone);
+                op.vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
-                op.vectorVector(sources->getData(), col_to->getData(), delta_column, time_zone);
+                op.vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
         }
         else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(source_col.get()))
         {
-            op.constantVector(
-                sources_const->template getValue<FromValueType>(),
-                col_to->getData(),
-                *block.getByPosition(arguments[1]).column, time_zone);
+            op.constant_vector(sources_const->template getValue<FromValueType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
         }
         else
         {
@@ -393,7 +390,6 @@ public:
         {
             if (!WhichDataType(arguments[0].type).isDateTime()
                 || !WhichDataType(arguments[2].type).isString())
-            {
                 throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument must be number. "
@@ -401,7 +397,6 @@ public:
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
         }
 
         switch (arguments[0].type->getTypeId())
@@ -421,8 +416,7 @@ public:
         }
     }
 
-    /// Helper templates to deduce return type based on argument type, since some overloads may promote or denote types,
-    /// e.g. addSeconds(Date, 1) => DateTime
+    // Helper templates to deduce return type based on argument type, since some overloads may promote or denote types, e.g. addSeconds(Date, 1) => DateTime
     template <typename FieldType>
     using TransformExecuteReturnType = decltype(std::declval<Transform>().execute(FieldType(), 0, std::declval<DateLUTImpl>()));
 
@@ -469,18 +463,15 @@ public:
 
         if (which.isDate())
         {
-            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
-                Transform{}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, block, arguments, result);
         }
         else if (which.isDateTime())
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
-                Transform{}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(Transform{}, block, arguments, result);
         }
         else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
-                Transform{datetime64_type->getScale()}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{datetime64_type->getScale()}, block, arguments, result);
         }
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of first argument of function " + getName(),

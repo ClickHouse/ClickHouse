@@ -5,10 +5,8 @@
 #include <Core/Defines.h>
 #include <unistd.h>
 #include <IO/ReadBufferAIO.h>
-#include <Common/randomSeed.h>
 #include <fstream>
 #include <string>
-
 
 namespace
 {
@@ -23,7 +21,7 @@ std::string createTmpFileForEOFtest()
     {
         /// We have no tmp in docker
         /// So we have to use root
-        std::string almost_rand_dir = std::string{"/"} + std::to_string(randomSeed()) + "foo";
+        std::string almost_rand_dir = std::string{"/"} + std::to_string(rand()) + "foo";
         return almost_rand_dir;
     }
 

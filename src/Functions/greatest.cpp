@@ -1,8 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Core/AccurateComparison.h>
-#include <Functions/LeastGreatestGeneric.h>
-
 
 namespace DB
 {
@@ -59,7 +57,7 @@ using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
 void registerFunctionGreatest(FunctionFactory & factory)
 {
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionGreatest>();
 }
 
 }

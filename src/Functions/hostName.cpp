@@ -54,7 +54,6 @@ public:
 void registerFunctionHostName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionHostName>();
-    factory.registerAlias("hostname", "hostName");
 }
 
 }

@@ -225,15 +225,6 @@ ASTPtr tryParseQuery(
         || token_iterator->type == TokenType::Semicolon)
     {
         out_error_message = "Empty query";
-        // Token iterator skips over comments, so we'll get this error for queries
-        // like this:
-        // "
-        // -- just a comment
-        // ;
-        //"
-        // Advance the position, so that we can use this parser for stream parsing
-        // even in presence of such queries.
-        pos = token_iterator->begin;
         return nullptr;
     }
 
@@ -328,7 +319,7 @@ ASTPtr parseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    const char * pos = begin;
+    auto pos = begin;
     return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size, max_parser_depth);
 }
 
@@ -337,28 +328,19 @@ ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
     const std::string & query_description,
-    size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_query_size)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size);
 }
 
 
-ASTPtr parseQuery(
-    IParser & parser,
-    const std::string & query,
-    size_t max_query_size,
-    size_t max_parser_depth)
+ASTPtr parseQuery(IParser & parser, const std::string & query, size_t max_query_size)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size);
 }
 
 
-std::pair<const char *, bool> splitMultipartQuery(
-    const std::string & queries,
-    std::vector<std::string> & queries_list,
-    size_t max_query_size,
-    size_t max_parser_depth)
+std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
 {
     ASTPtr ast;
 
@@ -374,7 +356,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     {
         begin = pos;
 
-        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth);
+        ast = parseQueryAndMovePosition(parser, pos, end, "", true, 0);
 
         auto * insert = ast->as<ASTInsertQuery>();
 

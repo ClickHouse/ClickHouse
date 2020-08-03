@@ -23,7 +23,7 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         case Type::EMPTY: break;
 
     #define M(NAME) \
-        case Type::NAME: (NAME) = std::make_unique<typename decltype(NAME)::element_type>(); break;
+        case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
@@ -37,7 +37,7 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         case Type::EMPTY: return 0;
 
     #define M(NAME) \
-        case Type::NAME: return (NAME)->data.size();
+        case Type::NAME: return NAME->data.size();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
@@ -53,7 +53,7 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         case Type::EMPTY: return 0;
 
     #define M(NAME) \
-        case Type::NAME: return (NAME)->data.getBufferSizeInBytes();
+        case Type::NAME: return NAME->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
@@ -74,7 +74,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     for (const auto & col : key_columns)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
         {
             nested_key_columns.push_back(&nullable->getNestedColumn());
             has_nullable_key = true;

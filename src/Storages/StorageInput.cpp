@@ -18,12 +18,10 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
-StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
-    : IStorage(table_id)
+StorageInput::StorageInput(const String & table_name_, const ColumnsDescription & columns_)
+    : IStorage({"", table_name_})
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
 }
 
 
@@ -58,9 +56,7 @@ void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 }
 
 
-Pipes StorageInput::read(
-    const Names & /*column_names*/,
-    const StorageMetadataPtr & metadata_snapshot,
+Pipes StorageInput::read(const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -74,7 +70,7 @@ Pipes StorageInput::read(
     {
         /// Send structure to the client.
         query_context.initializeInput(shared_from_this());
-        pipes.emplace_back(std::make_shared<StorageInputSource>(query_context, metadata_snapshot->getSampleBlock()));
+        pipes.emplace_back(std::make_shared<StorageInputSource>(query_context, getSampleBlock()));
         return pipes;
     }
 

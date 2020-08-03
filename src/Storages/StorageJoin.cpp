@@ -1,6 +1,6 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/Join.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -9,7 +9,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
-#include <Interpreters/TableJoin.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -53,32 +53,29 @@ StorageJoin::StorageJoin(
     , strictness(strictness_)
     , overwrite(overwrite_)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     for (const auto & key : key_names)
-        if (!metadata_snapshot->getColumns().hasPhysical(key))
+        if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    table_join = std::make_shared<AnalyzedJoin>(limits, use_nulls, kind, strictness, key_names);
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
 
-void StorageJoin::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder&)
+void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
 }
 
 
-HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
+HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
@@ -92,13 +89,13 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
     /// Some HACK to remove wrong names qualifiers: table.column -> column.
     analyzed_join->setRightKeys(key_names);
 
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
+    HashJoinPtr join_clone = std::make_shared<Join>(analyzed_join, getSampleBlock().sortColumns());
     join_clone->reuseJoinedData(*join);
     return join_clone;
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
+void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block); }
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 
@@ -110,7 +107,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        const auto & settings = args.context.getSettingsRef();
+        auto & settings = args.context.getSettingsRef();
 
         auto join_use_nulls = settings.join_use_nulls;
         auto max_rows_in_join = settings.max_rows_in_join;
@@ -247,7 +244,7 @@ size_t rawSize(const StringRef & t)
 class JoinSource : public SourceWithProgress
 {
 public:
-    JoinSource(const HashJoin & parent_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(const Join & parent_, UInt64 max_block_size_, Block sample_block_)
         : SourceWithProgress(sample_block_)
         , parent(parent_)
         , lock(parent.data->rwlock)
@@ -294,7 +291,7 @@ protected:
     }
 
 private:
-    const HashJoin & parent;
+    const Join & parent;
     std::shared_lock<std::shared_mutex> lock;
     UInt64 max_block_size;
     Block sample_block;
@@ -316,7 +313,7 @@ private:
         switch (parent.data->type)
         {
 #define M(TYPE)                                           \
-    case HashJoin::Type::TYPE:                                \
+    case Join::Type::TYPE:                                \
         rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, columns); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
@@ -438,17 +435,16 @@ private:
 // TODO: multiple stream read and index read
 Pipes StorageJoin::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, getSampleBlockForColumns(column_names)));
 
     return pipes;
 }

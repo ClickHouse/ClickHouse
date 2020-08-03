@@ -1,5 +1,4 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
-#include <Parsers/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 
 
@@ -7,24 +6,31 @@ namespace DB
 {
 namespace
 {
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
+    using Kind = ASTDropAccessEntityQuery::Kind;
 
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    const char * kindToKeyword(Kind kind)
     {
-        bool need_comma = false;
-        for (const auto & name : names)
+        switch (kind)
         {
-            if (std::exchange(need_comma, true))
-                settings.ostr << ',';
-            settings.ostr << ' ' << backQuoteIfNeed(name);
+            case Kind::USER: return "USER";
+            case Kind::ROLE: return "ROLE";
+            case Kind::QUOTA: return "QUOTA";
+            case Kind::ROW_POLICY: return "POLICY";
         }
+        __builtin_unreachable();
     }
+}
+
+
+ASTDropAccessEntityQuery::ASTDropAccessEntityQuery(Kind kind_)
+    : kind(kind_), keyword(kindToKeyword(kind_))
+{
 }
 
 
 String ASTDropAccessEntityQuery::getID(char) const
 {
-    return String("DROP ") + toString(type) + " query";
+    return String("DROP ") + keyword + " query";
 }
 
 
@@ -37,25 +43,36 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << EntityTypeInfo::get(type).name
+                  << "DROP " << keyword
                   << (if_exists ? " IF EXISTS" : "")
                   << (settings.hilite ? hilite_none : "");
 
-    if (type == EntityType::ROW_POLICY)
+    if (kind == Kind::ROW_POLICY)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        bool need_comma = false;
+        for (const auto & row_policy_name : row_policies_names)
+        {
+            if (need_comma)
+                settings.ostr << ',';
+            need_comma = true;
+            const String & database = row_policy_name.database;
+            const String & table_name = row_policy_name.table_name;
+            const String & policy_name = row_policy_name.policy_name;
+            settings.ostr << ' ' << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+                          << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
+                          << backQuoteIfNeed(table_name);
+        }
     }
     else
-        formatNames(names, settings);
-
-    formatOnCluster(settings);
-}
-
-
-void ASTDropAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
-{
-    if (row_policy_names)
-        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
+    {
+        bool need_comma = false;
+        for (const auto & name : names)
+        {
+            if (need_comma)
+                settings.ostr << ',';
+            need_comma = true;
+            settings.ostr << ' ' << backQuoteIfNeed(name);
+        }
+    }
 }
 }

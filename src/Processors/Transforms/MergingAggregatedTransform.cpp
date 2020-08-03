@@ -26,11 +26,11 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     total_input_rows += chunk.getNumRows();
     ++total_input_blocks;
 
-    const auto & info = chunk.getChunkInfo();
+    auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
-    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
     if (!agg_info)
         throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
@@ -46,7 +46,8 @@ Chunk MergingAggregatedTransform::generate()
     if (!generate_started)
     {
         generate_started = true;
-        LOG_TRACE(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
+        LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows
+                               << " rows.");
 
         /// Exception safety. Make iterator valid in case any method below throws.
         next_block = blocks.begin();

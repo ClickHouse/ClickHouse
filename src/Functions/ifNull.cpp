@@ -19,7 +19,7 @@ class FunctionIfNull : public IFunction
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(const Context & context_) : context(context_) {}
+    FunctionIfNull(const Context & context_) : context(context_) {}
 
     static FunctionPtr create(const Context & context)
     {

@@ -5,7 +5,7 @@
 #include <climits>
 #include <sstream>
 #include <AggregateFunctions/ReservoirSampler.h>
-#include <common/types.h>
+#include <common/Types.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -14,13 +14,6 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-}
 
 /// Implementation of Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the `sample_count` size.
 /// Can approximately get quantiles.
@@ -230,7 +223,7 @@ private:
     ResultType onEmpty() const
     {
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");
+            throw Poco::Exception("Quantile of empty ReservoirSamplerDeterministic");
         else
             return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }

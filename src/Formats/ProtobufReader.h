@@ -5,15 +5,13 @@
 #include <Common/UInt128.h>
 #include <Core/UUID.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
-
+#include "config_formats.h"
 #if USE_PROTOBUF
-#    include <memory>
-#    include <IO/ReadBuffer.h>
-#    include <boost/noncopyable.hpp>
-#    include "ProtobufColumnMatcher.h"
+
+#include <boost/noncopyable.hpp>
+#include "ProtobufColumnMatcher.h"
+#include <IO/ReadBuffer.h>
+#include <memory>
 
 namespace google
 {

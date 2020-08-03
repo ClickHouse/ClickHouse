@@ -22,7 +22,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
 
-    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
+    ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
         : hdfs_uri(hdfs_name_)
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))
@@ -36,7 +36,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
                 ErrorCodes::CANNOT_OPEN_FILE);
     }
 
-    int read(char * start, size_t size) const
+    int read(char * start, size_t size)
     {
         int bytes_read = hdfsRead(fs.get(), fin, start, size);
         if (bytes_read < 0)
