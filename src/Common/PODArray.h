@@ -21,6 +21,20 @@
 
 #include <Common/PODArray_fwd.h>
 
+template <typename T1, typename T2>
+constexpr bool allow_memcpy = std::is_same_v<T1, T2>;
+
+template <typename T2>
+constexpr bool allow_memcpy<char8_t, T2> = std::is_same_v<char8_t, T2>
+    || std::is_same_v<char, T2> || std::is_same_v<unsigned char, T2>;
+
+template <typename T2>
+constexpr bool allow_memcpy<char, T2> = std::is_same_v<char8_t, T2>
+    || std::is_same_v<char, T2> || std::is_same_v<unsigned char, T2>;
+
+template <typename T2>
+constexpr bool allow_memcpy<unsigned char, T2> = std::is_same_v<char8_t, T2>
+    || std::is_same_v<char, T2> || std::is_same_v<unsigned char, T2>;
 
 namespace DB
 {
@@ -317,7 +331,15 @@ public:
         insert(from_begin, from_end);
     }
 
-    PODArray(std::initializer_list<T> il) : PODArray(std::begin(il), std::end(il)) {}
+    PODArray(std::initializer_list<T> il)
+    {
+        reserve(std::size(il));
+
+        for (const auto & x : il)
+        {
+            push_back(x);
+        }
+    }
 
     PODArray(PODArray && other)
     {
@@ -443,6 +465,8 @@ public:
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
+        static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
         size_t position [[maybe_unused]] = it - begin();
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = this->byte_size(end() - it);
@@ -452,16 +476,7 @@ public:
         if (unlikely(bytes_to_move))
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
 
-        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
-        {
-            memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-        }
-        else
-        {
-            it = begin() + position;
-            for (auto from_it = from_begin; from_it != from_end; ++from_it, ++it)
-                new (&*it) T(*from_it);
-        }
+        memcpy(this->c_end - bytes_to_move, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
 
         this->c_end += bytes_to_copy;
     }
@@ -469,17 +484,11 @@ public:
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
-        {
-            size_t bytes_to_copy = this->byte_size(from_end - from_begin);
-            memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-            this->c_end += bytes_to_copy;
-        }
-        else
-        {
-            for (auto it = from_begin; it != from_end; ++it)
-                push_back(*it);
-        }
+        static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
+        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+        this->c_end += bytes_to_copy;
     }
 
     template <typename... TAllocatorParams>
@@ -609,21 +618,15 @@ public:
     template <typename It1, typename It2, typename... TAllocatorParams>
     void assign(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
+        static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
             this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
-        if constexpr (std::is_same_v<T, std::decay_t<decltype(*from_begin)>>)
-        {
-            memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-        }
-        else
-        {
-            auto it = begin();
-            for (auto from_it = from_begin; from_it != from_end; ++from_it)
-                new (&*it) T(*from_it);
-        }
+        memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+
         this->c_end = this->c_start + bytes_to_copy;
     }
 
