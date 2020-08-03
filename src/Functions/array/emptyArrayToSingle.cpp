@@ -45,7 +45,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 };
 
 
@@ -369,7 +369,7 @@ namespace
 }
 
 
-void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
     if (FunctionEmptyArrayToSingleImpl::executeConst(block, arguments, result, input_rows_count))
         return;

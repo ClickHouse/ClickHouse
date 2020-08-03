@@ -78,7 +78,7 @@ Puede haber otras cláusulas después del `ENGINE` cláusula en la consulta. Con
 La descripción de la columna puede especificar una expresión para un valor predeterminado, de una de las siguientes maneras:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Ejemplo: `URLDomain String DEFAULT domain(URL)`.
 
-Si no se define una expresión para el valor predeterminado, los valores predeterminados se establecerán en ceros para números, cadenas vacías para cadenas, matrices vacías para matrices y `0000-00-00` para fechas o `0000-00-00 00:00:00` para las fechas con el tiempo. Los NULL no son compatibles.
+Si no se define una expresión para el valor predeterminado, los valores predeterminados se establecerán en ceros para números, cadenas vacías para cadenas, matrices vacías para matrices y `1970-01-01` para fechas o zero unix timestamp para las fechas con el tiempo. Los NULL no son compatibles.
 
 Si se define la expresión predeterminada, el tipo de columna es opcional. Si no hay un tipo definido explícitamente, se utiliza el tipo de expresión predeterminado. Ejemplo: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ tipo será utilizado para el ‘EventDate’ columna.
 

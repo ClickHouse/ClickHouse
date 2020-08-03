@@ -1,11 +1,108 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
+#include <IO/ReadBuffer.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <ext/scope_guard.h>
 
 namespace DB
 {
 
-void ParallelParsingBlockInputStream::segmentatorThreadFunction()
+ParallelParsingBlockInputStream::ParallelParsingBlockInputStream(const Params & params)
+    : header(params.input_creator_params.sample),
+      row_input_format_params(params.input_creator_params.row_input_format_params),
+      format_settings(params.input_creator_params.settings),
+      input_processor_creator(params.input_processor_creator),
+      min_chunk_bytes(params.min_chunk_bytes),
+      original_buffer(params.read_buffer),
+      // Subtract one thread that we use for segmentation and one for
+      // reading. After that, must have at least two threads left for
+      // parsing. See the assertion below.
+      pool(std::max(2, params.max_threads - 2)),
+      file_segmentation_engine(params.file_segmentation_engine)
 {
+    // See comment above.
+    assert(params.max_threads >= 4);
+
+    // One unit for each thread, including segmentator and reader, plus a
+    // couple more units so that the segmentation thread doesn't spuriously
+    // bump into reader thread on wraparound.
+    processing_units.resize(params.max_threads + 2);
+
+    segmentator_thread = ThreadFromGlobalPool(
+        &ParallelParsingBlockInputStream::segmentatorThreadFunction, this, CurrentThread::getGroup());
+}
+
+ParallelParsingBlockInputStream::~ParallelParsingBlockInputStream()
+{
+    finishAndWait();
+}
+
+void ParallelParsingBlockInputStream::cancel(bool kill)
+{
+    /**
+      * Can be called multiple times, from different threads. Saturate the
+      * the kill flag with OR.
+      */
+    if (kill)
+        is_killed = true;
+    is_cancelled = true;
+
+    /*
+     * The format parsers themselves are not being cancelled here, so we'll
+     * have to wait until they process the current block. Given that the
+     * chunk size is on the order of megabytes, this should't be too long.
+     * We can't call IInputFormat->cancel here, because the parser object is
+     * local to the parser thread, and we don't want to introduce any
+     * synchronization between parser threads and the other threads to get
+     * better performance. An ideal solution would be to add a callback to
+     * IInputFormat that checks whether it was cancelled.
+     */
+
+    finishAndWait();
+}
+
+void ParallelParsingBlockInputStream::scheduleParserThreadForUnitWithNumber(size_t ticket_number)
+{
+    pool.scheduleOrThrowOnError([this, ticket_number, group = CurrentThread::getGroup()]()
+    {
+        parserThreadFunction(group, ticket_number);
+    });
+}
+
+void ParallelParsingBlockInputStream::finishAndWait()
+{
+    finished = true;
+
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        segmentator_condvar.notify_all();
+        reader_condvar.notify_all();
+    }
+
+    if (segmentator_thread.joinable())
+        segmentator_thread.join();
+
+    try
+    {
+        pool.wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void ParallelParsingBlockInputStream::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
+{
+    SCOPE_EXIT(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
+    if (thread_group)
+        CurrentThread::attachTo(thread_group);
+
     setThreadName("Segmentator");
+
     try
     {
         while (!finished)
@@ -49,12 +146,19 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
     }
 }
 
-void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_ticket_number)
+void ParallelParsingBlockInputStream::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
+    SCOPE_EXIT(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
+    if (thread_group)
+        CurrentThread::attachTo(thread_group);
+
+    setThreadName("ChunkParser");
+
     try
     {
-        setThreadName("ChunkParser");
-
         const auto current_unit_number = current_ticket_number % processing_units.size();
         auto & unit = processing_units[current_unit_number];
 

@@ -729,8 +729,6 @@ namespace MySQLReplication
 
     void RowsEvent::dump() const
     {
-        FieldVisitorToString to_string;
-
         header.dump();
         std::cerr << "Schema: " << this->schema << std::endl;
         std::cerr << "Table: " << this->table << std::endl;

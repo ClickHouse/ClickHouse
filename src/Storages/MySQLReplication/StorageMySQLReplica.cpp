@@ -128,10 +128,10 @@ Block StorageMySQLReplica::rowsToBlock(const StorageMetadataPtr & metadata, cons
 Pipes StorageMySQLReplica::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
     unsigned num_streams)
 {
     LOG_INFO(log, "Reading");
@@ -160,7 +160,8 @@ Pipes StorageMySQLReplica::read(
 
 void StorageMySQLReplica::threadFunc() {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    for (int i = 0; i < 5; ++i) {
+    LOG_DEBUG(log, "Starting thread func");
+    for (int i = 0; i < 1; ++i) {
         data.push_back(rowsToBlock(metadata_snapshot, readOneBinlogEvent().insert_rows));
         LOG_INFO(log, "Read one event");
     }
@@ -176,9 +177,12 @@ void StorageMySQLReplica::initBinlogStream() {
 }
 
 void StorageMySQLReplica::startup() {
+    LOG_DEBUG(log, "Connecting as slave client");
     slave_client.connect();
+    LOG_DEBUG(log, "Connected");
     initBinlogStream();
     task->activateAndSchedule();
+    LOG_DEBUG(log, "Activating task");
 }
 
 void StorageMySQLReplica::shutdown()
@@ -193,10 +197,10 @@ MySQLClickHouseEvent StorageMySQLReplica::readOneBinlogEvent() {
     auto event = slave_client.readOneBinlogEvent();
     LOG_INFO(log, "Got one mysql event of type {}", event->type());
     ch_event.type = event->type();
+
     if (event->type() != MYSQL_WRITE_ROWS_EVENT &&
         event->type() != MYSQL_DELETE_ROWS_EVENT &&
-        event->type() != MYSQL_UPDATE_ROWS_EVENT &&
-        event->type() != TABLE_MAP_EVENT)
+        event->type() != MYSQL_UPDATE_ROWS_EVENT)
     {
         return ch_event;
     }
@@ -257,21 +261,21 @@ StorageMySQLReplica::StorageMySQLReplica(
     Int32 & port,
     std::string & master_user,
     std::string & master_password,
-    std::string & replicate_db,
-    std::string & replicate_table,
-    std::string & binlog_filename,
-    std::string & gtid_sets,
-    UInt64 binlog_pos,
-    UInt32 slave_id)
+    std::string & replicate_db_,
+    std::string & replicate_table_,
+    std::string & binlog_filename_,
+    std::string & gtid_sets_,
+    UInt64 binlog_pos_,
+    UInt32 slave_id_)
     : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
     , slave_client(host, port, master_user, master_password)
-    , slave_id(slave_id)
-    , replicate_db(replicate_db)
-    , replicate_table(replicate_table)
-    , binlog_filename(binlog_filename)
-    , binlog_pos(binlog_pos)
-    , gtid_sets(gtid_sets)
+    , slave_id(slave_id_)
+    , replicate_db(replicate_db_)
+    , replicate_table(replicate_table_)
+    , binlog_filename(binlog_filename_)
+    , binlog_pos(binlog_pos_)
+    , gtid_sets(gtid_sets_)
     , log(&Poco::Logger::get("MySQLReplica (" + table_id_.table_name + ")"))
 {
     LOG_INFO(log, "Host: {}, Port: {}, User: {}, Password: {}, Slave ID: {}, DB: {}, File: {}, Position: {}, GTID sets: {}", host, port, master_user, master_password, slave_id, replicate_db, binlog_filename, binlog_pos, gtid_sets);
@@ -291,8 +295,8 @@ void registerStorageMySQLReplica(StorageFactory & factory)
     {
         //TODO: copy some logic from StorageMySQL
         ASTs & engine_args = args.engine_args;
-        if (engine_args.size() < 8 || engine_args.size() > 10) {
-            throw("StorageMySQLReplica requires 8-10 parameters"
+        if (engine_args.size() < 6 || engine_args.size() > 10) {
+            throw Exception("StorageMySQLReplica requires 8-10 parameters"
                 "MySQLReplica("
                     "'host', port, "
                     "'user', 'password', "
