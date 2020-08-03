@@ -2,13 +2,13 @@
 
 Содержит трассировки стека всех серверных потоков. Позволяет разработчикам анализировать состояние сервера.
 
-Для анализа логов используйте [функции интроспекции](../sql-reference/functions/introspection.md): `addressToLine`, `addressToSymbol` и `demangle`.
+Для анализа логов используйте [функции интроспекции](../../sql-reference/functions/introspection.md): `addressToLine`, `addressToSymbol` и `demangle`.
 
 Столбцы:
 
--   `thread_id` ([UInt64](../sql-reference/data-types/int-uint.md)) — Идентификатор потока.
--   `query_id` ([String](../sql-reference/data-types/string.md)) — Идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](#system_tables-query_log).
--   `trace` ([Array(UInt64)](../sql-reference/data-types/array.md)) — [Трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
+-   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Идентификатор потока.
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — Идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](#system_tables-query_log).
+-   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — [Трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
 
 **Пример**
 
@@ -80,9 +80,9 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 **См. также**
 
--   [Функции интроспекции](../sql-reference/functions/introspection.md) — Что такое функции интроспекции и как их использовать.
--   [system.trace_log](system-tables.md#system_tables-trace_log) — Содержит трассировки стека, собранные профилировщиком выборочных запросов.
--   [arrayMap](../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) — Описание и пример использования функции `arrayMap`.
--   [arrayFilter](../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-filter) — Описание и пример использования функции `arrayFilter`.
+-   [Функции интроспекции](../../sql-reference/functions/introspection.md) — Что такое функции интроспекции и как их использовать.
+-   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — Содержит трассировки стека, собранные профилировщиком выборочных запросов.
+-   [arrayMap](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-map) — Описание и пример использования функции `arrayMap`.
+-   [arrayFilter](../../sql-reference/functions/higher-order-functions.md#higher_order_functions-array-filter) — Описание и пример использования функции `arrayFilter`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/stack_trace) <!--hide-->
