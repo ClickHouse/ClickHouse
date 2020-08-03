@@ -932,6 +932,8 @@ case "$stage" in
     time configure
     ;&
 "restart")
+    numactl --hardware ||:
+    lscpu ||:
     time restart
     ;&
 "run_tests")
@@ -967,7 +969,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart || get_profiles ||: )
+    ( get_profiles || restart && get_profiles ||: )
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
