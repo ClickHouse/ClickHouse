@@ -35,7 +35,9 @@ class CherryPick:
         MERGED = 'backported'
 
     def _run(self, args):
-        logging.info(subprocess.check_output(args))
+        out = subprocess.check_output(args).rstrip()
+        logging.debug(out)
+        return out
 
     def __init__(self, token, owner, name, team, pr_number, target_branch):
         self._gh = RemoteRepo(token, owner=owner, name=name, team=team)
@@ -117,8 +119,8 @@ class CherryPick:
 
         self._run(git_prefix + ['checkout', '-f', self.backport_branch])
         self._run(git_prefix + ['pull', '--ff-only', 'origin', self.backport_branch])
-        self._run(git_prefix + ['reset', '--soft', self._run(git_prefix + ['merge-base', self.target_branch, self.backport_branch])])
-        self._run(git_prefix + ['commit', '-a', '-m', pr_title])
+        self._run(git_prefix + ['reset', '--soft', self._run(git_prefix + ['merge-base', 'origin/' + self.target_branch, self.backport_branch])])
+        self._run(git_prefix + ['commit', '-a', '--allow-empty', '-m', pr_title])
         self._run(git_prefix + ['push', '-f', 'origin', '{branch}:{branch}'.format(branch=self.backport_branch)])
 
         pr = self._gh.create_pull_request(source=self.backport_branch, target=self.target_branch, title=pr_title,

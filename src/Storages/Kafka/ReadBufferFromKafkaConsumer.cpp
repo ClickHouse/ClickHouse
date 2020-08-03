@@ -384,7 +384,8 @@ bool ReadBufferFromKafkaConsumer::poll()
         {
             messages = std::move(new_messages);
             current = messages.begin();
-            LOG_TRACE(log, "Polled batch of {} messages. Offset position: {}", messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+            LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",
+                messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
             break;
         }
     }
@@ -416,7 +417,7 @@ size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
         return false;
     });
 
-    size_t skipped = std::distance(messages.end(), new_end);
+    size_t skipped = std::distance(new_end, messages.end());
     if (skipped)
     {
         LOG_ERROR(log, "There were {} messages with an error", skipped);
