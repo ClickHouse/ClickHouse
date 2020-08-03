@@ -65,7 +65,7 @@ def test_insertion_sync(started_cluster):
     INSERT INTO distributed_table(val) VALUES (100500)''')
 
     expected = TSV('''
-0000-00-00	100500
+1970-01-01	100500
 2000-01-01	100500
 2000-01-01	100500''')
     assert TSV(node2.query('SELECT date, val FROM local_table WHERE val = 100500 ORDER BY date')) == expected

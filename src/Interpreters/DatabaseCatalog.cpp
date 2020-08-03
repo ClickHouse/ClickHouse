@@ -560,7 +560,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
-    ThreadPool pool(SettingMaxThreads().getAutoValue());
+    ThreadPool pool;
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()

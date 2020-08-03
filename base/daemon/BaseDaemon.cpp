@@ -151,6 +151,11 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 
+/// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
+__attribute__((__weak__)) void collectCrashLog(
+    Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
+
+
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP / USR1, close log files (for new files to be opened later).
   * On information about std::terminate, write it to log.
@@ -308,16 +313,13 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
+        /// Write crash to system.crash_log table if available.
+        if (collectCrashLog)
+            collectCrashLog(sig, thread_num, query_id, stack_trace);
+
         /// Send crash report to developers (if configured)
-
-        #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
-        #else
-            String build_id_hex{};
-        #endif
-
         if (sig != SanitizerTrap)
-            SentryWriter::onFault(sig, error_message, stack_trace, build_id_hex);
+            SentryWriter::onFault(sig, error_message, stack_trace);
 
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
