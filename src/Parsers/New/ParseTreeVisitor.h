@@ -60,9 +60,7 @@ public:
     // Basic expressions
 
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
-    antlrcpp::Any visitLiteralNull(ClickHouseParser::LiteralNullContext *ctx) override;
-    antlrcpp::Any visitLiteralNumber(ClickHouseParser::LiteralNumberContext *ctx) override;
-    antlrcpp::Any visitLiteralString(ClickHouseParser::LiteralStringContext *ctx) override;
+    antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;
 
 private:
     void visitQueryStmtAsParent(AST::Query *query, ClickHouseParser::QueryStmtContext *ctx);

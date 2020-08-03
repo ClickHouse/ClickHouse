@@ -273,15 +273,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitLiteralNumber(ClickHouseParser::LiteralNumberContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitLiteralString(ClickHouseParser::LiteralStringContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitLiteralNull(ClickHouseParser::LiteralNullContext *ctx) override {
+  virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override {
     return visitChildren(ctx);
   }
 

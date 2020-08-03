@@ -84,7 +84,7 @@ INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 
 IDENTIFIER: (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DIGIT)*;
 NUMBER_LITERAL: DIGIT+; // Unsigned natural integer with meaningless leading zeroes. TODO: don't forget exponential repr.
-STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) )* QUOTE_SINGLE;
+STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) )* QUOTE_SINGLE; // It's important that quote-symbol is a single character.
 
 // Alphabet and allowed symbols
 

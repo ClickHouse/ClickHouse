@@ -143,11 +143,7 @@ databaseIdentifier: identifier;
 
 // Basics
 
-literal
-    : NUMBER_LITERAL  # LiteralNumber
-    | STRING_LITERAL  # LiteralString
-    | NULL_SQL        # LiteralNull
-    ;
+literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
 identifier: IDENTIFIER; // TODO: not complete!
 unaryOp: DASH | NOT;
 binaryOp

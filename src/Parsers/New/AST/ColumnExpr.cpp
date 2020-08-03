@@ -3,6 +3,7 @@
 
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+#include "Parsers/New/AST/INode.h"
 
 
 namespace DB::AST
@@ -37,7 +38,7 @@ namespace DB
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *ctx)
 {
-    return AST::ColumnExpr::createLiteral(std::make_shared<AST::Literal>(ctx->LITERAL()));
+    return AST::ColumnExpr::createLiteral(ctx->literal()->accept(this).as<AST::PtrTo<AST::Literal>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprList(ClickHouseParser::ColumnExprListContext *ctx)

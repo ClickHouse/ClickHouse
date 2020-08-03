@@ -1072,41 +1072,14 @@ public:
   class  LiteralContext : public antlr4::ParserRuleContext {
   public:
     LiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-   
-    LiteralContext() = default;
-    void copyFrom(LiteralContext *context);
-    using antlr4::ParserRuleContext::copyFrom;
-
     virtual size_t getRuleIndex() const override;
-
-   
-  };
-
-  class  LiteralStringContext : public LiteralContext {
-  public:
-    LiteralStringContext(LiteralContext *ctx);
-
+    antlr4::tree::TerminalNode *NUMBER_LITERAL();
     antlr4::tree::TerminalNode *STRING_LITERAL();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  LiteralNullContext : public LiteralContext {
-  public:
-    LiteralNullContext(LiteralContext *ctx);
-
     antlr4::tree::TerminalNode *NULL_SQL();
 
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  LiteralNumberContext : public LiteralContext {
-  public:
-    LiteralNumberContext(LiteralContext *ctx);
-
-    antlr4::tree::TerminalNode *NUMBER_LITERAL();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
   };
 
   LiteralContext* literal();
