@@ -491,7 +491,6 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
         if (required_right_keys.count(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
 
-    JoinCommon::removeLowCardinalityInplace(right_columns_to_add);
     JoinCommon::createMissedColumns(right_columns_to_add);
 
     if (nullable_right_side)
@@ -598,7 +597,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block);
+    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight());
 
     sortBlock(block, right_sort_description);
     return saveRightBlock(std::move(block));
@@ -608,7 +607,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
     materializeBlockInplace(block);
-    JoinCommon::removeLowCardinalityInplace(block);
+    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft());
 
     sortBlock(block, left_sort_description);
     if (is_in_memory)
