@@ -128,8 +128,8 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         consumer_channel->consume(queue_name)
         .onSuccess([&](const std::string & consumer)
         {
-            LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
             consumer_tag = consumer;
+            LOG_TRACE(log, "Consumer {} (consumer tag: {}) is subscribed to queue {}", channel_id, consumer, queue_name);
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {

@@ -27,6 +27,7 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 
 void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 {
+    LOG_TRACE(log, "Connection is ready");
     connection_running.store(true);
 }
 
