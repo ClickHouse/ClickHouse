@@ -77,7 +77,8 @@ settingExpr: identifier EQ_SINGLE literal;
 // INSERT statement
 
 insertStmt:
-    INSERT INTO  // TODO: not complete!
+    INSERT INTO tableExpr (LPAREN columnExprList RPAREN)?
+    // TODO: not complete!
     ;
 
 // Columns

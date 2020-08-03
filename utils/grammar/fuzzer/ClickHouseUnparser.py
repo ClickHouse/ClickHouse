@@ -12,38 +12,30 @@ class ClickHouseUnparser(Grammarinator):
         super(ClickHouseUnparser, self).__init__()
         self.unlexer = unlexer
     @depthcontrol
-    def query_list(self):
-        current = self.create_node(UnparserRule(name='query_list'))
-        current += self.query_stmt()
-        if self.unlexer.max_depth >= 6:
+    def queryList(self):
+        current = self.create_node(UnparserRule(name='queryList'))
+        current += self.queryStmt()
+        if self.unlexer.max_depth >= 4:
             for _ in self.zero_or_more():
                 current += self.unlexer.SEMICOLON()
-                current += self.query_stmt()
+                current += self.queryStmt()
 
         if self.unlexer.max_depth >= 1:
             for _ in self.zero_or_one():
                 current += self.unlexer.SEMICOLON()
 
         return current
-    query_list.min_depth = 6
+    queryList.min_depth = 4
 
     @depthcontrol
-    def query_stmt(self):
-        current = self.create_node(UnparserRule(name='query_stmt'))
-        current += self.select_union_stmt()
-        return current
-    query_stmt.min_depth = 5
-
-    @depthcontrol
-    def select_union_stmt(self):
-        current = self.create_node(UnparserRule(name='select_union_stmt'))
-        current += self.select_stmt()
-        if self.unlexer.max_depth >= 4:
-            for _ in self.zero_or_more():
-                current += self.unlexer.UNION()
-                current += self.unlexer.ALL()
-                current += self.select_stmt()
-
+    def queryStmt(self):
+        current = self.create_node(UnparserRule(name='queryStmt'))
+        choice = self.choice([0 if [6, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_71', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_71', choice)] = self.unlexer.weights.get(('alt_71', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.selectUnionStmt()
+        elif choice == 1:
+            current += self.insertStmt()
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
                 current += self.unlexer.INTO()
@@ -56,149 +48,455 @@ class ClickHouseUnparser(Grammarinator):
                 current += self.identifier()
 
         return current
-    select_union_stmt.min_depth = 4
+    queryStmt.min_depth = 3
 
     @depthcontrol
-    def select_stmt(self):
-        current = self.create_node(UnparserRule(name='select_stmt'))
-        if self.unlexer.max_depth >= 3:
+    def selectUnionStmt(self):
+        current = self.create_node(UnparserRule(name='selectUnionStmt'))
+        current += self.selectStmt()
+        if self.unlexer.max_depth >= 5:
+            for _ in self.zero_or_more():
+                current += self.unlexer.UNION()
+                current += self.unlexer.ALL()
+                current += self.selectStmt()
+
+        return current
+    selectUnionStmt.min_depth = 5
+
+    @depthcontrol
+    def selectStmt(self):
+        current = self.create_node(UnparserRule(name='selectStmt'))
+        if self.unlexer.max_depth >= 5:
             for _ in self.zero_or_one():
-                current += self.unlexer.WITH()
-                current += self.column_expr_list()
+                current += self.withClause()
 
         current += self.unlexer.SELECT()
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
                 current += self.unlexer.DISTINCT()
 
-        current += self.column_expr_list()
-        if self.unlexer.max_depth >= 5:
+        current += self.columnExprList()
+        if self.unlexer.max_depth >= 9:
             for _ in self.zero_or_one():
-                current += self.unlexer.FROM()
-                current += self.join_expr()
-                if self.unlexer.max_depth >= 2:
-                    for _ in self.zero_or_one():
-                        current += self.unlexer.FINAL()
-
-
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                current += self.unlexer.SAMPLE()
-                current += self.ratio_expr()
-                if self.unlexer.max_depth >= 3:
-                    for _ in self.zero_or_one():
-                        current += self.unlexer.OFFSET()
-                        current += self.ratio_expr()
-
-
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                if self.unlexer.max_depth >= 2:
-                    for _ in self.zero_or_one():
-                        current += self.unlexer.LEFT()
-
-                current += self.unlexer.ARRAY()
-                current += self.unlexer.JOIN()
-                current += self.column_expr_list()
-
-        if self.unlexer.max_depth >= 2:
-            for _ in self.zero_or_one():
-                current += self.unlexer.PREWHERE()
-                current += self.column_expr()
-
-        if self.unlexer.max_depth >= 2:
-            for _ in self.zero_or_one():
-                current += self.unlexer.WHERE()
-                current += self.column_expr()
-
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                current += self.unlexer.GROUP()
-                current += self.unlexer.BY()
-                current += self.column_expr_list()
-                if self.unlexer.max_depth >= 2:
-                    for _ in self.zero_or_one():
-                        current += self.unlexer.WITH()
-                        current += self.unlexer.TOTALS()
-
-
-        if self.unlexer.max_depth >= 2:
-            for _ in self.zero_or_one():
-                current += self.unlexer.HAVING()
-                current += self.column_expr()
+                current += self.fromClause()
 
         if self.unlexer.max_depth >= 4:
             for _ in self.zero_or_one():
-                current += self.unlexer.ORDER()
-                current += self.unlexer.BY()
-                current += self.order_expr_list()
-
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                current += self.unlexer.LIMIT()
-                current += self.limit_expr()
-                current += self.unlexer.BY()
-                current += self.column_expr_list()
-
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                current += self.unlexer.LIMIT()
-                current += self.limit_expr()
+                current += self.sampleClause()
 
         if self.unlexer.max_depth >= 5:
             for _ in self.zero_or_one():
-                current += self.unlexer.SETTINGS()
-                current += self.setting_expr_list()
+                current += self.arrayJoinClause()
+
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_one():
+                current += self.prewhereClause()
+
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_one():
+                current += self.whereClause()
+
+        if self.unlexer.max_depth >= 5:
+            for _ in self.zero_or_one():
+                current += self.groupByClause()
+
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_one():
+                current += self.havingClause()
+
+        if self.unlexer.max_depth >= 6:
+            for _ in self.zero_or_one():
+                current += self.orderByClause()
+
+        if self.unlexer.max_depth >= 5:
+            for _ in self.zero_or_one():
+                current += self.limitByClause()
+
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_one():
+                current += self.limitClause()
+
+        if self.unlexer.max_depth >= 6:
+            for _ in self.zero_or_one():
+                current += self.settingsClause()
 
         return current
-    select_stmt.min_depth = 3
+    selectStmt.min_depth = 4
 
     @depthcontrol
-    def join_expr(self):
-        current = self.create_node(UnparserRule(name='join_expr'))
-        current += self.table_identifier()
+    def withClause(self):
+        current = self.create_node(UnparserRule(name='withClause'))
+        current += self.unlexer.WITH()
+        current += self.columnExprList()
         return current
-    join_expr.min_depth = 4
+    withClause.min_depth = 4
 
     @depthcontrol
-    def limit_expr(self):
-        current = self.create_node(UnparserRule(name='limit_expr'))
-        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_95', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_95', choice)] = self.unlexer.weights.get(('alt_95', choice), 1) * self.unlexer.cooldown
-        if choice == 0:
-            current += self.unlexer.NUMBER_LITERAL()
-            if self.unlexer.max_depth >= 2:
-                for _ in self.zero_or_one():
-                    current += self.unlexer.COMMA()
-                    current += self.unlexer.NUMBER_LITERAL()
-
-        elif choice == 1:
-            current += self.unlexer.NUMBER_LITERAL()
-            current += self.unlexer.OFFSET()
-            current += self.unlexer.NUMBER_LITERAL()
-        return current
-    limit_expr.min_depth = 2
-
-    @depthcontrol
-    def order_expr_list(self):
-        current = self.create_node(UnparserRule(name='order_expr_list'))
-        current += self.order_expr()
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_more():
-                current += self.unlexer.COMMA()
-                current += self.order_expr()
-
-        return current
-    order_expr_list.min_depth = 3
-
-    @depthcontrol
-    def order_expr(self):
-        current = self.create_node(UnparserRule(name='order_expr'))
-        current += self.column_expr()
+    def fromClause(self):
+        current = self.create_node(UnparserRule(name='fromClause'))
+        current += self.unlexer.FROM()
+        current += self.joinExpr()
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
-                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_101', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_101', choice)] = self.unlexer.weights.get(('alt_101', choice), 1) * self.unlexer.cooldown
+                current += self.unlexer.FINAL()
+
+        return current
+    fromClause.min_depth = 8
+
+    @depthcontrol
+    def sampleClause(self):
+        current = self.create_node(UnparserRule(name='sampleClause'))
+        current += self.unlexer.SAMPLE()
+        current += self.ratioExpr()
+        if self.unlexer.max_depth >= 3:
+            for _ in self.zero_or_one():
+                current += self.unlexer.OFFSET()
+                current += self.ratioExpr()
+
+        return current
+    sampleClause.min_depth = 3
+
+    @depthcontrol
+    def arrayJoinClause(self):
+        current = self.create_node(UnparserRule(name='arrayJoinClause'))
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                current += self.unlexer.LEFT()
+
+        current += self.unlexer.ARRAY()
+        current += self.unlexer.JOIN()
+        current += self.columnExprList()
+        return current
+    arrayJoinClause.min_depth = 4
+
+    @depthcontrol
+    def prewhereClause(self):
+        current = self.create_node(UnparserRule(name='prewhereClause'))
+        current += self.unlexer.PREWHERE()
+        current += self.columnExpr()
+        return current
+    prewhereClause.min_depth = 3
+
+    @depthcontrol
+    def whereClause(self):
+        current = self.create_node(UnparserRule(name='whereClause'))
+        current += self.unlexer.WHERE()
+        current += self.columnExpr()
+        return current
+    whereClause.min_depth = 3
+
+    @depthcontrol
+    def groupByClause(self):
+        current = self.create_node(UnparserRule(name='groupByClause'))
+        current += self.unlexer.GROUP()
+        current += self.unlexer.BY()
+        current += self.columnExprList()
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                current += self.unlexer.WITH()
+                current += self.unlexer.TOTALS()
+
+        return current
+    groupByClause.min_depth = 4
+
+    @depthcontrol
+    def havingClause(self):
+        current = self.create_node(UnparserRule(name='havingClause'))
+        current += self.unlexer.HAVING()
+        current += self.columnExpr()
+        return current
+    havingClause.min_depth = 3
+
+    @depthcontrol
+    def orderByClause(self):
+        current = self.create_node(UnparserRule(name='orderByClause'))
+        current += self.unlexer.ORDER()
+        current += self.unlexer.BY()
+        current += self.orderExprList()
+        return current
+    orderByClause.min_depth = 5
+
+    @depthcontrol
+    def limitByClause(self):
+        current = self.create_node(UnparserRule(name='limitByClause'))
+        current += self.unlexer.LIMIT()
+        current += self.limitExpr()
+        current += self.unlexer.BY()
+        current += self.columnExprList()
+        return current
+    limitByClause.min_depth = 4
+
+    @depthcontrol
+    def limitClause(self):
+        current = self.create_node(UnparserRule(name='limitClause'))
+        current += self.unlexer.LIMIT()
+        current += self.limitExpr()
+        return current
+    limitClause.min_depth = 3
+
+    @depthcontrol
+    def settingsClause(self):
+        current = self.create_node(UnparserRule(name='settingsClause'))
+        current += self.unlexer.SETTINGS()
+        current += self.settingExprList()
+        return current
+    settingsClause.min_depth = 5
+
+    @depthcontrol
+    def joinExpr(self):
+        current = self.create_node(UnparserRule(name='joinExpr'))
+        choice = self.choice([0 if [7, 9, 9, 9][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_94', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        self.unlexer.weights[('alt_94', choice)] = self.unlexer.weights.get(('alt_94', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current = self.joinExpr_JoinExprTable()
+        elif choice == 1:
+            current = self.joinExpr_JoinExprParens()
+        elif choice == 2:
+            current = self.joinExpr_JoinExprOp()
+        elif choice == 3:
+            current = self.joinExpr_JoinExprCrossOp()
+        return current
+    joinExpr.min_depth = 7
+
+    @depthcontrol
+    def joinExpr_JoinExprTable(self):
+        current = self.create_node(UnparserRule(name='joinExpr_JoinExprTable'))
+        current += self.tableExpr()
+        return current
+    joinExpr_JoinExprTable.min_depth = 6
+
+    @depthcontrol
+    def joinExpr_JoinExprParens(self):
+        current = self.create_node(UnparserRule(name='joinExpr_JoinExprParens'))
+        current += self.unlexer.LPAREN()
+        current += self.joinExpr()
+        current += self.unlexer.RPAREN()
+        return current
+    joinExpr_JoinExprParens.min_depth = 8
+
+    @depthcontrol
+    def joinExpr_JoinExprOp(self):
+        current = self.create_node(UnparserRule(name='joinExpr_JoinExprOp'))
+        current += self.joinExpr()
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_100', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_100', choice)] = self.unlexer.weights.get(('alt_100', choice), 1) * self.unlexer.cooldown
+                if choice == 0:
+                    current += self.unlexer.GLOBAL()
+                elif choice == 1:
+                    current += self.unlexer.LOCAL()
+
+        current += self.joinOp()
+        current += self.unlexer.JOIN()
+        current += self.joinExpr()
+        current += self.joinConstraintClause()
+        return current
+    joinExpr_JoinExprOp.min_depth = 8
+
+    @depthcontrol
+    def joinExpr_JoinExprCrossOp(self):
+        current = self.create_node(UnparserRule(name='joinExpr_JoinExprCrossOp'))
+        current += self.joinExpr()
+        current += self.joinCrossOp()
+        current += self.joinExpr()
+        return current
+    joinExpr_JoinExprCrossOp.min_depth = 8
+
+    @depthcontrol
+    def joinOp(self):
+        current = self.create_node(UnparserRule(name='joinOp'))
+        choice = self.choice([0 if [3, 3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_103', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_103', choice)] = self.unlexer.weights.get(('alt_103', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current = self.joinOp_JoinOpInner()
+        elif choice == 1:
+            current = self.joinOp_JoinOpLeftRight()
+        elif choice == 2:
+            current = self.joinOp_JoinOpFull()
+        return current
+    joinOp.min_depth = 3
+
+    @depthcontrol
+    def joinOp_JoinOpInner(self):
+        current = self.create_node(UnparserRule(name='joinOp_JoinOpInner'))
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_107', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_107', choice)] = self.unlexer.weights.get(('alt_107', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    current += self.unlexer.ANY()
+
+            current += self.unlexer.INNER()
+        elif choice == 1:
+            current += self.unlexer.INNER()
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    current += self.unlexer.ANY()
+
+        return current
+    joinOp_JoinOpInner.min_depth = 2
+
+    @depthcontrol
+    def joinOp_JoinOpLeftRight(self):
+        current = self.create_node(UnparserRule(name='joinOp_JoinOpLeftRight'))
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_112', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_112', choice)] = self.unlexer.weights.get(('alt_112', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    choice = self.choice([0 if [2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_116', i), 1) for i, w in enumerate([1, 1, 1, 1, 1])])
+                    self.unlexer.weights[('alt_116', choice)] = self.unlexer.weights.get(('alt_116', choice), 1) * self.unlexer.cooldown
+                    if choice == 0:
+                        current += self.unlexer.OUTER()
+                    elif choice == 1:
+                        current += self.unlexer.SEMI()
+                    elif choice == 2:
+                        current += self.unlexer.ANTI()
+                    elif choice == 3:
+                        current += self.unlexer.ANY()
+                    elif choice == 4:
+                        current += self.unlexer.ASOF()
+
+            choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_122', i), 1) for i, w in enumerate([1, 1])])
+            self.unlexer.weights[('alt_122', choice)] = self.unlexer.weights.get(('alt_122', choice), 1) * self.unlexer.cooldown
+            if choice == 0:
+                current += self.unlexer.LEFT()
+            elif choice == 1:
+                current += self.unlexer.RIGHT()
+        elif choice == 1:
+            choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_125', i), 1) for i, w in enumerate([1, 1])])
+            self.unlexer.weights[('alt_125', choice)] = self.unlexer.weights.get(('alt_125', choice), 1) * self.unlexer.cooldown
+            if choice == 0:
+                current += self.unlexer.LEFT()
+            elif choice == 1:
+                current += self.unlexer.RIGHT()
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    choice = self.choice([0 if [2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_129', i), 1) for i, w in enumerate([1, 1, 1, 1, 1])])
+                    self.unlexer.weights[('alt_129', choice)] = self.unlexer.weights.get(('alt_129', choice), 1) * self.unlexer.cooldown
+                    if choice == 0:
+                        current += self.unlexer.OUTER()
+                    elif choice == 1:
+                        current += self.unlexer.SEMI()
+                    elif choice == 2:
+                        current += self.unlexer.ANTI()
+                    elif choice == 3:
+                        current += self.unlexer.ANY()
+                    elif choice == 4:
+                        current += self.unlexer.ASOF()
+
+        return current
+    joinOp_JoinOpLeftRight.min_depth = 2
+
+    @depthcontrol
+    def joinOp_JoinOpFull(self):
+        current = self.create_node(UnparserRule(name='joinOp_JoinOpFull'))
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_135', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_135', choice)] = self.unlexer.weights.get(('alt_135', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_139', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_139', choice)] = self.unlexer.weights.get(('alt_139', choice), 1) * self.unlexer.cooldown
+                    if choice == 0:
+                        current += self.unlexer.OUTER()
+                    elif choice == 1:
+                        current += self.unlexer.ANY()
+
+            current += self.unlexer.FULL()
+        elif choice == 1:
+            current += self.unlexer.FULL()
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_143', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_143', choice)] = self.unlexer.weights.get(('alt_143', choice), 1) * self.unlexer.cooldown
+                    if choice == 0:
+                        current += self.unlexer.OUTER()
+                    elif choice == 1:
+                        current += self.unlexer.ANY()
+
+        return current
+    joinOp_JoinOpFull.min_depth = 2
+
+    @depthcontrol
+    def joinConstraintClause(self):
+        current = self.create_node(UnparserRule(name='joinConstraintClause'))
+        choice = self.choice([0 if [4, 4, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_146', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_146', choice)] = self.unlexer.weights.get(('alt_146', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.ON()
+            current += self.columnExprList()
+        elif choice == 1:
+            current += self.unlexer.USING()
+            current += self.unlexer.LPAREN()
+            current += self.columnExprList()
+            current += self.unlexer.RPAREN()
+        elif choice == 2:
+            current += self.unlexer.USING()
+            current += self.columnExprList()
+        return current
+    joinConstraintClause.min_depth = 4
+
+    @depthcontrol
+    def joinCrossOp(self):
+        current = self.create_node(UnparserRule(name='joinCrossOp'))
+        choice = self.choice([0 if [2, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_150', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_150', choice)] = self.unlexer.weights.get(('alt_150', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            if self.unlexer.max_depth >= 2:
+                for _ in self.zero_or_one():
+                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_154', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_154', choice)] = self.unlexer.weights.get(('alt_154', choice), 1) * self.unlexer.cooldown
+                    if choice == 0:
+                        current += self.unlexer.GLOBAL()
+                    elif choice == 1:
+                        current += self.unlexer.LOCAL()
+
+            current += self.unlexer.CROSS()
+            current += self.unlexer.JOIN()
+        elif choice == 1:
+            current += self.unlexer.COMMA()
+        return current
+    joinCrossOp.min_depth = 1
+
+    @depthcontrol
+    def limitExpr(self):
+        current = self.create_node(UnparserRule(name='limitExpr'))
+        current += self.unlexer.NUMBER_LITERAL()
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_158', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_158', choice)] = self.unlexer.weights.get(('alt_158', choice), 1) * self.unlexer.cooldown
+                if choice == 0:
+                    current += self.unlexer.COMMA()
+                elif choice == 1:
+                    current += self.unlexer.OFFSET()
+                current += self.unlexer.NUMBER_LITERAL()
+
+        return current
+    limitExpr.min_depth = 2
+
+    @depthcontrol
+    def orderExprList(self):
+        current = self.create_node(UnparserRule(name='orderExprList'))
+        current += self.orderExpr()
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_more():
+                current += self.unlexer.COMMA()
+                current += self.orderExpr()
+
+        return current
+    orderExprList.min_depth = 4
+
+    @depthcontrol
+    def orderExpr(self):
+        current = self.create_node(UnparserRule(name='orderExpr'))
+        current += self.columnExpr()
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_163', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_163', choice)] = self.unlexer.weights.get(('alt_163', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.ASCENDING()
                 elif choice == 1:
@@ -207,8 +505,8 @@ class ClickHouseUnparser(Grammarinator):
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
                 current += self.unlexer.NULLS()
-                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_105', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_105', choice)] = self.unlexer.weights.get(('alt_105', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_167', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_167', choice)] = self.unlexer.weights.get(('alt_167', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.FIRST()
                 elif choice == 1:
@@ -220,164 +518,280 @@ class ClickHouseUnparser(Grammarinator):
                 current += self.unlexer.STRING_LITERAL()
 
         return current
-    order_expr.min_depth = 2
+    orderExpr.min_depth = 3
 
     @depthcontrol
-    def ratio_expr(self):
-        current = self.create_node(UnparserRule(name='ratio_expr'))
+    def ratioExpr(self):
+        current = self.create_node(UnparserRule(name='ratioExpr'))
         current += self.unlexer.NUMBER_LITERAL()
         current += self.unlexer.SLASH()
         current += self.unlexer.NUMBER_LITERAL()
         return current
-    ratio_expr.min_depth = 2
+    ratioExpr.min_depth = 2
 
     @depthcontrol
-    def setting_expr_list(self):
-        current = self.create_node(UnparserRule(name='setting_expr_list'))
-        current += self.setting_expr()
+    def settingExprList(self):
+        current = self.create_node(UnparserRule(name='settingExprList'))
+        current += self.settingExpr()
         if self.unlexer.max_depth >= 4:
             for _ in self.zero_or_more():
                 current += self.unlexer.COMMA()
-                current += self.setting_expr()
+                current += self.settingExpr()
 
         return current
-    setting_expr_list.min_depth = 4
+    settingExprList.min_depth = 4
 
     @depthcontrol
-    def setting_expr(self):
-        current = self.create_node(UnparserRule(name='setting_expr'))
+    def settingExpr(self):
+        current = self.create_node(UnparserRule(name='settingExpr'))
         current += self.identifier()
-        current += self.unlexer.EQ()
-        current += self.unlexer.LITERAL()
+        current += self.unlexer.EQ_SINGLE()
+        current += self.literal()
         return current
-    setting_expr.min_depth = 3
+    settingExpr.min_depth = 3
 
     @depthcontrol
-    def column_expr_list(self):
-        current = self.create_node(UnparserRule(name='column_expr_list'))
-        current += self.column_expr()
-        if self.unlexer.max_depth >= 2:
+    def insertStmt(self):
+        current = self.create_node(UnparserRule(name='insertStmt'))
+        current += self.unlexer.INSERT()
+        current += self.unlexer.INTO()
+        return current
+    insertStmt.min_depth = 2
+
+    @depthcontrol
+    def columnExprList(self):
+        current = self.create_node(UnparserRule(name='columnExprList'))
+        current += self.columnExpr()
+        if self.unlexer.max_depth >= 3:
             for _ in self.zero_or_more():
                 current += self.unlexer.COMMA()
-                current += self.column_expr()
+                current += self.columnExpr()
 
         return current
-    column_expr_list.min_depth = 2
+    columnExprList.min_depth = 3
 
     @depthcontrol
-    def column_expr(self):
-        current = self.create_node(UnparserRule(name='column_expr'))
-        choice = self.choice([0 if [2, 4, 1, 2, 2, 3, 3, 4, 3, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_111', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
-        self.unlexer.weights[('alt_111', choice)] = self.unlexer.weights.get(('alt_111', choice), 1) * self.unlexer.cooldown
+    def columnExpr(self):
+        current = self.create_node(UnparserRule(name='columnExpr'))
+        choice = self.choice([0 if [4, 2, 5, 4, 5, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_173', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
+        self.unlexer.weights[('alt_173', choice)] = self.unlexer.weights.get(('alt_173', choice), 1) * self.unlexer.cooldown
         if choice == 0:
-            current += self.unlexer.LPAREN()
-            current += self.column_expr()
-            current += self.unlexer.RPAREN()
+            current = self.columnExpr_ColumnExprLiteral()
         elif choice == 1:
-            current += self.unlexer.LPAREN()
-            current += self.select_stmt()
-            current += self.unlexer.RPAREN()
+            current = self.columnExpr_ColumnExprAsterisk()
         elif choice == 2:
-            current += self.unlexer.LBRACKET()
-            if self.unlexer.max_depth >= 3:
-                for _ in self.zero_or_one():
-                    current += self.column_expr_list()
-
-            current += self.unlexer.RBRACKET()
+            current = self.columnExpr_ColumnExprIdentifier()
         elif choice == 3:
-            current += self.column_expr()
-            current += self.unlexer.LBRACKET()
-            current += self.column_expr()
-            current += self.unlexer.RBRACKET()
+            current = self.columnExpr_ColumnExprParens()
         elif choice == 4:
-            current += self.column_expr()
-            current += self.unlexer.DOT()
-            current += self.unlexer.NUMBER_LITERAL()
+            current = self.columnExpr_ColumnExprTuple()
         elif choice == 5:
-            current += self.column_op_expr()
+            current = self.columnExpr_ColumnExprArray()
         elif choice == 6:
-            current += self.column_function_expr()
+            current = self.columnExpr_ColumnExprArrayAccess()
         elif choice == 7:
-            current += self.column_identifier()
+            current = self.columnExpr_ColumnExprTupleAccess()
         elif choice == 8:
-            current += self.unlexer.LITERAL()
+            current = self.columnExpr_ColumnExprUnaryOp()
         elif choice == 9:
-            current += self.unlexer.ASTERISK()
+            current = self.columnExpr_ColumnExprIsNull()
+        elif choice == 10:
+            current = self.columnExpr_ColumnExprBinaryOp()
+        elif choice == 11:
+            current = self.columnExpr_ColumnExprTernaryOp()
+        elif choice == 12:
+            current = self.columnExpr_ColumnExprBetween()
+        elif choice == 13:
+            current = self.columnExpr_ColumnExprCase()
+        elif choice == 14:
+            current = self.columnExpr_ColumnExprInterval()
+        elif choice == 15:
+            current = self.columnExpr_ColumnExprFunction()
+        elif choice == 16:
+            current = self.columnExpr_ColumnExprAlias()
+        return current
+    columnExpr.min_depth = 2
+
+    @depthcontrol
+    def columnExpr_ColumnExprLiteral(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprLiteral'))
+        current += self.literal()
+        return current
+    columnExpr_ColumnExprLiteral.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprAsterisk(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprAsterisk'))
+        current += self.unlexer.ASTERISK()
+        return current
+    columnExpr_ColumnExprAsterisk.min_depth = 1
+
+    @depthcontrol
+    def columnExpr_ColumnExprIdentifier(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprIdentifier'))
+        current += self.columnIdentifier()
+        return current
+    columnExpr_ColumnExprIdentifier.min_depth = 4
+
+    @depthcontrol
+    def columnExpr_ColumnExprParens(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprParens'))
+        current += self.unlexer.LPAREN()
+        current += self.columnExpr()
+        current += self.unlexer.RPAREN()
+        return current
+    columnExpr_ColumnExprParens.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprTuple(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprTuple'))
+        current += self.unlexer.LPAREN()
+        current += self.columnExprList()
+        current += self.unlexer.RPAREN()
+        return current
+    columnExpr_ColumnExprTuple.min_depth = 4
+
+    @depthcontrol
+    def columnExpr_ColumnExprArray(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprArray'))
+        current += self.unlexer.LBRACKET()
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_one():
+                current += self.columnExprList()
+
+        current += self.unlexer.RBRACKET()
+        return current
+    columnExpr_ColumnExprArray.min_depth = 1
+
+    @depthcontrol
+    def columnExpr_ColumnExprArrayAccess(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprArrayAccess'))
+        current += self.columnExpr()
+        current += self.unlexer.LBRACKET()
+        current += self.columnExpr()
+        current += self.unlexer.RBRACKET()
+        return current
+    columnExpr_ColumnExprArrayAccess.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprTupleAccess(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprTupleAccess'))
+        current += self.columnExpr()
+        current += self.unlexer.DOT()
+        current += self.unlexer.NUMBER_LITERAL()
+        return current
+    columnExpr_ColumnExprTupleAccess.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprUnaryOp(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprUnaryOp'))
+        current += self.unaryOp()
+        current += self.columnExpr()
+        return current
+    columnExpr_ColumnExprUnaryOp.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprIsNull(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprIsNull'))
+        current += self.columnExpr()
+        current += self.unlexer.IS()
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                current += self.unlexer.NOT()
+
+        current += self.unlexer.NULL_SQL()
+        return current
+    columnExpr_ColumnExprIsNull.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprBinaryOp(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprBinaryOp'))
+        current += self.columnExpr()
+        current += self.binaryOp()
+        current += self.columnExpr()
+        return current
+    columnExpr_ColumnExprBinaryOp.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprTernaryOp(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprTernaryOp'))
+        current += self.columnExpr()
+        current += self.unlexer.QUERY()
+        current += self.columnExpr()
+        current += self.unlexer.COLON()
+        current += self.columnExpr()
+        return current
+    columnExpr_ColumnExprTernaryOp.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprBetween(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprBetween'))
+        current += self.columnExpr()
+        if self.unlexer.max_depth >= 2:
+            for _ in self.zero_or_one():
+                current += self.unlexer.NOT()
+
+        current += self.unlexer.BETWEEN()
+        current += self.columnExpr()
+        current += self.unlexer.AND()
+        current += self.columnExpr()
+        return current
+    columnExpr_ColumnExprBetween.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprCase(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprCase'))
+        current += self.unlexer.CASE()
         if self.unlexer.max_depth >= 3:
             for _ in self.zero_or_one():
-                current += self.unlexer.AS()
-                current += self.identifier()
+                current += self.columnExpr()
 
+        if self.unlexer.max_depth >= 0:
+            for _ in self.one_or_more():
+                current += self.unlexer.WHEN()
+                current += self.columnExpr()
+                current += self.unlexer.THEN()
+                current += self.columnExpr()
+
+        if self.unlexer.max_depth >= 3:
+            for _ in self.zero_or_one():
+                current += self.unlexer.ELSE()
+                current += self.columnExpr()
+
+        current += self.unlexer.END()
         return current
-    column_expr.min_depth = 1
+    columnExpr_ColumnExprCase.min_depth = 3
 
     @depthcontrol
-    def column_op_expr(self):
-        current = self.create_node(UnparserRule(name='column_op_expr'))
-        choice = self.choice([0 if [2, 2, 2, 2, 2, 2, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_124', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1])])
-        self.unlexer.weights[('alt_124', choice)] = self.unlexer.weights.get(('alt_124', choice), 1) * self.unlexer.cooldown
-        if choice == 0:
-            current += self.unary_op()
-            current += self.column_expr()
-        elif choice == 1:
-            current += self.column_expr()
-            current += self.unlexer.IS()
-            if self.unlexer.max_depth >= 2:
-                for _ in self.zero_or_one():
-                    current += self.unlexer.NOT()
-
-            current += self.unlexer.NULL()
-        elif choice == 2:
-            current += self.column_expr()
-            current += self.binary_op()
-            current += self.column_expr()
-        elif choice == 3:
-            current += self.column_expr()
-            current += self.unlexer.QUERY()
-            current += self.column_expr()
-            current += self.unlexer.COLON()
-            current += self.column_expr()
-        elif choice == 4:
-            current += self.column_expr()
-            if self.unlexer.max_depth >= 2:
-                for _ in self.zero_or_one():
-                    current += self.unlexer.NOT()
-
-            current += self.unlexer.BETWEEN()
-            current += self.column_expr()
-            current += self.unlexer.AND()
-            current += self.column_expr()
-        elif choice == 5:
-            current += self.unlexer.CASE()
-            if self.unlexer.max_depth >= 2:
-                for _ in self.zero_or_one():
-                    current += self.column_expr()
-
-            if self.unlexer.max_depth >= 0:
-                for _ in self.one_or_more():
-                    current += self.unlexer.WHEN()
-                    current += self.column_expr()
-                    current += self.unlexer.THEN()
-                    current += self.column_expr()
-
-            if self.unlexer.max_depth >= 2:
-                for _ in self.zero_or_one():
-                    current += self.unlexer.ELSE()
-                    current += self.column_expr()
-
-            current += self.unlexer.END()
-        elif choice == 6:
-            current += self.unlexer.INTERVAL()
-            current += self.column_expr()
-            current += self.unlexer.INTERVAL_TYPE()
+    def columnExpr_ColumnExprInterval(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprInterval'))
+        current += self.unlexer.INTERVAL()
+        current += self.columnExpr()
+        current += self.unlexer.INTERVAL_TYPE()
         return current
-    column_op_expr.min_depth = 2
+    columnExpr_ColumnExprInterval.min_depth = 3
 
     @depthcontrol
-    def column_function_expr(self):
-        current = self.create_node(UnparserRule(name='column_function_expr'))
-        choice = self.choice([0 if [3, 3, 3, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_136', i), 1) for i, w in enumerate([1, 1, 1, 1])])
-        self.unlexer.weights[('alt_136', choice)] = self.unlexer.weights.get(('alt_136', choice), 1) * self.unlexer.cooldown
+    def columnExpr_ColumnExprFunction(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprFunction'))
+        current += self.columnFunctionExpr()
+        return current
+    columnExpr_ColumnExprFunction.min_depth = 4
+
+    @depthcontrol
+    def columnExpr_ColumnExprAlias(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprAlias'))
+        current += self.columnExpr()
+        current += self.unlexer.AS()
+        current += self.identifier()
+        return current
+    columnExpr_ColumnExprAlias.min_depth = 3
+
+    @depthcontrol
+    def columnFunctionExpr(self):
+        current = self.create_node(UnparserRule(name='columnFunctionExpr'))
+        choice = self.choice([0 if [3, 3, 3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_196', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        self.unlexer.weights[('alt_196', choice)] = self.unlexer.weights.get(('alt_196', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.identifier()
             if self.unlexer.max_depth >= 1:
@@ -385,19 +799,19 @@ class ClickHouseUnparser(Grammarinator):
                     current += self.unlexer.LPAREN()
                     if self.unlexer.max_depth >= 3:
                         for _ in self.zero_or_one():
-                            current += self.unlexer.LITERAL()
+                            current += self.literal()
                             if self.unlexer.max_depth >= 3:
                                 for _ in self.zero_or_more():
                                     current += self.unlexer.COMMA()
-                                    current += self.unlexer.LITERAL()
+                                    current += self.literal()
 
 
                     current += self.unlexer.RPAREN()
 
             current += self.unlexer.LPAREN()
-            if self.unlexer.max_depth >= 4:
+            if self.unlexer.max_depth >= 5:
                 for _ in self.zero_or_one():
-                    current += self.column_arg_list()
+                    current += self.columnArgList()
 
             current += self.unlexer.RPAREN()
         elif choice == 1:
@@ -405,20 +819,20 @@ class ClickHouseUnparser(Grammarinator):
             current += self.unlexer.LPAREN()
             current += self.unlexer.INTERVAL_TYPE()
             current += self.unlexer.FROM()
-            current += self.column_expr()
+            current += self.columnExpr()
             current += self.unlexer.RPAREN()
         elif choice == 2:
             current += self.unlexer.CAST()
             current += self.unlexer.LPAREN()
-            current += self.column_expr()
+            current += self.columnExpr()
             current += self.unlexer.AS()
             current += self.identifier()
             current += self.unlexer.RPAREN()
         elif choice == 3:
             current += self.unlexer.TRIM()
             current += self.unlexer.LPAREN()
-            choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_145', i), 1) for i, w in enumerate([1, 1, 1])])
-            self.unlexer.weights[('alt_145', choice)] = self.unlexer.weights.get(('alt_145', choice), 1) * self.unlexer.cooldown
+            choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_205', i), 1) for i, w in enumerate([1, 1, 1])])
+            self.unlexer.weights[('alt_205', choice)] = self.unlexer.weights.get(('alt_205', choice), 1) * self.unlexer.cooldown
             if choice == 0:
                 current += self.unlexer.BOTH()
             elif choice == 1:
@@ -427,40 +841,40 @@ class ClickHouseUnparser(Grammarinator):
                 current += self.unlexer.TRAILING()
             current += self.unlexer.STRING_LITERAL()
             current += self.unlexer.FROM()
-            current += self.column_expr()
+            current += self.columnExpr()
             current += self.unlexer.RPAREN()
         return current
-    column_function_expr.min_depth = 2
+    columnFunctionExpr.min_depth = 3
 
     @depthcontrol
-    def column_arg_list(self):
-        current = self.create_node(UnparserRule(name='column_arg_list'))
-        current += self.column_arg_expr()
-        if self.unlexer.max_depth >= 3:
+    def columnArgList(self):
+        current = self.create_node(UnparserRule(name='columnArgList'))
+        current += self.columnArgExpr()
+        if self.unlexer.max_depth >= 4:
             for _ in self.zero_or_more():
                 current += self.unlexer.COMMA()
-                current += self.column_arg_expr()
+                current += self.columnArgExpr()
 
         return current
-    column_arg_list.min_depth = 3
+    columnArgList.min_depth = 4
 
     @depthcontrol
-    def column_arg_expr(self):
-        current = self.create_node(UnparserRule(name='column_arg_expr'))
-        choice = self.choice([0 if [2, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_150', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_150', choice)] = self.unlexer.weights.get(('alt_150', choice), 1) * self.unlexer.cooldown
+    def columnArgExpr(self):
+        current = self.create_node(UnparserRule(name='columnArgExpr'))
+        choice = self.choice([0 if [3, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_210', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_210', choice)] = self.unlexer.weights.get(('alt_210', choice), 1) * self.unlexer.cooldown
         if choice == 0:
-            current += self.column_expr()
+            current += self.columnExpr()
         elif choice == 1:
-            current += self.column_lambda_expr()
+            current += self.columnLambdaExpr()
         return current
-    column_arg_expr.min_depth = 2
+    columnArgExpr.min_depth = 3
 
     @depthcontrol
-    def column_lambda_expr(self):
-        current = self.create_node(UnparserRule(name='column_lambda_expr'))
-        choice = self.choice([0 if [3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_153', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_153', choice)] = self.unlexer.weights.get(('alt_153', choice), 1) * self.unlexer.cooldown
+    def columnLambdaExpr(self):
+        current = self.create_node(UnparserRule(name='columnLambdaExpr'))
+        choice = self.choice([0 if [3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_213', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_213', choice)] = self.unlexer.weights.get(('alt_213', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.LPAREN()
             current += self.identifier()
@@ -478,40 +892,139 @@ class ClickHouseUnparser(Grammarinator):
                     current += self.identifier()
 
         current += self.unlexer.ARROW()
-        current += self.column_expr()
+        current += self.columnExpr()
         return current
-    column_lambda_expr.min_depth = 3
+    columnLambdaExpr.min_depth = 3
 
     @depthcontrol
-    def column_identifier(self):
-        current = self.create_node(UnparserRule(name='column_identifier'))
+    def columnIdentifier(self):
+        current = self.create_node(UnparserRule(name='columnIdentifier'))
         if self.unlexer.max_depth >= 4:
             for _ in self.zero_or_one():
-                current += self.table_identifier()
+                current += self.tableIdentifier()
                 current += self.unlexer.DOT()
 
         current += self.identifier()
         return current
-    column_identifier.min_depth = 3
+    columnIdentifier.min_depth = 3
 
     @depthcontrol
-    def table_identifier(self):
-        current = self.create_node(UnparserRule(name='table_identifier'))
+    def tableExpr(self):
+        current = self.create_node(UnparserRule(name='tableExpr'))
+        choice = self.choice([0 if [5, 5, 6, 7][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_219', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        self.unlexer.weights[('alt_219', choice)] = self.unlexer.weights.get(('alt_219', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current = self.tableExpr_TableExprIdentifier()
+        elif choice == 1:
+            current = self.tableExpr_TableExprFunction()
+        elif choice == 2:
+            current = self.tableExpr_TableExprSubquery()
+        elif choice == 3:
+            current = self.tableExpr_TableExprAlias()
+        return current
+    tableExpr.min_depth = 5
+
+    @depthcontrol
+    def tableExpr_TableExprIdentifier(self):
+        current = self.create_node(UnparserRule(name='tableExpr_TableExprIdentifier'))
+        current += self.tableIdentifier()
+        return current
+    tableExpr_TableExprIdentifier.min_depth = 4
+
+    @depthcontrol
+    def tableExpr_TableExprFunction(self):
+        current = self.create_node(UnparserRule(name='tableExpr_TableExprFunction'))
+        current += self.tableFunctionExpr()
+        return current
+    tableExpr_TableExprFunction.min_depth = 4
+
+    @depthcontrol
+    def tableExpr_TableExprSubquery(self):
+        current = self.create_node(UnparserRule(name='tableExpr_TableExprSubquery'))
+        current += self.unlexer.LPAREN()
+        current += self.selectStmt()
+        current += self.unlexer.RPAREN()
+        return current
+    tableExpr_TableExprSubquery.min_depth = 5
+
+    @depthcontrol
+    def tableExpr_TableExprAlias(self):
+        current = self.create_node(UnparserRule(name='tableExpr_TableExprAlias'))
+        current += self.tableExpr()
+        current += self.unlexer.AS()
+        current += self.identifier()
+        return current
+    tableExpr_TableExprAlias.min_depth = 6
+
+    @depthcontrol
+    def tableIdentifier(self):
+        current = self.create_node(UnparserRule(name='tableIdentifier'))
         if self.unlexer.max_depth >= 4:
             for _ in self.zero_or_one():
-                current += self.database_identifier()
+                current += self.databaseIdentifier()
                 current += self.unlexer.DOT()
 
         current += self.identifier()
         return current
-    table_identifier.min_depth = 3
+    tableIdentifier.min_depth = 3
 
     @depthcontrol
-    def database_identifier(self):
-        current = self.create_node(UnparserRule(name='database_identifier'))
+    def tableFunctionExpr(self):
+        current = self.create_node(UnparserRule(name='tableFunctionExpr'))
+        current += self.identifier()
+        current += self.unlexer.LPAREN()
+        if self.unlexer.max_depth >= 5:
+            for _ in self.zero_or_one():
+                current += self.tableArgList()
+
+        current += self.unlexer.RPAREN()
+        return current
+    tableFunctionExpr.min_depth = 3
+
+    @depthcontrol
+    def tableArgList(self):
+        current = self.create_node(UnparserRule(name='tableArgList'))
+        current += self.tableArgExpr()
+        if self.unlexer.max_depth >= 4:
+            for _ in self.zero_or_more():
+                current += self.unlexer.COMMA()
+                current += self.tableArgExpr()
+
+        return current
+    tableArgList.min_depth = 4
+
+    @depthcontrol
+    def tableArgExpr(self):
+        current = self.create_node(UnparserRule(name='tableArgExpr'))
+        choice = self.choice([0 if [3, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_227', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_227', choice)] = self.unlexer.weights.get(('alt_227', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.literal()
+        elif choice == 1:
+            current += self.tableIdentifier()
+        return current
+    tableArgExpr.min_depth = 3
+
+    @depthcontrol
+    def databaseIdentifier(self):
+        current = self.create_node(UnparserRule(name='databaseIdentifier'))
         current += self.identifier()
         return current
-    database_identifier.min_depth = 3
+    databaseIdentifier.min_depth = 3
+
+    @depthcontrol
+    def literal(self):
+        current = self.create_node(UnparserRule(name='literal'))
+        choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_230', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_230', choice)] = self.unlexer.weights.get(('alt_230', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.NUMBER_LITERAL()
+        elif choice == 1:
+            current += self.unlexer.STRING_LITERAL()
+        elif choice == 2:
+            current += self.unlexer.NULL_SQL()
+        return current
+    literal.min_depth = 2
 
     @depthcontrol
     def identifier(self):
@@ -521,22 +1034,22 @@ class ClickHouseUnparser(Grammarinator):
     identifier.min_depth = 2
 
     @depthcontrol
-    def unary_op(self):
-        current = self.create_node(UnparserRule(name='unary_op'))
-        choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_160', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_160', choice)] = self.unlexer.weights.get(('alt_160', choice), 1) * self.unlexer.cooldown
+    def unaryOp(self):
+        current = self.create_node(UnparserRule(name='unaryOp'))
+        choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_234', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_234', choice)] = self.unlexer.weights.get(('alt_234', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.DASH()
         elif choice == 1:
             current += self.unlexer.NOT()
         return current
-    unary_op.min_depth = 1
+    unaryOp.min_depth = 1
 
     @depthcontrol
-    def binary_op(self):
-        current = self.create_node(UnparserRule(name='binary_op'))
-        choice = self.choice([0 if [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_163', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
-        self.unlexer.weights[('alt_163', choice)] = self.unlexer.weights.get(('alt_163', choice), 1) * self.unlexer.cooldown
+    def binaryOp(self):
+        current = self.create_node(UnparserRule(name='binaryOp'))
+        choice = self.choice([0 if [1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_237', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
+        self.unlexer.weights[('alt_237', choice)] = self.unlexer.weights.get(('alt_237', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.ASTERISK()
         elif choice == 1:
@@ -582,7 +1095,7 @@ class ClickHouseUnparser(Grammarinator):
 
             current += self.unlexer.IN()
         return current
-    binary_op.min_depth = 1
+    binaryOp.min_depth = 1
 
-    default_rule = query_list
+    default_rule = queryList
 
