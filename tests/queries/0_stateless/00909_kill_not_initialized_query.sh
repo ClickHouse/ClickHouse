@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cannot_kill_query"
@@ -34,15 +34,15 @@ $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_to_kill' ASYNC" &>/dev/nul
 sleep 1
 
 # Kill $query_for_pending SYNC. This query is not blocker, so it should be killed fast.
-timeout 20 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
+timeout 20 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
 
 # Both queries have to be killed, doesn't matter with SYNC or ASYNC kill
-for run in {1..15}
+for _ in {1..15}
 do
     sleep 1
-    no_first_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'"`
-    no_second_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_to_kill'"`
-    if [ $no_first_query == "0" ] && [ $no_second_query == "0" ]; then
+    no_first_query=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'")
+    no_second_query=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_to_kill'")
+    if [ "$no_first_query" == "0" ] && [ "$no_second_query" == "0" ]; then
         echo "killed"
         break
     fi
