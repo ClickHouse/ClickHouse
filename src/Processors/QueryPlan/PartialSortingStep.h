@@ -22,6 +22,9 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
+    /// Add limit or change it to lower value.
+    void updateLimit(size_t limit_);
+
 private:
     SortDescription sort_description;
     UInt64 limit;
