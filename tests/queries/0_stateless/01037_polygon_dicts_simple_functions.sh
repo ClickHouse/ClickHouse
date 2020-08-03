@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 TMP_DIR="/tmp"
 
@@ -51,7 +51,7 @@ INSERT INTO test_01037.points VALUES (0.0, -2.0, 774, 'ffd');
 
 declare -a SearchTypes=("POLYGON" "POLYGON_SIMPLE" "POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-for type in ${SearchTypes[@]};
+for type in "${SearchTypes[@]}";
 do
     outputFile="${TMP_DIR}/results${type}.out"
 
@@ -103,7 +103,7 @@ do
         dictHas(dict_name, key) from test_01037.points order by x, y;
     select 'dictHas', 'test_01037.dict_tuple' as dict_name, tuple(x, y) as key,
         dictHas(dict_name, key) from test_01037.points order by x, y;
-    "  > $outputFile
+    "  > "$outputFile"
 
     diff -q "${CURDIR}/01037_polygon_dicts_simple_functions.ans" "$outputFile"
 done

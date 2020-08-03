@@ -40,7 +40,6 @@ static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
-
 String FieldVisitorDump::operator() (const Null &) const { return "NULL"; }
 String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
 String FieldVisitorDump::operator() (const Int64 & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
@@ -93,8 +92,11 @@ String FieldVisitorDump::operator() (const Tuple & x) const
 String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
 {
     WriteBufferFromOwnString wb;
+    wb << "AggregateFunctionState_(";
     writeQuoted(x.name, wb);
+    wb << ", ";
     writeQuoted(x.data, wb);
+    wb << ')';
     return wb.str();
 }
 

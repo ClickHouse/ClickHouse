@@ -145,7 +145,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, const Context & context)
 {
-     /// Will form a block with values from the set.
+    /// Will form a block with values from the set.
 
     Block header;
     size_t num_columns = types.size();
@@ -161,6 +161,8 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
     {
         if (num_columns == 1)
         {
+            /// One column at the left of IN.
+
             Field value = extractValueFromNode(elem, *types[0], context);
 
             if (!value.isNull() || context.getSettingsRef().transform_null_in)
@@ -168,15 +170,20 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
         }
         else if (elem->as<ASTFunction>() || elem->as<ASTLiteral>())
         {
+            /// Multiple columns at the left of IN.
+            /// The right hand side of in should be a set of tuples.
+
             Field function_result;
             const Tuple * tuple = nullptr;
 
+            /// Tuple can be represented as a function in AST.
             auto * func = elem->as<ASTFunction>();
             if (func && func->name != "tuple")
             {
                 if (!tuple_type)
                     tuple_type = std::make_shared<DataTypeTuple>(types);
 
+                /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
                 if (function_result.getType() != Field::Types::Tuple)
                     throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
@@ -185,10 +192,12 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
                 tuple = &function_result.get<Tuple>();
             }
 
+            /// Tuple can be represented as a literal in AST.
             auto * literal = elem->as<ASTLiteral>();
             if (literal)
             {
-                 if (literal->value.getType() != Field::Types::Tuple)
+                /// The literal must be tuple.
+                if (literal->value.getType() != Field::Types::Tuple)
                     throw Exception("Invalid type in set. Expected tuple, got "
                         + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
@@ -203,13 +212,15 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, co
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
 
+            /// Fill tuple values by evaluation of constant expressions.
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                Field value = tuple ? (*tuple)[i]
+                Field value = tuple ? convertFieldToType((*tuple)[i], *types[i])
                                     : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
-                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
+                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value,
+                ///  then the entire tuple too.
                 if (value.isNull() && !context.getSettings().transform_null_in)
                     break;
 
@@ -275,7 +286,7 @@ static Block createBlockForSet(
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-  * 
+  *
   *  We need special implementation for ASTFunction, because in case, when we interpret
   *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
   */
