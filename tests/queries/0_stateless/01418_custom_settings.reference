@@ -1,0 +1,17 @@
+5	UInt8
+-177	Int16
+98.11	Float64
+abc def	String
+custom_a	UInt64_5
+custom_b	Int64_-177
+custom_c	Float64_98.11
+custom_d	\'abc def\'
+changed	String
+\N	Nullable(Nothing)
+50000	UInt16
+1.11	Float64
+custom_a	\'changed\'
+custom_b	NULL
+custom_c	UInt64_50000
+custom_d	Float64_1.11
+0	UInt8

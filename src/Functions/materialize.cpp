@@ -16,6 +16,11 @@ public:
         return std::make_shared<FunctionMaterialize>();
     }
 
+    bool useDefaultImplementationForNulls() const override
+    {
+        return false;
+    }
+
     /// Get the function name.
     String getName() const override
     {
