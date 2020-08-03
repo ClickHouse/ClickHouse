@@ -5,15 +5,19 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
+#include <constants.h>
 #include <h3api.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
 class FunctionH3ToParent : public IFunction
 {
 public:
@@ -56,6 +60,10 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(row);
             const UInt8 resolution = col_resolution->getUInt(row);
+
+            if (resolution > MAX_H3_RES)
+                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
+                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             UInt64 res = h3ToParent(hindex, resolution);
 
