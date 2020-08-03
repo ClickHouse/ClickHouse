@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS src;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst;"

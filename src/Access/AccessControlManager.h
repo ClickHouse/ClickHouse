@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
-#include <Poco/AutoPtr.h>
+#include <Common/SettingsChanges.h>
 #include <boost/container/flat_set.hpp>
 #include <memory>
 
@@ -53,6 +53,13 @@ public:
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
     void setDefaultProfileName(const String & default_profile_name);
 
+    /// Sets prefixes which should be used for custom settings.
+    /// This function also enables custom prefixes to be used.
+    void setCustomSettingsPrefixes(const Strings & prefixes);
+    void setCustomSettingsPrefixes(const String & comma_separated_prefixes);
+    bool isSettingNameAllowed(const std::string_view & name) const;
+    void checkSettingNameIsAllowed(const std::string_view & name) const;
+
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
         const boost::container::flat_set<UUID> & current_roles,
@@ -89,14 +96,15 @@ public:
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
-private:
-    class ContextAccessCache;
+private: class ContextAccessCache;
+    class CustomSettingsPrefixes;
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
     std::unique_ptr<RowPolicyCache> row_policy_cache;
     std::unique_ptr<QuotaCache> quota_cache;
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
+    std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
 };
 
 }
