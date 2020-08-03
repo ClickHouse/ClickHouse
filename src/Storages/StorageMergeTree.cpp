@@ -89,7 +89,7 @@ void StorageMergeTree::startup()
     clearOldPartsFromFilesystem();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
+    /// and don't allow to reinitialize them, so delete each of them immediately
     clearOldTemporaryDirectories(0);
 
     /// NOTE background task will also do the above cleanups periodically.
