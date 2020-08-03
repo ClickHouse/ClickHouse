@@ -83,7 +83,7 @@ IProcessor::Status DelayedSource::prepare()
     return Status::Finished;
 }
 
-/// Fix port from returned pipe. Create source_port is created or drop if source_port is null.
+/// Fix port from returned pipe. Create source_port if created or drop if source_port is null.
 void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, const Block & header, Processors & processors)
 {
     if (source_port)
