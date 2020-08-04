@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -21,8 +22,8 @@ SRCS(
     AggregateDescription.cpp
     Aggregator.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
-    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
+    AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
     castColumn.cpp
@@ -34,6 +35,7 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     Context.cpp
     convertFieldToType.cpp
+    CrashLog.cpp
     createBlockSelector.cpp
     CrossToInnerJoinVisitor.cpp
     DatabaseAndTableWithAlias.cpp
@@ -60,7 +62,6 @@ SRCS(
     HashJoin.cpp
     IdentifierSemantic.cpp
     IExternalLoadable.cpp
-    RemoveInjectiveFunctionsVisitor.cpp
     InJoinSubqueriesPreprocessor.cpp
     inplaceBlockConversions.cpp
     InternalTextLogsQueue.cpp
@@ -87,8 +88,8 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
-    InterpreterShowAccessQuery.cpp
     InterpreterShowAccessEntitiesQuery.cpp
+    InterpreterShowAccessQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
@@ -108,7 +109,6 @@ SRCS(
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
-    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp
@@ -122,6 +122,7 @@ SRCS(
     QueryLog.cpp
     QueryNormalizer.cpp
     QueryThreadLog.cpp
+    RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
@@ -143,6 +144,7 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
+
 )
 
 END()

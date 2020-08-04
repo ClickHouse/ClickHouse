@@ -49,60 +49,88 @@ header_template = """
     font-stretch:normal
 }}
 
-body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
-th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
-td {{ white-space: pre; font-family: Monospace, Courier New; }}
-border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
-a {{ color: #06F; text-decoration: none; }}
-a:hover, a:active {{ color: #F40; text-decoration: underline; }}
-table {{ border: 0; }}
-.main {{ margin: auto; max-width: 95%; }}
-p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
+body {{
+    font-family: "Yandex Sans Display Web", Arial, sans-serif;
+    background: #EEE;
+}}
 
-.cancela,.cancela:link,.cancela:visited,.cancela:hover,.cancela:focus,.cancela:active{{
+a {{ color: #06F; text-decoration: none; }}
+
+a:hover, a:active {{ color: #F40; text-decoration: underline; }}
+
+.main {{ margin: auto; max-width: 95%; }}
+
+p.links a {{
+    padding: 5px; margin: 3px; background: #FFF; line-height: 2;
+    white-space: nowrap;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+}}
+
+.cancela,.cancela:link,.cancela:visited,.cancela:hover,
+        .cancela:focus,.cancela:active {{
     color: inherit;
     text-decoration: none;
 }}
 
-tr:nth-child(odd) td {{filter: brightness(95%);}}
+table {{
+    border: none;
+    border-spacing: 0px;
+    line-height: 1.5;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+    text-align: left;
+}}
 
-.all-query-times tr td:nth-child(1),
-.all-query-times tr td:nth-child(2),
-.all-query-times tr td:nth-child(3),
-.all-query-times tr td:nth-child(4),
-.all-query-times tr td:nth-child(5),
-.all-query-times tr td:nth-child(7),
-.changes-in-performance tr td:nth-child(1),
-.changes-in-performance tr td:nth-child(2),
-.changes-in-performance tr td:nth-child(3),
-.changes-in-performance tr td:nth-child(4),
-.changes-in-performance tr td:nth-child(5),
-.changes-in-performance tr td:nth-child(7),
-.unstable-queries tr td:nth-child(1),
-.unstable-queries tr td:nth-child(2),
-.unstable-queries tr td:nth-child(3),
-.unstable-queries tr td:nth-child(4),
-.unstable-queries tr td:nth-child(6),
-.test-performance-changes tr td:nth-child(2),
-.test-performance-changes tr td:nth-child(3),
-.test-performance-changes tr td:nth-child(4),
-.test-performance-changes tr td:nth-child(5),
-.test-performance-changes tr td:nth-child(6),
-.test-times tr td:nth-child(2),
-.test-times tr td:nth-child(3),
-.test-times tr td:nth-child(4),
-.test-times tr td:nth-child(5),
-.test-times tr td:nth-child(6),
-.test-times tr td:nth-child(7),
-.test-times tr td:nth-child(8),
-.concurrent-benchmarks tr td:nth-child(2),
-.concurrent-benchmarks tr td:nth-child(3),
-.concurrent-benchmarks tr td:nth-child(4),
-.concurrent-benchmarks tr td:nth-child(5),
-.metric-changes tr td:nth-child(2),
-.metric-changes tr td:nth-child(3),
-.metric-changes tr td:nth-child(4),
-.metric-changes tr td:nth-child(5)
+th, td {{
+    border: none;
+    padding: 5px;
+    vertical-align: top;
+    background-color: #FFF;
+    font-family: sans-serif;
+}}
+
+th {{
+    border-bottom: 2px solid black;
+}}
+
+tr:nth-child(odd) td {{filter: brightness(90%);}}
+
+.all-query-times tr :nth-child(1),
+.all-query-times tr :nth-child(2),
+.all-query-times tr :nth-child(3),
+.all-query-times tr :nth-child(4),
+.all-query-times tr :nth-child(5),
+.all-query-times tr :nth-child(7),
+.changes-in-performance tr :nth-child(1),
+.changes-in-performance tr :nth-child(2),
+.changes-in-performance tr :nth-child(3),
+.changes-in-performance tr :nth-child(4),
+.changes-in-performance tr :nth-child(5),
+.changes-in-performance tr :nth-child(7),
+.unstable-queries tr :nth-child(1),
+.unstable-queries tr :nth-child(2),
+.unstable-queries tr :nth-child(3),
+.unstable-queries tr :nth-child(4),
+.unstable-queries tr :nth-child(6),
+.test-performance-changes tr :nth-child(2),
+.test-performance-changes tr :nth-child(3),
+.test-performance-changes tr :nth-child(4),
+.test-performance-changes tr :nth-child(5),
+.test-performance-changes tr :nth-child(6),
+.test-times tr :nth-child(2),
+.test-times tr :nth-child(3),
+.test-times tr :nth-child(4),
+.test-times tr :nth-child(5),
+.test-times tr :nth-child(6),
+.test-times tr :nth-child(7),
+.test-times tr :nth-child(8),
+.concurrent-benchmarks tr :nth-child(2),
+.concurrent-benchmarks tr :nth-child(3),
+.concurrent-benchmarks tr :nth-child(4),
+.concurrent-benchmarks tr :nth-child(5),
+.metric-changes tr :nth-child(2),
+.metric-changes tr :nth-child(3),
+.metric-changes tr :nth-child(4),
+.metric-changes tr :nth-child(5)
 {{ text-align: right; }}
 
   </style>
@@ -294,7 +322,7 @@ if args.report == 'main':
         print(tableHeader(columns))
 
         attrs = ['' for c in columns]
-        attrs[4] = None
+        attrs[5] = None
         for row in rows:
             if int(row[5]):
                 if float(row[3]) < 0.:

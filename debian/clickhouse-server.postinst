@@ -62,13 +62,13 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
     fi
 
     # check validity of user and group
-    if [ "`id -u ${CLICKHOUSE_USER}`" -eq 0 ]; then
+    if [ "$(id -u ${CLICKHOUSE_USER})" -eq 0 ]; then
         echo "The ${CLICKHOUSE_USER} system user must not have uid 0 (root).
 Please fix this and reinstall this package." >&2
         exit 1
     fi
 
-    if [ "`id -g ${CLICKHOUSE_GROUP}`" -eq 0 ]; then
+    if [ "$(id -g ${CLICKHOUSE_GROUP})" -eq 0 ]; then
         echo "The ${CLICKHOUSE_USER} system user must not have root as primary group.
 Please fix this and reinstall this package." >&2
         exit 1
