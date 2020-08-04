@@ -42,12 +42,12 @@ protected:
     ASTPtr getCreateDictionaryQueryImpl(const String & dictionary_name, bool throw_on_error) const override;
 
     std::unordered_map<String, DictionaryAttachInfo> dictionaries;
+    const ExternalDictionariesLoader & external_loader;
 
 private:
     void detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info);
     void reloadDictionaryConfig(const String & full_name);
 
-    const ExternalDictionariesLoader & external_loader;
     boost::atomic_shared_ptr<ext::scope_guard> database_as_config_repo_for_external_loader;
 };
 
