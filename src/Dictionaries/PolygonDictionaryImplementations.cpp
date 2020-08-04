@@ -18,22 +18,20 @@ namespace ErrorCodes
 }
 
 PolygonDictionarySimple::PolygonDictionarySimple(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_):
-        IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
+        IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
 }
 
 std::shared_ptr<const IExternalLoadable> PolygonDictionarySimple::clone() const
 {
     return std::make_shared<PolygonDictionarySimple>(
-            this->database,
-            this->name,
+            this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),
             this->dict_lifetime,
@@ -57,8 +55,7 @@ bool PolygonDictionarySimple::find(const Point & point, size_t & id) const
 }
 
 PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
@@ -66,7 +63,7 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
         PointType point_type_,
         int min_intersections_,
         int max_depth_)
-        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
+        : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
           grid(min_intersections_, max_depth_, polygons),
           min_intersections(min_intersections_),
           max_depth(max_depth_)
@@ -83,8 +80,7 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
 std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexEach>(
-            this->database,
-            this->name,
+            this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),
             this->dict_lifetime,
@@ -118,8 +114,7 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & id) const
 }
 
 PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
@@ -127,7 +122,7 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
     PointType point_type_,
     size_t min_intersections_,
     size_t max_depth_)
-    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
+    : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
       index(min_intersections_, max_depth_, polygons),
       min_intersections(min_intersections_),
       max_depth(max_depth_)
@@ -137,8 +132,7 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
 std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() const
 {
     return std::make_shared<PolygonDictionaryIndexCell>(
-            this->database,
-            this->name,
+            this->getDictionaryID(),
             this->dict_struct,
             this->source_ptr->clone(),
             this->dict_lifetime,
@@ -228,6 +222,8 @@ DictionaryPtr createLayout(const std::string & ,
 
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
+    const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+
     if constexpr (std::is_same_v<PolygonDictionary, PolygonDictionaryIndexEach> || std::is_same_v<PolygonDictionary, PolygonDictionaryIndexCell>)
     {
         const auto & layout_prefix = config_prefix + ".layout";
@@ -236,10 +232,10 @@ DictionaryPtr createLayout(const std::string & ,
         const auto & dict_prefix = layout_prefix + "." + keys.front();
         size_t max_depth = config.getUInt(dict_prefix + ".max_depth", PolygonDictionary::kMaxDepthDefault);
         size_t min_intersections = config.getUInt(dict_prefix + ".min_intersections", PolygonDictionary::kMinIntersectionsDefault);
-        return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type, min_intersections, max_depth);
+        return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type, min_intersections, max_depth);
     }
     else
-        return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
+        return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
 }
 
 void registerDictionaryPolygon(DictionaryFactory & factory)

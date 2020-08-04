@@ -1,0 +1,20 @@
+LIBRARY()
+
+ADDINCL(
+    contrib/libs/libdivide
+    contrib/libs/pdqsort
+)
+
+PEERDIR(
+    clickhouse/src/Core
+    contrib/libs/libdivide
+    contrib/libs/pdqsort
+)
+
+NO_COMPILER_WARNINGS()
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F JIT | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

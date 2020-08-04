@@ -2,7 +2,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS root"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS a"
@@ -17,7 +17,8 @@ ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW c (d UInt64) ENGINE = Rep
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
 ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table"
 if ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (2)" 2>/dev/null; then
-	echo "FAIL\nExpected 'too many parts' on table b"
+    echo "FAIL"
+    echo "Expected 'too many parts' on table b"
 fi
 
 echo

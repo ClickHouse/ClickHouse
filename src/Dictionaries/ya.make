@@ -56,8 +56,8 @@ SRCS(
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
-    PolygonDictionaryUtils.cpp
     PolygonDictionaryImplementations.cpp
+    PolygonDictionaryUtils.cpp
     RangeHashedDictionary.cpp
     readInvalidateQuery.cpp
     RedisBlockInputStream.cpp
@@ -67,6 +67,7 @@ SRCS(
     SSDComplexKeyCacheDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
+
 )
 
 END()
