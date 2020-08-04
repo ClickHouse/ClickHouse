@@ -80,7 +80,7 @@ def feature(self, node="clickhouse1"):
         with setup("user15"):
             with When("I alter user name"):
                 node.query("ALTER USER user15 RENAME TO user15")
-    
+
     with Scenario("I alter user to rename, target unavailable", flags=TE, requirements=[
             RQ_SRS_006_RBAC_User_Alter_Rename("1.0")]):
         with setup("user15"):
@@ -174,7 +174,7 @@ def feature(self, node="clickhouse1"):
                 node.query("ALTER USER user13 DEFAULT ROLE ALL")
 
     @contextmanager
-    def setup_role(role): 
+    def setup_role(role):
         try:
             with Given(f"I have a role {role}"):
                 node.query(f"CREATE ROLE OR REPLACE {role}")
@@ -198,7 +198,7 @@ def feature(self, node="clickhouse1"):
                 node.query("GRANT default TO user14a")
             with When("I alter user default role"):
                 node.query("ALTER USER user14a DEFAULT ROLE default")
-    
+
     with Scenario("I alter user default role, role doesn't exist, throws exception", flags=TE, requirements=[
             RQ_SRS_006_RBAC_User_Alter_DefaultRole("1.0")]):
         with setup("user12"):
@@ -228,7 +228,7 @@ def feature(self, node="clickhouse1"):
                 node.query("GRANT second,third TO user15")
             with When("I alter user default role to second, third"):
                 node.query("ALTER USER user15 DEFAULT ROLE second, third")
-    
+
     with Scenario("I alter user default role set to all except", flags=TE, requirements=[
             RQ_SRS_006_RBAC_User_Alter_DefaultRole_AllExcept("1.0")]):
         with setup("user16"), setup_role("second"):

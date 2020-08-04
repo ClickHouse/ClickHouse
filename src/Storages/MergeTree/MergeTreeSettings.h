@@ -13,6 +13,7 @@ namespace Poco::Util
 namespace DB
 {
 class ASTStorage;
+struct Settings;
 
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M) \
@@ -123,6 +124,9 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
         return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part"
             || name == "min_bytes_for_compact_part" || name == "min_rows_for_compact_part";
     }
+
+    /// Check that the values are sane taking also query-level settings into account.
+    void sanityCheck(const Settings & query_settings) const;
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;

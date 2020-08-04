@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.200723.1011705.
+# document by TestFlows v1.6.200731.1222107.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Requirement
@@ -312,329 +312,6 @@ RQ_SRS_006_RBAC_Role_RowPolicies = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support assigning one or more **row policies** to a **role**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Usage = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Usage',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **usage** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Select = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Select',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **select** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_SelectColumns = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.SelectColumns',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **select columns** privilege\n'
-        'for a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Insert = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Insert',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **insert** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Delete = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Delete',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **delete** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Alter = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Alter',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **alter** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Create = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Create',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **create** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_Drop = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.Drop',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **drop** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_All = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.All',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL include in the **all** privilege the same rights\n'
-        'as provided by **usage**, **select**, **select columns**,\n'
-        '**insert**, **delete**, **alter**, **create**, and **drop** privileges.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_All_GrantRevoke = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.All.GrantRevoke',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **all** privileges\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_GrantOption = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.GrantOption',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **grant option** privilege\n'
-        'for a database or a specific table to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Privileges_AdminOption = Requirement(
-        name='RQ.SRS-006.RBAC.Privileges.AdminOption',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting or revoking **admin option** privilege\n'
-        'to one or more **users** or **roles**.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Insert = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Insert',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `INSERT INTO` statements\n'
-        'to be executed unless the user has the **insert** privilege for the destination table\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Select = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Select',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `SELECT` statements\n'
-        'to be executed unless the user has the **select** or **select columns** privilege\n'
-        'for the destination table either because of the explicit grant\n'
-        'or through one of the roles assigned to the user.\n'
-        'If the the user only has the **select columns**\n'
-        'privilege then only the specified columns SHALL be available for reading.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Create = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Create',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `CREATE` statements\n'
-        'to be executed unless the user has the **create** privilege for the destination database\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Alter = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Alter',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `ALTER` statements\n'
-        'to be executed unless the user has the **alter** privilege for the destination table\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Drop = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Drop',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `DROP` statements\n'
-        'to be executed unless the user has the **drop** privilege for the destination database\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Drop_Table = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Drop.Table',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `DROP TABLE` statements\n'
-        'to be executed unless the user has the **drop** privilege for the destination database or the table\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_GrantRevoke = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.GrantRevoke',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any `GRANT` or `REVOKE` statements\n'
-        'to be executed unless the user has the **grant option** privilege\n'
-        'for the privilege of the destination table\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Use = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Use',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow the `USE` statement to be executed\n'
-        'unless the user has at least one of the privileges for the database\n'
-        'or the table inside that database\n'
-        'either because of the explicit grant or through one of the roles assigned to the user.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RequiredPrivileges_Admin = Requirement(
-        name='RQ.SRS-006.RBAC.RequiredPrivileges.Admin',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL not allow any of the following statements\n'
-        '\n'
-        '* `SYSTEM`\n'
-        '* `SHOW`\n'
-        '* `ATTACH`\n'
-        '* `CHECK TABLE`\n'
-        '* `DESCRIBE TABLE`\n'
-        '* `DETACH`\n'
-        '* `EXISTS`\n'
-        '* `KILL QUERY`\n'
-        '* `KILL MUTATION`\n'
-        '* `OPTIMIZE`\n'
-        '* `RENAME`\n'
-        '* `TRUNCATE`\n'
-        '\n'
-        'to be executed unless the user has the **admin option** privilege\n'
-        'through one of the roles with **admin option** privilege assigned to the user.\n'
         ),
         link=None
     )
@@ -2319,52 +1996,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Select = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_Select_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Select.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **select** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT SELECT` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **select** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_SelectColumns = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.SelectColumns',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL support granting the **select columns** privilege to one or more users or roles\n'
-        'for a database or a table using the `GRANT SELECT(columns)` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_SelectColumns_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.SelectColumns.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **select columns** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT SELECT(columns)` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **select columns** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_Insert = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.Insert',
         version='1.0',
@@ -2375,21 +2006,9 @@ RQ_SRS_006_RBAC_Grant_Privilege_Insert = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **insert** privilege to one or more users or roles\n'
         'for a database or a table using the `GRANT INSERT` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_Insert_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Insert.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **insert** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT INSERT` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
+        'When the **insert** privilege is granted to the specified users or roles\n'
+        'after the successful execution of the `GRANT INSERT` statement,\n'
+        'any new operation by a user or a user that has the specified role\n'
         'which requires the **insert** privilege SHALL succeed.\n'
         ),
         link=None
@@ -2942,9 +2561,8 @@ RQ_SRS_006_RBAC_Grant_Privilege_Syntax = Requirement(
         'grants explicit privileges to a user or a role.\n'
         '\n'
         '```sql\n'
-        'GRANT [ON CLUSTER cluster_name]\n'
-        '    privilege {SELECT | SELECT(columns) | INSERT | ALTER | CREATE | DROP | TRUNCATE | OPTIMIZE | SHOW | KILL QUERY | ACCESS MANAGEMENT | SYSTEM | INTROSPECTION | SOURCES | dictGet | NONE |ALL \t[PRIVILEGES]} [, ...]\n'
-        '    ON {*.* | database.* | database.table | * | table}\n'
+        'GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...]\n'
+        '    ON {db.table|db.*|*.*|table|*}\n'
         '    TO {user | role | CURRENT_USER} [,...]\n'
         '    [WITH GRANT OPTION]\n'
         '```\n'
@@ -3029,22 +2647,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Select = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Select_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Select.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **select** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE SELECT` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **select** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_Insert = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.Insert',
         version='1.0',
@@ -3055,21 +2657,9 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Insert = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **insert** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE INSERT` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_Insert_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Insert.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **insert** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE INSERT` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
+        'When the **insert** privilege is removed from the specified users or roles\n'
+        'after the successful execution of the `REVOKE INSERT` statement,\n'
+        'any new operation by a user or a user that had the specified role\n'
         'which requires the **insert** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
@@ -3664,13 +3254,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Syntax = Requirement(
         '    ON {db.table|db.*|*.*|table|*}\n'
         '    FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]\n'
         '```\n'
-        '<!-- old syntax, for reference -->\n'
-        '<!-- ```sql\n'
-        'REVOKE [GRANT OPTION FOR]\n'
-        '    {USAGE | SELECT | SELECT(columns) | INSERT | DELETE | ALTER | CREATE | DROP | ALL [PRIVILEGES]} [, ...]\n'
-        '    ON {*.* | database.* | database.table | * | table}\n'
-        '    FROM user_or_role [, user_or_role ...]\n'
-        '``` -->\n'
         ),
         link=None
     )
@@ -6189,6 +5772,512 @@ RQ_SRS_006_RBAC_RowPolicy_ShowRowPolicies_Syntax = Requirement(
         '```sql\n'
         'SHOW [ROW] POLICIES [ON [database.]table]\n'
         '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Usage = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Usage',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **usage** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support changing access to the **select** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `SELECT INTO` statements SHALL not to be executed, unless the user\n'
+        'has the **select** privilege for the destination table\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **select** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **select** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_Column = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.Column',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **select** privilege\n'
+        'for one or more specified columns in a table to one or more **users** or **roles**.\n'
+        'Any `SELECT INTO` statements SHALL not to be executed, unless the user\n'
+        'has the **select** privilege for the destination column\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.Cluster',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **select** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `SELECT INTO` statements SHALL succeed only on nodes where\n'
+        'the table exists and privilege was granted.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **select** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **select** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **select** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `SELECT INTO` statements SHALL succeed\n'
+        'when done by a user with privilege granted by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **select** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `SELECT INTO` statements SHALL fail\n'
+        'when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support changing access to the **insert** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        'Any `INSERT INTO` statements SHALL not to be executed, unless the user\n'
+        'has the **insert** privilege for the destination table\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **insert** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support revoking **insert** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_Column = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.Column',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **insert** privilege\n'
+        'for one or more specified columns in a table to one or more **users** or **roles**.\n'
+        'Any `INSERT INTO` statements SHALL not to be executed, unless the user\n'
+        'has the **insert** privilege for the destination column\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_Cluster = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.Cluster',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **insert** privilege\n'
+        'on a specified cluster to one or more **users** or **roles**.\n'
+        'Any `INSERT INTO` statements SHALL succeed only on nodes where\n'
+        'the table exists and privilege was granted.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting **insert** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**\n'
+        'with a `GRANT OPTION` clause. User with **grant option** privilege SHALL be able to\n'
+        'change access to the **insert** privilege by another user or role\n'
+        'on the same or smaller scope that they have access to.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Grant = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Grant',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'granting **insert** privilege to other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `INSERT INTO` statements SHALL succeed\n'
+        'when done by a user with privilege granted by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.GrantOption.Revoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support a user with **grant option** privilege\n'
+        'revoking **insert** privilege from other **users** or **roles** on the same\n'
+        'or smaller scope that they have access to. Any `INSERT INTO` statements SHALL fail\n'
+        'when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
+        'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Delete = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Delete',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **delete** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Alter = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Alter',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **alter** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Create = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Create',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **create** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Drop = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Drop',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **drop** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_All = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.All',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL include in the **all** privilege the same rights\n'
+        'as provided by **usage**, **select**, **select columns**,\n'
+        '**insert**, **delete**, **alter**, **create**, and **drop** privileges.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_All_GrantRevoke = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.All.GrantRevoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **all** privileges\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_GrantOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.GrantOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **grant option** privilege\n'
+        'for a database or a specific table to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_AdminOption = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.AdminOption',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting or revoking **admin option** privilege\n'
+        'to one or more **users** or **roles**.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_Create = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.Create',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow any `CREATE` statements\n'
+        'to be executed unless the user has the **create** privilege for the destination database\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_Alter = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.Alter',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow any `ALTER` statements\n'
+        'to be executed unless the user has the **alter** privilege for the destination table\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_Drop = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.Drop',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow any `DROP` statements\n'
+        'to be executed unless the user has the **drop** privilege for the destination database\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_Drop_Table = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.Drop.Table',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow any `DROP TABLE` statements\n'
+        'to be executed unless the user has the **drop** privilege for the destination database or the table\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_GrantRevoke = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.GrantRevoke',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow any `GRANT` or `REVOKE` statements\n'
+        'to be executed unless the user has the **grant option** privilege\n'
+        'for the privilege of the destination table\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_Use = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.Use',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow the `USE` statement to be executed\n'
+        'unless the user has at least one of the privileges for the database\n'
+        'or the table inside that database\n'
+        'either because of the explicit grant or through one of the roles assigned to the user.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_RequiredPrivileges_Admin = Requirement(
+        name='RQ.SRS-006.RBAC.RequiredPrivileges.Admin',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL not allow any of the following statements\n'
+        '\n'
+        '* `SYSTEM`\n'
+        '* `SHOW`\n'
+        '* `ATTACH`\n'
+        '* `CHECK TABLE`\n'
+        '* `DESCRIBE TABLE`\n'
+        '* `DETACH`\n'
+        '* `EXISTS`\n'
+        '* `KILL QUERY`\n'
+        '* `KILL MUTATION`\n'
+        '* `OPTIMIZE`\n'
+        '* `RENAME`\n'
+        '* `TRUNCATE`\n'
+        '\n'
+        'to be executed unless the user has the **admin option** privilege\n'
+        'through one of the roles with **admin option** privilege assigned to the user.\n'
         ),
         link=None
     )

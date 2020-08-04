@@ -31,11 +31,11 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally("I drop the quota"):
                 node.query(f"DROP QUOTA IF EXISTS {quota}")
-    
+
     def create_quota(quota):
         with And(f"I ensure I do have quota {quota}"):
                 node.query(f"CREATE QUOTA OR REPLACE {quota}")
-                
+
     try:
         with Given("I have a user and a role"):
             node.query(f"CREATE USER user0")
@@ -81,7 +81,7 @@ def feature(self, node="clickhouse1"):
                 with When(f"I create a quota {quota} with or replace"):
                     node.query(f"CREATE QUOTA OR REPLACE {quota}")
             del quota
-        
+
         with Scenario("I create quota or replace, quota does exist", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_Quota_Create_Replace("1.0")]):
             quota = "quota2"
@@ -214,7 +214,7 @@ def feature(self, node="clickhouse1"):
             finally:
                 with Finally("I drop the quota from cluster"):
                     node.query("DROP QUOTA IF EXISTS quota29 ON CLUSTER sharded_cluster")
-        
+
         with Scenario("I create quota on nonexistent cluster, throws exception", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_Quota_Create_Cluster("1.0")]):
             with When("I run create quota on a cluster"):
