@@ -65,7 +65,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
 
     size_t count = 0;
 
-    for (auto setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
+    for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
     {
         if (column_names)
         {
@@ -95,7 +95,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
 
 void Settings::addProgramOptions(boost::program_options::options_description & options)
 {
-    for (auto field : all())
+    for (const auto & field : all())
     {
         const std::string_view name = field.getName();
         auto on_program_option

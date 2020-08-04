@@ -25,7 +25,7 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally("I confirm the role is dropped"):
                 node.query(f"DROP ROLE IF EXISTS {role}")
-    
+
     def cleanup_role(role):
         with Given(f"I ensure that role {role} does not exist"):
                 node.query(f"DROP ROLE IF EXISTS {role}")
@@ -69,7 +69,7 @@ def feature(self, node="clickhouse1"):
             node.query("DROP ROLE IF EXISTS role6")
         with When("I drop the nonexistant roles"):
             node.query("DROP USER IF EXISTS role5, role6")
-    
+
     with Scenario("I drop role on cluster", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Role_Drop_Cluster("1.0")]):
         with Given("I have a role on cluster"):
