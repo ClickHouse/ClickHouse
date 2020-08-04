@@ -9,7 +9,22 @@ import rbac.tests.errors as errors
 
 table_types = {
     "MergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = MergeTree(d, (a, b), 111)",
-    "CollapsingMergeTree": "CREATE TABLE {name} (d Date, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = CollapsingMergeTree(d, (a, b), 111, y);"
+    "ReplacingMergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = ReplacingMergeTree(d, (a, b), 111)",
+    "SummingMergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = SummingMergeTree(d, (a, b), 111)",
+    "AggregatingMergeTree": "CREATE TABLE {name} (d DATE, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = AggregatingMergeTree(d, (a, b), 111)",
+    "CollapsingMergeTree": "CREATE TABLE {name} (d Date, a String, b UInt8, x String, y Int8, z UInt32) ENGINE = CollapsingMergeTree(d, (a, b), 111, y);",
+    "VersionedCollapsingMergeTree": "CREATE TABLE {name} (d Date, a String, b UInt8, x String, y Int8, z UInt32, version UInt64, sign Int8, INDEX a (b * y, d) TYPE minmax GRANULARITY 3) ENGINE = VersionedCollapsingMergeTree(sign, version) ORDER BY tuple()",
+    "GraphiteMergeTree": "CREATE TABLE {name} (key UInt32, Path String, Time DateTime, d Date, a String, b UInt8, x String, y Int8, z UInt32, Value Float64, Version UInt32, col UInt64, INDEX a (key * Value, Time) TYPE minmax GRANULARITY 3) ENGINE = GraphiteMergeTree('graphite_rollup_example') ORDER BY tuple()"
+}
+
+table_requirements ={
+    "MergeTree": RQ_SRS_006_RBAC_Privileges_Select_MergeTree("1.0"),
+    "ReplacingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_ReplacingMergeTree("1.0"),
+    "SummingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_SummingMergeTree("1.0"),
+    "AggregatingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_AggregatingMergeTree("1.0"),
+    "CollapsingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_CollapsingMergeTree("1.0"),
+    "VersionedCollapsingMergeTree": RQ_SRS_006_RBAC_Privileges_Select_VersionedCollapsingMergeTree("1.0"),
+    "GraphiteMergeTree": RQ_SRS_006_RBAC_Privileges_Select_GraphiteMergeTree("1.0"),
 }
 
 @contextmanager
@@ -462,7 +477,7 @@ def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node
     RQ_SRS_006_RBAC_Privileges_Select("1.0"),
 )
 @Examples("table_type", [
-    (key,) for key in table_types.keys()
+    (table_type, Requirements(requirement)) for table_type, requirement in table_requirements.items()
 ])
 @Name("select")
 def feature(self, table_type, node="clickhouse1"):
