@@ -36,7 +36,6 @@ protected:
     Poco::Logger * log;
     MaterializeMySQLSyncThread materialize_thread;
 
-    mutable std::mutex mutex;
     std::exception_ptr exception;
 
     DatabasePtr getNestedDatabase() const;
@@ -68,7 +67,7 @@ public:
 
     StoragePtr detachTable(const String & name) override;
 
-    void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange) override;
+    void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary) override;
 
     void alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 

@@ -16,7 +16,7 @@ int main(int argc, char ** argv)
 
     String user = "default";
     String password = "123";
-    String database = "";
+    String database;
 
     UInt8 charset_utf8 = 33;
     UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
@@ -113,7 +113,7 @@ int main(int argc, char ** argv)
         ASSERT(client.err.header == server.header)
         ASSERT(client.err.error_code == server.error_code)
         ASSERT(client.err.sql_state == server.sql_state)
-        ASSERT(client.err.error_message.data() == server.error_message)
+        ASSERT(client.err.error_message == server.error_message)
     }
 
     /// EOF Packet
@@ -204,32 +204,32 @@ int main(int argc, char ** argv)
                 switch (event->type())
                 {
                     case MYSQL_QUERY_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<QueryEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<QueryEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
                         break;
                     }
                     case MYSQL_WRITE_ROWS_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<WriteRowsEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<WriteRowsEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
                         break;
                     }
                     case MYSQL_UPDATE_ROWS_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<UpdateRowsEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<UpdateRowsEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
                         break;
                     }
                     case MYSQL_DELETE_ROWS_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<DeleteRowsEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<DeleteRowsEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
