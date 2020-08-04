@@ -72,7 +72,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                             ErrorCodes::SYNTAX_ERROR);
     }
     else
-        throw Exception("Expected equality or inequality, got '" + queryToString(ast) + "'", ErrorCodes::SYNTAX_ERROR);
+        throw Exception("Expected equality or inequality, got '" + queryToString(ast) + "'", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
     if (func.name == "equals")
     {
