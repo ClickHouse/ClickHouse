@@ -223,9 +223,9 @@ void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & co
         return;
 
     Settings settings;
-    for (const auto & setting : settings)
+    for (const auto & setting : settings.all())
     {
-        std::string name = setting.getName().toString();
+        const auto & name = setting.getName();
         if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
@@ -614,6 +614,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
+    if (config().has("custom_settings_prefixes"))
+        global_context->getAccessControlManager().setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
@@ -640,6 +643,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
+
+    /// Check sanity of MergeTreeSettings on server startup
+    global_context->getMergeTreeSettings().sanityCheck(settings);
 
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);

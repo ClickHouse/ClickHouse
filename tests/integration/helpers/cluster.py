@@ -345,7 +345,7 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id)
 
-    def exec_in_container(self, container_id, cmd, detach=False, **kwargs):
+    def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, **kwargs):
         exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
         output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
@@ -361,7 +361,11 @@ class ClickHouseCluster:
             print("Container {} uses image {}: ".format(container_id, image_id))
             pprint.pprint(image_info)
             print("")
-            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output))
+            message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output)
+            if nothrow:
+                print(message)
+            else:
+                raise Exception(message)
         return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
@@ -888,9 +892,9 @@ class ClickHouseInstance:
         from helpers.test_tools import assert_eq_with_retry
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
-    def exec_in_container(self, cmd, detach=False, **kwargs):
+    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         container_id = self.get_docker_handle().id
-        return self.cluster.exec_in_container(container_id, cmd, detach, **kwargs)
+        return self.cluster.exec_in_container(container_id, cmd, detach, nothrow, **kwargs)
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
@@ -928,7 +932,8 @@ class ClickHouseInstance:
 
         # force kill if server hangs
         if self.get_process_pid("clickhouse server"):
-            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], nothrow=True, user='root')
 
         if callback_onstop:
             callback_onstop(self)
@@ -1191,4 +1196,3 @@ class ClickHouseKiller(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.restore_clickhouse()
-
