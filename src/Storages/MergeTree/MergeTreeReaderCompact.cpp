@@ -59,7 +59,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             if (!position && typeid_cast<const DataTypeArray *>(type.get()))
             {
                 /// If array of Nested column is missing in part,
-                ///  we have to read its offsets if they exist.
+                /// we have to read its offsets if they exist.
                 position = findColumnForOffsets(name);
                 read_only_offsets[i] = (position != std::nullopt);
             }
