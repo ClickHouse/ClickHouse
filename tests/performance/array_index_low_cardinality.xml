@@ -22,6 +22,7 @@
 
     <query>SELECT count() FROM perf_lc WHERE has(arr, concat('0', str))</query>
     <query>SELECT count() FROM perf_lc WHERE has(arr, concat(str, 'str'))</query>
+    <query>SELECT count() FROM perf_lc WHERE has(arr, concat(str, '0'))</query>
 
     <drop_query>DROP TABLE IF EXISTS perf_lc</drop_query>
 </test>
