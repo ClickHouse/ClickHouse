@@ -70,7 +70,7 @@ Running a query may use more memory than `max_bytes_before_external_sort`. For t
 
 External sorting works much less effectively than sorting in RAM.
 
-## Optimize_read_in_order Setting {#optimize_read_in_order}
+## Optimization of Data Reading {#optimize_read_in_order}
 
  If `ORDER BY` expression has coinciding prefix with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.  
  
