@@ -33,45 +33,6 @@ TEST(Common, PODArrayInsert)
     EXPECT_EQ(str, std::string(chars.data(), chars.size()));
 }
 
-TEST(Common, PODInsertIteratorRange)
-{
-    size_t size = 1 << 20;
-    char value = 123;
-
-    PODArray<size_t> big;
-    PODArray<char> small(size, value);
-
-    EXPECT_EQ(big.size(), 0);
-    EXPECT_EQ(small.size(), size);
-
-    big.insert(small.begin(), small.end());
-
-    EXPECT_EQ(big.size(), size);
-    EXPECT_EQ(big.back(), value);
-
-    big.assign(small.begin(), small.end());
-
-    EXPECT_EQ(big.size(), size);
-    EXPECT_EQ(big.back(), value);
-
-    big.insert(big.begin(), small.begin(), small.end());
-
-    EXPECT_EQ(big.size(), size * 2);
-    EXPECT_EQ(big.front(), value);
-    EXPECT_EQ(big.back(), value);
-
-    PODArray<uint16_t> arr1{1, 2, 3, 4, 5};
-    PODArray<uint32_t> arr2{11, 12};
-
-    arr1.insert(arr1.begin() + 3, arr2.begin(), arr2.end());
-
-    EXPECT_EQ(arr1, (PODArray<uint16_t>{1, 2, 3, 11, 12, 4, 5}));
-
-    arr2.insert(arr2.begin() + 1, arr1.begin(), arr1.end());
-
-    EXPECT_EQ(arr2, (PODArray<uint32_t>{11, 1, 2, 3, 11, 12, 4, 5, 12}));
-}
-
 TEST(Common, PODPushBackRawMany)
 {
     PODArray<char> chars;
