@@ -1474,7 +1474,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         size_t steps = 0;
 
-        auto find_leaf = [&](bool left) -> std::optional<size_t>
+        auto find_leaf = [&marks_count, &steps, may_be_true_in_range](bool left) -> std::optional<size_t>
         {
             std::vector<MarkRange> stack = {};
 
@@ -1503,7 +1503,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                     MarkRange left_range = {range.begin, (range.begin + range.end) / 2};
                     MarkRange right_range = {(range.begin + range.end) / 2, range.end};
-
                     if (left)
                     {
                         check_order.emplace_back(left_range.begin, left_range.end);
@@ -1518,12 +1517,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     steps++;
 
                     if (may_be_true_in_range(check_order[0]))
-                    {
                         stack.emplace_back(check_order[0].begin, check_order[0].end);
-                        continue;
-                    }
-
-                    stack.emplace_back(check_order[1].begin, check_order[1].end);
+                    else
+                        stack.emplace_back(check_order[1].begin, check_order[1].end);
                 }
             }
 
@@ -1532,7 +1528,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         auto left_leaf = find_leaf(true);
         if (left_leaf)
-            res.emplace_back(left_leaf.value(), find_leaf(false).value());
+        {
+            auto right_leaf = find_leaf(false);
+            if (left_leaf.value() > right_leaf.value())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got invalid marks range [{}, {}] for part {}, cannot execute query", left_leaf.value(), right_leaf.value(), part->name);
+            res.emplace_back(left_leaf.value(), right_leaf.value());
+        }
 
         LOG_TRACE(log, "Used optimized inclusion search over index for part {} with {} steps", part->name, steps);
     }

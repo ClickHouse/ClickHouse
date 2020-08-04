@@ -141,11 +141,11 @@ MergeTreeRangeReader::Stream::Stream(
 {
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
-        throw Exception("Trying create stream to read from mark №"+ toString(current_mark) + " but total marks count is "
+        throw Exception("Trying create stream to read from mark №" + toString(current_mark) + " but total marks count is "
             + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
 
     if (last_mark > marks_count)
-        throw Exception("Trying create stream to read to mark №"+ toString(current_mark) + " but total marks count is "
+        throw Exception("Trying create stream to read to mark №" + toString(last_mark) + " but total marks count is "
             + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
 }
 

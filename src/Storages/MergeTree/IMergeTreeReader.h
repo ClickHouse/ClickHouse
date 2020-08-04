@@ -52,10 +52,7 @@ public:
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
 
-    size_t getFirstMarkToRead() const
-    {
-        return all_mark_ranges.front().begin;
-    }
+    size_t getFirstMarkToRead() const;
 
     MergeTreeData::DataPartPtr data_part;
 

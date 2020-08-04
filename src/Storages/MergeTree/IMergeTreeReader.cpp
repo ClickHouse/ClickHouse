@@ -258,6 +258,14 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
     }
 }
 
+size_t IMergeTreeReader::getFirstMarkToRead() const
+{
+    if (all_mark_ranges.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get first mark to read because mark ranges empty");
+    return all_mark_ranges.front().begin;
+}
+
+
 IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const String & column_name) const
 {
     String table_name = Nested::extractTableName(column_name);
