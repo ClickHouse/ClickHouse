@@ -123,6 +123,59 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     return totals_port;
 }
 
+Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes)
+{
+    if (!source->getInputs().empty())
+        throw Exception("Source for pipe shouldn't have any input, but " + source->getName() + " has " +
+                        toString(source->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
+
+    if (!output)
+        throw Exception("Cannot create Pipe from source because specified output port is nullptr",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (output == totals || output == extremes || (totals && totals == extremes))
+        throw Exception("Cannot create Pipe from source because some of specified ports are the same",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    header = output->getHeader();
+
+    /// Check that ports belong to source and all ports from source were specified.
+    {
+        auto & outputs = source->getOutputs();
+        size_t num_specified_ports = 0;
+
+        auto check_port_from_source = [&](OutputPort * port, std::string name)
+        {
+            if (!port)
+                return;
+
+            assertBlocksHaveEqualStructure(header, port->getHeader(), name);
+
+            ++num_specified_ports;
+
+            auto it = std::find_if(outputs.begin(), outputs.end(), [port](const OutputPort & p) { return &p == port; });
+            if (it == outputs.end())
+                throw Exception("Cannot create Pipe because specified " + name + " port does not belong to source",
+                                ErrorCodes::LOGICAL_ERROR);
+        };
+
+        check_port_from_source(output, "output");
+        check_port_from_source(totals, "totals");
+        check_port_from_source(extremes, "extremes");
+
+        if (num_specified_ports != outputs.size())
+            throw Exception("Cannot create Pipe from source because it has " + std::to_string(outputs.size()) +
+                            " output ports, but " + std::to_string(num_specified_ports) + " were specified",
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    totals_port = totals;
+    extremes_port = extremes;
+    output_ports.push_back(output);
+    processors.emplace_back(std::move(source));
+    max_parallel_streams = 1;
+}
+
 Pipe::Pipe(ProcessorPtr source)
 {
     if (auto * source_from_input_stream = typeid_cast<SourceFromInputStream *>(source.get()))
@@ -262,51 +315,24 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors)
     }
 }
 
-//void Pipe::addPipes(Pipe pipes)
-//{
-//    if (processors.empty())
-//    {
-//        *this = std::move(pipes);
-//        return;
-//    }
-//
-//    if (pipes.processors.empty())
-//        return;
-//
-//    assertBlocksHaveEqualStructure(header, pipes.header, "Pipe");
-//
-//    max_parallel_streams += pipes.max_parallel_streams;
-//    processors.insert(processors.end(), pipes.processors.begin(), pipes.processors.end());
-//
-//    OutputPortRawPtrs totals;
-//    if (totals_port)
-//        totals.emplace_back(totals_port);
-//    if (pipes.totals_port)
-//        totals.emplace_back(pipes.totals_port);
-//    if (!totals.empty())
-//        totals_port = uniteTotals(totals, header, processors);
-//
-//    OutputPortRawPtrs extremes;
-//    if (extremes_port)
-//        extremes.emplace_back(extremes_port);
-//    if (pipes.extremes_port)
-//        extremes.emplace_back(pipes.extremes_port);
-//    if (!extremes.empty())
-//        extremes_port = uniteExtremes(extremes, header, processors);
-//}
+void Pipe::addSource(ProcessorPtr source)
+{
+    checkSource(*source);
+    const auto & source_header = output_ports.front()->getHeader();
 
-//void Pipe::addSource(ProcessorPtr source)
-//{
-//    checkSource(*source);
-//    const auto & source_header = output_ports.front()->getHeader();
-//
-//    assertBlocksHaveEqualStructure(header, source_header, "Pipes"); !!!!
-//
-//    output_ports.push_back(&source->getOutputs().front());
-//    processors.emplace_back(std::move(source));
-//
-//    max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
-//}
+    if (output_ports.empty())
+        header = source_header;
+    else
+        assertBlocksHaveEqualStructure(header, source_header, "Pipes");
+
+    if (collected_processors)
+        collected_processors->emplace_back(source.get());
+
+    output_ports.push_back(&source->getOutputs().front());
+    processors.emplace_back(std::move(source));
+
+    max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
 
 void Pipe::addTotalsSource(ProcessorPtr source)
 {
@@ -456,6 +482,48 @@ void Pipe::addSimpleTransform(const ProcessorGetter & getter)
     addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
 }
 
+void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
+{
+    if (output_ports.empty())
+        throw Exception("Cannot set sink to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
+
+    auto add_transform = [&](OutputPort *& stream, Pipe::StreamType stream_type)
+    {
+        if (!stream)
+            return;
+
+        auto transform = getter(stream->getHeader(), stream_type);
+
+        if (transform)
+        {
+            if (transform->getInputs().size() != 1)
+                throw Exception("Sink for query pipeline transform should have single input, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
+
+            if (!transform->getOutputs().empty())
+                throw Exception("Sink for query pipeline transform should have no outputs, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        if (!transform)
+            transform = std::make_shared<NullSink>(stream->getHeader());
+
+        connect(*stream, transform->getInputs().front());
+        processors.emplace_back(std::move(transform));
+    };
+
+    for (auto & port : output_ports)
+        add_transform(port, StreamType::Main);
+
+    add_transform(totals_port, StreamType::Totals);
+    add_transform(extremes_port, StreamType::Extremes);
+
+    output_ports.clear();
+    header.clear();
+}
+
 void Pipe::transform(const Transformer & transformer)
 {
     if (output_ports.empty())
@@ -561,69 +629,4 @@ void Pipe::enableQuota()
     }
 }
 
-/*
-Pipe::Pipe(ProcessorPtr source)
-{
-    if (auto * source_from_input_stream = typeid_cast<SourceFromInputStream *>(source.get()))
-    {
-        totals = source_from_input_stream->getTotalsPort();
-        extremes = source_from_input_stream->getExtremesPort();
-    }
-    else if (source->getOutputs().size() != 1)
-        checkSource(*source);
-
-    output_port = &source->getOutputs().front();
-
-    processors.emplace_back(std::move(source));
-    max_parallel_streams = 1;
-}
-
-Pipe::Pipe(Processors processors_, OutputPort * output_port_, OutputPort * totals_, OutputPort * extremes_)
-    : processors(std::move(processors_)), output_port(output_port_), totals(totals_), extremes(extremes_)
-{
-}
-
-Pipe::Pipe(Pipes && pipes, ProcessorPtr transform)
-{
-    checkSingleOutput(*transform);
-    checkMultipleInputs(*transform, pipes.size());
-
-    auto it = transform->getInputs().begin();
-
-    for (auto & pipe : pipes)
-    {
-        connect(*pipe.output_port, *it);
-        ++it;
-
-        max_parallel_streams += pipe.max_parallel_streams;
-        processors.insert(processors.end(), pipe.processors.begin(), pipe.processors.end());
-
-        std::move(pipe.table_locks.begin(), pipe.table_locks.end(), std::back_inserter(table_locks));
-        std::move(pipe.interpreter_context.begin(), pipe.interpreter_context.end(), std::back_inserter(interpreter_context));
-        std::move(pipe.storage_holders.begin(), pipe.storage_holders.end(), std::back_inserter(storage_holders));
-    }
-
-    output_port = &transform->getOutputs().front();
-    processors.emplace_back(std::move(transform));
-}
-
-Pipe::Pipe(OutputPort * port) : output_port(port)
-{
-}
-
-void Pipe::addProcessors(const Processors & processors_)
-{
-    processors.insert(processors.end(), processors_.begin(), processors_.end());
-}
-
-void Pipe::addSimpleTransform(ProcessorPtr transform)
-{
-    checkSimpleTransform(*transform);
-    connect(*output_port, transform->getInputs().front());
-    output_port = &transform->getOutputs().front();
-    processors.emplace_back(std::move(transform));
-}
-
-
-*/
 }
