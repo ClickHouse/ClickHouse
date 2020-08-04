@@ -70,7 +70,8 @@ template <
     class Initial,
     class Result,
     class ConcreteAction,
-    bool InvokedNotFromLCSpec = true>
+    bool InvokedNotFromLCSpec = true,
+    bool ResColumnIsConst = false>
 struct ArrayIndexNumImpl
 {
 private:
@@ -84,34 +85,41 @@ private:
     /// compares `lhs against `rhs`, third argument unused
     static bool compare(const Initial & lhs, const Result & rhs, size_t) { return lhs == rhs; }
 
-    static Initial extract(const PaddedPODArray<Initial> & a, size_t i) { return a[i]; }
-
-    /// LowCardinality spec. We now the column holds one of the UInt* numbers
-    static UInt64 extract(const IColumn & a, size_t i) { return a.getUInt(i); }
-
 #pragma GCC diagnostic pop
 
-    static bool hasNull(const PaddedPODArray<UInt8> & null_map, size_t i)
+    using ResultType = typename ConcreteAction::ResultType;
+    using ResultArr = PaddedPODArray<ResultType>;
+
+    using ArrOffset = ColumnArray::Offset;
+    using ArrOffsets = ColumnArray::Offsets;
+
+    using NullMap = PaddedPODArray<UInt8>;
+
+    static inline bool hasNull(const NullMap & null_map, size_t i) { return null_map[i]; }
+
+    static inline void setResult(
+            ResultArr& result, const ArrOffsets& offsets,
+            ResultType current, ArrOffset& current_offset, size_t i)
     {
-        return null_map[i];
+        if constexpr (InvokedNotFromLCSpec)
+            result[i] = current;
+        else
+            if (current != 0)        /// do not override the value if it was not found as we invoke this function
+                result[i] = current; /// multiple times.
+
+        current_offset = offsets[i];
     }
 
-    using ResultType = typename ConcreteAction::ResultType;
-
     /// Both function arguments are ordinary.
-    template <class Data, class ScalarOrVector>
-    static void vectorCase1(
-        const Data & data,
-        const ColumnArray::Offsets & offsets,
-        const ScalarOrVector & target_value,
-        PaddedPODArray<ResultType> & result)
+    template <class Data, class Target>
+    static void vectorCase1(const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result)
     {
         const size_t size = offsets.size();
 
         if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
-        ColumnArray::Offset current_offset = 0;
+        ArrOffset current_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -120,165 +128,154 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (!compare(extract(data, current_offset + j), target_value, i))
-                    continue;
+                if constexpr (InvokedNotFromLCSpec)
+                {
+                    if (!compare(data[current_offset + j], target, i))
+                        continue;
+                }
+                else
+                    if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target, 1))
+                        continue;
 
                 if (!ConcreteAction::apply(j, current))
                     break;
             }
 
-            if constexpr (InvokedNotFromLCSpec)
-                result[i] = current;
-            else
-                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
-                    result[i] = current; /// multiple times.
-
-            current_offset = offsets[i];
+            setResult(result, offsets, current, current_offset, i);
         }
     }
 
     /// The 2nd function argument is nullable.
-    template <class Data, class ScalarOrVector>
-    static void vectorCase2(
-        const Data & data,
-        const ColumnArray::Offsets & offsets,
-        const ScalarOrVector & value,
-        PaddedPODArray<ResultType> & result,
-        const PaddedPODArray<UInt8> & null_map_item)
+    template <class Data, class Target>
+    static void vectorCase2(const Data & data, const ArrOffsets & offsets, const Target & target_value,
+        ResultArr & result, const NullMap & null_map_item)
     {
-        size_t size = offsets.size();
+        const size_t size = offsets.size();
 
         if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
-        ColumnArray::Offset current_offset = 0;
+        ArrOffset current_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - current_offset;
+            const size_t array_size = offsets[i] - current_offset;
             ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (!hasNull(null_map_item, i) && compare(extract(data, current_offset + j), value, i))
+                if (hasNull(null_map_item, i))
+                    continue;
+
+                if constexpr (InvokedNotFromLCSpec)
                 {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
+                    if (!compare(data[current_offset + j], target_value, i))
+                        continue;
                 }
+                else
+                    if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target_value, 1))
+                        continue;
+
+                if (!ConcreteAction::apply(j, current))
+                    break;
             }
 
-            if constexpr (InvokedNotFromLCSpec)
-                result[i] = current;
-            else
-                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
-                    result[i] = current; /// multiple times.
-
-            current_offset = offsets[i];
+            setResult(result, offsets, current, current_offset, i);
         }
     }
 
     /// The 1st function argument is a non-constant array of nullable values.
-    template <class Data, class ScalarOrVector>
-    static void vectorCase3(
-        const Data & data,
-        const ColumnArray::Offsets & offsets,
-        const ScalarOrVector & value,
-        PaddedPODArray<ResultType> & result,
-        const PaddedPODArray<UInt8> & null_map_data)
+    template <class Data, class Target>
+    static void vectorCase3(const Data & data, const ArrOffsets & offsets, const Target & target_value,
+        ResultArr & result, const NullMap & null_map_data)
     {
-        size_t size = offsets.size();
+        const size_t size = offsets.size();
 
         if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
-        ColumnArray::Offset current_offset = 0;
+        ArrOffset current_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - current_offset;
+            const size_t array_size = offsets[i] - current_offset;
             ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
                 if (null_map_data[current_offset + j])
+                    continue;
+
+                if constexpr (InvokedNotFromLCSpec)
                 {
+                    if (!compare(data[current_offset + j], target_value, i))
+                        continue;
                 }
-                else if (compare(extract(data, current_offset + j), value, i))
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
+                else
+                    if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target_value, 1))
+                        continue;
+
+                if (!ConcreteAction::apply(j, current))
+                    break;
             }
 
-            if constexpr (InvokedNotFromLCSpec)
-                result[i] = current;
-            else
-                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
-                    result[i] = current; /// multiple times.
-
-            current_offset = offsets[i];
+            setResult(result, offsets, current, current_offset, i);
         }
     }
 
     /// The 1st function argument is a non-constant array of nullable values.
     /// The 2nd function argument is nullable.
-    template <class Data, class ScalarOrVector>
-    static void vectorCase4(
-        const Data & data,
-        const ColumnArray::Offsets & offsets,
-        const ScalarOrVector & value,
-        PaddedPODArray<ResultType> & result,
-        const PaddedPODArray<UInt8> & null_map_data,
-        const PaddedPODArray<UInt8> & null_map_item)
+    template <class Data, class Target>
+    static void vectorCase4(const Data & data, const ArrOffsets & offsets, const Target & value,
+        ResultArr & result, const NullMap & null_map_data, const NullMap & null_map_item)
     {
-        size_t size = offsets.size();
+        const size_t size = offsets.size();
 
         if constexpr (InvokedNotFromLCSpec)
             result.resize(size);
 
-        ColumnArray::Offset current_offset = 0;
+        ArrOffset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
+            const size_t array_size = offsets[i] - current_offset;
+            ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
+
                 if (null_map_data[current_offset + j])
                 {
                     if (hasNull(null_map_item, i))
                         hit = true;
                 }
-                else if (compare(extract(data, current_offset + j), value, i))
-                    hit = true;
-
-                if (hit)
+                else
                 {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
+                    if constexpr (InvokedNotFromLCSpec)
+                    {
+                        if (!compare(data[current_offset + j], value, i))
+                            continue;
+                    }
+                    else
+                        if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , value, 1))
+                            continue;
+
+                    hit = true;
                 }
+
+                if (hit && !ConcreteAction::apply(j, current))
+                    break;
             }
 
-            if constexpr (InvokedNotFromLCSpec)
-                result[i] = current;
-            else
-                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
-                    result[i] = current; /// multiple times.
-
-            current_offset = offsets[i];
+            setResult(result, offsets, current, current_offset, i);
         }
     }
 
 public:
     template <class Data, class ScalarOrVector>
-    static void vector(
-        const Data & data,
-        const ColumnArray::Offsets & offsets,
-        const ScalarOrVector & value,
-        PaddedPODArray<ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data,
-        const PaddedPODArray<UInt8> * null_map_item)
+    static void vector(const Data & data, const ArrOffsets & offsets, const ScalarOrVector & value,
+        ResultArr & result, const NullMap * null_map_data, const NullMap * null_map_item)
     {
         /// Processing is split into 4 cases.
         if (!null_map_data && !null_map_item)
@@ -848,12 +845,6 @@ private:
     }
 
     /**
-     * 1. Obtain the right-side argument column @e C. If @e C is a non-const column (thus the argument is not constant),
-     * loop through all @e C's values.
-     * 2. Obtain the value's index.
-     * 3. Invoke the ArrayIndexNum*Impl to find the desired value
-     * 4. Fill the desired values in the resulting column
-     *
      * Catches arguments of type LC(T), LC(Nullable(T)) and so on.
      */
     bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
@@ -864,32 +855,28 @@ private:
         if (!col_array)
             return false;
 
-        /**
-         * Here we have two general cases:
-         * 1. LC(T).
-         * 2. LC(Nullable(T)) -- somewhat special as Nullable's getDataAt is slightly slower
-         * (due to nested column invocation).
-         */
-        const ColumnLowCardinality * const col_array_nested_lc =
-            checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
+        const ColumnLowCardinality * const col_lc = checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
 
-        if (!col_array_nested_lc)
+        if (!col_lc)
             return false;
 
-        auto col_res = ResultColumnType::create();
+        auto col_result = ResultColumnType::create();
+        col_result->getData().resize_fill(col_array->getOffsets().size());
 
-        // Pre-filling is needed as the ArrayIndexNumImpl and ArrayIndexNumNullImpl won't fill the not-found values
-        // with 0.
-        col_res->getData().resize_fill(col_array->getOffsets().size());
-
-        const IColumnUnique& col_lc_dict = col_array_nested_lc->getDictionary();
-
-        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
         const IColumn * const col_arg = block.getByPosition(arguments[1]).column.get();
 
-        const size_t arg_size = isColumnConst(*col_arg)
-            ? 1 // We have a column with just one value. Arbitrary n is allowed (as the column is const), so take 0.
-            : col_arg->size();
+        /**
+         * If the types of #col_arg and #col_lc (or its nested column if Nullable) are
+         * non-integral, everything is ok as equal values would give equal StringRef representations.
+         * But this is not true for different integral types:
+         * consider #col_arg = UInt8 and #col_lc = UInt16.
+         * The right argument StringRef's size would be 2 (and the left one's -- 1).
+         *
+         * So, for integral types, it's not enough to simply call getDataAt on both arguments.
+         * The left argument (the value whose index is being searched in the indices column) must be casted
+         * to the right argument's side to ensure the StringRefs' equality.
+         */
+        const IColumnUnique & col_lc_dict = col_lc->getDictionary();
 
         const bool different_inner_types = col_lc_dict.isNullable()
             ? !col_arg->structureEquals(*col_lc_dict.getNestedColumn().get())
@@ -902,18 +889,7 @@ private:
             // inner types do not match (like A and Nullable(B) or A and Const(B));
             && different_inner_types;
 
-        /**
-         * If the types of #col_arg and #col_array_nested_lc (or its nested column if Nullable) are
-         * non-integral, everything is ok as equal values would give equal StringRef representations.
-         * But this is not true for different integral types:
-         * consider #col_arg = UInt8 and #col_array_nested_lc = UInt16.
-         * The right argument StringRef's size would be 2 (and the left one's -- 1).
-         *
-         * So, for integral types, it's not enough to simply call getDataAt on both arguments.
-         * The left argument (the value whose index is being searched in the indices column) must be casted
-         * to the right argument's side to ensure the StringRefs' equality.
-         */
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(
+        const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(
                 block.getByPosition(arguments[0]).type.get());
         const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
 
@@ -921,37 +897,52 @@ private:
             ? castColumn(block.getByPosition(arguments[1]), target_type_ptr)
             : col_arg->getPtr();
 
-        // Need to clone the column to build its index.
-        auto col_lc_dict_mutated_icol = IColumn::mutate(col_array_nested_lc->getDictionaryPtr());
-        IColumnUnique * const col_lc_dict_mutated = static_cast<IColumnUnique *>(col_lc_dict_mutated_icol.get());
+        const size_t col_arg_is_const = isColumnConst(*col_arg);
+        const size_t arg_size = col_arg_is_const
+            ? 1 // We have a column with just one value. Arbitrary n is allowed (as the column is const), so take 0.
+            : col_arg->size();
 
-        const UInt64 null_value_index = col_lc_dict.getNullValueIndex();
-        const UInt64 not_found_index = col_lc_dict.size();
+        const auto col_arg_indices_col = ColumnUInt64::create(arg_size);
+        ColumnUInt64 & col_arg_indices = *col_arg_indices_col.get();
 
-        const IColumn& lc_indices = col_array_nested_lc->getIndexes();
-        const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
-        auto& res_data = col_res->getData();
-
-        for (size_t i = 0; i < arg_size; ++i)
         {
-            const StringRef elem = col_arg_cloned->getDataAt(i);
+            // Need to clone the column to build its index.
+            auto col_lc_dict_mutated_icol = IColumn::mutate(col_lc->getDictionaryPtr());
+            IColumnUnique * const col_lc_dict_mutated = static_cast<IColumnUnique *>(col_lc_dict_mutated_icol.get());
 
-            const UInt64 value_index = (elem == EMPTY_STRING_REF)
-                ? null_value_index
-                : col_lc_dict_mutated->getValueIndex(elem);
+            for (size_t i = 0; i < arg_size; ++i)
+            {
+                const StringRef elem = col_arg_cloned->getDataAt(i);
 
-            if (value_index >= not_found_index) // getValueIndex didn't find the index
-                continue;
-
-           ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false /* Invoking from LC spec */ >::vector(
-                lc_indices,/* where the value will be searched */
-                lc_offsets,
-                value_index, /* target value to search */
-                res_data,
-                null_map_data, null_map_item);
+                col_arg_indices.getElement(i) = (elem == EMPTY_STRING_REF)
+                    ? 0 // NULL value index
+                    : col_lc_dict_mutated->getValueIndex(elem);
+            }
         }
 
-        block.getByPosition(result).column = std::move(col_res);
+        const IColumn & lc_indices = col_lc->getIndexes();
+        const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
+        PaddedPODArray<ResultType> & res_data = col_result->getData();
+        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
+
+        if (col_arg_is_const)
+           ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction,
+                false /* Invoking from LC spec */,
+                true /* const column */>::vector(
+                lc_indices,/* where the value will be searched */
+                lc_offsets,
+                col_arg_indices, /* target value to search */
+                res_data,
+                null_map_data, null_map_item);
+        else
+           ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false>::vector(
+                lc_indices,
+                lc_offsets,
+                col_arg_indices,
+                res_data,
+                null_map_data, null_map_item);
+
+        block.getByPosition(result).column = std::move(col_result);
         return true;
     }
 

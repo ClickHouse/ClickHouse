@@ -5,11 +5,11 @@
         arr Array(LowCardinality(String)) default array(str)
         ) ENGINE = MergeTree() ORDER BY tuple()</create_query>
 
-    <query>
+    <create_query>
         INSERT INTO perf_lc (str)
         SELECT concat('asdf', toString(number % 1000))
         FROM numbers(100000000)
-    </query>
+    </create_query>
 
     <query>SELECT count() FROM perf_lc WHERE str = 'asdf337'</query>
     <query>SELECT count() FROM perf_lc WHERE arr[1] = 'asdf337'</query>
