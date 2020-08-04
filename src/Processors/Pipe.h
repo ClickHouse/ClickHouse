@@ -52,10 +52,15 @@ public:
     void addTotalsSource(ProcessorPtr source);
     void addExtremesSource(ProcessorPtr source);
 
+    /// Drop totals and extremes (create NullSink for them).
+    void dropTotals();
+    void dropExtremes();
+
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
     /// If totals or extremes are not empty, transform shouldn't change header.
     void addTransform(ProcessorPtr transform);
+    void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
 
     enum class StreamType
     {
@@ -85,7 +90,6 @@ public:
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const SourceWithProgress::LocalLimits & limits);
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
-    void enableQuota();
 
     /// Do not allow to change the table while the processors of pipe are alive.
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
@@ -125,6 +129,7 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void setOutputFormat(ProcessorPtr output);
 
     friend class QueryPipeline;
 };

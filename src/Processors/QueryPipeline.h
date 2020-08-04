@@ -28,7 +28,7 @@ public:
     ~QueryPipeline() = default;
     QueryPipeline(QueryPipeline &&) = default;
     QueryPipeline(const QueryPipeline &) = delete;
-    QueryPipeline & operator= (QueryPipeline && rhs);
+    QueryPipeline & operator= (QueryPipeline && rhs) = default;
     QueryPipeline & operator= (const QueryPipeline & rhs) = delete;
 
     /// All pipes must have same header.
@@ -73,7 +73,11 @@ public:
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
-    void unitePipelines(std::vector<std::unique_ptr<QueryPipeline>> pipelines, const Block & common_header, size_t max_threads_limit = 0);
+    static QueryPipeline unitePipelines(
+            std::vector<std::unique_ptr<QueryPipeline>> pipelines,
+            const Block & common_header,
+            size_t max_threads_limit = 0,
+            Processors * collected_processors = nullptr);
 
     PipelineExecutorPtr execute();
 
@@ -113,10 +117,9 @@ public:
     }
 
     /// Convert query pipeline to pipe.
-    Pipe getPipe() &&;
+    static Pipe getPipe(QueryPipeline pipeline) { return std::move(pipeline.pipe); }
 
 private:
-    /// Destruction order: processors, header, locks, temporary storages, local contexts
 
     Pipe pipe;
     IOutputFormat * output_format = nullptr;
@@ -131,6 +134,8 @@ private:
     void checkInitializedAndNotCompleted();
 
     void initRowsBeforeLimit();
+
+    void setCollectedProcessors(Processors * processors);
 
     friend class QueryPipelineProcessorsCollector;
 };
