@@ -34,7 +34,7 @@ def feature(self, node="clickhouse1"):
             with And("I drop the roles"):
                 for i in range(roles):
                     node.query(f"DROP ROLE IF EXISTS role{i}")
-    
+
     with Scenario("I set default a nonexistent role to user", requirements=[
             RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
         with setup(1,0):
@@ -56,7 +56,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.user_not_found_in_disk(name="user0")
                 node.query("SET DEFAULT ROLE role0 TO user0", exitcode=exitcode, message=message)
 
-    #in SET DEFAULT ROLE, the nonexistent user is noticed first and becomes the thrown exception
+    # In SET DEFAULT ROLE, the nonexistent user is noticed first and becomes the thrown exception
     with Scenario("I set default a nonexistent role to a nonexistent user", requirements=[
             RQ_SRS_006_RBAC_SetDefaultRole("1.0")]):
         with setup(0,0):
