@@ -86,9 +86,17 @@ ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-clien
 
 clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
 
+counter=0
+
 until clickhouse-client --query "SELECT 1"
 do
     sleep 0.1
+    if [ "$counter" -gt 1200 ]
+    then
+        break
+    fi
+
+    counter=$(($counter + 1))
 done
 
 TESTS_TO_SKIP=(
@@ -178,9 +186,16 @@ if [[ ! -z "$FAILED_TESTS" ]]; then
 
     clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
 
+    counter=0
     until clickhouse-client --query "SELECT 1"
     do
         sleep 0.1
+        if [ "$counter" -gt 1200 ]
+        then
+            break
+        fi
+
+        counter=$(($counter + 1))
     done
 
     echo "Going to run again: $FAILED_TESTS"
