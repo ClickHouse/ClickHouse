@@ -229,7 +229,6 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
-
 void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
