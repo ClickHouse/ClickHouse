@@ -6,6 +6,8 @@
 #include <Processors/LimitTransform.h>
 #include <Processors/NullSink.h>
 #include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Sources/NullSource.h>
 
 namespace DB
 {
@@ -374,7 +376,37 @@ void Pipe::addExtremesSource(ProcessorPtr source)
     processors.emplace_back(std::move(source));
 }
 
+static void dropPort(OutputPort *& port, Processors & processors, Processors * collected_processors)
+{
+    if (port == nullptr)
+        return;
+
+    auto null_sink = std::make_shared<NullSink>(port->getHeader());
+    connect(*port, null_sink->getPort());
+
+    if (collected_processors)
+        collected_processors->emplace_back(null_sink.get());
+
+    processors.emplace_back(std::move(null_sink));
+    port = nullptr;
+}
+
+void Pipe::dropTotals()
+{
+    dropPort(totals_port, processors, collected_processors);
+}
+
+void Pipe::dropExtremes()
+{
+    dropPort(extremes_port, processors, collected_processors);
+}
+
 void Pipe::addTransform(ProcessorPtr transform)
+{
+    addTransform(std::move(transform), nullptr, nullptr);
+}
+
+void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes)
 {
     if (output_ports.empty())
         throw Exception("Cannot add transform to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
@@ -385,6 +417,19 @@ void Pipe::addTransform(ProcessorPtr transform)
                         "Processor has " + std::to_string(inputs.size()) + " input ports, "
                         "but " + std::to_string(output_ports.size()) + " expected", ErrorCodes::LOGICAL_ERROR);
 
+    if (totals && totals_port)
+        throw Exception("Cannot add transform with totals to Pipe because it already has totals.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (extremes && extremes_port)
+        throw Exception("Cannot add transform with totals to Pipe because it already has totals.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (totals)
+        totals_port = totals;
+    if (extremes)
+        extremes_port = extremes;
+
     size_t next_output = 0;
     for (auto & input : inputs)
     {
@@ -393,15 +438,34 @@ void Pipe::addTransform(ProcessorPtr transform)
     }
 
     auto & outputs = transform->getOutputs();
-    if (outputs.empty())
-        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because it has no outputs",
-                        ErrorCodes::LOGICAL_ERROR);
 
     output_ports.clear();
     output_ports.reserve(outputs.size());
 
+    bool found_totals = false;
+    bool found_extremes = false;
+
     for (auto & output : outputs)
-        output_ports.emplace_back(&output);
+    {
+        if (&output == totals)
+            found_totals = true;
+        else if (&output == extremes)
+            found_extremes = true;
+        else
+            output_ports.emplace_back(&output);
+    }
+
+    if (totals && !found_totals)
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "specified totals port does not belong to it", ErrorCodes::LOGICAL_ERROR);
+
+    if (extremes && !found_extremes)
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because "
+                        "specified extremes port does not belong to it", ErrorCodes::LOGICAL_ERROR);
+
+    if (output_ports.empty())
+        throw Exception("Cannot add transform " + transform->getName() + " to Pipes because it has no outputs",
+                        ErrorCodes::LOGICAL_ERROR);
 
     header = output_ports.front()->getHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
@@ -524,6 +588,44 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
     header.clear();
 }
 
+void Pipe::setOutputFormat(ProcessorPtr output)
+{
+    if (output_ports.empty())
+        throw Exception("Cannot set output format to empty Pipe.", ErrorCodes::LOGICAL_ERROR);
+
+    if (output_ports.size() != 1)
+        throw Exception("Cannot set output format to Pipe because single output port is expected, "
+                        "but it has " + std::to_string(output_ports.size()) + " ports", ErrorCodes::LOGICAL_ERROR);
+
+    auto * format = dynamic_cast<IOutputFormat * >(output.get());
+
+    if (!format)
+        throw Exception("IOutputFormat processor expected for QueryPipeline::setOutputFormat.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    auto & main = format->getPort(IOutputFormat::PortKind::Main);
+    auto & totals = format->getPort(IOutputFormat::PortKind::Totals);
+    auto & extremes = format->getPort(IOutputFormat::PortKind::Extremes);
+
+    if (!totals_port)
+        addTotalsSource(std::make_shared<NullSource>(totals.getHeader()));
+
+    if (!extremes_port)
+        addExtremesSource(std::make_shared<NullSource>(extremes.getHeader()));
+
+    if (collected_processors)
+        collected_processors->emplace_back(output.get());
+
+    processors.emplace_back(std::move(output));
+
+    connect(*output_ports.front(), main);
+    connect(*totals_port, totals);
+    connect(*extremes_port, extremes);
+
+    output_ports.clear();
+    header.clear();
+}
+
 void Pipe::transform(const Transformer & transformer)
 {
     if (output_ports.empty())
@@ -617,15 +719,6 @@ void Pipe::setQuota(const std::shared_ptr<const EnabledQuota> & quota)
     {
         if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source_with_progress->setQuota(quota);
-    }
-}
-
-void Pipe::enableQuota()
-{
-    for (auto & processor : processors)
-    {
-        if (auto * source = dynamic_cast<ISource *>(processor.get()))
-            source->enableQuota();
     }
 }
 
