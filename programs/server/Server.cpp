@@ -223,7 +223,7 @@ void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & co
         return;
 
     Settings settings;
-    for (auto setting : settings.all())
+    for (const auto & setting : settings.all())
     {
         const auto & name = setting.getName();
         if (config.has(name))
@@ -643,6 +643,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
+
+    /// Check sanity of MergeTreeSettings on server startup
+    global_context->getMergeTreeSettings().sanityCheck(settings);
 
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);

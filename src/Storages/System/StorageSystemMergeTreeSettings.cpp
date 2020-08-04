@@ -20,7 +20,7 @@ NamesAndTypesList SystemMergeTreeSettings::getNamesAndTypes()
 
 void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    for (auto setting : context.getMergeTreeSettings().all())
+    for (const auto & setting : context.getMergeTreeSettings().all())
     {
         res_columns[0]->insert(setting.getName());
         res_columns[1]->insert(setting.getValueString());

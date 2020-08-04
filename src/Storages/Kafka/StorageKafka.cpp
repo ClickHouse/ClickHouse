@@ -169,7 +169,7 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
 
-    for (auto setting : *kafka_settings)
+    for (const auto & setting : *kafka_settings)
     {
         const auto & name = setting.getName();
         if (name.find("kafka_") == std::string::npos)
