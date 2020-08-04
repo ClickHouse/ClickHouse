@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 

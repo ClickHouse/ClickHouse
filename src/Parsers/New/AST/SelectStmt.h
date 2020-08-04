@@ -1,11 +1,6 @@
 #pragma once
 
-#include <Parsers/New/AST/ColumnExpr.h>
-#include <Parsers/New/AST/JoinExpr.h>
-#include <Parsers/New/AST/LimitExpr.h>
-#include <Parsers/New/AST/OrderExpr.h>
-#include <Parsers/New/AST/RatioExpr.h>
-#include <Parsers/New/AST/SettingExpr.h>
+#include <Parsers/New/AST/INode.h>
 
 #include <Core/Types.h>
 

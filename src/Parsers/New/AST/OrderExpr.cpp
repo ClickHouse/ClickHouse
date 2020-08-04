@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/OrderExpr.h>
 
+#include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -33,7 +34,7 @@ antlrcpp::Any ParseTreeVisitor::visitOrderExpr(ClickHouseParser::OrderExprContex
     else if (ctx->LAST()) nulls = AST::OrderExpr::NULLS_LAST;
 
     AST::PtrTo<AST::StringLiteral> collate;
-    if (ctx->COLLATE()) collate = std::make_shared<AST::StringLiteral>(ctx->STRING_LITERAL()->accept(this));
+    if (ctx->COLLATE()) collate = AST::Literal::createString(ctx->STRING_LITERAL());
 
     return std::make_shared<AST::OrderExpr>(ctx->columnExpr()->accept(this), nulls, collate, !ctx->DESCENDING());
 }

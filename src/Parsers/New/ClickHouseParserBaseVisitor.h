@@ -25,6 +25,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -109,11 +113,11 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *ctx) override {
+  virtual antlrcpp::Any visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitJoinCrossOp(ClickHouseParser::JoinCrossOpContext *ctx) override {
+  virtual antlrcpp::Any visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -138,10 +142,6 @@ public:
   }
 
   virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -218,6 +218,10 @@ public:
   }
 
   virtual antlrcpp::Any visitColumnFunctionExpr(ClickHouseParser::ColumnFunctionExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnParamList(ClickHouseParser::ColumnParamListContext *ctx) override {
     return visitChildren(ctx);
   }
 

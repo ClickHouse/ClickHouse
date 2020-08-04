@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Parsers/New/AST/Identifier.h>
-#include <Parsers/New/AST/Literal.h>
+#include <Parsers/New/AST/INode.h>
 
 
 namespace DB::AST
@@ -16,7 +15,5 @@ private:
     PtrTo<StringLiteral> out_file;
     PtrTo<Identifier> format;
 };
-
-using QueryList = List<Query, ';'>;
 
 }

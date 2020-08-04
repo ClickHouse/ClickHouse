@@ -8,10 +8,10 @@ options {
 
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON?;
 
-queryStmt:  // NOTE: |ParseTreeVisitor::visitQueryStmtAsParent()| callers depend on this rule
-    ( selectUnionStmt | insertStmt )
-    (INTO OUTFILE STRING_LITERAL)?
-    (FORMAT identifier)?
+queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
+
+query
+    : selectUnionStmt
     ;
 
 // SELECT statement
@@ -50,21 +50,21 @@ joinExpr
     : tableExpr                                                           # JoinExprTable
     | LPAREN joinExpr RPAREN                                              # JoinExprParens
     | joinExpr (GLOBAL|LOCAL)? joinOp JOIN joinExpr joinConstraintClause  # JoinExprOp
-    | joinExpr joinCrossOp joinExpr                                       # JoinExprCrossOp
+    | joinExpr joinOpCross joinExpr                                       # JoinExprCrossOp
     ;
 joinOp
     : (ANY? INNER | INNER ANY?)                                                                                  # JoinOpInner
     | ((OUTER | SEMI | ANTI | ANY | ASOF)? (LEFT | RIGHT) | (LEFT | RIGHT) (OUTER | SEMI | ANTI | ANY | ASOF)?)  # JoinOpLeftRight
     | ((OUTER | ANY)? FULL | FULL (OUTER | ANY)?)                                                                # JoinOpFull
     ;
+joinOpCross
+    : (GLOBAL|LOCAL)? CROSS JOIN
+    | COMMA
+    ;
 joinConstraintClause
     : ON columnExprList
     | USING LPAREN columnExprList RPAREN
     | USING columnExprList
-    ;
-joinCrossOp
-    : (GLOBAL|LOCAL)? CROSS JOIN
-    | COMMA
     ;
 
 limitExpr: NUMBER_LITERAL ((COMMA | OFFSET) NUMBER_LITERAL)?;
@@ -73,13 +73,6 @@ orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE
 ratioExpr: NUMBER_LITERAL (SLASH NUMBER_LITERAL); // TODO: not complete!
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE literal;
-
-// INSERT statement
-
-insertStmt:
-    INSERT INTO tableExpr (LPAREN columnExprList RPAREN)?
-    // TODO: not complete!
-    ;
 
 // Columns
 
@@ -106,12 +99,13 @@ columnExpr
     | columnExpr AS identifier                                                    # ColumnExprAlias
     ;
 columnFunctionExpr
-    : identifier (LPAREN (literal (COMMA literal)*)? RPAREN)? LPAREN columnArgList? RPAREN
+    : identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN
     // TODO: do we really need this misc parsing rules?
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN
     | CAST LPAREN columnExpr AS identifier RPAREN
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN
     ;
+columnParamList: literal (COMMA literal)*;
 columnArgList: columnArgExpr (COMMA columnArgExpr)*;
 columnArgExpr: columnExpr | columnLambdaExpr;
 columnLambdaExpr:
@@ -148,7 +142,20 @@ literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
 identifier: IDENTIFIER; // TODO: not complete!
 unaryOp: DASH | NOT;
 binaryOp
-    // TODO: sort by priority.
-    : ASTERISK | SLASH | PERCENT | PLUS | DASH | EQ | NOT_EQ | LE | GE | LT | GT | CONCAT // signs
-    | AND | OR | NOT? LIKE | GLOBAL? NOT? IN                                              // keywords
+    : CONCAT
+    | ASTERISK
+    | SLASH
+    | PLUS
+    | DASH
+    | PERCENT
+    | EQ
+    | NOT_EQ
+    | LE
+    | GE
+    | LT
+    | GT
+    | AND
+    | OR
+    | NOT? LIKE
+    | GLOBAL? NOT? IN
     ;

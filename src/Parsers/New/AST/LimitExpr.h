@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/New/AST/Literal.h>
+#include <Parsers/New/AST/INode.h>
 
 
 namespace DB::AST

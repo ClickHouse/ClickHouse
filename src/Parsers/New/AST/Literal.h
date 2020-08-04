@@ -6,16 +6,12 @@
 
 #include <Token.h>
 #include <tree/TerminalNode.h>
-#include "Core/Types.h"
 
 #include <sstream>
 
 
 namespace DB::AST
 {
-
-class NumberLiteral;
-class StringLiteral;
 
 class Literal : public INode
 {

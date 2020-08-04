@@ -1,21 +1,13 @@
 #pragma once
 
+#include <Parsers/New/AST/fwd_decl.h>
+
 #include <Common/TypePromotion.h>
-#include "Parsers/ASTExpressionList.h"
-#include <Parsers/IAST_fwd.h>
-
-#include <memory>
-#include <vector>
+#include <Parsers/ASTExpressionList.h>
 
 
-namespace DB::AST {
-
-class INode;
-
-template <class T = INode>
-using PtrTo = std::shared_ptr<T>;
-
-using Ptr = PtrTo<>;
+namespace DB::AST
+{
 
 class INode : public TypePromotion<INode>
 {
@@ -24,7 +16,7 @@ class INode : public TypePromotion<INode>
         virtual ASTPtr convertToOld() const { return ASTPtr(); }
 
     protected:
-        std::vector<Ptr> children;
+        PtrList children;
 };
 
 template <class T, char Separator>

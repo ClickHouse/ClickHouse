@@ -24,6 +24,8 @@ public:
 
     virtual antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *context) = 0;
+
     virtual antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *context) = 0;
@@ -66,9 +68,9 @@ public:
 
     virtual antlrcpp::Any visitJoinOpFull(ClickHouseParser::JoinOpFullContext *context) = 0;
 
-    virtual antlrcpp::Any visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *context) = 0;
+    virtual antlrcpp::Any visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *context) = 0;
 
-    virtual antlrcpp::Any visitJoinCrossOp(ClickHouseParser::JoinCrossOpContext *context) = 0;
+    virtual antlrcpp::Any visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitLimitExpr(ClickHouseParser::LimitExprContext *context) = 0;
 
@@ -81,8 +83,6 @@ public:
     virtual antlrcpp::Any visitSettingExprList(ClickHouseParser::SettingExprListContext *context) = 0;
 
     virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *context) = 0;
-
-    virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext *context) = 0;
 
@@ -121,6 +121,8 @@ public:
     virtual antlrcpp::Any visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnFunctionExpr(ClickHouseParser::ColumnFunctionExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnParamList(ClickHouseParser::ColumnParamListContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnArgList(ClickHouseParser::ColumnArgListContext *context) = 0;
 

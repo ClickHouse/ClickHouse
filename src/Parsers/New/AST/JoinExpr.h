@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Parsers/New/AST/ColumnExpr.h>
-#include <Parsers/New/AST/TableExpr.h>
+#include <Parsers/New/AST/INode.h>
 
 
 namespace DB::AST
@@ -18,10 +17,8 @@ class JoinConstraintClause : public INode
 
         JoinConstraintClause(ConstraintType type, PtrTo<ColumnExprList> list);
 
-        ASTPtr convertToOld() const override;
-
     private:
-        ConstraintType type;
+        const ConstraintType type;
 };
 
 class JoinExpr : public INode
@@ -78,8 +75,8 @@ class JoinExpr : public INode
         JoinOpType op_type = JoinOpType::INNER;
         JoinOpMode op_mode = JoinOpMode::DEFAULT;
 
-        JoinExpr(ExprType type, std::vector<Ptr> exprs);
-        JoinExpr(ExprType type, JoinOpType op, JoinOpMode mode, std::vector<Ptr> exprs);
+        JoinExpr(ExprType type, PtrList exprs);
+        JoinExpr(ExprType type, JoinOpType op, JoinOpMode mode, PtrList exprs);
 };
 
 }

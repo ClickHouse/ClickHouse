@@ -2,6 +2,8 @@
 
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
+#include "Parsers/New/ClickHouseLexer.h"
+#include "Parsers/New/ClickHouseParser.h"
 
 
 namespace DB
@@ -17,6 +19,21 @@ antlrcpp::Any ParseTreeVisitor::visitQueryList(ClickHouseParser::QueryListContex
     return query_list;
 }
 
+antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx)
+{
+    AST::PtrTo<AST::Query> query = ctx->query()->accept(this);
+
+    if (ctx->OUTFILE()) query->setOutFile(ctx->STRING_LITERAL()->accept(this));
+    if (ctx->FORMAT()) query->setFormat(ctx->identifier()->accept(this));
+
+    return query;
+}
+
+antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
+{
+    return ctx->children[0]->accept(this);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx)
 {
     auto select_union_query = std::make_shared<AST::SelectUnionQuery>();
@@ -24,9 +41,7 @@ antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUni
     for (auto * stmt : ctx->selectStmt())
         select_union_query->appendSelect(stmt->accept(this));
 
-    visitQueryStmtAsParent(select_union_query.get(), static_cast<ClickHouseParser::QueryStmtContext*>(ctx->parent));
-
-    return std::static_pointer_cast<AST::Query>(select_union_query);
+    return select_union_query;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
@@ -51,8 +66,7 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 
 void ParseTreeVisitor::visitQueryStmtAsParent(AST::Query *query, ClickHouseParser::QueryStmtContext *ctx)
 {
-    if (ctx->OUTFILE()) query->setOutFile(ctx->STRING_LITERAL()->accept(this));
-    if (ctx->FORMAT()) query->setFormat(ctx->identifier()->accept(this));
+
 }
 
 }

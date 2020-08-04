@@ -37,3 +37,5 @@ Old vs. new parser
 
 - `a as b [c]` - accessing aliased array expression is not possible.
 - `a as b . 1` - accessing aliased tuple expression is not possible.
+- `between a is not null and b` - `between` operator should have lower priority than `is null`.
+- `*.1` - accessing asterisk tuple expression is not possible.

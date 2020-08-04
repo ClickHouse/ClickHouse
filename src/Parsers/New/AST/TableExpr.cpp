@@ -1,5 +1,7 @@
 #include <Parsers/New/AST/TableExpr.h>
 
+#include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -11,10 +13,29 @@ namespace DB::AST
 // static
 PtrTo<TableExpr> TableExpr::createIdentifier(PtrTo<TableIdentifier> identifier)
 {
-    return PtrTo<TableExpr>(new TableExpr(TableExpr::ExprType::IDENTIFIER, {identifier}));
+    return PtrTo<TableExpr>(new TableExpr(ExprType::IDENTIFIER, {identifier}));
 }
 
-TableExpr::TableExpr(TableExpr::ExprType type, std::vector<Ptr> exprs) : expr_type(type)
+// static
+PtrTo<TableExpr> TableExpr::createFunction(PtrTo<Identifier> name, PtrList args)
+{
+    args.insert(args.begin(), std::static_pointer_cast<INode>(name));
+    return PtrTo<TableExpr>(new TableExpr(ExprType::FUNCTION, args));
+}
+
+// static
+PtrTo<TableExpr> TableExpr::createSubquery(PtrTo<SelectStmt> subquery)
+{
+    return PtrTo<TableExpr>(new TableExpr(ExprType::SUBQUERY, {subquery}));
+}
+
+// static
+PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias)
+{
+    return PtrTo<TableExpr>(new TableExpr(ExprType::ALIAS, {expr, alias}));
+}
+
+TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : expr_type(type)
 {
     children = exprs;
 }
@@ -43,9 +64,45 @@ ASTPtr TableExpr::convertToOld() const
 namespace DB
 {
 
+antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExprContext *ctx)
+{
+    if (ctx->literal()) return ctx->literal()->accept(this);
+    if (ctx->tableIdentifier()) return ctx->tableIdentifier()->accept(this);
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableArgList(ClickHouseParser::TableArgListContext *)
+{
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableExprAlias(ClickHouseParser::TableExprAliasContext *ctx)
+{
+    return AST::TableExpr::createAlias(ctx->tableExpr()->accept(this), ctx->identifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx)
+{
+    return ctx->tableFunctionExpr()->accept(this);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx)
 {
     return AST::TableExpr::createIdentifier(ctx->tableIdentifier()->accept(this).as<AST::PtrTo<AST::TableIdentifier>>());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx)
+{
+    return AST::TableExpr::createSubquery(ctx->selectStmt()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *ctx)
+{
+    AST::PtrList args;
+
+    for (auto * arg : ctx->tableArgList()->tableArgExpr()) args.emplace_back(arg->accept(this));
+
+    return AST::TableExpr::createFunction(ctx->identifier()->accept(this), args);
 }
 
 }

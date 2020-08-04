@@ -8,13 +8,33 @@
 namespace DB::AST
 {
 
-class ColumnExpr;
-using ColumnExprList = List<ColumnExpr, ','>;
-class ColumnFunctionExpr;
-class ColumnIdentifier;
-class Identifier;
-class Literal;
-class NumberLiteral;
+class ColumnArgExpr : public INode
+{
+    public:
+        explicit ColumnArgExpr(PtrTo<ColumnExpr> expr);
+        explicit ColumnArgExpr(PtrTo<ColumnLambdaExpr> expr);
+
+    private:
+        enum class ArgType
+        {
+            EXPR = 0,
+            LAMBDA = 1,
+        };
+
+        const ArgType type;
+};
+
+class ColumnLambdaExpr : public INode
+{
+    public:
+        ColumnLambdaExpr(PtrTo<List<Identifier, ','>> params, PtrTo<ColumnExpr> expr);
+
+    private:
+        enum ChildIndex
+        {
+            EXPR = 0,
+        };
+};
 
 class ColumnExpr : public INode
 {
@@ -29,18 +49,18 @@ class ColumnExpr : public INode
 
         enum class BinaryOpType
         {
-            ASTERISK,
-            SLASH,
-            PERCENT,
+            CONCAT,
+            MULTIPLY,
+            DIVIDE,
+            MODULO,
             PLUS,
-            DASH,
+            MINUS,
             EQ,
             NOT_EQ,
             LE,
             GE,
             LT,
             GT,
-            CONCAT,
             AND,
             OR,
             LIKE,
@@ -49,6 +69,13 @@ class ColumnExpr : public INode
             NOT_IN,
             GLOBAL_IN,
             GLOBAL_NOT_IN,
+        };
+
+        enum class TernaryOpType
+        {
+            IF,
+            BETWEEN,
+            NOT_BETWEEN,
         };
 
         enum class IntervalType
@@ -77,7 +104,7 @@ class ColumnExpr : public INode
         static PtrTo<ColumnExpr> createBetween(bool not_op, PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2, PtrTo<ColumnExpr> expr3);
         static PtrTo<ColumnExpr> createCase(PtrTo<ColumnExpr> expr, std::list<std::pair<PtrTo<ColumnExpr> /* when */, PtrTo<ColumnExpr> /* then */>> cases, PtrTo<ColumnExpr> else_expr);
         static PtrTo<ColumnExpr> createInterval(IntervalType type, PtrTo<ColumnExpr> expr);
-        static PtrTo<ColumnExpr> createFunction(PtrTo<ColumnFunctionExpr> expr);
+        static PtrTo<ColumnExpr> createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnArgList> args);
         static PtrTo<ColumnExpr> createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias);
 
         ASTPtr convertToOld() const override;
@@ -85,8 +112,19 @@ class ColumnExpr : public INode
     private:
         enum ChildIndex : UInt8
         {
+            // LITERAL
             LITERAL = 0,
+
+            // IDENTIFIER
             IDENTIFIER = 0,
+
+            // ARRAY_ACCESS and TUPLE_ACCESS
+            ARRAY = 0,
+            TUPLE = 0,
+            INDEX = 1,
+
+            // ALIAS
+            ALIAS = 1,
         };
         enum class ExprType
         {
@@ -100,16 +138,26 @@ class ColumnExpr : public INode
             UNARY_OP,
             BINARY_OP,
             TERNARY_OP,
-            BETWEEN,
             CASE,
             INTERVAL,
             FUNCTION,
             ALIAS,
         };
 
-        ExprType expr_type;
+        const ExprType expr_type;
+        union
+        {
+            IntervalType interval_type;
+            UnaryOpType unary_op_type;
+            BinaryOpType binary_op_type;
+            TernaryOpType ternary_op_type;
+        };
 
-        ColumnExpr(ExprType type, std::vector<Ptr> exprs);
+        ColumnExpr(ExprType type, PtrList exprs);
+        ColumnExpr(IntervalType type, Ptr expr);
+        ColumnExpr(UnaryOpType type, Ptr expr);
+        ColumnExpr(BinaryOpType type, Ptr expr1, Ptr expr2);
+        ColumnExpr(TernaryOpType type, Ptr expr1, Ptr expr2, Ptr expr3);
 };
 
 }
