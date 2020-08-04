@@ -54,7 +54,7 @@ def feature(self, node="clickhouse1"):
             with When(f"I create role {role} with if not exists"):
                 node.query(f"CREATE ROLE IF NOT EXISTS {role}")
         del role
-    
+
     with Scenario("I create role if not exists, role does exist", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Role_Create_IfNotExists("1.0")]):
         role = "role1"

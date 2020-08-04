@@ -262,6 +262,9 @@
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
+    <!-- Comma-separated list of prefixes for user-defined settings. -->
+    <custom_settings_prefixes></custom_settings_prefixes>
+
     <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distibuted DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
 
@@ -559,6 +562,16 @@
         -->
         <flush_interval_milliseconds>60000</flush_interval_milliseconds>
     </asynchronous_metric_log>
+
+    <!-- Crash log. Stores stack traces for fatal errors.
+         This table is normally empty. -->
+    <crash_log>
+        <database>system</database>
+        <table>crash_log</table>
+
+        <partition_by />
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </crash_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
