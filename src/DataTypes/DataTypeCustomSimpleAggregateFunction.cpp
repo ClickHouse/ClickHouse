@@ -1,14 +1,9 @@
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 
-#include <IO/ReadHelpers.h>
-
-#include <Columns/ColumnAggregateFunction.h>
-
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
