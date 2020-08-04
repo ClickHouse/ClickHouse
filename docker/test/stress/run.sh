@@ -38,7 +38,8 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
-timeout 120 service clickhouse-server restart
+timeout 120 service clickhouse-server stop
+timeout 120 service clickhouse-server start
 
 wait_server
 
@@ -50,7 +51,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 ./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION"
 
-timeout 120 service clickhouse-server restart
+timeout 120 service clickhouse-server stop
+timeout 120 service clickhouse-server start
 
 wait_server
 
