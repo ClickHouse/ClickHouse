@@ -63,7 +63,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserKeyword("IF NOT EXISTS").ignore(pos, expected))
         if_not_exists = true;
 
-    if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
+    if (!ParserCompoundIdentifier(false).parse(pos, table, expected))
         return false;
 
     if (ParserKeyword("LIKE").ignore(pos, expected))
@@ -71,8 +71,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
             return false;
     }
-
-    if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+    else if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         if (ParserKeyword("LIKE").ignore(pos, expected))
         {
@@ -94,6 +93,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ParserDeclarePartitionOptions().parse(pos, partition_options, expected);
         }
     }
+    else
+        return false;
 
     auto create_query = std::make_shared<ASTCreateQuery>();
 

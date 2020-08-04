@@ -129,8 +129,8 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     String checksum = "CRC32";
     writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'");
 
-    /// Set heartbeat 30s.
-    UInt64 period_ns = (30 * 1e9);
+    /// Set heartbeat 1s.
+    UInt64 period_ns = (1 * 1e9);
     writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns));
 
     // Register slave.

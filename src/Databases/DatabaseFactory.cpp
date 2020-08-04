@@ -74,7 +74,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
 
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, Context & context)
 {
-    const auto * engine_define = create.storage;
+    auto * engine_define = create.storage;
     const String & database_name = create.database;
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;

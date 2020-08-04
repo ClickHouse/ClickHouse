@@ -774,7 +774,6 @@ namespace MySQLReplication
                 event = std::make_shared<TableMapEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
                 table_map = std::static_pointer_cast<TableMapEvent>(event);
                 break;
             }
