@@ -49,7 +49,7 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 ./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION"
 
-service clickhouse-server restart
+timeout 120 service clickhouse-server restart
 
 wait_server
 
