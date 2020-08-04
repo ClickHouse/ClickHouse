@@ -16,5 +16,12 @@
     <query>SELECT count() FROM perf_lc WHERE has(arr, 'asdf337')</query>
     <query>SELECT count() FROM perf_lc WHERE indexOf(arr, 'asdf337') > 0</query>
 
+    <query>SELECT count() FROM perf_lc WHERE arr[1] = str</query>
+    <query>SELECT count() FROM perf_lc WHERE has(arr, str)</query>
+    <query>SELECT count() FROM perf_lc WHERE indexOf(arr, str) > 0</query>
+
+    <query>SELECT count() FROM perf_lc WHERE has(arr, concat('0', str))</query>
+    <query>SELECT count() FROM perf_lc WHERE has(arr, concat(str, 'str'))</query>
+
     <drop_query>DROP TABLE IF EXISTS perf_lc</drop_query>
 </test>
