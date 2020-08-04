@@ -72,11 +72,11 @@ public:
 
     /**
      * Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
-     * index in the DB::ColumnUnique::reverse_index hashtable (std::nullopt if not found).
+     * index in the DB::ColumnUnique::reverse_index hashtable.
      *
      * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:
      * - On the function call it's present. Therefore we obtain the index in O(1).
-     * - The reverse index is absent. We find the index in O(dictionary size) by performing the linear search.
+     * - The reverse index is absent. We build the index.
      *
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
@@ -86,7 +86,7 @@ public:
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.
      */
-    virtual std::optional<UInt64> getOrFindIndex(StringRef value) const = 0;
+    virtual UInt64 getValueIndex(StringRef value) = 0;
 
     void insert(const Field &) override
     {

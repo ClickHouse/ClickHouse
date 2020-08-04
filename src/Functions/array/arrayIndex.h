@@ -921,22 +921,33 @@ private:
             ? castColumn(block.getByPosition(arguments[1]), target_type_ptr)
             : col_arg->getPtr();
 
+        // Need to clone the column to build its index.
+        auto col_lc_dict_mutated_icol = IColumn::mutate(col_array_nested_lc->getDictionaryPtr());
+        IColumnUnique * const col_lc_dict_mutated = static_cast<IColumnUnique *>(col_lc_dict_mutated_icol.get());
+
+        const UInt64 null_value_index = col_lc_dict.getNullValueIndex();
+        const UInt64 not_found_index = col_lc_dict.size();
+
+        const IColumn& lc_indices = col_array_nested_lc->getIndexes();
+        const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
+        auto& res_data = col_res->getData();
+
         for (size_t i = 0; i < arg_size; ++i)
         {
             const StringRef elem = col_arg_cloned->getDataAt(i);
 
-            const std::optional<UInt64> value_index = (elem == EMPTY_STRING_REF)
-                ? 0 // NULL, which always has index 0
-                : col_lc_dict.getOrFindIndex(elem);
+            const UInt64 value_index = (elem == EMPTY_STRING_REF)
+                ? null_value_index
+                : col_lc_dict_mutated->getValueIndex(elem);
 
-            if (!value_index)
+            if (value_index >= not_found_index) // getValueIndex didn't find the index
                 continue;
 
            ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false /* Invoking from LC spec */ >::vector(
-                col_array_nested_lc->getIndexes(),/* where the value will be searched */
-                col_array->getOffsets(),
-                *value_index, /* target value to search */
-                col_res->getData(),
+                lc_indices,/* where the value will be searched */
+                lc_offsets,
+                value_index, /* target value to search */
+                res_data,
                 null_map_data, null_map_item);
         }
 
