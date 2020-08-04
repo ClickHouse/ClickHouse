@@ -23,19 +23,21 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <cmath>
-#include <numeric>
-#include <iomanip>
 
+#include <cmath>
+#include <ctime>
+#include <iomanip>
+#include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
+
 
 namespace ProfileEvents
 {
@@ -173,8 +175,12 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
     size_t free_entries = pool_size - pool_used;
     const auto data_settings = data.getSettings();
 
+    /// Always allow maximum size if one or less pool entries is busy.
+    /// One entry is probably the entry where this function is executed.
+    /// This will protect from bad settings.
+
     UInt64 max_size = 0;
-    if (free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+    if (pool_used <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
         max_size = interpolateExponential(
@@ -195,7 +201,8 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
-    if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
+    if (busy_threads_in_pool <= 1
+        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
@@ -219,14 +226,13 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         return false;
     }
 
-    time_t current_time = time(nullptr);
+    time_t current_time = std::time(nullptr);
 
     IMergeSelector::Partitions partitions;
 
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
-    bool has_part_with_expired_ttl = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         /// Check predicate only for first part in each partition.
@@ -258,11 +264,6 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.min_ttl = part->ttl_infos.part_min_ttl;
         part_info.max_ttl = part->ttl_infos.part_max_ttl;
 
-        time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
-
-        if (ttl && ttl <= current_time)
-            has_part_with_expired_ttl = true;
-
         partitions.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
@@ -275,38 +276,38 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         prev_part = &part;
     }
 
-    std::unique_ptr<IMergeSelector> merge_selector;
+    IMergeSelector::PartsInPartition parts_to_merge;
 
-    SimpleMergeSelector::Settings merge_settings;
-    if (aggressive)
-        merge_settings.base = 1;
-
-    bool can_merge_with_ttl =
-        (current_time - last_merge_with_ttl > data_settings->merge_with_ttl_timeout);
-
-    /// NOTE Could allow selection of different merge strategy.
-    if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
+    if (!ttl_merges_blocker.isCancelled())
     {
-        merge_selector = std::make_unique<TTLMergeSelector>(current_time, data_settings->ttl_only_drop_parts);
-        last_merge_with_ttl = current_time;
+        TTLMergeSelector merge_selector(
+                next_ttl_merge_times_by_partition,
+                current_time,
+                data_settings->merge_with_ttl_timeout,
+                data_settings->ttl_only_drop_parts);
+        parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge);
     }
-    else
-        merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
-
-    IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
-        partitions,
-        max_total_size_to_merge);
 
     if (parts_to_merge.empty())
     {
-        if (out_disable_reason)
-            *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
-        return false;
-    }
+        SimpleMergeSelector::Settings merge_settings;
+        if (aggressive)
+            merge_settings.base = 1;
 
-    /// Allow to "merge" part with itself if we need remove some values with expired ttl
-    if (parts_to_merge.size() == 1 && !has_part_with_expired_ttl)
-        throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
+        parts_to_merge = SimpleMergeSelector(merge_settings)
+                            .select(partitions, max_total_size_to_merge);
+
+        /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
+        if (parts_to_merge.size() == 1)
+            throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
+
+        if (parts_to_merge.empty())
+        {
+            if (out_disable_reason)
+                *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
+            return false;
+        }
+    }
 
     MergeTreeData::DataPartsVector parts;
     parts.reserve(parts_to_merge.size());
@@ -798,8 +799,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             break;
     }
 
-    Pipe merged_pipe(std::move(pipes), std::move(merged_transform));
-    BlockInputStreamPtr merged_stream = std::make_shared<TreeExecutorBlockInputStream>(std::move(merged_pipe));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
+    pipeline.setMaxThreads(1);
+    BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
@@ -914,8 +917,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
 
-                column_part_streams[part_num] = std::make_shared<TreeExecutorBlockInputStream>(
-                        Pipe(std::move(column_part_source)));
+                QueryPipeline column_part_pipeline;
+                column_part_pipeline.init(Pipe(std::move(column_part_source)));
+                column_part_pipeline.setMaxThreads(1);
+
+                column_part_streams[part_num] =
+                        std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
             }
 
             rows_sources_read_buf.seek(0, 0);
