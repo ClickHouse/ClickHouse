@@ -306,7 +306,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             replaceWithColumnLike(ast);
         }
     }
-    else if (auto * dictionary_layout = typeid_cast<ASTDictionaryLayout *>(ast.get()))
+    else if (typeid_cast<ASTDictionaryLayout *>(ast.get()))
     {
         // Don't fuzz it. It is a somewhat unconventional AST which does not
         // directly correspond to the query text, but performs some validation
