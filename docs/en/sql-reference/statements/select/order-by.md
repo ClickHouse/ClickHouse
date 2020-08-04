@@ -80,7 +80,7 @@ Optimization works with both `ASC` and `DESC` and doesn't work together with [GR
 
 When the `optimize_read_in_order` setting is disabled, the Clickhouse server does not use the table index while processing `SELECT` queries.
 
-There are queries that have `ORDER BY` clause, large `LIMIT` and [WHERE](../../../sql-reference/statements/select/where.md) condition that requires to read huge amount of records before queried data is found. For these queries you should consider disabling `optimize_read_in_order` manually.
+Consider disabling `optimize_read_in_order` manually, when running queries that have `ORDER BY` clause, large `LIMIT` and [WHERE](../../../sql-reference/statements/select/where.md) condition that requires to read huge amount of records before queried data is found.
 
 Optimization is supported in the following table engines:
 
