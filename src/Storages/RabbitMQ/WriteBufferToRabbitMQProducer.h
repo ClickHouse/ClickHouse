@@ -45,8 +45,8 @@ private:
     void writingFunc();
     bool setupConnection();
     void setupChannel();
-    void removeConfirmed(UInt64 received_delivery_tag, bool multiple);
-    void publish(ConcurrentBoundedQueue<String> & message);
+    void removeConfirmed(UInt64 received_delivery_tag, bool multiple, bool republish);
+    void publish(ConcurrentBoundedQueue<String> & message, bool republishing);
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
@@ -68,10 +68,8 @@ private:
     UInt64 delivery_tag = 0;
     std::atomic<bool> wait_all = true;
     std::atomic<UInt64> wait_num = 0;
-    std::set<UInt64> delivery_tags_record;
-    std::mutex mutex;
     UInt64 payload_counter = 0;
-    std::function<void(const AMQP::Message &, int16_t, const std::string &)> returned_callback;
+    std::map<UInt64, String> delivery_record;
 
     Poco::Logger * log;
     const std::optional<char> delim;
