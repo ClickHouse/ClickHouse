@@ -180,3 +180,6 @@
 [submodule "contrib/stats"]
 	path = contrib/stats
 	url = https://github.com/kthohr/stats.git
+[submodule "contrib/eigen"]
+	path = contrib/eigen
+	url = https://gitlab.com/libeigen/eigen.git

@@ -11,6 +11,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/density.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 
@@ -22,6 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -34,14 +36,9 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
 {
     const size_t r = 1000, c = 100;
 
-    Variants variants(xs.size(), {0.0, 0.0, 0.0, 0.0});
-    std::vector<std::vector<Float64>> samples_matrix;
-
+    Variants variants;
     for (size_t i = 0; i < xs.size(); ++i)
-    {
-        variants[i].x = xs[i];
-        variants[i].y = ys[i];
-    }
+        variants.emplace_back(Variant(xs[i], ys[i]));
 
     if (distribution == BETA)
     {
@@ -56,7 +53,7 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
             alpha = 1.0 + ys[i];
             beta = 1.0 + xs[i] - ys[i];
 
-            samples_matrix.emplace_back(stats::rbeta<std::vector<Float64>>(r, c, alpha, beta));
+            variants[i].samples = stats::rbeta<std::vector<Float64>>(r, c, alpha, beta);
         }
     }
     else if (distribution == GAMMA)
@@ -68,20 +65,19 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
             shape = 1.0 + xs[i];
             scale = 250.0 / (1 + 250.0 * ys[i]);
 
-            std::vector<Float64> samples = stats::rgamma<std::vector<Float64>>(r, c, shape, scale);
-            for (auto & sample : samples)
-                sample = 1 / sample;
-            samples_matrix.emplace_back(std::move(samples));
+            variants[i].samples = stats::rgamma<std::vector<Float64>>(r, c, shape, scale);
+            for (auto & sample : variants[i].samples)
+                sample = 1.0 / sample;
         }
     }
 
     PODArray<Float64> means;
-    for (auto & samples : samples_matrix)
+    for (auto & variant : variants)
     {
         Float64 total = 0.0;
-        for (auto sample : samples)
+        for (auto sample : variant.samples)
             total += sample;
-        means.push_back(total / samples.size());
+        means.push_back(total / variant.samples.size());
     }
 
     // Beats control
@@ -91,12 +87,12 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
         {
             if (higher_is_better)
             {
-                if (samples_matrix[i][n] > samples_matrix[0][n])
+                if (variants[i].samples[n] > variants[0].samples[n])
                     ++variants[i].beats_control;
             }
             else
             {
-                if (samples_matrix[i][n] < samples_matrix[0][n])
+                if (variants[i].samples[n] < variants[0].samples[n])
                     ++variants[i].beats_control;
             }
         }
@@ -112,7 +108,7 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
     for (size_t n = 0; n < r * c; ++n)
     {
         for (size_t i = 0; i < xs.size(); ++i)
-            row[i] = samples_matrix[i][n];
+            row[i] = variants[i].samples[n];
 
         Float64 m;
         if (higher_is_better)
@@ -122,7 +118,7 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
 
         for (size_t i = 0; i < xs.size(); ++i)
         {
-            if (m == samples_matrix[i][n])
+            if (m == variants[i].samples[n])
             {
                 ++variants[i].best;
                 break;
@@ -136,7 +132,7 @@ Variants bayesian_ab_test(String distribution, PODArray<Float64> & xs, PODArray<
     return variants;
 }
 
-String convertToJson(const PODArray<String> & variant_names, const Variants & variants)
+String convertToJson(const PODArray<String> & variant_names, Variants & variants, const bool include_density)
 {
     FormatSettings settings;
     std::stringstream s;
@@ -157,6 +153,33 @@ String convertToJson(const PODArray<String> & variant_names, const Variants & va
             writeText(variants[i].beats_control, buf);
             writeCString(",\"to_be_best\":", buf);
             writeText(variants[i].best, buf);
+
+            if (include_density)
+            {
+                std::vector<Float64> result_xs;
+                std::vector<Float64> result_ys;
+
+                density(variants[i].samples, result_xs, result_ys);
+
+                writeCString(",\"samples\":{", buf);
+                writeCString("\"x\":[", buf);
+                writeText(result_xs[0], buf);
+                for (size_t j = 1; j < result_xs.size(); ++j)
+                {
+                    writeCString(",", buf);
+                    writeText(result_xs[j], buf);
+                }
+
+                writeCString("],\"y\":[", buf);
+                writeText(result_ys[0], buf);
+                for (size_t j = 1; j < result_ys.size(); ++j)
+                {
+                    writeCString(",", buf);
+                    writeText(result_ys[j], buf);
+                }
+                writeCString("]}", buf);
+            }
+
             writeCString("}", buf);
             if (i != variant_names.size() -1) writeCString(",", buf);
         }
@@ -184,10 +207,16 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 5; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &arguments) const override
     {
+        if ((arguments.size() < 5) || (arguments.size() > 6))
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                    + toString(arguments.size()) + ", should be 5 or 6.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -228,6 +257,7 @@ public:
         PODArray<String> variant_names;
         String dist;
         bool higher_is_better;
+        bool include_density;
 
         if (const ColumnConst * col_dist = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -275,6 +305,18 @@ public:
                 throw Exception("Fifth Argument for function " + getName() + " must be Array of constant Numbers", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
+        if (arguments.size() == 6)
+        {
+            if (const ColumnConst * col_density = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[5]).column.get()))
+                include_density = col_density->getBool(0);
+            else
+                throw Exception("Sixth argument for function " + getName() + " must be Constatnt boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+        else
+        {
+            include_density = false;
+        }
+
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doen't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
 
@@ -292,7 +334,7 @@ public:
             variants = bayesian_ab_test<false>(dist, xs, ys);
 
         auto dst = ColumnString::create();
-        std::string result_str = convertToJson(variant_names, variants);
+        std::string result_str = convertToJson(variant_names, variants, include_density);
         dst->insertData(result_str.c_str(), result_str.length());
         block.getByPosition(result).column = std::move(dst);
     }
