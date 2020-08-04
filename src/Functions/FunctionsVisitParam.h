@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -90,7 +91,7 @@ struct ExtractParamImpl
         PaddedPODArray<ResultType> & res)
     {
         if (start_pos != nullptr)
-            throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support start_pos argument", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";

@@ -10,6 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -37,8 +38,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template <typename Impl, typename Name>
@@ -72,6 +74,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments.size() < 2 || 3 < arguments.size())
+            throw Exception("Number of arguments for function " + String(Name::name) + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2 or 3.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         if (!isStringOrFixedString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
