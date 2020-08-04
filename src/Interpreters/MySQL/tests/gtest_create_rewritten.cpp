@@ -10,9 +10,9 @@
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
-#include <Functions/registerFunctions.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register_functions.h>
 
 using namespace DB;
 
@@ -30,7 +30,7 @@ static inline ASTPtr tryRewrittenCreateQuery(const String & query, const Context
 
 TEST(MySQLCreateRewritten, RewrittenQueryWithPrimaryKey)
 {
-    registerFunctions();
+    tryRegisterFunctions();
     const auto & context_holder = getContext();
 
     EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
