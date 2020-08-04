@@ -155,8 +155,6 @@ TESTS_TO_SKIP=(
     01280_ssd_complex_key_dictionary
     00652_replicated_mutations_zookeeper
     01411_bayesian_ab_testing
-    # TRUNCATE TABLE system.query_log -- conflicts with other tests
-    01413_rows_events
 )
 
 clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip ${TESTS_TO_SKIP[*]} 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
