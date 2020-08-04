@@ -237,8 +237,7 @@ def tls_cipher_suite(self):
     ("ssl3", None, None),
     ("tls1.0", None, None),
     ("tls1.1", None, None),
-    ("tls1.2", None, None),
-    ("tls1.3", 36, "DB::Exception: LDAP server 'openldap4' is not configured")
+    ("tls1.2", None, None)
 ])
 def tls_minimum_protocol_version(self, version, exitcode, message):
     """Check that `tls_minimum_protocol_version` parameter can be used specify
