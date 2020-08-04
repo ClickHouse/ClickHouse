@@ -4,9 +4,9 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
-#include <Core/Settings.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
 #include <common/logger_useful.h>
@@ -362,26 +362,25 @@ namespace
                                                      const String & path_to_constraints)
     {
         SettingsProfileElements profile_elements;
-        Poco::Util::AbstractConfiguration::Keys names;
-        config.keys(path_to_constraints, names);
-        for (const String & name : names)
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(path_to_constraints, keys);
+        for (const String & setting_name : keys)
         {
             SettingsProfileElement profile_element;
-            size_t setting_index = Settings::findIndexStrict(name);
-            profile_element.setting_index = setting_index;
+            profile_element.setting_name = setting_name;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
-            String path_to_name = path_to_constraints + "." + name;
+            String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
                 else
-                    throw Exception("Setting " + constraint_type + " value for " + name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
             profile_elements.push_back(std::move(profile_element));
         }
@@ -416,10 +415,10 @@ namespace
                 continue;
             }
 
+            const auto & setting_name = key;
             SettingsProfileElement profile_element;
-            size_t setting_index = Settings::findIndexStrict(key);
-            profile_element.setting_index = setting_index;
-            profile_element.value = Settings::valueToCorrespondingType(setting_index, config.getString(profile_config + "." + key));
+            profile_element.setting_name = setting_name;
+            profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 

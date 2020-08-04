@@ -191,9 +191,15 @@ public:
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
-    TypeIndex getAsofType() const { return *asof_type; }
+    const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
+
+    const ColumnWithTypeAndName & rightAsofKeyColumn() const
+    {
+        /// It should be nullable if nullable_right_side is true
+        return savedBlockSample().getByName(key_names_right.back());
+    }
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \

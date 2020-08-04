@@ -5,7 +5,6 @@
 #include <syscall.h>
 #include <unistd.h>
 #include <linux/capability.h>
-#include <linux/netlink.h>
 #include <Common/Exception.h>
 
 

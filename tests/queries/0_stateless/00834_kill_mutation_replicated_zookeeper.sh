@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-. $CURDIR/mergetree_mutations.lib
+. "$CURDIR"/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.kill_mutation_r1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.kill_mutation_r2"
@@ -18,15 +18,15 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.kill_mutation_r1 VALUES ('2001-01
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Create and kill a single invalid mutation ***'"
 
 # wrong mutation
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1 SETTINGS mutations_sync=2" 2>&1 | grep -o "Mutation 0000000000 was killed" &
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1 SETTINGS mutations_sync=2" 2>&1 | grep -o "happened during execution of mutation '0000000000'" | head -n 1
 
 check_query1="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1' AND is_done = 0"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query1" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
 
 while [ "$query_result" == "0" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query1" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
     sleep 0.5
 done
 
@@ -51,16 +51,26 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.replication_queue WHERE table
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1"
 
+check_query1="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1' AND is_done = 0"
+
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
+
+while [ "$query_result" == "0" ]
+do
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query1" 2>&1)
+    sleep 0.5
+done
+
 # good mutation, but blocked with wrong mutation
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE x = 1 SETTINGS mutations_sync=2" &
 
 check_query2="SELECT count() FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1' AND mutation_id = '0000000001' AND is_done = 0"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query2" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query2" 2>&1)
 
 while [ "$query_result" == "0" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query2" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query2" 2>&1)
     sleep 0.5
 done
 

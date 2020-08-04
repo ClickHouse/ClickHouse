@@ -37,8 +37,6 @@ using StorageActionBlockType = size_t;
 class ASTCreateQuery;
 
 struct Settings;
-struct SettingChange;
-using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
@@ -185,18 +183,18 @@ private:
     MultiVersionStorageMetadataPtr metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
 public:
     /// Lock table for share. This lock must be acuqired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
-    TableLockHolder lockForShare(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
-    TableLockHolder lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acuired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -205,7 +203,7 @@ public:
     ///
     /// NOTE: You have to be 100% sure that you need this lock. It's extremely
     /// heavyweight and makes table irresponsive.
-    TableExclusiveLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,

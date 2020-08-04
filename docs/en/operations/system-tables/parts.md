@@ -121,12 +121,12 @@ data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
-remove_time:                           0000-00-00 00:00:00
+remove_time:                           1970-01-01 00:00:00
 refcount:                              1
-min_date:                              0000-00-00
-max_date:                              0000-00-00
-min_time:                              0000-00-00 00:00:00
-max_time:                              0000-00-00 00:00:00
+min_date:                              1970-01-01
+max_date:                              1970-01-01
+min_time:                              1970-01-01 00:00:00
+max_time:                              1970-01-01 00:00:00
 partition_id:                          all
 min_block_number:                      1
 max_block_number:                      4
@@ -143,8 +143,8 @@ path:                                  /var/lib/clickhouse/data/default/months/a
 hash_of_all_files:                     2d0657a16d9430824d35e327fcbd87bf
 hash_of_uncompressed_files:            84950cc30ba867c77a408ae21332ba29
 uncompressed_hash_of_compressed_files: 1ad78f1c6843bbfb99a2c931abe7df7d
-delete_ttl_info_min:                   0000-00-00 00:00:00
-delete_ttl_info_max:                   0000-00-00 00:00:00
+delete_ttl_info_min:                   1970-01-01 00:00:00
+delete_ttl_info_max:                   1970-01-01 00:00:00
 move_ttl_info.expression:              []
 move_ttl_info.min:                     []
 move_ttl_info.max:                     []
