@@ -64,11 +64,7 @@ ASTPtr ASTDictionaryLayout::clone() const
 {
     auto res = std::make_shared<ASTDictionaryLayout>();
     res->layout_type = layout_type;
-    for (const auto & parameter : parameters)
-    {
-        res->parameters.emplace_back(parameter.first, nullptr);
-        res->set(res->parameters.back().second, parameter.second->clone());
-    }
+    res->set(res->parameters, parameters->clone());
     res->has_brackets = has_brackets;
     return res;
 }
@@ -89,18 +85,7 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
     if (has_brackets)
         settings.ostr << "(";
 
-    bool first = true;
-    for (const auto & parameter : parameters)
-    {
-        settings.ostr << (first ? "" : " ")
-                      << (settings.hilite ? hilite_keyword : "")
-                      << Poco::toUpper(parameter.first)
-                      << (settings.hilite ? hilite_none : "")
-                      << " ";
-
-        parameter.second->formatImpl(settings, state, frame);
-        first = false;
-    }
+    parameters->formatImpl(settings, state, frame);
 
     if (has_brackets)
         settings.ostr << ")";

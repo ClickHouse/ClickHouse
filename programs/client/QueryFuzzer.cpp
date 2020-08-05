@@ -306,26 +306,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             replaceWithColumnLike(ast);
         }
     }
-    else if (typeid_cast<ASTDictionaryLayout *>(ast.get()))
-    {
-        // Don't fuzz it. It is a somewhat unconventional AST which does not
-        // directly correspond to the query text, but performs some validation
-        // by itself. It considers its children to be ASTLiteral * only, so when
-        // we replace them with something column-like, the client segfaults.
-        // See ParserDictionaryLayout or just grep for ASTDictionaryLayout.
-        //
-        // Example query:
-        // CREATE DICTIONARY database_for_dict.dictionary_with_hierarchy
-        // (
-        //     `id` UInt64,
-        //     `parent_id` UInt64 HIERARCHICAL,
-        //     `value` String
-        // )
-        // PRIMARY KEY id
-        // SOURCE(CLICKHOUSE(HOST localhost PORT 9000 USER default DB database_for_dict TABLE dict_source))
-        // LIFETIME(MIN 1 MAX 1)
-        // LAYOUT(CACHE(SIZE_IN_CELLS 10))
-    }
     else
     {
         fuzz(ast->children);
