@@ -1710,20 +1710,6 @@ RQ_SRS_006_RBAC_Role_Create_Syntax = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Role_Create_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Role.Create.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL make the role available to be linked with users, privileges, quotas and\n'
-        'settings profiles after the successful execution of the `CREATE ROLE` statement.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Role_Alter = Requirement(
         name='RQ.SRS-006.RBAC.Role.Alter',
         version='1.0',
@@ -1801,21 +1787,6 @@ RQ_SRS_006_RBAC_Role_Alter_Settings = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Role_Alter_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Role.Alter.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL alter the abilities granted by the role\n'
-        'from all the users to which the role was assigned after the successful execution\n'
-        'of the `ALTER ROLE` statement. Operations in progress SHALL be allowed to complete as is, but any new operation that requires the privileges that not otherwise granted to the user SHALL fail.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Role_Alter_Syntax = Requirement(
         name='RQ.SRS-006.RBAC.Role.Alter.Syntax',
         version='1.0',
@@ -1871,23 +1842,6 @@ RQ_SRS_006_RBAC_Role_Drop_Cluster = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support using `ON CLUSTER` clause in the `DROP ROLE` statement to specify the cluster from which to drop the specified role.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Role_Drop_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Role.Drop.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the abilities granted by the role\n'
-        'from all the users to which the role was assigned after the successful execution\n'
-        'of the `DROP ROLE` statement. Operations in progress SHALL be allowed to complete\n'
-        'but any new operation that requires the privileges that not otherwise granted to\n'
-        'the user SHALL fail.\n'
         ),
         link=None
     )
@@ -1954,20 +1908,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_To = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_To_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.To.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL grant privileges to any set of users and/or roles specified in the `TO` clause of the grant statement.\n'
-        'Any new operation by one of the specified users or roles with the granted privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_ToCurrentUser = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.ToCurrentUser',
         version='1.0',
@@ -2006,10 +1946,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Insert = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **insert** privilege to one or more users or roles\n'
         'for a database or a table using the `GRANT INSERT` statement.\n'
-        'When the **insert** privilege is granted to the specified users or roles\n'
-        'after the successful execution of the `GRANT INSERT` statement,\n'
-        'any new operation by a user or a user that has the specified role\n'
-        'which requires the **insert** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2028,22 +1964,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Alter = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_Alter_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Alter.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **alter** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT ALTER` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **alter** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_Create = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.Create',
         version='1.0',
@@ -2054,22 +1974,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Create = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **create** privilege to one or more users or roles\n'
         'for a database or a table using the `GRANT CREATE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_Create_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Create.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **create** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT CREATE` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **create** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2088,22 +1992,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Drop = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_Drop_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Drop.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **drop** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT DROP` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **drop** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_Truncate = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.Truncate',
         version='1.0',
@@ -2114,22 +2002,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Truncate = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **truncate** privilege to one or more users or roles\n'
         'for a database or a table using `GRANT TRUNCATE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_Truncate_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Truncate.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **truncate** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT TRUNCATE` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **truncate** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2148,22 +2020,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Optimize = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_Optimize_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Optimize.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **optimize** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT OPTIMIZE` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **optimize** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_Show = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.Show',
         version='1.0',
@@ -2174,22 +2030,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Show = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **show** privilege to one or more users or roles\n'
         'for a database or a table using `GRANT SHOW` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_Show_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Show.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **show** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT SHOW` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **show** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2208,22 +2048,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_KillQuery = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_KillQuery_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.KillQuery.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **kill query** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT KILL QUERY` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **kill query** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_AccessManagement = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement',
         version='1.0',
@@ -2234,22 +2058,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_AccessManagement = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **access management** privileges to one or more users or roles\n'
         'for a database or a table using `GRANT ACCESS MANAGEMENT` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_AccessManagement_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.AccessManagement.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **access management** privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT ACCESS MANAGEMENT` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **access management** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2268,22 +2076,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_System = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_System_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.System.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **system** privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT SYSTEM` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **system** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_Introspection = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.Introspection',
         version='1.0',
@@ -2294,22 +2086,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Introspection = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **introspection** privileges to one or more users or roles\n'
         'for a database or a table using `GRANT INTROSPECTION` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_Introspection_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Introspection.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **introspection** privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT INTROSPECTION` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **introspection** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2328,22 +2104,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_Sources = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_Sources_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.Sources.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **sources** privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT SOURCES` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **sources** privilege SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_DictGet = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.DictGet',
         version='1.0',
@@ -2354,22 +2114,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_DictGet = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **dictGet** privilege to one or more users or roles\n'
         'for a database or a table using `GRANT dictGet` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_DictGet_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.DictGet.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **dictGet** privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT dictGet` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires the **dictGet** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2388,22 +2132,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_None = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_None_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.None.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add no privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT NONE` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires no privileges SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_All = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.All',
         version='1.0',
@@ -2418,23 +2146,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_All = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_All_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.All.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **all** privileges to the specified users or roles\n'
-        'after the successful execution of the `GRANT ALL` or `GRANT ALL PRIVILEGES` statement.\n'
-        'Any new operation by a user or a user that has the specified role\n'
-        'which requires one or more privileges that are part of the **all**\n'
-        'privileges SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_GrantOption = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.GrantOption',
         version='1.0',
@@ -2445,23 +2156,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_GrantOption = Requirement(
         description=(
         '[ClickHouse] SHALL support granting the **grant option** privilege to one or more users or roles\n'
         'for a database or a table using the `WITH GRANT OPTION` clause in the `GRANT` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_GrantOption_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.GrantOption.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **grant option** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT` statement with the `WITH GRANT OPTION` clause\n'
-        'for the privilege that was specified in the statement.\n'
-        'Any new `GRANT` statements executed by a user or a user that has the specified role\n'
-        'which requires **grant option** for the privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -2487,20 +2181,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_On = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Privilege_On_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.On.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL grant privilege on a table specified in the `ON` clause.\n'
-        'Any new operation by user or role with privilege on the granted table SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns',
         version='1.0',
@@ -2513,24 +2193,6 @@ RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns = Requirement(
         'for a database or a table using the `GRANT some_privilege(column)` statement for one column.\n'
         'Multiple columns will be supported with `GRANT some_privilege(column1, column2...)` statement.\n'
         'The privileges will be granted for only the specified columns.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Privilege_PrivilegeColumns_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Privilege.PrivilegeColumns.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL grant the privilege **some_privilege** to the specified users or roles\n'
-        'after the successful execution of the `GRANT some_privilege(column)` statement for the specified column.\n'
-        'Granting of the privilege **some_privilege** over multiple columns SHALL happen after the successful\n'
-        'execution of the `GRANT some_privilege(column1, column2...)` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the privilege **some_privilege** over specified columns SHALL succeed.\n'
         ),
         link=None
     )
@@ -2584,22 +2246,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Cluster = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Cluster_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Cluster.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove some privilege from the specified users or roles\n'
-        'on cluster **cluster_name** after the successful execution of the\n'
-        '`REVOKE ON CLUSTER cluster_name some_privilege` statement. Any new operation by a user or a user\n'
-        'that had the specified role which requires that privilege on cluster **cluster_name** SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_Any = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.Any',
         version='1.0',
@@ -2613,22 +2259,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Any = Requirement(
         '**some_privilege** refers to any Clickhouse defined privilege, whose hierarchy includes\n'
         'SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, KILL QUERY, ACCESS MANAGEMENT,\n'
         'SYSTEM, INTROSPECTION, SOURCES, dictGet and all of their sub-privileges.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_Any_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Any.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **some_privilege** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE some_privilege` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the privilege **some_privilege** SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2657,10 +2287,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Insert = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **insert** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE INSERT` statement.\n'
-        'When the **insert** privilege is removed from the specified users or roles\n'
-        'after the successful execution of the `REVOKE INSERT` statement,\n'
-        'any new operation by a user or a user that had the specified role\n'
-        'which requires the **insert** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2679,22 +2305,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Alter = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Alter_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Alter.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **alter** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE ALTER` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **alter** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_Create = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.Create',
         version='1.0',
@@ -2705,22 +2315,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Create = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **create** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE CREATE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_Create_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Create.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **create** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE CREATE` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **create** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2739,22 +2333,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Drop = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Drop_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Drop.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **drop** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE DROP` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **drop** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_Truncate = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.Truncate',
         version='1.0',
@@ -2765,22 +2343,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Truncate = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **truncate** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE TRUNCATE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_Truncate_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Truncate.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **truncate** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE TRUNCATE` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **truncate** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2799,22 +2361,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Optimize = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Optimize_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Optimize.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **optimize** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE OPTMIZE` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **optimize** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_Show = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.Show',
         version='1.0',
@@ -2825,22 +2371,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Show = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **show** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE SHOW` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_Show_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Show.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **show** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE SHOW` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **show** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2859,22 +2389,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_KillQuery = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_KillQuery_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.KillQuery.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **kill query** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE KILL QUERY` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **kill query** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_AccessManagement = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement',
         version='1.0',
@@ -2885,22 +2399,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_AccessManagement = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **access management** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE ACCESS MANAGEMENT` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_AccessManagement_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.AccessManagement.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **access management** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE ACCESS MANAGEMENT` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **access management** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2919,22 +2417,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_System = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_System_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.System.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **system** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE SYSTEM` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **system** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_Introspection = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.Introspection',
         version='1.0',
@@ -2945,22 +2427,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Introspection = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **introspection** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE INTROSPECTION` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_Introspection_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Introspection.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **introspection** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE INTROSPECTION` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **introspection** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -2979,22 +2445,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Sources = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Sources_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Sources.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **sources** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE SOURCES` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **sources** privilege SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_DictGet = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.DictGet',
         version='1.0',
@@ -3005,22 +2455,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_DictGet = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking the **dictGet** privilege to one or more users or roles\n'
         'for a database or a table using the `REVOKE dictGet` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_DictGet_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.DictGet.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **dictGet** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE dictGet` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the **dictGet** privilege SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -3037,24 +2471,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns = Requirement(
         'for a database or a table using the `REVOKE some_privilege(column)` statement for one column.\n'
         'Multiple columns will be supported with `REVOKE some_privilege(column1, column2...)` statement.\n'
         'The privileges will be revoked for only the specified columns.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_PrivelegeColumns_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.PrivelegeColumns.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the privilege **some_privilege** from the specified users or roles\n'
-        'after the successful execution of the `REVOKE some_privilege(column)` statement for the specified column.\n'
-        'Removal of the privilege **some_privilege** over multiple columns SHALL happen after the successful\n'
-        'execution of the `REVOKE some_privilege(column1, column2...)` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires the privilege **some_privilege** over specified SHALL fail if user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -3076,22 +2492,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_Multiple = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_Multiple_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.Multiple.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **privileges** from the specified users or roles\n'
-        'after the successful execution of the `REVOKE privilege1, privilege2...` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires any of the **privileges** SHALL fail if user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_All = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.All',
         version='1.0',
@@ -3106,23 +2506,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_All = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_All_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.All.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove **all** privileges from the specified users or roles\n'
-        'after the successful execution of the `REVOKE ALL` or `REVOKE ALL PRIVILEGES` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires one or more privileges that are part of **all**\n'
-        'privileges SHALL fail.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_None = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.None',
         version='1.0',
@@ -3133,22 +2516,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_None = Requirement(
         description=(
         '[ClickHouse] SHALL support revoking **no** privileges to one or more users or roles\n'
         'for a database or a table using the `REVOKE NONE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_None_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.None.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove **no** privileges from the specified users or roles\n'
-        'after the successful execution of the `REVOKE NONE` statement.\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'shall have the same effect after this command as it did before this command.\n'
         ),
         link=None
     )
@@ -3174,30 +2541,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_On = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Privilege_On_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.On.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the specificed priviliges from the specified one or more tables\n'
-        'indicated with the `ON` clause in the `REVOKE` privilege statement.\n'
-        'The tables will be indicated using the following patterns\n'
-        '\n'
-        '* `db.table` specific table in the specified database\n'
-        '* `db.*` any table in the specified database\n'
-        '* `*.*` any table in any database\n'
-        '* `table` specific table in the current database\n'
-        '* `*` any table in the current database\n'
-        '\n'
-        'Any new operation by a user or a user that had the specified role\n'
-        'which requires one or more privileges on the revoked tables SHALL fail.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Privilege_From = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Privilege.From',
         version='1.0',
@@ -3209,26 +2552,6 @@ RQ_SRS_006_RBAC_Revoke_Privilege_From = Requirement(
         '[ClickHouse] SHALL support the `FROM` clause in the `REVOKE` privilege statement\n'
         'which SHALL allow to specify one or more users to which the privilege SHALL\n'
         'be revoked using the following patterns\n'
-        '\n'
-        '* `{user | CURRENT_USER} [,...]` some combination of users by name, which may include the current user\n'
-        '* `ALL` all users\n'
-        '* `ALL EXCEPT {user | CURRENT_USER} [,...]` the logical reverse of the first pattern\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Privilege_From_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Privilege.From.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove **priviliges** to any set of users specified in the `FROM` clause\n'
-        'in the `REVOKE` privilege statement. The details of the removed **privileges** will be specified\n'
-        'in the other clauses. Any new operation by one of the specified users whose **privileges** have been\n'
-        'revoked SHALL fail. The patterns that expand the `FROM` clause are listed below\n'
         '\n'
         '* `{user | CURRENT_USER} [,...]` some combination of users by name, which may include the current user\n'
         '* `ALL` all users\n'
@@ -3284,19 +2607,6 @@ RQ_SRS_006_RBAC_PartialRevoke_Syntax = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_PartialRevoke_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.PartialRevoke.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        'FIXME: Need to be defined.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Role = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Role',
         version='1.0',
@@ -3307,22 +2617,6 @@ RQ_SRS_006_RBAC_Grant_Role = Requirement(
         description=(
         '[ClickHouse] SHALL support granting one or more roles to\n'
         'one or more users or roles using the `GRANT` role statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Role_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Role.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add all the privileges that are assigned to the role\n'
-        'which is granted to the user or the role to which `GRANT` role statement is applied.\n'
-        'Any new operation that requires the privileges included in the role\n'
-        'SHALL succeed.\n'
         ),
         link=None
     )
@@ -3341,21 +2635,6 @@ RQ_SRS_006_RBAC_Grant_Role_CurrentUser = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Grant_Role_CurrentUser_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Role.CurrentUser.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add all the privileges that are assigned to the role\n'
-        'which is granted to the current user via the `GRANT` statement. Any new operation that\n'
-        'requires the privileges included in the role SHALL succeed.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Grant_Role_AdminOption = Requirement(
         name='RQ.SRS-006.RBAC.Grant.Role.AdminOption',
         version='1.0',
@@ -3367,22 +2646,6 @@ RQ_SRS_006_RBAC_Grant_Role_AdminOption = Requirement(
         '[ClickHouse] SHALL support granting `admin option` privilege\n'
         'to one or more users or roles using the `WITH ADMIN OPTION` clause\n'
         'in the `GRANT` role statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Grant_Role_AdminOption_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Grant.Role.AdminOption.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL add the **admin option** privilege to the specified users or roles\n'
-        'after the successful execution of the `GRANT` role statement with the `WITH ADMIN OPTION` clause.\n'
-        'Any new **system queries** statements executed by a user or a user that has the specified role\n'
-        'which requires the **admin option** privilege SHALL succeed.\n'
         ),
         link=None
     )
@@ -3436,22 +2699,6 @@ RQ_SRS_006_RBAC_Revoke_Role = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Role_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Role.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove all the privileges that are assigned to the role\n'
-        'that is being revoked from the user or the role to which the `REVOKE` role statement is applied.\n'
-        'Any new operation, by the user or users that have the role which included the role being revoked,\n'
-        'that requires the privileges included in the role SHALL fail if the user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_Role_Keywords = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.Role.Keywords',
         version='1.0',
@@ -3463,22 +2710,6 @@ RQ_SRS_006_RBAC_Revoke_Role_Keywords = Requirement(
         '[ClickHouse] SHALL support revoking one or more roles from\n'
         'special groupings of one or more users or roles with the `ALL`, `ALL EXCEPT`,\n'
         'and `CURRENT_USER` keywords.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_Role_Keywords_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Role.Keywords.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove all the privileges that are assigned to the role\n'
-        'that is being revoked from the user or the role to which the `REVOKE` role statement with the specified keywords is applied.\n'
-        'Any new operation, by the user or users that have the role which included the role being revoked,\n'
-        'that requires the privileges included in the role SHALL fail if the user does not have it otherwise.\n'
         ),
         link=None
     )
@@ -3498,23 +2729,6 @@ RQ_SRS_006_RBAC_Revoke_Role_Cluster = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Revoke_Role_Cluster_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.Role.Cluster.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove all the privileges that are assigned to the role\n'
-        'that is being revoked from the user or the role from the cluster(s)\n'
-        'to which the `REVOKE ON CLUSTER` role statement is applied.\n'
-        'Any new operation, by the user or users that have the role which included the role being revoked,\n'
-        'that requires the privileges included in the role SHALL fail if the user does not have it otherwise.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Revoke_AdminOption = Requirement(
         name='RQ.SRS-006.RBAC.Revoke.AdminOption',
         version='1.0',
@@ -3526,22 +2740,6 @@ RQ_SRS_006_RBAC_Revoke_AdminOption = Requirement(
         '[ClickHouse] SHALL support revoking `admin option` privilege\n'
         'in one or more users or roles using the `ADMIN OPTION FOR` clause\n'
         'in the `REVOKE` role statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Revoke_AdminOption_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Revoke.AdminOption.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove the **admin option** privilege from the specified users or roles\n'
-        'after the successful execution of the `REVOKE` role statement with the `ADMIN OPTION FOR` clause.\n'
-        'Any new **system queries** statements executed by a user or a user that has the specified role\n'
-        'which requires the **admin option** privilege SHALL fail.\n'
         ),
         link=None
     )
@@ -3623,21 +2821,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Create = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_SettingsProfile_Create_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Create.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use new profile after the `CREATE SETTINGS PROFILE` statement\n'
-        'is successfully executed for any new operations performed by all the users and roles to which\n'
-        'the settings profile is assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_SettingsProfile_Create_IfNotExists = Requirement(
         name='RQ.SRS-006.RBAC.SettingsProfile.Create.IfNotExists',
         version='1.0',
@@ -3695,21 +2878,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Create_Variables_Value = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_SettingsProfile_Create_Variables_Value_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Value.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use new variable values after `CREATE SETTINGS PROFILE` statement is\n'
-        'successfully executed for any new operations performed by all the users and roles to which\n'
-        'the settings profile is assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_SettingsProfile_Create_Variables_Constraints = Requirement(
         name='RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints',
         version='1.0',
@@ -3720,21 +2888,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Create_Variables_Constraints = Requirement(
         description=(
         '[ClickHouse] SHALL support setting `MIN`, `MAX`, `READONLY`, and `WRITABLE`\n'
         'constraints for the variables in the `CREATE SETTINGS PROFILE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_SettingsProfile_Create_Variables_Constraints_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Create.Variables.Constraints.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use new variable constraints after `CREATE SETTINGS PROFILE` statement is\n'
-        'successfully executed for any new operations performed by all the users and roles to which\n'
-        'the settings profile is assigned.\n'
         ),
         link=None
     )
@@ -3856,21 +3009,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Alter = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_SettingsProfile_Alter_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Alter.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use the updated settings profile after `ALTER SETTINGS PROFILE`\n'
-        'is successfully executed for any new operations performed by all the users and roles to which\n'
-        'the settings profile is assigned or SHALL raise an exception if the settings profile does not exist.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_SettingsProfile_Alter_IfExists = Requirement(
         name='RQ.SRS-006.RBAC.SettingsProfile.Alter.IfExists',
         version='1.0',
@@ -3928,21 +3066,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Alter_Variables_Value = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_SettingsProfile_Alter_Variables_Value_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Value.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use the new value of the variable after `ALTER SETTINGS PROFILE`\n'
-        'is successfully executed for any new operations performed by all the users and roles to which\n'
-        'the settings profile is assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_SettingsProfile_Alter_Variables_Constraints = Requirement(
         name='RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints',
         version='1.0',
@@ -3957,21 +3080,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Alter_Variables_Constraints = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_SettingsProfile_Alter_Variables_Constraints_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Alter.Variables.Constraints.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use new constraints after `ALTER SETTINGS PROFILE`\n'
-        'is successfully executed for any new operations performed by all the users and roles to which\n'
-        'the settings profile is assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_SettingsProfile_Alter_Assignment = Requirement(
         name='RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment',
         version='1.0',
@@ -3982,20 +3090,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Alter_Assignment = Requirement(
         description=(
         '[ClickHouse] SHALL support reassigning settings profile to one or more users\n'
         'or roles using the `TO` clause in the `ALTER SETTINGS PROFILE` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_SettingsProfile_Alter_Assignment_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Alter.Assignment.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL unset all the variables and constraints that were defined in the settings profile\n'
-        'in all users and roles to which the settings profile was previously assigned.\n'
         ),
         link=None
     )
@@ -4104,20 +3198,6 @@ RQ_SRS_006_RBAC_SettingsProfile_Drop = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_SettingsProfile_Drop_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.SettingsProfile.Drop.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL unset all the variables and constraints that were defined in the settings profile\n'
-        'in all the users and roles to which the settings profile was assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_SettingsProfile_Drop_IfExists = Requirement(
         name='RQ.SRS-006.RBAC.SettingsProfile.Drop.IfExists',
         version='1.0',
@@ -4192,21 +3272,6 @@ RQ_SRS_006_RBAC_Quota_Create = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support creating quotas using the `CREATE QUOTA` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_Quota_Create_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Quota.Create.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use new limits specified by the quota after the `CREATE QUOTA` statement\n'
-        'is successfully executed for any new operations performed by all the users and roles to which\n'
-        'the quota is assigned.\n'
         ),
         link=None
     )
@@ -4547,21 +3612,6 @@ RQ_SRS_006_RBAC_Quota_Alter = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Quota_Alter_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Quota.Alter.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use new limits specified by the updated quota after the `ALTER QUOTA` statement\n'
-        'is successfully executed for any new operations performed by all the users and roles to which\n'
-        'the quota is assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Quota_Alter_IfExists = Requirement(
         name='RQ.SRS-006.RBAC.Quota.Alter.IfExists',
         version='1.0',
@@ -4896,20 +3946,6 @@ RQ_SRS_006_RBAC_Quota_Drop = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_Quota_Drop_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.Quota.Drop.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL unset all the limits that were defined in the quota\n'
-        'in all the users and roles to which the quota was assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_Quota_Drop_IfExists = Requirement(
         name='RQ.SRS-006.RBAC.Quota.Drop.IfExists',
         version='1.0',
@@ -5094,22 +4130,6 @@ RQ_SRS_006_RBAC_RowPolicy_Create = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_RowPolicy_Create_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.RowPolicy.Create.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use the new row policy to control access to the specified table\n'
-        'after the `CREATE ROW POLICY` statement is successfully executed\n'
-        'for any new operations on the table performed by all the users and roles to which\n'
-        'the row policy is assigned.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_RowPolicy_Create_IfNotExists = Requirement(
         name='RQ.SRS-006.RBAC.RowPolicy.Create.IfNotExists',
         version='1.0',
@@ -5240,22 +4260,6 @@ RQ_SRS_006_RBAC_RowPolicy_Create_Condition = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_RowPolicy_Create_Condition_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.RowPolicy.Create.Condition.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL check the condition specified in the row policy using the\n'
-        '`USING` clause in the `CREATE ROW POLICY` statement. The users or roles\n'
-        'to which the row policy is assigned SHALL only see data for which\n'
-        'the condition evaluates to the boolean value of `true`.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_RowPolicy_Create_Assignment = Requirement(
         name='RQ.SRS-006.RBAC.RowPolicy.Create.Assignment',
         version='1.0',
@@ -5342,22 +4346,6 @@ RQ_SRS_006_RBAC_RowPolicy_Alter = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support altering row policy using the `ALTER ROW POLICY` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RowPolicy_Alter_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.RowPolicy.Alter.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL use the updated row policy to control access to the specified table\n'
-        'after the `ALTER ROW POLICY` statement is successfully executed\n'
-        'for any new operations on the table performed by all the users and roles to which\n'
-        'the row policy is assigned.\n'
         ),
         link=None
     )
@@ -5491,22 +4479,6 @@ RQ_SRS_006_RBAC_RowPolicy_Alter_Condition = Requirement(
         link=None
     )
 
-RQ_SRS_006_RBAC_RowPolicy_Alter_Condition_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL check the new condition specified for the row policy using the\n'
-        '`USING` clause in the `ALTER ROW POLICY` statement. The users or roles\n'
-        'to which the row policy is assigned SHALL only see data for which\n'
-        'the new condition evaluates to the boolean value of `true`.\n'
-        ),
-        link=None
-    )
-
 RQ_SRS_006_RBAC_RowPolicy_Alter_Condition_None = Requirement(
         name='RQ.SRS-006.RBAC.RowPolicy.Alter.Condition.None',
         version='1.0',
@@ -5608,20 +4580,6 @@ RQ_SRS_006_RBAC_RowPolicy_Drop = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support removing one or more row policies using the `DROP ROW POLICY` statement.\n'
-        ),
-        link=None
-    )
-
-RQ_SRS_006_RBAC_RowPolicy_Drop_Effect = Requirement(
-        name='RQ.SRS-006.RBAC.RowPolicy.Drop.Effect',
-        version='1.0',
-        priority=None,
-        group=None,
-        type=None,
-        uid=None,
-        description=(
-        '[ClickHouse] SHALL remove checking the condition defined in the row policy\n'
-        'in all the users and roles to which the row policy was assigned.\n'
         ),
         link=None
     )
@@ -5919,6 +4877,104 @@ RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke = Requirement(
         link=None
     )
 
+RQ_SRS_006_RBAC_Privileges_Select_MergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.MergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the MergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_ReplacingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.ReplacingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the ReplacingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_SummingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.SummingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the SummingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_AggregatingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.AggregatingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the AggregatingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_CollapsingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.CollapsingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the CollapsingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_VersionedCollapsingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.VersionedCollapsingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the VersionedCollapsingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Select_GraphiteMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Select.GraphiteMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **select** privilege on a table\n'
+        'created using the GraphiteMergeTree engine.\n'
+        ),
+        link=None
+    )
+
 RQ_SRS_006_RBAC_Privileges_Insert = Requirement(
         name='RQ.SRS-006.RBAC.Privileges.Insert',
         version='1.0',
@@ -6044,6 +5100,104 @@ RQ_SRS_006_RBAC_Privileges_Insert_GrantOption_Revoke = Requirement(
         'or smaller scope that they have access to. Any `INSERT INTO` statements SHALL fail\n'
         'when done by a user with privilege revoke by a user with `GRANT OPTION`,\n'
         'either directly or through an assigned role, unless they have access otherwise.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_MergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.MergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the MergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_ReplacingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.ReplacingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the ReplacingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_SummingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.SummingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the SummingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_AggregatingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.AggregatingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the AggregatingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_CollapsingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.CollapsingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the CollapsingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_VersionedCollapsingMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.VersionedCollapsingMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the VersionedCollapsingMergeTree engine.\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_006_RBAC_Privileges_Insert_GraphiteMergeTree = Requirement(
+        name='RQ.SRS-006.RBAC.Privileges.Insert.GraphiteMergeTree',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support granting and revoking the **insert** privilege on a table\n'
+        'created using the GraphiteMergeTree engine.\n'
         ),
         link=None
     )
