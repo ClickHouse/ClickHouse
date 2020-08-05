@@ -223,7 +223,7 @@ void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & co
         return;
 
     Settings settings;
-    for (auto setting : settings.all())
+    for (const auto & setting : settings.all())
     {
         const auto & name = setting.getName();
         if (config.has(name))
