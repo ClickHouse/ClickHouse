@@ -163,20 +163,15 @@ clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip ${TESTS_TO_
 
 
 kill_clickhouse () {
-    pid=`ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'`
-    if [[ -z "$pid" ]]; then
-        return
-    fi
-
-    kill $pid 2>/dev/null
+    killall clickhouse-server ||:
 
     for i in {1..10}
     do
-        if ! kill -0 `ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'`; then
+        if ! killall -0 clickhouse-server; then
             echo "No clickhouse process"
             break
         else
-            echo "Process" `ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'` "still alive"
+            echo "Clickhouse server process" `pgrep -f clickhouse-server` "still alive"
             sleep 10
         fi
     done
