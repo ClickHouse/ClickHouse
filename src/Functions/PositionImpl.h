@@ -361,7 +361,7 @@ struct PositionImpl
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        // NOTE You could use haystack indexing. But this is a rare case.
+        /// NOTE You could use haystack indexing. But this is a rare case.
 
         ColumnString::Offset prev_needle_offset = 0;
 
