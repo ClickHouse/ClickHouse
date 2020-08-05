@@ -19,7 +19,6 @@ SRCS(
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     Aggregator.cpp
-    AnyInputOptimize.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
     ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
@@ -125,6 +124,7 @@ SRCS(
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
+    RewriteAnyFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
