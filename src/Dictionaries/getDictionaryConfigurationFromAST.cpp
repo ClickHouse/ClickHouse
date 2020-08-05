@@ -98,22 +98,36 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-    for (const auto & param : layout->parameters)
+    for (const auto & param : layout->parameters->children)
     {
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param.first));
-        const ASTLiteral & literal = param.second->as<const ASTLiteral &>();
-        Field::dispatch([&](auto & value)
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
         {
-            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, UInt64> || std::is_same_v<std::decay_t<decltype(value)>, String>)
-            {
-                AutoPtr<Text> value_to_append(doc->createTextNode(toString(value)));
-                layout_type_parameter_element->appendChild(value_to_append);
-            }
-            else
-            {
-                throw DB::Exception{"Wrong type of layout argument.", ErrorCodes::BAD_ARGUMENTS};
-            }
-        }, literal.value);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
+        }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second ? pair->second->formatForErrorMessage() : "<none>");
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64
+            && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
 }

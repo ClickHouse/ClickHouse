@@ -859,10 +859,38 @@ void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
 
+
+__attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateData &, WriteBuffer &)
+{
+    // This probably doesn't make any sense, but we have to have it for
+    // completeness, so that we can use toString(field_value) in field visitors.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert a Field of type AggregateFunctionStateData to human-readable text");
+}
+
+template <typename T>
+inline void writeText(const DecimalField<T> & value, WriteBuffer & buf)
+{
+    writeText(value.getValue(), value.getScale(), buf);
+}
+
+void writeText(const std::string &, WriteBuffer & buf);
+
+inline void writeText(const Null &, WriteBuffer & buf)
+{
+    writeText(std::string("Null"), buf);
+}
+
+
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 [[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+
+inline String toString(const Field & x)
+{
+    return Field::dispatch([] (auto & value) { return toString(value); }, x);
+}
+
 }
