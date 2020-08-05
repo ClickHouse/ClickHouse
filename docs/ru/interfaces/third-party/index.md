@@ -13,7 +13,7 @@ toc_priority: 24
 -   [GUI](../../interfaces/third-party/gui.md)
 -   [Proxies](../../interfaces/third-party/proxy.md)
 
-!!! note "Note"
+!!! note "Примечание"
     Универсальные инструменты, поддерживающие общий API, такие как [ODBC](../../interfaces/odbc.md) или [JDBC](../../interfaces/jdbc.md), также могут хорошо работать с ClickHouse, но здесь их нет, потому что их слишком много.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/) <!--hide-->
