@@ -873,14 +873,6 @@ inline void writeText(const DecimalField<T> & value, WriteBuffer & buf)
     writeText(value.getValue(), value.getScale(), buf);
 }
 
-void writeText(const std::string &, WriteBuffer & buf);
-
-inline void writeText(const Null &, WriteBuffer & buf)
-{
-    writeText(std::string("Null"), buf);
-}
-
-
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
