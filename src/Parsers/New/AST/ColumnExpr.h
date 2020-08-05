@@ -78,18 +78,6 @@ class ColumnExpr : public INode
             NOT_BETWEEN,
         };
 
-        enum class IntervalType
-        {
-            SECOND,
-            MINUTE,
-            HOUR,
-            DAY,
-            WEEK,
-            MONTH,
-            QUARTER,
-            YEAR,
-        };
-
         static PtrTo<ColumnExpr> createLiteral(PtrTo<Literal> literal);
         static PtrTo<ColumnExpr> createAsterisk();
         static PtrTo<ColumnExpr> createIdentifier(PtrTo<ColumnIdentifier> identifier);
@@ -103,7 +91,6 @@ class ColumnExpr : public INode
         static PtrTo<ColumnExpr> createTernaryOp(PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2, PtrTo<ColumnExpr> expr3);
         static PtrTo<ColumnExpr> createBetween(bool not_op, PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2, PtrTo<ColumnExpr> expr3);
         static PtrTo<ColumnExpr> createCase(PtrTo<ColumnExpr> expr, std::list<std::pair<PtrTo<ColumnExpr> /* when */, PtrTo<ColumnExpr> /* then */>> cases, PtrTo<ColumnExpr> else_expr);
-        static PtrTo<ColumnExpr> createInterval(IntervalType type, PtrTo<ColumnExpr> expr);
         static PtrTo<ColumnExpr> createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnArgList> args);
         static PtrTo<ColumnExpr> createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias);
 
@@ -138,8 +125,7 @@ class ColumnExpr : public INode
             UNARY_OP,
             BINARY_OP,
             TERNARY_OP,
-            CASE,
-            INTERVAL,
+            CASE,         // not merge into function because can have |nullptr| children
             FUNCTION,
             ALIAS,
         };
@@ -147,14 +133,12 @@ class ColumnExpr : public INode
         const ExprType expr_type;
         union
         {
-            IntervalType interval_type;
             UnaryOpType unary_op_type;
             BinaryOpType binary_op_type;
             TernaryOpType ternary_op_type;
         };
 
         ColumnExpr(ExprType type, PtrList exprs);
-        ColumnExpr(IntervalType type, Ptr expr);
         ColumnExpr(UnaryOpType type, Ptr expr);
         ColumnExpr(BinaryOpType type, Ptr expr1, Ptr expr2);
         ColumnExpr(TernaryOpType type, Ptr expr1, Ptr expr2, Ptr expr3);

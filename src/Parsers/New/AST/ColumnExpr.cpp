@@ -1,3 +1,4 @@
+#include <memory>
 #include <stdexcept>
 #include <Parsers/New/AST/ColumnExpr.h>
 
@@ -6,6 +7,7 @@
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+#include <support/Any.h>
 #include "Parsers/New/AST/fwd_decl.h"
 
 
@@ -110,12 +112,6 @@ PtrTo<ColumnExpr> ColumnExpr::createCase(
 }
 
 // static
-PtrTo<ColumnExpr> ColumnExpr::createInterval(IntervalType type, PtrTo<ColumnExpr> expr)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(type, expr));
-}
-
-// static
 PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnArgList> args)
 {
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::FUNCTION, {name, params, args}));
@@ -130,11 +126,6 @@ PtrTo<ColumnExpr> ColumnExpr::createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifi
 ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, PtrList exprs) : expr_type(type)
 {
     children = exprs;
-}
-
-ColumnExpr::ColumnExpr(ColumnExpr::IntervalType type, Ptr expr) : expr_type(ExprType::INTERVAL), interval_type(type)
-{
-    children.push_back(expr);
 }
 
 ColumnExpr::ColumnExpr(ColumnExpr::UnaryOpType type, Ptr expr) : expr_type(ExprType::UNARY_OP), unary_op_type(type)
@@ -290,9 +281,32 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExpr
     return AST::ColumnExpr::createCase(first_expr, cases, else_expr);
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
+{
+    auto args = std::make_shared<AST::ColumnArgList>();
+    auto params = std::make_shared<AST::ColumnParamList>();
+
+    args->append(ctx->columnExpr()->accept(this));
+    // TODO: params->append(AST::Literal::createString(???));
+
+    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("CAST"), params, args);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
+{
+    auto args = std::make_shared<AST::ColumnArgList>();
+    auto params = std::make_shared<AST::ColumnParamList>();
+
+    args->append(ctx->columnExpr()->accept(this));
+    // TODO: params->append(AST::Literal::createString(???));
+
+    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("EXTRACT"), params, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx)
 {
-    return ctx->columnFunctionExpr()->accept(this);
+    return AST::ColumnExpr::createFunction(
+        ctx->identifier()->accept(this), ctx->columnParamList()->accept(this), ctx->columnArgList()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx)
@@ -302,22 +316,13 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::Colu
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprInterval(ClickHouseParser::ColumnExprIntervalContext *ctx)
 {
-    using IntervalType = AST::ColumnExpr::IntervalType;
+    auto args = std::make_shared<AST::ColumnArgList>();
+    auto params = std::make_shared<AST::ColumnParamList>();
 
-    IntervalType type;
-    auto token_type = ctx->INTERVAL_TYPE()->getSymbol()->getType();
+    args->append(ctx->columnExpr()->accept(this));
+    // TODO: params->append(AST::Literal::createString(???));
 
-    if (token_type == ClickHouseLexer::SECOND) type = IntervalType::SECOND;
-    else if (token_type == ClickHouseLexer::MINUTE) type = IntervalType::MINUTE;
-    else if (token_type == ClickHouseLexer::HOUR) type = IntervalType::HOUR;
-    else if (token_type == ClickHouseLexer::DAY) type = IntervalType::DAY;
-    else if (token_type == ClickHouseLexer::WEEK) type = IntervalType::WEEK;
-    else if (token_type == ClickHouseLexer::MONTH) type = IntervalType::MONTH;
-    else if (token_type == ClickHouseLexer::QUARTER) type = IntervalType::QUARTER;
-    else if (token_type == ClickHouseLexer::YEAR) type = IntervalType::YEAR;
-    else __builtin_unreachable();
-
-    return AST::ColumnExpr::createInterval(type, ctx->columnExpr()->accept(this));
+    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("INTERVAL"), params, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIsNull(ClickHouseParser::ColumnExprIsNullContext *ctx)
@@ -349,6 +354,18 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::Colum
         ctx->columnExpr(0)->accept(this), ctx->columnExpr(1)->accept(this), ctx->columnExpr(2)->accept(this));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *ctx)
+{
+    auto args = std::make_shared<AST::ColumnArgList>();
+    auto params = std::make_shared<AST::ColumnParamList>();
+
+    args->append(ctx->columnExpr()->accept(this));
+    // TODO: params->append(AST::Literal::createString(???));
+    params->append(AST::Literal::createString(ctx->STRING_LITERAL()));
+
+    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("TRIM"), params, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *ctx)
 {
     return AST::ColumnExpr::createTuple(
@@ -363,16 +380,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTupleAccess(ClickHouseParser::Col
 antlrcpp::Any ParseTreeVisitor::visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *ctx)
 {
     return AST::ColumnExpr::createUnaryOp(ctx->unaryOp()->accept(this), ctx->columnExpr()->accept(this));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitColumnFunctionExpr(ClickHouseParser::ColumnFunctionExprContext *ctx)
-{
-    if (ctx->identifier())
-        return AST::ColumnExpr::createFunction(
-            ctx->identifier()->accept(this), ctx->columnParamList()->accept(this), ctx->columnArgList()->accept(this));
-
-    // TODO: find a way to create literals from strings.
-    throw std::logic_error("Extra function syntax is not supported now!");
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLambdaExprContext *ctx)

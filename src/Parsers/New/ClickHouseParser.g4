@@ -78,32 +78,28 @@ settingExpr: identifier EQ_SINGLE literal;
 
 columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
-    : literal                                                                     # ColumnExprLiteral
-    | ASTERISK                                                                    # ColumnExprAsterisk
-    | columnIdentifier                                                            # ColumnExprIdentifier
-    | LPAREN columnExpr RPAREN                                                    # ColumnExprParens
-    | LPAREN columnExprList RPAREN                                                # ColumnExprTuple
-    | LBRACKET columnExprList? RBRACKET                                           # ColumnExprArray
+    : literal                                                                        # ColumnExprLiteral
+    | ASTERISK                                                                       # ColumnExprAsterisk
+    | columnIdentifier                                                               # ColumnExprIdentifier
+    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens
+    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
+    | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
 
     // NOTE: rules below are sorted according to operators' priority - the most priority on top.
-    | columnExpr LBRACKET columnExpr RBRACKET                                     # ColumnExprArrayAccess
-    | columnExpr DOT NUMBER_LITERAL                                               # ColumnExprTupleAccess
-    | unaryOp columnExpr                                                          # ColumnExprUnaryOp
-    | columnExpr IS NOT? NULL_SQL                                                 # ColumnExprIsNull
-    | columnExpr binaryOp columnExpr                                              # ColumnExprBinaryOp
-    | columnExpr QUERY columnExpr COLON columnExpr                                # ColumnExprTernaryOp
-    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                           # ColumnExprBetween
-    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END  # ColumnExprCase
-    | INTERVAL columnExpr INTERVAL_TYPE                                           # ColumnExprInterval
-    | columnFunctionExpr                                                          # ColumnExprFunction
-    | columnExpr AS identifier                                                    # ColumnExprAlias
-    ;
-columnFunctionExpr
-    : identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN
-    // TODO: do we really need this misc parsing rules?
-    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN
-    | CAST LPAREN columnExpr AS identifier RPAREN
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN
+    | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
+    | columnExpr DOT NUMBER_LITERAL                                                  # ColumnExprTupleAccess
+    | unaryOp columnExpr                                                             # ColumnExprUnaryOp
+    | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
+    | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp
+    | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
+    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
+    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
+    | CAST LPAREN columnExpr AS identifier RPAREN                                    # ColumnExprCast
+    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
+    | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
+    | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
+    | columnExpr AS identifier                                                       # ColumnExprAlias
     ;
 columnParamList: literal (COMMA literal)*;
 columnArgList: columnArgExpr (COMMA columnArgExpr)*;

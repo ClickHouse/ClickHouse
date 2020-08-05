@@ -157,6 +157,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -174,6 +182,10 @@ public:
   }
 
   virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -214,10 +226,6 @@ public:
   }
 
   virtual antlrcpp::Any visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitColumnFunctionExpr(ClickHouseParser::ColumnFunctionExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

@@ -43,12 +43,11 @@ public:
     RuleJoinExpr = 17, RuleJoinOp = 18, RuleJoinOpCross = 19, RuleJoinConstraintClause = 20, 
     RuleLimitExpr = 21, RuleOrderExprList = 22, RuleOrderExpr = 23, RuleRatioExpr = 24, 
     RuleSettingExprList = 25, RuleSettingExpr = 26, RuleColumnExprList = 27, 
-    RuleColumnExpr = 28, RuleColumnFunctionExpr = 29, RuleColumnParamList = 30, 
-    RuleColumnArgList = 31, RuleColumnArgExpr = 32, RuleColumnLambdaExpr = 33, 
-    RuleColumnIdentifier = 34, RuleTableExpr = 35, RuleTableIdentifier = 36, 
-    RuleTableFunctionExpr = 37, RuleTableArgList = 38, RuleTableArgExpr = 39, 
-    RuleDatabaseIdentifier = 40, RuleLiteral = 41, RuleIdentifier = 42, 
-    RuleUnaryOp = 43, RuleBinaryOp = 44
+    RuleColumnExpr = 28, RuleColumnParamList = 29, RuleColumnArgList = 30, 
+    RuleColumnArgExpr = 31, RuleColumnLambdaExpr = 32, RuleColumnIdentifier = 33, 
+    RuleTableExpr = 34, RuleTableIdentifier = 35, RuleTableFunctionExpr = 36, 
+    RuleTableArgList = 37, RuleTableArgExpr = 38, RuleDatabaseIdentifier = 39, 
+    RuleLiteral = 40, RuleIdentifier = 41, RuleUnaryOp = 42, RuleBinaryOp = 43
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -90,7 +89,6 @@ public:
   class SettingExprContext;
   class ColumnExprListContext;
   class ColumnExprContext;
-  class ColumnFunctionExprContext;
   class ColumnParamListContext;
   class ColumnArgListContext;
   class ColumnArgExprContext;
@@ -674,6 +672,37 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  ColumnExprExtractContext : public ColumnExprContext {
+  public:
+    ColumnExprExtractContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *EXTRACT();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *INTERVAL_TYPE();
+    antlr4::tree::TerminalNode *FROM();
+    ColumnExprContext *columnExpr();
+    antlr4::tree::TerminalNode *RPAREN();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnExprTrimContext : public ColumnExprContext {
+  public:
+    ColumnExprTrimContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *TRIM();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *STRING_LITERAL();
+    antlr4::tree::TerminalNode *FROM();
+    ColumnExprContext *columnExpr();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *BOTH();
+    antlr4::tree::TerminalNode *LEADING();
+    antlr4::tree::TerminalNode *TRAILING();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  ColumnExprLiteralContext : public ColumnExprContext {
   public:
     ColumnExprLiteralContext(ColumnExprContext *ctx);
@@ -726,6 +755,20 @@ public:
     antlr4::tree::TerminalNode *BETWEEN();
     antlr4::tree::TerminalNode *AND();
     antlr4::tree::TerminalNode *NOT();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnExprCastContext : public ColumnExprContext {
+  public:
+    ColumnExprCastContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *CAST();
+    antlr4::tree::TerminalNode *LPAREN();
+    ColumnExprContext *columnExpr();
+    antlr4::tree::TerminalNode *AS();
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *RPAREN();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -835,17 +878,6 @@ public:
   public:
     ColumnExprFunctionContext(ColumnExprContext *ctx);
 
-    ColumnFunctionExprContext *columnFunctionExpr();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  ColumnExprContext* columnExpr();
-  ColumnExprContext* columnExpr(int precedence);
-  class  ColumnFunctionExprContext : public antlr4::ParserRuleContext {
-  public:
-    ColumnFunctionExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
     IdentifierContext *identifier();
     std::vector<antlr4::tree::TerminalNode *> LPAREN();
     antlr4::tree::TerminalNode* LPAREN(size_t i);
@@ -853,25 +885,12 @@ public:
     antlr4::tree::TerminalNode* RPAREN(size_t i);
     ColumnArgListContext *columnArgList();
     ColumnParamListContext *columnParamList();
-    antlr4::tree::TerminalNode *EXTRACT();
-    antlr4::tree::TerminalNode *INTERVAL_TYPE();
-    antlr4::tree::TerminalNode *FROM();
-    ColumnExprContext *columnExpr();
-    antlr4::tree::TerminalNode *CAST();
-    antlr4::tree::TerminalNode *AS();
-    antlr4::tree::TerminalNode *TRIM();
-    antlr4::tree::TerminalNode *STRING_LITERAL();
-    antlr4::tree::TerminalNode *BOTH();
-    antlr4::tree::TerminalNode *LEADING();
-    antlr4::tree::TerminalNode *TRAILING();
-
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
   };
 
-  ColumnFunctionExprContext* columnFunctionExpr();
-
+  ColumnExprContext* columnExpr();
+  ColumnExprContext* columnExpr(int precedence);
   class  ColumnParamListContext : public antlr4::ParserRuleContext {
   public:
     ColumnParamListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
