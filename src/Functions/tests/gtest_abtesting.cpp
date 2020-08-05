@@ -41,7 +41,7 @@ Variants test_bayesab(std::string dist, PODArray<Float64> xs, PODArray<Float64> 
     for (size_t i = 0; i < variants.size(); ++i)
         std::cout << i << " to be best: " << variants[i].best << std::endl;
 
-    std::cout << convertToJson({"0", "1", "2"}, variants) << std::endl;
+    std::cout << convertToJson({"0", "1", "2"}, variants, false) << std::endl;
 
     Float64 max_val = 0.0, min_val = 2.0;
     for (size_t i = 0; i < variants.size(); ++i)
