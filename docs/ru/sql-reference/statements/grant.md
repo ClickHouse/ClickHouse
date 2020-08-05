@@ -348,7 +348,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### KILL QUERY {#grant-kill-query}
 
-Разрешает выполнять запросы [KILL](misc.md#kill-query-statement) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [KILL](../../sql-reference/statements/kill.md#kill-query) в соответствии со следующей иерархией привилегий:
 
 Уровень: `GLOBAL`.
 
