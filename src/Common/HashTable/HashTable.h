@@ -715,7 +715,7 @@ public:
 
     const_iterator cbegin() const { return begin(); }
 
-    iterator begin()
+    __attribute__((__no_sanitize__("undefined"))) iterator begin()
     {
         if (!buf)
             return end();
