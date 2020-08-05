@@ -66,7 +66,6 @@ ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
-ln -s /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/custom_settings_prefixes.xml /etc/clickhouse-server/config.d/
 ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
@@ -83,6 +82,10 @@ ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/
 ln -sf /usr/share/clickhouse-test/config/client_config.xml /etc/clickhouse-client/config.xml
+
+# Keep original query_masking_rules.xml
+ln -s --backup=simple --suffix=_original.xml /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
+
 
 clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
 
