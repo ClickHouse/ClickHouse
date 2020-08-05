@@ -14,3 +14,6 @@ USE db
 При использовании HTTP протокола запрос не может быть выполнен, так как понятия сессии не существует.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/misc/) <!--hide-->
+
+
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/use/) <!--hide-->

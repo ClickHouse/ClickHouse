@@ -15,3 +15,5 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Также, «отцепленную» таблицу можно прицепить заново запросом `ATTACH` (за исключением системных таблиц, для которых метаданные не хранятся).
 
 Запроса `DETACH DATABASE` нет.
+
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/detach/) <!--hide-->

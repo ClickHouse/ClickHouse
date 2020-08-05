@@ -20,3 +20,6 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 !!! warning "Внимание"
     Запрос `OPTIMIZE` не может устранить причину появления ошибки «Too many parts».
+
+    
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/optimize/) <!--hide-->

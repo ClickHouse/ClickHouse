@@ -78,3 +78,7 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ``` sql
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
+
+
+
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/drop/) <!--hide-->

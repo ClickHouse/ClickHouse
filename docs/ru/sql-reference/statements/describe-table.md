@@ -20,3 +20,5 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 -   `comment_expression` — комментарий к столбцу.
 
 Вложенные структуры данных выводятся в «развёрнутом» виде. То есть, каждый столбец - по отдельности, с именем через точку.
+
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/describe-table/) <!--hide-->
