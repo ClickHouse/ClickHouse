@@ -1280,7 +1280,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (method.data.impls[bucket].empty())
                 continue;
 
-            tasks[bucket] = std::packaged_task<Block()>([converter, bucket, capture0 = CurrentThread::getGroup()] { return converter(bucket, capture0); });
+            tasks[bucket] = std::packaged_task<Block()>([group = CurrentThread::getGroup(), bucket, &converter] { return converter(bucket, group); });
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError([bucket, &tasks] { tasks[bucket](); });
@@ -1742,7 +1742,9 @@ private:
         if (max_scheduled_bucket_num >= NUM_BUCKETS)
             return;
 
-        parallel_merge_data->pool.scheduleOrThrowOnError([this, capture0 = CurrentThread::getGroup()] { thread(max_scheduled_bucket_num, capture0); });
+        parallel_merge_data->pool.scheduleOrThrowOnError(
+                [this, max_scheduled_bucket_num = max_scheduled_bucket_num, group = CurrentThread::getGroup()] 
+                { thread(max_scheduled_bucket_num, group); });
     }
 
     void thread(Int32 bucket_num, ThreadGroupStatusPtr thread_group)
@@ -2098,7 +2100,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = [merge_bucket, bucket, aggregates_pool, capture0 = CurrentThread::getGroup()] { return merge_bucket(bucket, aggregates_pool, capture0); };
+            auto task = [group = CurrentThread::getGroup(), bucket, &merge_bucket, aggregates_pool] { return merge_bucket(bucket, aggregates_pool, group); };
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError(task);
