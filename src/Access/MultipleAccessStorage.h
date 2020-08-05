@@ -15,11 +15,6 @@ public:
 
     MultipleAccessStorage(std::vector<std::unique_ptr<Storage>> nested_storages_);
 
-    std::vector<UUID> findMultiple(EntityType type, const String & name) const;
-
-    template <typename EntityType>
-    std::vector<UUID> findMultiple(const String & name) const { return findMultiple(EntityType::TYPE, name); }
-
     const Storage * findStorage(const UUID & id) const;
     Storage * findStorage(const UUID & id);
     const Storage & getStorage(const UUID & id) const;

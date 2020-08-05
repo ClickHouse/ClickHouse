@@ -7,7 +7,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
 }
 
@@ -38,9 +37,8 @@ MultipleAccessStorage::MultipleAccessStorage(
 }
 
 
-std::vector<UUID> MultipleAccessStorage::findMultiple(EntityType type, const String & name) const
+std::optional<UUID> MultipleAccessStorage::findImpl(EntityType type, const String & name) const
 {
-    std::vector<UUID> ids;
     for (const auto & nested_storage : nested_storages)
     {
         auto id = nested_storage->find(type, name);
@@ -48,33 +46,10 @@ std::vector<UUID> MultipleAccessStorage::findMultiple(EntityType type, const Str
         {
             std::lock_guard lock{ids_cache_mutex};
             ids_cache.set(*id, std::make_shared<Storage *>(nested_storage.get()));
-            ids.push_back(*id);
+            return *id;
         }
     }
-    return ids;
-}
-
-
-std::optional<UUID> MultipleAccessStorage::findImpl(EntityType type, const String & name) const
-{
-    auto ids = findMultiple(type, name);
-    if (ids.empty())
-        return {};
-    if (ids.size() == 1)
-        return ids[0];
-
-    std::vector<const Storage *> storages_with_duplicates;
-    for (const auto & id : ids)
-    {
-        const auto * storage = findStorage(id);
-        if (storage)
-            storages_with_duplicates.push_back(storage);
-    }
-
-    throw Exception(
-        "Found " + outputEntityTypeAndName(type, name) + " in " + std::to_string(ids.size())
-            + " storages [" + joinStorageNames(storages_with_duplicates) + "]",
-        ErrorCodes::ACCESS_ENTITY_FOUND_DUPLICATES);
+    return {};
 }
 
 
