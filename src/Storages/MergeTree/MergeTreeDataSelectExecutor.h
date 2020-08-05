@@ -95,19 +95,21 @@ private:
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
-    MarkRanges markRangesFromPKRange(
+    static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const Settings & settings) const;
+        const Settings & settings,
+        Poco::Logger * log);
 
-    MarkRanges filterMarksUsingIndex(
+    static MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings,
+        Poco::Logger * log);
 };
 
 }

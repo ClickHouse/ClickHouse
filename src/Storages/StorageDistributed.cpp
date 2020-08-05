@@ -39,7 +39,7 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -185,7 +185,7 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
+    auto syntax_result = TreeRewriter(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
@@ -235,7 +235,7 @@ void replaceConstantExpressions(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot)
 {
-    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage, metadata_snapshot);
+    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, metadata_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
@@ -290,7 +290,7 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & storage_policy_,
+    const String & storage_policy_name_,
     const String & relative_data_path_,
     bool attach_)
     : IStorage(id_)
@@ -300,7 +300,6 @@ StorageDistributed::StorageDistributed(
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
-    , storage_policy(storage_policy_)
     , relative_data_path(relative_data_path_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -316,7 +315,11 @@ StorageDistributed::StorageDistributed(
     }
 
     if (!relative_data_path.empty())
-        createStorage();
+    {
+        storage_policy = global_context->getStoragePolicy(storage_policy_name_);
+        if (storage_policy->getVolumes().size() != 1)
+            throw Exception("Storage policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
+    }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach_ && !cluster_name.empty())
@@ -336,34 +339,14 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & storage_policy_,
+    const String & storage_policy_name_,
     const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_, relative_data_path_, attach)
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach)
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
-void StorageDistributed::createStorage()
-{
-    /// Create default policy with the relative_data_path_
-    if (storage_policy.empty())
-    {
-        std::string path(global_context->getPath());
-        /// Disk must ends with '/'
-        if (!path.ends_with('/'))
-            path += '/';
-        auto disk = std::make_shared<DiskLocal>("default", path, 0);
-        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
-    }
-    else
-    {
-        auto policy = global_context->getStoragePolicy(storage_policy);
-        if (policy->getVolumes().size() != 1)
-             throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
-        volume = policy->getVolume(0);
-    }
-}
 
 StoragePtr StorageDistributed::createWithOwnCluster(
     const StorageID & table_id_,
@@ -539,7 +522,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (!volume && !owned_cluster && !settings.insert_distributed_sync)
+    if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
     {
         throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -595,10 +578,10 @@ void StorageDistributed::startup()
     if (remote_database.empty() && !remote_table_function_ptr)
         LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
-    if (!volume)
+    if (!storage_policy)
         return;
 
-    for (const DiskPtr & disk : volume->getDisks())
+    for (const DiskPtr & disk : storage_policy->getDisks())
         createDirectoryMonitors(disk->getPath());
 
     for (const String & path : getDataPaths())
@@ -632,7 +615,7 @@ void StorageDistributed::drop()
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
 
-    auto disks = volume->getDisks();
+    auto disks = storage_policy->getDisks();
     for (const auto & disk : disks)
         disk->removeRecursive(relative_data_path);
 
@@ -646,7 +629,7 @@ Strings StorageDistributed::getDataPaths() const
     if (relative_data_path.empty())
         return paths;
 
-    for (const DiskPtr & disk : volume->getDisks())
+    for (const DiskPtr & disk : storage_policy->getDisks())
         paths.push_back(disk->getPath() + relative_data_path);
 
     return paths;
@@ -669,9 +652,7 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, co
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 {
-    if (storage_policy.empty())
-        return {};
-    return global_context->getStoragePolicy(storage_policy);
+    return storage_policy;
 }
 
 void StorageDistributed::createDirectoryMonitors(const std::string & disk)
@@ -716,11 +697,6 @@ std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getD
 size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();
-}
-
-std::pair<const std::string &, const std::string &> StorageDistributed::getPath()
-{
-    return {volume->getNextDisk()->getPath(), relative_data_path};
 }
 
 ClusterPtr StorageDistributed::getCluster() const
@@ -868,9 +844,11 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
 }
+
+
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
-    for (const DiskPtr & disk : volume->getDisks())
+    for (const DiskPtr & disk : storage_policy->getDisks())
     {
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;
@@ -925,7 +903,7 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
-        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "";
+        const auto & storage_policy = engine_args.size() >= 5 ? engine_args[4]->as<ASTLiteral &>().value.safeGet<String>() : "default";
 
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)

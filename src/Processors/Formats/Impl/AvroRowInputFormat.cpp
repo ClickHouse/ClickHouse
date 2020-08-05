@@ -727,11 +727,22 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
     {
         return false;
     }
+    // skip tombstone records (kafka messages with null value)
+    if (in.available() == 0)
+    {
+        return false;
+    }
     SchemaId schema_id = readConfluentSchemaId(in);
     const auto & deserializer = getOrCreateDeserializer(schema_id);
     deserializer.deserializeRow(columns, *decoder, ext);
     decoder->drain();
     return true;
+}
+
+void AvroConfluentRowInputFormat::syncAfterError()
+{
+    // skip until the end of current kafka message
+    in.tryIgnore(in.available());
 }
 
 const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(SchemaId schema_id)

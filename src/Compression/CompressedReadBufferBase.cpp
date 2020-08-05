@@ -1,14 +1,11 @@
 #include "CompressedReadBufferBase.h"
 
-#include <vector>
 #include <cstring>
 #include <cassert>
 #include <city.h>
-#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/hex.h>
-#include <common/unaligned.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
