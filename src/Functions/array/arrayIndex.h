@@ -95,24 +95,12 @@ private:
 
     using NullMap = PaddedPODArray<UInt8>;
 
-    static inline bool hasNull(const NullMap & null_map, size_t i) { return null_map[i]; }
+    static inline bool hasNull(const NullMap * const null_map, size_t i) { return (*null_map)[i]; }
 
-    static inline void setResult(
-            ResultArr& result, const ArrOffsets& offsets,
-            ResultType current, ArrOffset& current_offset, size_t i)
-    {
-        if constexpr (InvokedNotFromLCSpec)
-            result[i] = current;
-        else
-            if (current != 0)        /// do not override the value if it was not found as we invoke this function
-                result[i] = current; /// multiple times.
-
-        current_offset = offsets[i];
-    }
-
-    /// Both function arguments are ordinary.
-    template <class Data, class Target>
-    static void vectorCase1(const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result)
+    template <size_t Case, class Data, class Target>
+    static void process(
+        const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result,
+        const NullMap * const null_map_data, const NullMap * const null_map_item)
     {
         const size_t size = offsets.size();
 
@@ -128,164 +116,71 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if constexpr (InvokedNotFromLCSpec)
+                if constexpr (Case == 2) /// Right arg is Nullable
+                     if (hasNull(null_map_item, i))
+                        continue;
+
+                if constexpr (Case == 3) /// Left arg is an array of Nullables
+                    if (hasNull(null_map_data, current_offset + j))
+                        continue;
+
+                if constexpr (Case == 4)
                 {
-                    if (!compare(data[current_offset + j], target, i))
-                        continue;
-                }
-                else
-                    if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target, 1))
-                        continue;
+                    const bool right_is_null = hasNull(null_map_data, current_offset + j);
+                    const bool left_is_null = hasNull(null_map_item, i);
 
-                if (!ConcreteAction::apply(j, current))
-                    break;
-            }
-
-            setResult(result, offsets, current, current_offset, i);
-        }
-    }
-
-    /// The 2nd function argument is nullable.
-    template <class Data, class Target>
-    static void vectorCase2(const Data & data, const ArrOffsets & offsets, const Target & target_value,
-        ResultArr & result, const NullMap & null_map_item)
-    {
-        const size_t size = offsets.size();
-
-        if constexpr (InvokedNotFromLCSpec)
-            result.resize(size);
-
-        ArrOffset current_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            const size_t array_size = offsets[i] - current_offset;
-            ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if (hasNull(null_map_item, i))
-                    continue;
-
-                if constexpr (InvokedNotFromLCSpec)
-                {
-                    if (!compare(data[current_offset + j], target_value, i))
-                        continue;
-                }
-                else
-                    if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target_value, 1))
+                    if (right_is_null != left_is_null)
                         continue;
 
-                if (!ConcreteAction::apply(j, current))
-                    break;
-            }
-
-            setResult(result, offsets, current, current_offset, i);
-        }
-    }
-
-    /// The 1st function argument is a non-constant array of nullable values.
-    template <class Data, class Target>
-    static void vectorCase3(const Data & data, const ArrOffsets & offsets, const Target & target_value,
-        ResultArr & result, const NullMap & null_map_data)
-    {
-        const size_t size = offsets.size();
-
-        if constexpr (InvokedNotFromLCSpec)
-            result.resize(size);
-
-        ArrOffset current_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            const size_t array_size = offsets[i] - current_offset;
-            ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if (null_map_data[current_offset + j])
-                    continue;
-
-                if constexpr (InvokedNotFromLCSpec)
-                {
-                    if (!compare(data[current_offset + j], target_value, i))
-                        continue;
-                }
-                else
-                    if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target_value, 1))
-                        continue;
-
-                if (!ConcreteAction::apply(j, current))
-                    break;
-            }
-
-            setResult(result, offsets, current, current_offset, i);
-        }
-    }
-
-    /// The 1st function argument is a non-constant array of nullable values.
-    /// The 2nd function argument is nullable.
-    template <class Data, class Target>
-    static void vectorCase4(const Data & data, const ArrOffsets & offsets, const Target & value,
-        ResultArr & result, const NullMap & null_map_data, const NullMap & null_map_item)
-    {
-        const size_t size = offsets.size();
-
-        if constexpr (InvokedNotFromLCSpec)
-            result.resize(size);
-
-        ArrOffset current_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            const size_t array_size = offsets[i] - current_offset;
-            ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                bool hit = false;
-
-                if (null_map_data[current_offset + j])
-                {
-                    if (hasNull(null_map_item, i))
-                        hit = true;
+                    if (!right_is_null)
+                    {
+                        if constexpr (InvokedNotFromLCSpec)
+                        {
+                            if (!compare(data[current_offset + j], target, i))
+                                continue;
+                        }
+                        else if (0 != data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target, 1))
+                            continue;
+                    }
                 }
                 else
                 {
                     if constexpr (InvokedNotFromLCSpec)
                     {
-                        if (!compare(data[current_offset + j], value, i))
+                        if (!compare(data[current_offset + j], target, i))
                             continue;
                     }
-                    else
-                        if (data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , value, 1))
-                            continue;
-
-                    hit = true;
+                    else if (0 != data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target, 1))
+                        continue;
                 }
 
-                if (hit && !ConcreteAction::apply(j, current))
+                if (!ConcreteAction::apply(j, current))
                     break;
             }
 
-            setResult(result, offsets, current, current_offset, i);
+            if constexpr (InvokedNotFromLCSpec)
+                result[i] = current;
+            else
+                if (current != 0)        /// do not override the value if it was not found as we invoke this function
+                    result[i] = current; /// multiple times.
+
+            current_offset = offsets[i];
         }
     }
 
 public:
-    template <class Data, class ScalarOrVector>
-    static void vector(const Data & data, const ArrOffsets & offsets, const ScalarOrVector & value,
-        ResultArr & result, const NullMap * null_map_data, const NullMap * null_map_item)
+    template <class Data, class Target>
+    static void vector(const Data & data, const ArrOffsets & offsets, const Target & value,
+        ResultArr & result, const NullMap * const null_map_data, const NullMap * const null_map_item)
     {
-        /// Processing is split into 4 cases.
         if (!null_map_data && !null_map_item)
-            vectorCase1(data, offsets, value, result);
+            process<1>(data, offsets, value, result, null_map_data, null_map_item);
         else if (!null_map_data && null_map_item)
-            vectorCase2(data, offsets, value, result, *null_map_item);
+            process<2>(data, offsets, value, result, null_map_data, null_map_item);
         else if (null_map_data && !null_map_item)
-            vectorCase3(data, offsets, value, result, *null_map_data);
+            process<3>(data, offsets, value, result, null_map_data, null_map_item);
         else
-            vectorCase4(data, offsets, value, result, *null_map_data, *null_map_item);
+            process<4>(data, offsets, value, result, null_map_data, null_map_item);
     }
 };
 
@@ -308,6 +203,7 @@ struct ArrayIndexNumNullImpl
             result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -657,12 +553,12 @@ struct ArrayIndexGenericNullImpl
     }
 };
 
-inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
+static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
 {
     return ((isNativeNumber(left) || isEnum(left)) && isNativeNumber(right)) || left->equals(*right);
 }
 
-inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
+static inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
 {
     if (allowNested(array_inner_type, arg))
         return true;
