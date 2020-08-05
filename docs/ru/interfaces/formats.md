@@ -7,7 +7,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | Формат                                                          | INSERT | SELECT |
 |-----------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✗      | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✔      | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
 | [Template](#format-template)                                    | ✔      | ✔      |
@@ -132,7 +132,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
-Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+При парсинге с этим форматом,  в каждом поле не допускается использование табуляций или разрывов строк.
 
 Этот формат также доступен под именем `TSVRaw`.
 
