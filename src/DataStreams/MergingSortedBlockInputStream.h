@@ -30,9 +30,6 @@ public:
 
     String getName() const override { return "MergingSorted"; }
 
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
-
     Block getHeader() const override { return header; }
 
 protected:

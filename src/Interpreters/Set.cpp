@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
-    extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -215,97 +214,6 @@ bool Set::insertFromBlock(const Block & block)
 }
 
 
-static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, const Context & context)
-{
-    if (const auto * lit = node->as<ASTLiteral>())
-    {
-        return convertFieldToType(lit->value, type);
-    }
-    else if (node->as<ASTFunction>())
-    {
-        std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
-        return convertFieldToType(value_raw.first, type, value_raw.second.get());
-    }
-    else
-        throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-}
-
-void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
-{
-    /// Will form a block with values from the set.
-
-    Block header;
-    size_t num_columns = types.size();
-    for (size_t i = 0; i < num_columns; ++i)
-        header.insert(ColumnWithTypeAndName(types[i]->createColumn(), types[i], "_" + toString(i)));
-    setHeader(header);
-
-    MutableColumns columns = header.cloneEmptyColumns();
-
-    DataTypePtr tuple_type;
-    Row tuple_values;
-    const auto & list = node->as<ASTExpressionList &>();
-    for (const auto & elem : list.children)
-    {
-        if (num_columns == 1)
-        {
-            Field value = extractValueFromNode(elem, *types[0], context);
-
-            if (!value.isNull() || context.getSettingsRef().transform_null_in)
-                columns[0]->insert(value);
-        }
-        else if (const auto * func = elem->as<ASTFunction>())
-        {
-            Field function_result;
-            const Tuple * tuple = nullptr;
-            if (func->name != "tuple")
-            {
-                if (!tuple_type)
-                    tuple_type = std::make_shared<DataTypeTuple>(types);
-
-                function_result = extractValueFromNode(elem, *tuple_type, context);
-                if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
-                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-                tuple = &function_result.get<Tuple>();
-            }
-
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
-            if (tuple_size != num_columns)
-                throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
-                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-            if (tuple_values.empty())
-                tuple_values.resize(tuple_size);
-
-            size_t i = 0;
-            for (; i < tuple_size; ++i)
-            {
-                Field value = tuple ? (*tuple)[i]
-                                    : extractValueFromNode(func->arguments->children[i], *types[i], context);
-
-                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
-                if (value.isNull() && !context.getSettings().transform_null_in)
-                    break;
-
-                tuple_values[i] = value;
-            }
-
-            if (i == tuple_size)
-                for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(tuple_values[i]);
-        }
-        else
-            throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-    }
-
-    Block block = header.cloneWithColumns(std::move(columns));
-    insertFromBlock(block);
-    finishInsert();
-}
-
-
 ColumnPtr Set::execute(const Block & block, bool negative) const
 {
     size_t num_key_columns = block.columns();
@@ -440,9 +348,14 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
     }
 }
 
+bool Set::areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
+{
+    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
+}
+
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
-    if (!removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type))))
+    if (!this->areTypesEqual(set_type_idx, other_type))
         throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
                         + other_type->getName() + " on the left, "
                         + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);

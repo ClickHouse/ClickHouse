@@ -80,6 +80,21 @@ void MemoryTracker::alloc(Int64 size)
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
+    /// Cap the limit to the total_memory_tracker, since it may include some drift.
+    ///
+    /// And since total_memory_tracker is reseted to the process resident
+    /// memory peridically (in AsynchronousMetrics::update()), any limit can be
+    /// capped to it, to avoid possible drift.
+    if (unlikely(current_hard_limit && will_be > current_hard_limit))
+    {
+        Int64 total_amount = total_memory_tracker.get();
+        if (amount > total_amount)
+        {
+            set(total_amount);
+            will_be = size + total_amount;
+        }
+    }
+
     /// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
     /// In this case, it doesn't matter.
     if (unlikely(fault_probability && drand48() < fault_probability))

@@ -148,8 +148,8 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_e
     if (!table_predicates.empty())
     {
         auto optimize_final = settings.enable_optimize_predicate_expression_to_final_subquery;
-        PredicateRewriteVisitor::Data data(context, table_predicates, table_column, optimize_final);
-
+        auto optimize_with = settings.allow_push_predicate_when_subquery_contains_with;
+        PredicateRewriteVisitor::Data data(context, table_predicates, table_column, optimize_final, optimize_with);
         PredicateRewriteVisitor(data).visit(table_element);
         return data.is_rewrite;
     }

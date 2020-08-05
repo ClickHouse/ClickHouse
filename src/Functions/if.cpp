@@ -176,9 +176,6 @@ public:
 
 private:
     template <typename T0, typename T1>
-    static constexpr bool allow_arrays = !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
-
-    template <typename T0, typename T1>
     static UInt32 decimalScale(Block & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])
     {
         if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
@@ -262,7 +259,7 @@ private:
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
-        else if constexpr (allow_arrays<T0, T1>)
+        else
         {
             using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -318,7 +315,7 @@ private:
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
-        else if constexpr (allow_arrays<T0, T1>)
+        else
         {
             using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -704,19 +701,13 @@ private:
 
         if (cond_is_true)
         {
-            if (result_column.type->equals(*column1.type))
-            {
-                result_column.column = std::move(column1.column);
-                return true;
-            }
+            result_column.column = castColumn(column1, result_column.type);
+            return true;
         }
         else if (cond_is_false || cond_is_null)
         {
-            if (result_column.type->equals(*column2.type))
-            {
-                result_column.column = std::move(column2.column);
-                return true;
-            }
+            result_column.column = castColumn(column2, result_column.type);
+            return true;
         }
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))
