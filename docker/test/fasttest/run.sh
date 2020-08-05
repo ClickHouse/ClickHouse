@@ -171,7 +171,7 @@ kill_clickhouse () {
             echo "No clickhouse process"
             break
         else
-            echo "Clickhouse server process" `pgrep -f clickhouse-server` "still alive"
+            echo "Clickhouse server process" $(pgrep -f clickhouse-server) "still alive"
             sleep 10
         fi
     done
