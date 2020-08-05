@@ -24,6 +24,7 @@ public:
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
+    virtual const char * getStorageType() const = 0;
 
     using EntityType = IAccessEntity::Type;
     using EntityTypeInfo = IAccessEntity::TypeInfo;
