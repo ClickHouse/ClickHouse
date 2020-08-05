@@ -285,6 +285,53 @@ static const std::map<std::string, std::string> inverse_relations = {
 };
 
 
+void KeyCondition::optimizeRPN()
+{
+    std::vector<RPNElement> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function != RPNElement::FUNCTION_AND)
+            rpn_stack.push_back(element);
+        else
+        {
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+            if (arg1.key_column == arg2.key_column)
+            {
+                if (arg1.function == RPNElement::ALWAYS_TRUE && arg2.function == RPNElement::ALWAYS_TRUE)
+                    rpn_stack.back() = RPNElement(RPNElement::ALWAYS_TRUE);
+                else if (arg1.function == RPNElement::ALWAYS_FALSE || arg2.function == RPNElement::ALWAYS_FALSE)
+                    rpn_stack.back() = RPNElement(RPNElement::ALWAYS_FALSE);
+                else if (arg1.function == RPNElement::ALWAYS_TRUE)
+                    rpn_stack.back() = arg2;
+                else if (arg2.function == RPNElement::ALWAYS_TRUE)
+                    rpn_stack.back() = arg1;
+                else if (arg1.function == RPNElement::FUNCTION_NOT_IN_RANGE && arg2.function == RPNElement::FUNCTION_NOT_IN_RANGE && arg1.range.intersectsRange(arg2.range))
+                {
+                    rpn_stack.back() = RPNElement(RPNElement::ALWAYS_FALSE);
+                }
+                else if (arg1.function == RPNElement::FUNCTION_IN_RANGE && arg2.function == RPNElement::FUNCTION_IN_RANGE && !arg1.range.intersectsRange(arg2.range))
+                {
+                    rpn_stack.back() = RPNElement(RPNElement::ALWAYS_FALSE);
+                }
+                else
+                {
+                    rpn_stack.push_back(arg1);
+                    rpn_stack.push_back(element);
+                }
+            }
+            else
+            {
+                rpn_stack.push_back(arg1);
+                rpn_stack.push_back(element);
+            }
+        }
+    }
+    rpn = rpn_stack;
+}
+
 bool isLogicalOperator(const String & func_name)
 {
     return (func_name == "and" || func_name == "or" || func_name == "not");
@@ -381,6 +428,16 @@ KeyCondition::KeyCondition(
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
+    //std::cerr << "BLOCK WITH CONSTANTS:" << block_with_constants.dumpStructure() << std::endl;
+    //for (size_t i = 0; i < block_with_constants.rows(); ++i)
+    //{
+    //    std::cerr << "ROW:" << i << std::endl;
+    //    for (size_t j = 0; j < block_with_constants.columns(); ++j)
+    //    {
+    //        std::cerr << "\tCOLUMN:" << block_with_constants.getByPosition(j).name << " type:" << block_with_constants.getByPosition(j).type->getName() << std::endl;
+    //        std::cerr << "\tVALUE:" << applyVisitor(FieldVisitorToString(), block_with_constants.getByPosition(j).column->operator[](i)) << std::endl;
+    //    }
+    //}
 
     const ASTSelectQuery & select = query_info.query->as<ASTSelectQuery &>();
     if (select.where() || select.prewhere())
@@ -404,6 +461,7 @@ KeyCondition::KeyCondition(
     {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
     }
+    optimizeRPN();
 }
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
@@ -421,9 +479,13 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
     String column_name = expr->getColumnName();
+    //std::cerr << "GETTING CONSTANT FOR:" << queryToString(expr) << std::endl;
+    //std::cerr << "COLUMN NAME:" << column_name << std::endl;
+    //std::cerr << "BLOCK STRUCTURE:" <<    block_with_constants.dumpStructure() << std::endl;
 
     if (const auto * lit = expr->as<ASTLiteral>())
     {
+        //std::cerr << "IT'S LITERAL\n";
         /// By default block_with_constants has only one column named "_dummy".
         /// If block contains only constants it's may not be preprocessed by
         //  ExpressionAnalyzer, so try to look up in the default column.
@@ -432,15 +494,20 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 
         /// Simple literal
         out_value = lit->value;
+        //std::cerr <<  "OUTVALUE:" << applyVisitor(FieldVisitorToString(), out_value) << std::endl;
         out_type = block_with_constants.getByName(column_name).type;
+        //std::cerr <<  "OUTTYPE:" << out_type->getName() << std::endl;
         return true;
     }
     else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
     {
+        //std::cerr <<  "BLOCK HAS COLUMN:" << column_name << std::endl;
         /// An expression which is dependent on constants only
         const auto & expr_info = block_with_constants.getByName(column_name);
         out_value = (*expr_info.column)[0];
+        //std::cerr <<  "OUTVALUE:" << applyVisitor(FieldVisitorToString(), out_value) << std::endl;
         out_type = expr_info.type;
+        //std::cerr <<  "OUTTYPE:" << out_type->getName() << std::endl;
         return true;
     }
     else
@@ -581,10 +648,13 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             if (!monotonicity.is_always_monotonic)
                 return false;
 
+            //std::cerr << "\tOUTVALUEBEFORE:" << applyVisitor(FieldVisitorToString(), out_value) << std::endl;
             /// Apply the next transformation step.
             std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(
                 action.function_builder,
                 out_type, out_value);
+
+            //std::cerr << "\tOUTVALUEAFTER:" << applyVisitor(FieldVisitorToString(), out_value) << std::endl;
 
             expr_name = action.result_name;
 
@@ -791,6 +861,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
     DataTypePtr const_type;
     if (const auto * func = node->as<ASTFunction>())
     {
+        //std::cerr << "KEY IS FUNC:" << queryToString(node) << std::endl;
         const ASTs & args = func->arguments->children;
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
@@ -1033,7 +1104,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(key_left[prefix_size], true, key_right[prefix_size], true);
         else if (left_bounded)
+        {
             hyperrectangle[prefix_size] = Range::createLeftBounded(key_left[prefix_size], true);
+        }
         else if (right_bounded)
             hyperrectangle[prefix_size] = Range::createRightBounded(key_right[prefix_size], true);
 
@@ -1097,29 +1170,29 @@ BoolMask KeyCondition::checkInRange(
 {
     std::vector<Range> key_ranges(used_key_size, Range());
 
-/*  std::cerr << "Checking for: [";
-    for (size_t i = 0; i != used_key_size; ++i)
-        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_key[i]);
-    std::cerr << " ... ";
+    //std::cerr << "Checking for: [";
+    //for (size_t i = 0; i != used_key_size; ++i)
+    //    std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_key[i]);
+    //std::cerr << " ... ";
 
-    if (right_bounded)
-    {
-        for (size_t i = 0; i != used_key_size; ++i)
-            std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_key[i]);
-        std::cerr << "]\n";
-    }
-    else
-        std::cerr << "+inf)\n";*/
+    //if (right_bounded)
+    //{
+    //    for (size_t i = 0; i != used_key_size; ++i)
+    //        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_key[i]);
+    //    std::cerr << "]\n";
+    //}
+    //else
+    //    std::cerr << "+inf)\n";
 
     return forAnyHyperrectangle(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0, initial_mask,
         [&] (const std::vector<Range> & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
-/*      std::cerr << "Hyperrectangle: ";
-        for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
-            std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
-        std::cerr << ": " << res.can_be_true << "\n";*/
+        //std::cerr << "Hyperrectangle: ";
+        //for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
+        //    std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
+        //std::cerr << ": " << res.can_be_true << "\n";
 
         return res;
     });
@@ -1249,6 +1322,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     std::vector<BoolMask> rpn_stack;
     for (const auto & element : rpn)
     {
+        //std::cerr << "PROCESSING RPN:" << element.toString() << std::endl;
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
@@ -1432,7 +1506,6 @@ String KeyCondition::RPNElement::toString() const
 
     __builtin_unreachable();
 }
-
 
 bool KeyCondition::alwaysUnknownOrTrue() const
 {

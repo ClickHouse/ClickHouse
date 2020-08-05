@@ -277,6 +277,8 @@ public:
     /// Checks that the index can not be used.
     bool alwaysUnknownOrTrue() const;
 
+    void optimizeRPN();
+
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
 
