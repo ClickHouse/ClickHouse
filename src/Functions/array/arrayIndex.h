@@ -158,12 +158,7 @@ private:
                     break;
             }
 
-            if constexpr (InvokedNotFromLCSpec)
-                result[i] = current;
-            else
-                if (current != 0)        /// do not override the value if it was not found as we invoke this function
-                    result[i] = current; /// multiple times.
-
+            result[i] = current;
             current_offset = offsets[i];
         }
     }
@@ -798,10 +793,10 @@ private:
             ? 1 // We have a column with just one value. Arbitrary n is allowed (as the column is const), so take 0.
             : col_arg->size();
 
-        const auto col_arg_indices_col = ColumnUInt64::create(arg_size);
-        ColumnUInt64 & col_arg_indices = *col_arg_indices_col.get();
+        const IColumn & lc_indices = col_lc->getIndexes();
+        MutableColumnPtr col_arg_indices = lc_indices.cloneResized(arg_size);
 
-        {
+        auto fill_col = [&col_lc, &col_arg_cloned, arg_size]<class T>(ColumnVector<T>& col_indices) {
             // Need to clone the column to build its index.
             auto col_lc_dict_mutated_icol = IColumn::mutate(col_lc->getDictionaryPtr());
             IColumnUnique * const col_lc_dict_mutated = static_cast<IColumnUnique *>(col_lc_dict_mutated_icol.get());
@@ -810,33 +805,35 @@ private:
             {
                 const StringRef elem = col_arg_cloned->getDataAt(i);
 
-                col_arg_indices.getElement(i) = (elem == EMPTY_STRING_REF)
+                col_indices.getElement(i) = (elem == EMPTY_STRING_REF)
                     ? 0 // NULL value index
                     : col_lc_dict_mutated->getValueIndex(elem);
             }
+        };
+
+        switch (col_lc->getSizeOfIndexType())
+        {
+            case sizeof(UInt8): fill_col(*typeid_cast<ColumnUInt8 *>(col_arg_indices.get())); break;
+            case sizeof(UInt16): fill_col(*typeid_cast<ColumnUInt16 *>(col_arg_indices.get())); break;
+            case sizeof(UInt32): fill_col(*typeid_cast<ColumnUInt32 *>(col_arg_indices.get())); break;
+            case sizeof(UInt64): fill_col(*typeid_cast<ColumnUInt64 *>(col_arg_indices.get())); break;
         }
 
-        const IColumn & lc_indices = col_lc->getIndexes();
         const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
         PaddedPODArray<ResultType> & res_data = col_result->getData();
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         if (col_arg_is_const)
-           ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction,
-                false /* Invoking from LC spec */,
-                true /* const column */>::vector(
-                lc_indices,/* where the value will be searched */
+            ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false /* Invoking from LC spec */, true /* const column */>::vector(
+                lc_indices, /* where the value will be searched */
                 lc_offsets,
-                col_arg_indices, /* target value to search */
+                *col_arg_indices.get(), /* target value to search */
                 res_data,
-                null_map_data, null_map_item);
+                null_map_data,
+                null_map_item);
         else
-           ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false>::vector(
-                lc_indices,
-                lc_offsets,
-                col_arg_indices,
-                res_data,
-                null_map_data, null_map_item);
+            ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false>::vector(
+                lc_indices, lc_offsets, *col_arg_indices.get(), res_data, null_map_data, null_map_item);
 
         block.getByPosition(result).column = std::move(col_result);
         return true;
