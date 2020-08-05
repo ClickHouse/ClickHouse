@@ -35,7 +35,7 @@ def feature(self, node="clickhouse1"):
         with setup("user0"):
             with When("I drop user"):
                 node.query("DROP USER user0")
-    
+
     with Scenario("I drop user, does not exist, throws exception", flags=TE, requirements=[
             RQ_SRS_006_RBAC_User_Drop("1.0")]):
             user = "user0"
@@ -79,7 +79,7 @@ def feature(self, node="clickhouse1"):
             RQ_SRS_006_RBAC_User_Drop_IfExists("1.0")]):
         with When("I drop the nonexistant users"):
             node.query("DROP USER IF EXISTS user5, user6")
-        
+
     with Scenario("I drop user from specific cluster", flags=TE, requirements=[
             RQ_SRS_006_RBAC_User_Drop_OnCluster("1.0")]):
        try:

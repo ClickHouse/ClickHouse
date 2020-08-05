@@ -62,7 +62,7 @@ class TaskTrivial:
 
         for node in [source, destination]:
             node.query("DROP DATABASE IF EXISTS default")
-            node.query("CREATE DATABASE IF NOT EXISTS default")
+            node.query("CREATE DATABASE IF NOT EXISTS default ENGINE=Ordinary")
 
         source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1) "
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
