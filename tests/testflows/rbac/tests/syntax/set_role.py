@@ -22,7 +22,7 @@ def feature(self, node="clickhouse1"):
         try:
             with Given("I have some roles"):
                 for i in range(roles):
-                    node.query(f"CREATE ROLE role{i}")             
+                    node.query(f"CREATE ROLE role{i}")
             yield
         finally:
             with Finally("I drop the roles"):
@@ -54,7 +54,7 @@ def feature(self, node="clickhouse1"):
             with When("I set nonexistent role for current user"):
                 exitcode, message = errors.role_not_found_in_disk("role5")
                 node.query("SET ROLE ALL EXCEPT role5", exitcode=exitcode, message=message)
-    
+
     with Scenario("I set one role for current user", flags = TE, requirements=[
             RQ_SRS_006_RBAC_SetRole("1.0")]):
         with setup(1):

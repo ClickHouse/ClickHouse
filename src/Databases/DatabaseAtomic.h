@@ -21,16 +21,20 @@ class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
 
-    DatabaseAtomic(String name_, String metadata_path_, Context & context_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_);
 
     String getEngineName() const override { return "Atomic"; }
+    UUID getUUID() const override { return db_uuid; }
+
+    void renameDatabase(const String & new_name) override;
 
     void renameTable(
             const Context & context,
             const String & table_name,
             IDatabase & to_database,
             const String & to_table_name,
-            bool exchange) override;
+            bool exchange,
+            bool dictionary) override;
 
     void dropTable(const Context & context, const String & table_name, bool no_delay) override;
 
@@ -51,6 +55,9 @@ public:
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
+    void tryCreateSymlink(const String & table_name, const String & actual_data_path);
+    void tryRemoveSymlink(const String & table_name);
+
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -60,15 +67,18 @@ private:
     typedef std::unordered_map<UUID, StoragePtr> DetachedTables;
     [[nodiscard]] DetachedTables cleenupDetachedTables();
 
-    void tryCreateSymlink(const String & table_name, const String & actual_data_path);
-    void tryRemoveSymlink(const String & table_name);
+    void tryCreateMetadataSymlink();
+
+    void renameDictionaryInMemoryUnlocked(const StorageID & old_name, const StorageID & new_name);
 
     //TODO store path in DatabaseWithOwnTables::tables
     typedef std::unordered_map<String, String> NameToPathMap;
     NameToPathMap table_name_to_path;
 
     DetachedTables detached_tables;
-    const String path_to_table_symlinks;
+    String path_to_table_symlinks;
+    String path_to_metadata_symlink;
+    const UUID db_uuid;
 };
 
 }
