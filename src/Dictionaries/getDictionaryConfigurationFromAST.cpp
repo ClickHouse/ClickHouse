@@ -112,7 +112,7 @@ void buildLayoutConfiguration(
         {
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Dictionary layout parameter value must be a literal, got '{}' instead",
-                pair->second ? pair->second->formatForErrorMessage() : "<none>");
+                pair->second->formatForErrorMessage());
         }
 
         const auto value_field = value_literal->value;
