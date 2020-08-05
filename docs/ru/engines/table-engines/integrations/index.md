@@ -15,3 +15,4 @@ ClickHouse предоставляет различные средства для
 -   [HDFS](../../../engines/table-engines/integrations/hdfs.md)
 -   [Kafka](../../../engines/table-engines/integrations/kafka.md)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/) <!--hide-->
