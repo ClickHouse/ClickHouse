@@ -102,6 +102,9 @@ private:
         const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result,
         const NullMap * const null_map_data, const NullMap * const null_map_item)
     {
+        UNUSED(null_map_data);
+        UNUSED(null_map_item);
+
         const size_t size = offsets.size();
 
         if constexpr (InvokedNotFromLCSpec)
@@ -796,7 +799,8 @@ private:
         const IColumn & lc_indices = col_lc->getIndexes();
         MutableColumnPtr col_arg_indices = lc_indices.cloneResized(arg_size);
 
-        auto fill_col = [&col_lc, &col_arg_cloned, arg_size]<class T>(ColumnVector<T>& col_indices) {
+        auto fill_col = [&col_lc, &col_arg_cloned, arg_size]<class T>(ColumnVector<T>& col_indices)
+        {
             // Need to clone the column to build its index.
             auto col_lc_dict_mutated_icol = IColumn::mutate(col_lc->getDictionaryPtr());
             IColumnUnique * const col_lc_dict_mutated = static_cast<IColumnUnique *>(col_lc_dict_mutated_icol.get());
