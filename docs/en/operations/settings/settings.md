@@ -998,6 +998,17 @@ The results of the compilation are saved in the build directory in the form of .
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
+## output\_format\_json\_quote\_denormals (#settings-output_format_json_quote_denormals)
+
+Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
