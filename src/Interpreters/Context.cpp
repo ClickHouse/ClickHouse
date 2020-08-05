@@ -1362,7 +1362,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     return *shared->background_pool;
 }
 
-BackgroundProcessingPool & Context::getBackgroundMovePool()
+BackgroundProcessingPool & Context::getBackgroundMovePool() const
 {
     auto lock = getLock();
     if (!shared->background_move_pool)

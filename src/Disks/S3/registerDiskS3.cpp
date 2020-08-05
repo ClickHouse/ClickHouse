@@ -136,6 +136,7 @@ void registerDiskS3(DiskFactory & factory)
             name,
             client,
             proxy_config,
+            context.getBackgroundMovePool(),
             uri.bucket,
             uri.key,
             metadata_path,
