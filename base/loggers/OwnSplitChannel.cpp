@@ -98,7 +98,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
             text_log_locked = text_log.lock();
         }
         if (text_log_locked)
-               text_log_locked->add(elem);
+            text_log_locked->add(elem);
     }
 }
 
