@@ -1,5 +1,9 @@
 lexer grammar ClickHouseLexer;
 
+// Interval types
+
+INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
+
 // Keywords
 
 ALL: A L L;
@@ -76,10 +80,6 @@ WHERE: W H E R E;
 WITH: W I T H;
 YEAR: Y E A R;
 
-// Interval types
-
-INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
-
 // Tokens
 
 IDENTIFIER: (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DIGIT)*;
@@ -127,7 +127,6 @@ COMMA: ',';
 CONCAT: '||';
 DASH: '-';
 DOT: '.';
-EQ: EQ_SINGLE | EQ_DOUBLE;
 EQ_DOUBLE: '==';
 EQ_SINGLE: '=';
 GE: '>=';

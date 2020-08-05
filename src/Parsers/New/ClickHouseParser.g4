@@ -6,7 +6,7 @@ options {
 
 // Top-level statements
 
-queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON?;
+queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
 
@@ -94,7 +94,7 @@ columnExpr
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
     | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
-    | CAST LPAREN columnExpr AS identifier RPAREN                                    # ColumnExprCast
+    // TODO: | CAST LPAREN columnExpr AS identifier RPAREN                                    # ColumnExprCast
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
@@ -144,7 +144,8 @@ binaryOp
     | PLUS
     | DASH
     | PERCENT
-    | EQ
+    | EQ_DOUBLE
+    | EQ_SINGLE
     | NOT_EQ
     | LE
     | GE

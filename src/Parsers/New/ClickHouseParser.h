@@ -13,25 +13,25 @@ namespace DB {
 class  ClickHouseParser : public antlr4::Parser {
 public:
   enum {
-    ALL = 1, AND = 2, ANTI = 3, ANY = 4, ARRAY = 5, AS = 6, ASCENDING = 7, 
-    ASOF = 8, BETWEEN = 9, BOTH = 10, BY = 11, CASE = 12, CAST = 13, COLLATE = 14, 
-    CROSS = 15, DAY = 16, DESCENDING = 17, DISTINCT = 18, ELSE = 19, END = 20, 
-    EXTRACT = 21, FINAL = 22, FIRST = 23, FORMAT = 24, FROM = 25, FULL = 26, 
-    GLOBAL = 27, GROUP = 28, HAVING = 29, HOUR = 30, IN = 31, INNER = 32, 
-    INSERT = 33, INTERVAL = 34, INTO = 35, IS = 36, JOIN = 37, LAST = 38, 
-    LEADING = 39, LEFT = 40, LIKE = 41, LIMIT = 42, LOCAL = 43, MINUTE = 44, 
-    MONTH = 45, NOT = 46, NULL_SQL = 47, NULLS = 48, OFFSET = 49, ON = 50, 
-    OR = 51, ORDER = 52, OUTER = 53, OUTFILE = 54, PREWHERE = 55, QUARTER = 56, 
-    RIGHT = 57, SAMPLE = 58, SECOND = 59, SELECT = 60, SEMI = 61, SETTINGS = 62, 
-    THEN = 63, TOTALS = 64, TRAILING = 65, TRIM = 66, UNION = 67, USING = 68, 
-    WEEK = 69, WHEN = 70, WHERE = 71, WITH = 72, YEAR = 73, INTERVAL_TYPE = 74, 
-    IDENTIFIER = 75, NUMBER_LITERAL = 76, STRING_LITERAL = 77, ARROW = 78, 
-    ASTERISK = 79, BACKQUOTE = 80, BACKSLASH = 81, COLON = 82, COMMA = 83, 
-    CONCAT = 84, DASH = 85, DOT = 86, EQ = 87, EQ_DOUBLE = 88, EQ_SINGLE = 89, 
-    GE = 90, GT = 91, LBRACKET = 92, LE = 93, LPAREN = 94, LT = 95, NOT_EQ = 96, 
-    PERCENT = 97, PLUS = 98, QUERY = 99, QUOTE_SINGLE = 100, RBRACKET = 101, 
-    RPAREN = 102, SEMICOLON = 103, SLASH = 104, UNDERSCORE = 105, LINE_COMMENT = 106, 
-    WHITESPACE = 107
+    INTERVAL_TYPE = 1, ALL = 2, AND = 3, ANTI = 4, ANY = 5, ARRAY = 6, AS = 7, 
+    ASCENDING = 8, ASOF = 9, BETWEEN = 10, BOTH = 11, BY = 12, CASE = 13, 
+    CAST = 14, COLLATE = 15, CROSS = 16, DAY = 17, DESCENDING = 18, DISTINCT = 19, 
+    ELSE = 20, END = 21, EXTRACT = 22, FINAL = 23, FIRST = 24, FORMAT = 25, 
+    FROM = 26, FULL = 27, GLOBAL = 28, GROUP = 29, HAVING = 30, HOUR = 31, 
+    IN = 32, INNER = 33, INSERT = 34, INTERVAL = 35, INTO = 36, IS = 37, 
+    JOIN = 38, LAST = 39, LEADING = 40, LEFT = 41, LIKE = 42, LIMIT = 43, 
+    LOCAL = 44, MINUTE = 45, MONTH = 46, NOT = 47, NULL_SQL = 48, NULLS = 49, 
+    OFFSET = 50, ON = 51, OR = 52, ORDER = 53, OUTER = 54, OUTFILE = 55, 
+    PREWHERE = 56, QUARTER = 57, RIGHT = 58, SAMPLE = 59, SECOND = 60, SELECT = 61, 
+    SEMI = 62, SETTINGS = 63, THEN = 64, TOTALS = 65, TRAILING = 66, TRIM = 67, 
+    UNION = 68, USING = 69, WEEK = 70, WHEN = 71, WHERE = 72, WITH = 73, 
+    YEAR = 74, IDENTIFIER = 75, NUMBER_LITERAL = 76, STRING_LITERAL = 77, 
+    ARROW = 78, ASTERISK = 79, BACKQUOTE = 80, BACKSLASH = 81, COLON = 82, 
+    COMMA = 83, CONCAT = 84, DASH = 85, DOT = 86, EQ_DOUBLE = 87, EQ_SINGLE = 88, 
+    GE = 89, GT = 90, LBRACKET = 91, LE = 92, LPAREN = 93, LT = 94, NOT_EQ = 95, 
+    PERCENT = 96, PLUS = 97, QUERY = 98, QUOTE_SINGLE = 99, RBRACKET = 100, 
+    RPAREN = 101, SEMICOLON = 102, SLASH = 103, UNDERSCORE = 104, LINE_COMMENT = 105, 
+    WHITESPACE = 106
   };
 
   enum {
@@ -111,6 +111,7 @@ public:
     virtual size_t getRuleIndex() const override;
     std::vector<QueryStmtContext *> queryStmt();
     QueryStmtContext* queryStmt(size_t i);
+    antlr4::tree::TerminalNode *EOF();
     std::vector<antlr4::tree::TerminalNode *> SEMICOLON();
     antlr4::tree::TerminalNode* SEMICOLON(size_t i);
 
@@ -759,20 +760,6 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
-  class  ColumnExprCastContext : public ColumnExprContext {
-  public:
-    ColumnExprCastContext(ColumnExprContext *ctx);
-
-    antlr4::tree::TerminalNode *CAST();
-    antlr4::tree::TerminalNode *LPAREN();
-    ColumnExprContext *columnExpr();
-    antlr4::tree::TerminalNode *AS();
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *RPAREN();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
   class  ColumnExprParensContext : public ColumnExprContext {
   public:
     ColumnExprParensContext(ColumnExprContext *ctx);
@@ -1153,7 +1140,8 @@ public:
     antlr4::tree::TerminalNode *PLUS();
     antlr4::tree::TerminalNode *DASH();
     antlr4::tree::TerminalNode *PERCENT();
-    antlr4::tree::TerminalNode *EQ();
+    antlr4::tree::TerminalNode *EQ_DOUBLE();
+    antlr4::tree::TerminalNode *EQ_SINGLE();
     antlr4::tree::TerminalNode *NOT_EQ();
     antlr4::tree::TerminalNode *LE();
     antlr4::tree::TerminalNode *GE();

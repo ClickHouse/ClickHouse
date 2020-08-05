@@ -185,10 +185,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *ctx) override {
     return visitChildren(ctx);
   }

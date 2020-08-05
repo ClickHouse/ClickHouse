@@ -169,7 +169,7 @@ antlrcpp::Any ParseTreeVisitor::visitBinaryOp(ClickHouseParser::BinaryOpContext 
     if (ctx->PERCENT()) return AST::ColumnExpr::BinaryOpType::MODULO;
     if (ctx->PLUS()) return AST::ColumnExpr::BinaryOpType::PLUS;
     if (ctx->DASH()) return AST::ColumnExpr::BinaryOpType::MINUS;
-    if (ctx->EQ()) return AST::ColumnExpr::BinaryOpType::EQ;
+    if (ctx->EQ_DOUBLE() || ctx->EQ_SINGLE()) return AST::ColumnExpr::BinaryOpType::EQ;
     if (ctx->NOT_EQ()) return AST::ColumnExpr::BinaryOpType::NOT_EQ;
     if (ctx->LE()) return AST::ColumnExpr::BinaryOpType::LE;
     if (ctx->GE()) return AST::ColumnExpr::BinaryOpType::GE;
@@ -281,16 +281,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExpr
     return AST::ColumnExpr::createCase(first_expr, cases, else_expr);
 }
 
-antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
-{
-    auto args = std::make_shared<AST::ColumnArgList>();
-    auto params = std::make_shared<AST::ColumnParamList>();
+// antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
+// {
+//     auto args = std::make_shared<AST::ColumnArgList>();
+//     auto params = std::make_shared<AST::ColumnParamList>();
 
-    args->append(ctx->columnExpr()->accept(this));
-    // TODO: params->append(AST::Literal::createString(???));
+//     args->append(ctx->columnExpr()->accept(this));
+//     // TODO: params->append(AST::Literal::createString(???));
 
-    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("CAST"), params, args);
-}
+//     return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("CAST"), params, args);
+// }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
 {

@@ -104,8 +104,6 @@ public:
 
     virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *context) = 0;
-
     virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *context) = 0;
