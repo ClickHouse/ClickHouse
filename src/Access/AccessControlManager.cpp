@@ -29,8 +29,8 @@ namespace
     std::vector<std::unique_ptr<IAccessStorage>> createStorages()
     {
         std::vector<std::unique_ptr<IAccessStorage>> list;
-        list.emplace_back(std::make_unique<DiskAccessStorage>());
         list.emplace_back(std::make_unique<UsersConfigAccessStorage>());
+        list.emplace_back(std::make_unique<DiskAccessStorage>());
 
 #if 0  /// Memory access storage is disabled.
         list.emplace_back(std::make_unique<MemoryAccessStorage>());
@@ -38,8 +38,8 @@ namespace
         return list;
     }
 
-    constexpr size_t DISK_ACCESS_STORAGE_INDEX = 0;
-    constexpr size_t USERS_CONFIG_ACCESS_STORAGE_INDEX = 1;
+    constexpr size_t USERS_CONFIG_ACCESS_STORAGE_INDEX = 0;
+    constexpr size_t DISK_ACCESS_STORAGE_INDEX = 1;
 }
 
 
