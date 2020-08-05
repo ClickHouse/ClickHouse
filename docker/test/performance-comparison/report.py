@@ -18,7 +18,7 @@ parser.add_argument('--report', default='main', choices=['main', 'all-queries'],
 args = parser.parse_args()
 
 tables = []
-errors_described = []
+errors_explained = []
 report_errors = []
 error_tests = 0
 slow_average_tests = 0
@@ -285,11 +285,11 @@ def add_report_errors():
     text += tableEnd()
     # Insert after Tested Commits
     tables.insert(1, text)
-    errors_described.append([f'<a href="#{currentTableAnchor()}">There were some errors while building the report</a>']);
+    errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while building the report</a>']);
 
 def add_errors_explained():
     global tables
-    addSimpleTable('Error summary', ['Description'], errors_described, 1)
+    addSimpleTable('Error summary', ['Description'], errors_explained, 1)
 
 
 if args.report == 'main':
@@ -302,7 +302,7 @@ if args.report == 'main':
     error_tests += len(run_error_rows)
     addSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
     if run_error_rows:
-        errors_described.append([f'<a href="#{currentTableAnchor()}">There were some errors while running the tests</a>']);
+        errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while running the tests</a>']);
 
 
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
@@ -311,7 +311,7 @@ if args.report == 'main':
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
     if slow_on_client_rows:
-        errors_described.append([f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>']);
+        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>']);
 
     unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
     error_tests += len(unmarked_short_rows)
@@ -319,7 +319,7 @@ if args.report == 'main':
         ['New client time, s', 'Test', '#', 'Query'],
         unmarked_short_rows)
     if unmarked_short_rows:
-        errors_described.append([f'<a href="#{currentTableAnchor()}">Some queries have short duration but are not explicitly marked as "short"</a>']);
+        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have short duration but are not explicitly marked as "short"</a>']);
 
     def add_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
@@ -335,12 +335,12 @@ if args.report == 'main':
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
                 unstable_partial_queries += 1
-                errors_described.append([f'<a href="#{nextRowAnchor()}">The query no. {row[3]} of test \'{row[2]}\' has excessive variance of run time. Keep it below 10%</a>'])
+                errors_explained.append([f'<a href="#{nextRowAnchor()}">The query no. {row[3]} of test \'{row[2]}\' has excessive variance of run time. Keep it below 10%</a>'])
             else:
                 attrs[1] = ''
             if float(row[0]) > allowed_single_run_time:
                 attrs[0] = f'style="background: {color_bad}"'
-                errors_described.append([f'<a href="#{nextRowAnchor()}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run} seconds"</a>'])
+                errors_explained.append([f'<a href="#{nextRowAnchor()}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run} seconds"</a>'])
                 slow_average_tests += 1
             else:
                 attrs[0] = ''
@@ -382,7 +382,7 @@ if args.report == 'main':
                 else:
                     slower_queries += 1
                     attrs[2] = attrs[3] = f'style="background: {color_bad}"'
-                    errors_described.append([f'<a href="#{nextRowAnchor()}">The query no. {row[7]} of test \'{row[6]}\' has slowed down</a>'])
+                    errors_explained.append([f'<a href="#{nextRowAnchor()}">The query no. {row[7]} of test \'{row[6]}\' has slowed down</a>'])
             else:
                 attrs[2] = attrs[3] = ''
 
@@ -467,14 +467,14 @@ if args.report == 'main':
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = f'style="background: {color_bad}"'
-                errors_explained.append(f'<a href="./all-queries.html#all-query-times.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up')
+                errors_explained.append([f'<a href="./all-queries.html#all-query-times.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
                 attrs[6] = ''
 
             if float(r[5]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[5] = f'style="background: {color_bad}"'
-                errors_explained.append(f'<a href="./all-queries.html#all-query-times.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report')
+                errors_explained.append([f'<a href="./all-queries.html#all-query-times.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
             else:
                 attrs[5] = ''
 
