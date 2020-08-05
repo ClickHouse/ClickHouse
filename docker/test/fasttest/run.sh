@@ -53,7 +53,7 @@ mkdir -p /etc/clickhouse-server
 mkdir -p /etc/clickhouse-client
 mkdir -p /etc/clickhouse-server/config.d
 mkdir -p /etc/clickhouse-server/users.d
-mkdir -p /var/log/clickhouse-server
+ln -s /test_output /var/log/clickhouse-server
 cp $CLICKHOUSE_DIR/programs/server/config.xml /etc/clickhouse-server/
 cp $CLICKHOUSE_DIR/programs/server/users.xml /etc/clickhouse-server/
 
@@ -161,15 +161,15 @@ clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip ${TESTS_TO_
 
 
 kill_clickhouse () {
-    kill `ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'` 2>/dev/null
+    killall clickhouse-server ||:
 
     for i in {1..10}
     do
-        if ! kill -0 `ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'`; then
+        if ! killall -0 clickhouse-server; then
             echo "No clickhouse process"
             break
         else
-            echo "Process" `ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'` "still alive"
+            echo "Clickhouse server process" $(pgrep -f clickhouse-server) "still alive"
             sleep 10
         fi
     done
@@ -202,5 +202,3 @@ if [[ ! -z "$FAILED_TESTS" ]]; then
 else
     echo "No failed tests"
 fi
-
-mv /var/log/clickhouse-server/* /test_output
