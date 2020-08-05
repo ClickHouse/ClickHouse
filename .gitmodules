@@ -10,7 +10,7 @@
 	url = https://github.com/lz4/lz4.git
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
-	url = https://github.com/edenhill/librdkafka.git
+	url = https://github.com/ClickHouse-Extras/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse-Extras/cctz.git
@@ -76,7 +76,7 @@
 	url = https://github.com/google/snappy
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/ClickHouse-Extras/cppkafka.git
+	url = https://github.com/mfontanini/cppkafka.git
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
@@ -174,3 +174,9 @@
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/getsentry/sentry-native.git
+[submodule "contrib/gcem"]
+	path = contrib/gcem
+	url = https://github.com/kthohr/gcem.git
+[submodule "contrib/stats"]
+	path = contrib/stats
+	url = https://github.com/kthohr/stats.git

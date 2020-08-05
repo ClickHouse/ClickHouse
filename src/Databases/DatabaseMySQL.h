@@ -67,7 +67,6 @@ private:
     ASTPtr database_engine_define;
     String database_name_in_mysql;
 
-    mutable std::mutex mutex;
     std::atomic<bool> quit{false};
     std::condition_variable cond;
 

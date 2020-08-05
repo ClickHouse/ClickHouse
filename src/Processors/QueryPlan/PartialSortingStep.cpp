@@ -7,13 +7,19 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::Traits getTraits(size_t limit)
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
+        {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
+            .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = limit == 0,
+        }
     };
 }
 
@@ -22,11 +28,22 @@ PartialSortingStep::PartialSortingStep(
     SortDescription sort_description_,
     UInt64 limit_,
     SizeLimits size_limits_)
-    : ITransformingStep(input_stream, input_stream.header, getTraits())
+    : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , sort_description(std::move(sort_description_))
     , limit(limit_)
     , size_limits(size_limits_)
 {
+    output_stream->sort_description = sort_description;
+    output_stream->sort_mode = DataStream::SortMode::Chunk;
+}
+
+void PartialSortingStep::updateLimit(size_t limit_)
+{
+    if (limit_ && (limit == 0 || limit_ < limit))
+    {
+        limit = limit_;
+        transform_traits.preserves_number_of_rows = limit == 0;
+    }
 }
 
 void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
@@ -59,6 +76,9 @@ void PartialSortingStep::describeActions(FormatSettings & settings) const
     settings.out << prefix << "Sort description: ";
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
+
+    if (limit)
+        settings.out << prefix << "Limit " << limit << '\n';
 }
 
 }

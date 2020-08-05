@@ -149,7 +149,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #if defined(__linux__)
     try
     {
-        static constexpr size_t buf_size = 4096;
+        static constexpr size_t buf_size = 1024;
         char buf[buf_size];
 
         UInt64 max_map_count = 0;

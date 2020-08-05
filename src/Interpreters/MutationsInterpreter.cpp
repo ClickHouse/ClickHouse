@@ -5,7 +5,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -321,7 +321,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (column.default_desc.kind == ColumnDefaultKind::Materialized)
             {
                 auto query = column.default_desc.expression->clone();
-                auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
@@ -418,7 +418,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
 
             auto query = (*it).expression_list_ast->clone();
-            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
+            auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
             for (const auto & column : required_columns)
                 dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -584,7 +584,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = SyntaxAnalyzer(context).analyze(all_asts, all_columns);
+        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns);
         if (context.hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context.getQueryContext().addScalar(it.first, it.second);
@@ -762,6 +762,25 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     }
 
     return sort_description;
+}
+
+bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
+{
+    /// is subset
+    for (const auto & storage_column : storage_columns)
+        if (!output_columns.count(storage_column))
+            return false;
+
+    return true;
+}
+
+bool MutationsInterpreter::isAffectingAllColumns() const
+{
+    auto storage_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    if (stages.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
+
+    return stages.back().isAffectingAllColumns(storage_columns);
 }
 
 }

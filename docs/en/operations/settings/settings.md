@@ -1459,6 +1459,20 @@ Possible values:
 
 Default value: 16.
 
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+
+Enables parallel distributed `INSERT ... SELECT` query. 
+
+If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
+
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## insert_distributed_sync {#insert_distributed_sync}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
@@ -1535,7 +1549,7 @@ Default value: 16.
 
 ## validate\_polygons {#validate_polygons}
 
-Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
 
 Possible values:
 
@@ -1708,5 +1722,22 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
+
+## mutations_sync {#mutations_sync}
+
+Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
+
+Possible values:
+
+-   0 - Mutations execute asynchronously. 
+-   1 - The query waits for all mutations to complete on the current server. 
+-   2 - The query waits for all mutations to complete on all replicas (if they exist).
+
+Default value: `0`.
+
+**See Also**
+
+-   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+-   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
