@@ -173,7 +173,7 @@
 	url = https://github.com/fmtlib/fmt.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
-	url = https://github.com/getsentry/sentry-native.git
+	url = https://github.com/ClickHouse-Extras/sentry-native.git
 [submodule "contrib/gcem"]
 	path = contrib/gcem
 	url = https://github.com/kthohr/gcem.git
