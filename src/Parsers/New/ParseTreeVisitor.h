@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ClickHouseParserBaseVisitor.h"
+#include "ClickHouseParserVisitor.h"
 
 #include <Parsers/New/AST/Query.h>
 #include <Parsers/New/ClickHouseParser.h>
@@ -68,7 +68,7 @@ public:
     antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *ctx) override;
     antlrcpp::Any visitColumnExprBinaryOp(ClickHouseParser::ColumnExprBinaryOpContext *ctx) override;
     antlrcpp::Any visitColumnExprCase(ClickHouseParser::ColumnExprCaseContext *ctx) override;
-    //antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx) override;
+    // TODO: antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx) override;
     antlrcpp::Any visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx) override;
     antlrcpp::Any visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx) override;
     antlrcpp::Any visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx) override;
@@ -107,9 +107,6 @@ public:
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
     antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;
     antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *ctx) override;  // returns |AST::ColumnExpr::UnaryOpType|
-
-private:
-    void visitQueryStmtAsParent(AST::Query *query, ClickHouseParser::QueryStmtContext *ctx);
 };
 
 }
