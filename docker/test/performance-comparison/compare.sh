@@ -55,7 +55,7 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    numactl --cpunodebind=0 --membind=0 \
+    numactl --cpunodebind=0 --localalloc \
         left/clickhouse-server --config-file=left/config/config.xml \
             -- --path left/db --user_files_path left/db/user_files \
             &>> left-server-log.log &
@@ -63,7 +63,7 @@ function restart
     kill -0 $left_pid
     disown $left_pid
 
-    numactl --cpunodebind=1 --membind=1 \
+    numactl --cpunodebind=0 --localalloc \
         right/clickhouse-server --config-file=right/config/config.xml \
             -- --path right/db --user_files_path right/db/user_files \
             &>> right-server-log.log &
@@ -952,7 +952,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart && get_profiles ||: )
+    ( get_profiles || restart || get_profiles ||: )
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
