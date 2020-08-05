@@ -888,9 +888,6 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 [[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
-inline String toString(const Field & x)
-{
-    return Field::dispatch([] (auto & value) { return toString(value); }, x);
-}
+String toString(const Field & x);
 
 }
