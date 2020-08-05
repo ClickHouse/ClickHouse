@@ -163,7 +163,12 @@ clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip ${TESTS_TO_
 
 
 kill_clickhouse () {
-    kill `ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'` 2>/dev/null
+    pid=`ps ax | grep clickhouse-server | grep -v 'grep' | awk '{print $1}'`
+    if [[ -z "$pid" ]]; then
+        return
+    fi
+
+    kill $pid 2>/dev/null
 
     for i in {1..10}
     do
