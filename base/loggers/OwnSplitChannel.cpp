@@ -92,7 +92,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         elem.source_line = msg.getSourceLine();
         
-        shared_ptr<TextLog> text_log_locked;
+        std::shared_ptr<TextLog> text_log_locked;
         {
             std::lock_guard<std::mutex> lock(text_log_mutex);
             text_log_locked = text_log.lock();
