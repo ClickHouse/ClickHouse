@@ -129,6 +129,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
+                create_query->database = database_name;
                 std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
@@ -165,7 +166,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
                     context,
                     create_query,
                     *this,
-                    getDatabaseName(),
+                    database_name,
                     getMetadataPath() + name_with_query.first,
                     has_force_restore_data_flag);
 
@@ -234,8 +235,7 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     String statement;
 
     {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
         readStringUntilEOF(statement, in);
     }
 

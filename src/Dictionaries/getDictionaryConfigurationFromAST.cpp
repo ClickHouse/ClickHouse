@@ -469,6 +469,14 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
+    if (query.uuid != UUIDHelpers::Nil)
+    {
+        AutoPtr<Poco::XML::Element> uuid_element(xml_document->createElement("uuid"));
+        current_dictionary->appendChild(uuid_element);
+        AutoPtr<Text> uuid(xml_document->createTextNode(toString(query.uuid)));
+        uuid_element->appendChild(uuid);
+    }
+
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));
     current_dictionary->appendChild(structure_element);
     Names pk_attrs = getPrimaryKeyColumns(query.dictionary->primary_key);
