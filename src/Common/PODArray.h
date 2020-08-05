@@ -218,12 +218,8 @@ public:
 
     void clear() { c_end = c_start; }
 
-    /// Always inline is for clang. GCC works fine.
-    /// It makes sense when "resize" called in a loop, so we want "reserve" to be inlined into "resize".
-    /// It improves performance of SQL queries with "materialize" of String by 23%.
-    /// And we don't need always inline for "reserve_exact" because calling it in a loop is already terribly slow.
     template <typename ... TAllocatorParams>
-    ALWAYS_INLINE void reserve(size_t n, TAllocatorParams &&... allocator_params)
+    void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
             realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)), std::forward<TAllocatorParams>(allocator_params)...);
@@ -467,7 +463,6 @@ public:
     {
         static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
-        size_t position [[maybe_unused]] = it - begin();
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = this->byte_size(end() - it);
 
