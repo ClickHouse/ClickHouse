@@ -7,7 +7,7 @@ toc_title: KILL
 
 Существует два вида операторов KILL: KILL QUERY и KILL MUTATION
 
-## KILL QUERY {#kill-query-statement}
+## KILL QUERY {#kill-query}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
