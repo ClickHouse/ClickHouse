@@ -72,7 +72,7 @@ void CacheDictionary::getItemsNumberImpl(
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
                 if (!cell.isDefault())
-                    static_cast<OutputType>(attribute_array[cell_idx]);
+                    out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
             };
 
             if (!find_result.valid)
