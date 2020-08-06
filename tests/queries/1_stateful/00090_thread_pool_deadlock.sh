@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 echo '1';
 $CLICKHOUSE_CLIENT --distributed_aggregation_memory_efficient=1 --group_by_two_level_threshold=1 --max_execution_time=1 --query="SELECT SearchPhrase AS k, count() AS c FROM remote('127.0.0.{1,2}', test.hits) GROUP BY k ORDER BY c DESC LIMIT 10" --format=Null 2>/dev/null;

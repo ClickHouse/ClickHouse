@@ -48,8 +48,33 @@ python3 regression.py --local --clickhouse-binary-path "/usr/bin/clickhouse"
 You can control verbosity of the output by specifying the output format with `-o` or `--output` option.
 See `--help` for more details.
 
+## Running Only Selected Tests
+
+You can run only the selected tests by passing `--only` option to the `regression.py`.
+
+For example,
+
+```bash
+./regression.py --local --clickhouse-binary-path /usr/bin/clickhouse --only "/clickhouse/rbac/syntax/grant privilege/*"
+```
+
+will execute all `rbac/syntax/grant privilege` tests.
+
+If you want to run only a single test such as the `/clickhouse/rbac/syntax/grant privilege/grant privileges/privilege='KILL QUERY', on=('*.*',), allow_introspection=False` you can do it as follows
+
+```bash
+./regression.py --local --clickhouse-binary-path /usr/bin/clickhouse --only "/clickhouse/rbac/syntax/grant privilege/grant privileges/privilege='KILL QUERY', on=('[*].[*]',), allow_introspection=False/*"
+```
+
+> Note that you need to surround special characters such as `*` with square brackets, for example `[*]`.
+
+> Note that you need to end the filtering pattern with `/*` to run all the steps inside the test.
+
+For more information, please see [Filtering](https://testflows.com/handbook/#Filtering) section in the [TestFlows Handbook].
+
 [Python 3]: https://www.python.org/
 [Ubuntu]: https://ubuntu.com/ 
 [TestFlows]: https://testflows.com
+[TestFlows Handbook]: https://testflows.com/handbook/
 [Docker]: https://www.docker.com/
 [Docker Compose]: https://docs.docker.com/compose/

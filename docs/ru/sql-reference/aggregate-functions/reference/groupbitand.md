@@ -44,3 +44,5 @@ SELECT groupBitAnd(num) FROM t
 binary     decimal
 00000100 = 4
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitand/) <!--hide-->

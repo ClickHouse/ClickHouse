@@ -42,3 +42,5 @@ FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 │                      8 │
 └────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avgweighted/) <!--hide-->
