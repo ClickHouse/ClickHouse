@@ -41,7 +41,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (finished)
+        if (is_finished)
         {
             return {};
         }
@@ -56,7 +56,7 @@ protected:
                 columns.emplace_back(src.getByName(name).column);
 
             if (it == end)
-                finished = true;
+                is_finished = true;
             else
                 ++it;
             return Chunk(std::move(columns), src.rows());
@@ -67,7 +67,7 @@ private:
     BlocksList::iterator begin;
     BlocksList::iterator end;
     BlocksList::iterator it;
-    bool finished = false;
+    bool is_finished = false;
 };
 
 
