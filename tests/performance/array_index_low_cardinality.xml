@@ -1,14 +1,16 @@
 <test>
     <create_query>DROP TABLE IF EXISTS perf_lc</create_query>
+
     <create_query>CREATE TABLE perf_lc(
         str LowCardinality(String),
-        arr Array(LowCardinality(String)) default array(str)
-        ) ENGINE = MergeTree() ORDER BY tuple()</create_query>
+        arr Array(LowCardinality(String)) default [str]
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
 
     <create_query>
         INSERT INTO perf_lc (str)
         SELECT concat('asdf', toString(number % 10000))
-        FROM numbers(1000000000)
+        FROM numbers(500000000)
     </create_query>
 
     <query>SELECT count() FROM perf_lc WHERE str = 'asdf337'</query>
@@ -23,6 +25,32 @@
     <query>SELECT count() FROM perf_lc WHERE has(arr, concat('0', str))</query>
     <query>SELECT count() FROM perf_lc WHERE has(arr, concat(str, 'str'))</query>
     <query>SELECT count() FROM perf_lc WHERE has(arr, concat(str, '0'))</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_lc</drop_query>
+
+    <create_query>CREATE TABLE perf_lc(
+        num UInt8,
+        arr Array(LowCardinality(Int64)) default [num]
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
+
+    <create_query>
+        INSERT INTO perf_lc (num)
+        SELECT number % 1000
+        FROM numbers(500000000)
+    </create_query>
+
+    <query>SELECT count() FROM perf_lc WHERE num = 42</query>
+    <query>SELECT count() FROM perf_lc WHERE arr[1] = 42</query>
+    <query>SELECT count() FROM perf_lc WHERE has(arr, 42)</query>
+    <query>SELECT count() FROM perf_lc WHERE indexOf(arr, 42) > 0</query>
+
+    <query>SELECT count() FROM perf_lc WHERE arr[1] = num</query>
+    <query>SELECT count() FROM perf_lc WHERE has(arr, num)</query>
+    <query>SELECT count() FROM perf_lc WHERE indexOf(arr, num) > 0</query>
+
+    <query>SELECT count() FROM perf_lc WHERE has(arr, num * 10)</query>
+    <query>SELECT count() FROM perf_lc WHERE has(arr, (num * 1000 + 20) % 137)</query>
 
     <drop_query>DROP TABLE IF EXISTS perf_lc</drop_query>
 </test>
