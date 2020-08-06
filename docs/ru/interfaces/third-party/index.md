@@ -6,7 +6,7 @@ toc_priority: 24
 
 # Сторонние интерфейсы {#third-party-interfaces}
 
-Далее представлен список ссылок на сторонние инструменты, которые предоставляют своего рода интерфейс для ClickHouse. Это может быть либо визуальный интерфейс, интерфейс командной строки, либо API:
+Раздел содержит список сторонних интерфейсов для ClickHouse. Это может быть визуальный интерфейс, интерфейс командной строки, либо API:
 
 -   [Client libraries](../../interfaces/third-party/client-libraries.md)
 -   [Integrations](../../interfaces/third-party/integrations.md)
