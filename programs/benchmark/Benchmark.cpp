@@ -157,7 +157,7 @@ private:
     std::string query_id;
     bool continue_on_errors;
     bool print_stacktrace;
-    Settings settings;
+    const Settings & settings;
     SharedContextHolder shared_context;
     Context global_context;
     QueryProcessingStage::Enum query_processing_stage;

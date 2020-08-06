@@ -30,7 +30,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context
 {
     const Settings & settings = context.getSettingsRef();
     auto settings_constraints = context.getSettingsConstraints();
-    for (auto setting : settings.all())
+    for (const auto & setting : settings.all())
     {
         const auto & setting_name = setting.getName();
         res_columns[0]->insert(setting_name);
