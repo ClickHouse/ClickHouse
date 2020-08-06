@@ -21,7 +21,7 @@ struct InterpreterDropImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & drop_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db);
+    static ASTPtr getRewrittenQuery(const TQuery & drop_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 struct InterpreterAlterImpl
@@ -30,7 +30,7 @@ struct InterpreterAlterImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & alter_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db);
+    static ASTPtr getRewrittenQuery(const TQuery & alter_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 struct InterpreterRenameImpl
@@ -39,7 +39,7 @@ struct InterpreterRenameImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & rename_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db);
+    static ASTPtr getRewrittenQuery(const TQuery & rename_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 struct InterpreterCreateImpl
@@ -48,15 +48,15 @@ struct InterpreterCreateImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db);
+    static ASTPtr getRewrittenQuery(const TQuery & create_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 template <typename InterpreterImpl>
 class InterpreterMySQLDDLQuery : public IInterpreter
 {
 public:
-    InterpreterMySQLDDLQuery(const ASTPtr & query_ptr_, Context & context_, const String & clickhouse_db_, const String & mysql_db_)
-        : query_ptr(query_ptr_), context(context_), clickhouse_db(clickhouse_db_), mysql_db(mysql_db_)
+    InterpreterMySQLDDLQuery(const ASTPtr & query_ptr_, Context & context_, const String & mapped_to_database_, const String & mysql_database_)
+        : query_ptr(query_ptr_), context(context_), mapped_to_database(mapped_to_database_), mysql_database(mysql_database_)
     {
     }
 
@@ -65,7 +65,7 @@ public:
         const typename InterpreterImpl::TQuery & query = query_ptr->as<typename InterpreterImpl::TQuery &>();
 
         InterpreterImpl::validate(query, context);
-        ASTPtr rewritten_query = InterpreterImpl::getRewrittenQuery(query, context, clickhouse_db, mysql_db);
+        ASTPtr rewritten_query = InterpreterImpl::getRewrittenQuery(query, context, mapped_to_database, mysql_database);
 
         if (rewritten_query)
             return executeQuery("/* Rewritten MySQL DDL Query */ " + queryToString(rewritten_query), context, true);
@@ -76,8 +76,8 @@ public:
 private:
     ASTPtr query_ptr;
     Context & context;
-    const String clickhouse_db;
-    const String mysql_db;
+    const String mapped_to_database;
+    const String mysql_database;
 };
 
 using InterpreterMySQLDropQuery = InterpreterMySQLDDLQuery<InterpreterDropImpl>;

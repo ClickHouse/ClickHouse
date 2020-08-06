@@ -49,9 +49,6 @@ bool ParserDeclareOptionImpl<recursive>::parseImpl(Pos & pos, ASTPtr & node, Exp
                 if (!option_describe.value_parser->parse(pos, value, expected))
                     return false;
 
-                /*const auto & changes_iterator = changes.find(option_describe.option_name);
-                if (changes_iterator != changes.end())
-                    throw Exception("Duplicate options declare", ErrorCodes::)*/
                 found = true;
                 changes.insert(std::make_pair(option_describe.option_name, value));
                 break;

@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace MySQLParser
 {
 
@@ -22,8 +27,11 @@ public:
 
     String getID(char delim) const override { return "AlterQuery" + (delim + database) + delim + table; }
 
-/*protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;*/
+protected:
+    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    {
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTAlterQuery.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 class ParserAlterQuery : public IParserBase

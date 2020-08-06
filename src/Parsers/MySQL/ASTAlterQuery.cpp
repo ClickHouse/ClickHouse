@@ -28,31 +28,6 @@ ASTPtr ASTAlterQuery::clone() const
     return res;
 }
 
-/*void ASTAlterQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
-{
-    frame.need_parens = false;
-
-    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
-
-    if (!table.empty())
-    {
-        if (!database.empty())
-        {
-            settings.ostr << indent_str << backQuoteIfNeed(database);
-            settings.ostr << ".";
-        }
-        settings.ostr << indent_str << backQuoteIfNeed(table);
-    }
-
-    settings.ostr << settings.nl_or_ws;
-    FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
-    ++frame_nested.indent;
-//    static_cast<IAST *>(command_list)->formatImpl(settings, state, frame_nested);
-}*/
-
 bool ParserAlterQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr table;

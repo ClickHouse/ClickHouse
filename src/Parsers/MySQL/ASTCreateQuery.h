@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace MySQLParser
 {
 
@@ -25,6 +30,12 @@ public:
     ASTPtr clone() const override;
 
     String getID(char) const override { return "create query"; }
+
+protected:
+    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    {
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTCreateQuery.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 class ParserCreateQuery : public IParserBase

@@ -36,6 +36,33 @@ namespace ErrorCodes
 namespace MySQLInterpreter
 {
 
+static inline String resolveDatabase(
+    const String & database_in_query, const String & replica_mysql_database, const String & replica_clickhouse_database, const Context & context)
+{
+    if (!database_in_query.empty())
+    {
+        if (database_in_query == replica_mysql_database)
+        {
+            /// USE other_database_name; CREATE TABLE replica_mysql_database.table_name;
+            /// USE replica_mysql_database; CREATE TABLE replica_mysql_database.table_name;
+            return replica_clickhouse_database;
+        }
+        else
+        {
+            /// USE other_database_name; CREATE TABLE other_database_name.table_name;
+            /// USE replica_mysql_database; CREATE TABLE other_database_name.table_name;
+            return "";
+        }
+    }
+
+    /// When USE other_database_name; CREATE TABLE table_name; 
+    /// context.getCurrentDatabase() is always return `default database`
+    /// When USE replica_mysql_database; CREATE TABLE table_name;
+    /// context.getCurrentDatabase() is always return replica_clickhouse_database
+    const String & current_database = context.getCurrentDatabase();
+    return current_database != replica_clickhouse_database ? "" : replica_clickhouse_database;
+}
+
 static inline NamesAndTypesList getColumnsList(ASTExpressionList * columns_define)
 {
     NamesAndTypesList columns_name_and_type;
@@ -295,12 +322,10 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
 }
 
 ASTPtr InterpreterCreateImpl::getRewrittenQuery(
-    const TQuery & create_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+    const TQuery & create_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
     auto rewritten_query = std::make_shared<ASTCreateQuery>();
-    const auto & database_name = context.resolveDatabase(create_query.database);
-
-    if (database_name != filter_mysql_db)
+    if (resolveDatabase(create_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
         return {};
 
     const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
@@ -309,7 +334,7 @@ ASTPtr InterpreterCreateImpl::getRewrittenQuery(
     const auto & [primary_keys, unique_keys, keys, increment_columns] = getKeys(create_defines->columns, create_defines->indices, context, columns_name_and_type);
 
     if (primary_keys.empty())
-        throw Exception("The " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(create_query.table)
+        throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
             + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto columns = std::make_shared<ASTColumns>();
@@ -333,7 +358,7 @@ ASTPtr InterpreterCreateImpl::getRewrittenQuery(
 
     storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>(version_column_name)));
 
-    rewritten_query->database = clickhouse_db;
+    rewritten_query->database = mapped_to_database;
     rewritten_query->table = create_query.table;
     rewritten_query->if_not_exists = create_query.if_not_exists;
     rewritten_query->set(rewritten_query->storage, storage);
@@ -347,16 +372,16 @@ void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/
 }
 
 ASTPtr InterpreterDropImpl::getRewrittenQuery(
-    const InterpreterDropImpl::TQuery & drop_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+    const InterpreterDropImpl::TQuery & drop_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
-    const auto & database_name = context.resolveDatabase(drop_query.database);
+    const auto & database_name = resolveDatabase(drop_query.database, mysql_database, mapped_to_database, context);
 
     /// Skip drop database|view|dictionary
-    if (database_name != filter_mysql_db || drop_query.table.empty() || drop_query.is_view || drop_query.is_dictionary)
+    if (database_name != mapped_to_database || drop_query.table.empty() || drop_query.is_view || drop_query.is_dictionary)
         return {};
 
     ASTPtr rewritten_query = drop_query.clone();
-    rewritten_query->as<ASTDropQuery>()->database = clickhouse_db;
+    rewritten_query->as<ASTDropQuery>()->database = mapped_to_database;
     return rewritten_query;
 }
 
@@ -367,23 +392,23 @@ void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & renam
 }
 
 ASTPtr InterpreterRenameImpl::getRewrittenQuery(
-    const InterpreterRenameImpl::TQuery & rename_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+    const InterpreterRenameImpl::TQuery & rename_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
     ASTRenameQuery::Elements elements;
     for (const auto & rename_element : rename_query.elements)
     {
-        const auto & to_database = context.resolveDatabase(rename_element.to.database);
-        const auto & from_database = context.resolveDatabase(rename_element.from.database);
+        const auto & to_database =  resolveDatabase(rename_element.to.database, mysql_database, mapped_to_database, context);
+        const auto & from_database =  resolveDatabase(rename_element.from.database, mysql_database, mapped_to_database, context);
 
-        if (to_database != from_database)
+        if ((from_database == mapped_to_database || to_database == mapped_to_database) && to_database != from_database)
             throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
 
-        if (from_database == filter_mysql_db)
+        if (from_database == mapped_to_database)
         {
             elements.push_back(ASTRenameQuery::Element());
-            elements.back().from.database = clickhouse_db;
+            elements.back().from.database = mapped_to_database;
             elements.back().from.table = rename_element.from.table;
-            elements.back().to.database = clickhouse_db;
+            elements.back().to.database = mapped_to_database;
             elements.back().to.table = rename_element.to.table;
         }
     }
@@ -401,15 +426,13 @@ void InterpreterAlterImpl::validate(const InterpreterAlterImpl::TQuery & /*query
 }
 
 ASTPtr InterpreterAlterImpl::getRewrittenQuery(
-    const InterpreterAlterImpl::TQuery & alter_query, const Context & context, const String & clickhouse_db, const String & filter_mysql_db)
+    const InterpreterAlterImpl::TQuery & alter_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
-    const auto & database_name = context.resolveDatabase(alter_query.database);
-
-    if (database_name != filter_mysql_db)
+    if (resolveDatabase(alter_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
         return {};
 
     auto rewritten_query = std::make_shared<ASTAlterQuery>();
-    rewritten_query->database = clickhouse_db;
+    rewritten_query->database = mapped_to_database;
     rewritten_query->table = alter_query.table;
     rewritten_query->set(rewritten_query->command_list, std::make_shared<ASTAlterCommandList>());
 
@@ -448,7 +471,7 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
 
                 if (default_after_column.empty())
                 {
-                    StoragePtr storage = DatabaseCatalog::instance().getTable({clickhouse_db, alter_query.table}, context);
+                    StoragePtr storage = DatabaseCatalog::instance().getTable({mapped_to_database, alter_query.table}, context);
                     Block storage_header = storage->getInMemoryMetadataPtr()->getSampleBlock();
 
                     /// Put the sign and version columns last

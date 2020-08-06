@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace MySQLParser
 {
 
@@ -23,6 +28,12 @@ public:
     ASTPtr clone() const override;
 
     String getID(char /*delimiter*/) const override { return "index declaration"; }
+
+protected:
+    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    {
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTDeclareIndex.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 class ParserDeclareIndex : public IParserBase
