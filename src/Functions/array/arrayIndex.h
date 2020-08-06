@@ -788,7 +788,6 @@ private:
 
         const IColumn & lc_indices = col_lc->getIndexes();
         const MutableColumnPtr col_arg_indices = col_lc->buildIndexColumn(*col_arg_cloned.get());
-
         const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
         PaddedPODArray<ResultType> & res_data = col_result->getData();
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
