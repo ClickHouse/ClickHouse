@@ -21,20 +21,15 @@
 
 #include <Common/PODArray_fwd.h>
 
-template <typename T1, typename T2>
-constexpr bool allow_memcpy = std::is_same_v<T1, T2>;
-
-template <typename T2>
-constexpr bool allow_memcpy<char8_t, T2> = std::is_same_v<char8_t, T2>
-    || std::is_same_v<char, T2> || std::is_same_v<unsigned char, T2>;
-
-template <typename T2>
-constexpr bool allow_memcpy<char, T2> = std::is_same_v<char8_t, T2>
-    || std::is_same_v<char, T2> || std::is_same_v<unsigned char, T2>;
-
-template <typename T2>
-constexpr bool allow_memcpy<unsigned char, T2> = std::is_same_v<char8_t, T2>
-    || std::is_same_v<char, T2> || std::is_same_v<unsigned char, T2>;
+/** Whether we can use memcpy instead of a loop with assignment to T from U.
+  * It is Ok if types are the same. And if types are integral and of the same size,
+  *  example: char, signed char, unsigned char.
+  * It's not Ok for int and float.
+  * Don't forget to apply std::decay when using this constexpr.
+  */
+template <typename T, typename U>
+constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
+    || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U));
 
 namespace DB
 {
@@ -461,7 +456,7 @@ public:
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = this->byte_size(end() - it);
@@ -479,7 +474,7 @@ public:
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
-        static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
@@ -613,7 +608,7 @@ public:
     template <typename It1, typename It2, typename... TAllocatorParams>
     void assign(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        static_assert(allow_memcpy<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
