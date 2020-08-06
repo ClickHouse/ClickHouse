@@ -221,10 +221,10 @@ Pipe StorageBuffer::read(
                     columns_intersection, destination_metadata_snapshot, query_info,
                     context, processed_stage, max_block_size, num_streams);
 
-                pipe_from_dst.addSimpleTransform([&](const Block & header)
+                pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
                 {
-                    return std::make_shared<AddingMissedTransform>(
-                        header, header_after_adding_defaults, metadata_snapshot->getColumns().getDefaults(), context);
+                    return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
+                        metadata_snapshot->getColumns().getDefaults(), context);
                 });
 
                 pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
@@ -252,7 +252,7 @@ Pipe StorageBuffer::read(
     if (!pipe_from_buffers.empty() && !pipe_from_dst.empty()
         && !blocksHaveEqualStructure(pipe_from_buffers.getHeader(), pipe_from_dst.getHeader()))
     {
-        pipe_from_buffers.addSimpleTransform([&](const Block & header)
+        pipe_from_dst.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ConvertingTransform>(
                    header,
@@ -265,7 +265,9 @@ Pipe StorageBuffer::read(
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
-        pipe_from_buffers = InterpreterSelectQuery(query_info.query, context, std::move(pipe_from_buffers), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
+        pipe_from_buffers = QueryPipeline::getPipe(
+                InterpreterSelectQuery(query_info.query, context, std::move(pipe_from_buffers),
+                                               SelectQueryOptions(processed_stage)).execute().pipeline);
 
     if (query_info.prewhere_info)
     {
@@ -285,7 +287,10 @@ Pipe StorageBuffer::read(
         }
     }
 
-    return Pipe::unitePipes({std::move(pipe_from_dst), std::move(pipe_from_buffers)});
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe_from_dst));
+    pipes.emplace_back(std::move(pipe_from_buffers));
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

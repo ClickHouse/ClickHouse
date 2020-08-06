@@ -73,8 +73,8 @@ public:
     using ProcessorGetterWithStreamKind = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
 
     /// Add transform with single input and single output for each port.
-    void addSimpleTransform(const ProcessorGetter & port);
-    void addSimpleTransform(const ProcessorGetterWithStreamKind & port);
+    void addSimpleTransform(const ProcessorGetter & getter);
+    void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
@@ -92,20 +92,30 @@ public:
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Do not allow to change the table while the processors of pipe are alive.
-    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { holder.table_locks.push_back(lock); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
-    void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { storage_holders.emplace_back(std::move(storage)); }
+    void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
 
-    /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
-    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
-    /// because QueryPipeline is alive until query is finished.
-    std::vector<std::shared_ptr<Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holders;
-    std::vector<TableLockHolder> table_locks;
+    struct Holder
+    {
+        Holder() = default;
+        Holder(Holder &&) = default;
+        /// Custom mode assignment does not destroy data from lhs. It appends data from rhs to lhs.
+        Holder& operator=(Holder &&);
+
+        /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
+        /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+        /// because QueryPipeline is alive until query is finished.
+        std::vector<std::shared_ptr<Context>> interpreter_context;
+        std::vector<StoragePtr> storage_holders;
+        std::vector<TableLockHolder> table_locks;
+    };
+
+    Holder holder;
 
     /// Header is common for all output below.
     Block header;

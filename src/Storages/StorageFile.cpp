@@ -419,7 +419,7 @@ Pipe StorageFile::read(
         pipes.emplace_back(std::make_shared<StorageFileSource>(
                 this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
 
-    return Pipe::unitePipes(pipes);
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

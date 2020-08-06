@@ -86,7 +86,7 @@ Pipe StorageView::read(
                 column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
     });
 
-    return std::move(pipeline).getPipe();
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

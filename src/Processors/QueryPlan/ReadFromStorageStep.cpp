@@ -120,8 +120,6 @@ ReadFromStorageStep::ReadFromStorageStep(
             pipe.setQuota(quota);
     }
 
-    pipe.enableQuota();
-
     pipeline->init(std::move(pipe));
 
     pipeline->addInterpreterContext(std::move(context));

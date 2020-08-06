@@ -479,7 +479,7 @@ private:
 };
 
 
-Pipes StorageSystemTables::read(
+Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -509,11 +509,8 @@ Pipes StorageSystemTables::read(
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<TablesBlockSource>(
+    return Pipe(std::make_shared<TablesBlockSource>(
         std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
-
-    return pipes;
 }
 
 }
