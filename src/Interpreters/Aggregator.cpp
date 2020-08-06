@@ -521,6 +521,39 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions) const
 {
+    /// Optimization for special case when there are no aggregate functions.
+    if (params.aggregates_size == 0)
+    {
+        /// For all rows.
+        AggregateDataPtr place = aggregates_pool->alloc(0);
+        for (size_t i = 0; i < rows; ++i)
+            state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+        return;
+    }
+
+    /// Optimization for special case when aggregating by 8bit key.
+    if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    {
+        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        {
+            inst->batch_that->addBatchLookupTable8(
+                rows,
+                reinterpret_cast<AggregateDataPtr *>(method.data.data()),
+                inst->state_offset,
+                [&](AggregateDataPtr & aggregate_data)
+                {
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                    createAggregateStates(aggregate_data);
+                },
+                state.getKeyData(),
+                inst->batch_arguments,
+                aggregates_pool);
+        }
+        return;
+    }
+
+    /// Generic case.
+
     PODArray<AggregateDataPtr> places(rows);
 
     /// For all rows.
@@ -765,7 +798,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        const std::string tmp_path = params.tmp_volume->getNextDisk()->getPath();
+
+        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
 
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
@@ -851,9 +885,12 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
         ReadableSize(uncompressed_bytes / elapsed_seconds),
         ReadableSize(compressed_bytes / elapsed_seconds));
 }
+
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
-    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
+    String tmp_path = params.tmp_volume->getDisk()->getPath();
+    return writeToTemporaryFile(data_variants, tmp_path);
 }
 
 

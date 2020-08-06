@@ -168,7 +168,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `FILE`
     - `URL`
     - `REMOTE`
-    - `YSQL`
+    - `MYSQL`
     - `ODBC`
     - `JDBC`
     - `HDFS`
@@ -476,4 +476,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/grant/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/grant/) <!--hide-->

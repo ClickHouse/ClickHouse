@@ -4,9 +4,9 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
-#include <Core/Settings.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
 #include <common/logger_useful.h>
@@ -56,14 +56,15 @@ namespace
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
+        bool has_ldap = config.has(user_config + ".ldap");
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex;
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap;
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password' are used to specify password for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap' are used to specify password for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -79,6 +80,19 @@ namespace
         {
             user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
             user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+        }
+        else if (has_ldap)
+        {
+            bool has_ldap_server = config.has(user_config + ".ldap.server");
+            if (!has_ldap_server)
+                throw Exception("Missing mandatory 'server' in 'ldap', with LDAP server name, for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+            const auto ldap_server_name = config.getString(user_config + ".ldap.server");
+            if (ldap_server_name.empty())
+                throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+            user->authentication = Authentication{Authentication::LDAP_SERVER};
+            user->authentication.setServerName(ldap_server_name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -348,26 +362,25 @@ namespace
                                                      const String & path_to_constraints)
     {
         SettingsProfileElements profile_elements;
-        Poco::Util::AbstractConfiguration::Keys names;
-        config.keys(path_to_constraints, names);
-        for (const String & name : names)
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(path_to_constraints, keys);
+        for (const String & setting_name : keys)
         {
             SettingsProfileElement profile_element;
-            size_t setting_index = Settings::findIndexStrict(name);
-            profile_element.setting_index = setting_index;
+            profile_element.setting_name = setting_name;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
-            String path_to_name = path_to_constraints + "." + name;
+            String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = Settings::valueToCorrespondingType(setting_index, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "readonly")
                     profile_element.readonly = true;
                 else
-                    throw Exception("Setting " + constraint_type + " value for " + name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
             profile_elements.push_back(std::move(profile_element));
         }
@@ -402,10 +415,10 @@ namespace
                 continue;
             }
 
+            const auto & setting_name = key;
             SettingsProfileElement profile_element;
-            size_t setting_index = Settings::findIndexStrict(key);
-            profile_element.setting_index = setting_index;
-            profile_element.value = Settings::valueToCorrespondingType(setting_index, config.getString(profile_config + "." + key));
+            profile_element.setting_name = setting_name;
+            profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 

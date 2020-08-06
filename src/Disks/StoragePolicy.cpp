@@ -71,7 +71,7 @@ StoragePolicy::StoragePolicy(
 }
 
 
-StoragePolicy::StoragePolicy(String name_, VolumesJBOD volumes_, double move_factor_)
+StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
     : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
 {
     if (volumes.empty())
@@ -204,7 +204,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     for (const auto & volume : getVolumes())
     {
         if (new_volume_names.count(volume->getName()) == 0)
-            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_set<String> new_disk_names;
         for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
@@ -212,7 +212,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
         for (const auto & disk : volume->getDisks())
             if (new_disk_names.count(disk->getName()) == 0)
-                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
@@ -257,7 +257,7 @@ StoragePolicySelector::StoragePolicySelector(
     {
         auto default_volume = std::make_shared<VolumeJBOD>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0);
 
-        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, VolumesJBOD{default_volume}, 0.0);
+        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);
     }
 }

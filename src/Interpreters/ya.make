@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -20,10 +21,9 @@ SRCS(
     addTypeConversionToAST.cpp
     AggregateDescription.cpp
     Aggregator.cpp
-    AnyInputOptimize.cpp
     ArithmeticOperationsInAgrFuncOptimize.cpp
-    ArithmeticOperationsInAgrFuncOptimize.h
     ArrayJoinAction.cpp
+    AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
     castColumn.cpp
@@ -35,6 +35,7 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     Context.cpp
     convertFieldToType.cpp
+    CrashLog.cpp
     createBlockSelector.cpp
     CrossToInnerJoinVisitor.cpp
     DatabaseAndTableWithAlias.cpp
@@ -87,8 +88,8 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
-    InterpreterShowAccessQuery.cpp
     InterpreterShowAccessEntitiesQuery.cpp
+    InterpreterShowAccessQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
@@ -108,7 +109,6 @@ SRCS(
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
     MetricLog.cpp
-    AsynchronousMetricLog.cpp
     MutationsInterpreter.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp
@@ -122,10 +122,12 @@ SRCS(
     QueryLog.cpp
     QueryNormalizer.cpp
     QueryThreadLog.cpp
+    RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
+    RewriteAnyFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
@@ -133,7 +135,6 @@ SRCS(
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
-    SyntaxAnalyzer.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -141,6 +142,9 @@ SRCS(
     ThreadStatusExt.cpp
     TraceLog.cpp
     TranslateQualifiedNamesVisitor.cpp
+    TreeOptimizer.cpp
+    TreeRewriter.cpp
+
 )
 
 END()

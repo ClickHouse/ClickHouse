@@ -37,8 +37,6 @@ using StorageActionBlockType = size_t;
 class ASTCreateQuery;
 
 struct Settings;
-struct SettingChange;
-using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
@@ -185,18 +183,18 @@ private:
     MultiVersionStorageMetadataPtr metadata;
 private:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
 public:
     /// Lock table for share. This lock must be acuqired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
-    TableLockHolder lockForShare(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
-    TableLockHolder lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acuired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -205,7 +203,7 @@ public:
     ///
     /// NOTE: You have to be 100% sure that you need this lock. It's extremely
     /// heavyweight and makes table irresponsive.
-    TableExclusiveLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
@@ -355,10 +353,13 @@ public:
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
       */
-    virtual void alterPartition(const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
+    virtual Pipes alterPartition(const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
     {
         throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    /// Checks that partition commands can be applied to storage.
+    virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
@@ -443,10 +444,7 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalRows() const
-    {
-        return {};
-    }
+    virtual std::optional<UInt64> totalRows() const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
@@ -461,10 +459,17 @@ public:
     /// Memory part should be estimated as a resident memory size.
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
-    virtual std::optional<UInt64> totalBytes() const
-    {
-        return {};
-    }
+    virtual std::optional<UInt64> totalBytes() const { return {}; }
+
+    /// Number of rows INSERTed since server start.
+    ///
+    /// Does not takes underlying Storage (if any) into account.
+    virtual std::optional<UInt64> lifetimeRows() const { return {}; }
+
+    /// Number of bytes INSERTed since server start.
+    ///
+    /// Does not takes underlying Storage (if any) into account.
+    virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write

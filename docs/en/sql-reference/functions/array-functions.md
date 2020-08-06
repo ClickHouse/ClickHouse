@@ -184,12 +184,12 @@ Checks whether all the elements of array2 appear in array1 in the same exact ord
 hasSubstr(array1, array2)
 ```
 
-In other words, the functions will check whether all the elements of `array2` are contained in `array1` like 
+In other words, the functions will check whether all the elements of `array2` are contained in `array1` like
 the `hasAll` function. In addition, it will check that the elements are observed in the same order in both `array1` and `array2`.
 
-For Example: 
- - `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
- - `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
+For Example:
+- `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
+- `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
 
 **Parameters**
 
@@ -222,7 +222,6 @@ For Example:
 `SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
 
 `SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
-
 
 ## indexOf(arr, x) {#indexofarr-x}
 
@@ -939,7 +938,7 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 **Returned value**
 
-- Array containing results of the aggregate function over specified ranges.
+-   Array containing results of the aggregate function over specified ranges.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 

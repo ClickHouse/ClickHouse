@@ -5,7 +5,7 @@ toc_title: TinyLog
 
 # TinyLog {#tinylog}
 
-The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/log-family.md) for common properties of log engines and their differences.
+The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
 
 This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
 

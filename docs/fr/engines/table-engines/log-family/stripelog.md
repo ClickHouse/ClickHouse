@@ -7,7 +7,7 @@ toc_title: StripeLog
 
 # Stripelog {#stripelog}
 
-Ce moteur appartient à la famille des moteurs en rondins. Voir les propriétés communes des moteurs de journal et leurs différences dans le [Famille De Moteurs En Rondins](log-family.md) article.
+Ce moteur appartient à la famille des moteurs en rondins. Voir les propriétés communes des moteurs de journal et leurs différences dans le [Famille De Moteurs En Rondins](index.md) article.
 
 Utilisez ce moteur dans des scénarios lorsque vous devez écrire de nombreuses tables avec une petite quantité de données (moins de 1 million de lignes).
 
