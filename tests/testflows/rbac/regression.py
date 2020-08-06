@@ -2,7 +2,7 @@
 import sys
 from testflows.core import *
 
-append_path(sys.path, "..") 
+append_path(sys.path, "..")
 
 from helpers.cluster import Cluster
 from helpers.argparser import argparser
@@ -56,6 +56,7 @@ def regression(self, local, clickhouse_binary_path):
         self.context.cluster = cluster
 
         Feature(run=load("rbac.tests.syntax.feature", "feature"), flags=TE)
+        Feature(run=load("rbac.tests.privileges.feature", "feature"), flags=TE)
 
 if main():
     regression()

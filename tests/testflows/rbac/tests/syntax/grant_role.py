@@ -10,7 +10,7 @@ import rbac.tests.errors as errors
 @Args(format_description=False)
 def feature(self, node="clickhouse1"):
     """Check grant query syntax.
-    
+
     ```sql
     GRANT ON CLUSTER [cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
     ```
@@ -93,7 +93,7 @@ def feature(self, node="clickhouse1"):
         with setup(1,1):
             with When("I grant role to a user with admin option"):
                 node.query("GRANT role0 TO user0 WITH ADMIN OPTION")
-            
+
     with Scenario("I grant role to user on cluster", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Grant_Role_OnCluster("1.0")]):
         try:

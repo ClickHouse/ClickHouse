@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -10,6 +11,7 @@ SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
+    Executors/ExecutingGraph.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
@@ -68,52 +70,59 @@ SRCS(
     ISink.cpp
     ISource.cpp
     LimitTransform.cpp
-    Merges/AggregatingSortedTransform.h
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
-    Merges/Algorithms/AggregatingSortedAlgorithm.h
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
-    Merges/Algorithms/CollapsingSortedAlgorithm.h
-    Merges/Algorithms/FixedSizeDequeWithGaps.h
-    Merges/Algorithms/Graphite.h
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
-    Merges/Algorithms/GraphiteRollupSortedAlgorithm.h
-    Merges/Algorithms/IMergingAlgorithm.h
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
-    Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
-    Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h
-    Merges/Algorithms/MergedData.h
     Merges/Algorithms/MergingSortedAlgorithm.cpp
-    Merges/Algorithms/MergingSortedAlgorithm.h
     Merges/Algorithms/ReplacingSortedAlgorithm.cpp
-    Merges/Algorithms/ReplacingSortedAlgorithm.h
-    Merges/Algorithms/RowRef.h
     Merges/Algorithms/SummingSortedAlgorithm.cpp
-    Merges/Algorithms/SummingSortedAlgorithm.h
     Merges/Algorithms/VersionedCollapsingAlgorithm.cpp
-    Merges/Algorithms/VersionedCollapsingAlgorithm.h
-    Merges/CollapsingSortedTransform.h
-    Merges/GraphiteRollupSortedTransform.h
     Merges/IMergingTransform.cpp
-    Merges/IMergingTransform.h
     Merges/MergingSortedTransform.cpp
-    Merges/MergingSortedTransform.h
-    Merges/ReplacingSortedTransform.h
-    Merges/SummingSortedTransform.h
-    Merges/VersionedCollapsingTransform.h
     OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
     printPipeline.cpp
     QueryPipeline.cpp
+    QueryPlan/AddingDelayedSourceStep.cpp
+    QueryPlan/AggregatingStep.cpp
+    QueryPlan/ConvertingStep.cpp
+    QueryPlan/CreatingSetsStep.cpp
+    QueryPlan/CubeStep.cpp
+    QueryPlan/DistinctStep.cpp
+    QueryPlan/ExpressionStep.cpp
+    QueryPlan/ExtremesStep.cpp
+    QueryPlan/FillingStep.cpp
+    QueryPlan/FilterStep.cpp
+    QueryPlan/FinishSortingStep.cpp
+    QueryPlan/IQueryPlanStep.cpp
+    QueryPlan/ISourceStep.cpp
+    QueryPlan/ITransformingStep.cpp
+    QueryPlan/LimitByStep.cpp
+    QueryPlan/LimitStep.cpp
+    QueryPlan/MergeSortingStep.cpp
+    QueryPlan/MergingAggregatedStep.cpp
+    QueryPlan/MergingSortedStep.cpp
+    QueryPlan/OffsetStep.cpp
+    QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryPlan.cpp
+    QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromStorageStep.cpp
+    QueryPlan/ReadNothingStep.cpp
+    QueryPlan/RollupStep.cpp
+    QueryPlan/TotalsHavingStep.cpp
+    QueryPlan/UnionStep.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
+    Sources/RemoteSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
-    Sources/RemoteSource.cpp
     Transforms/AddingMissedTransform.cpp
     Transforms/AddingSelectorTransform.cpp
+    Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ConvertingTransform.cpp
     Transforms/CopyTransform.cpp
@@ -137,35 +146,7 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-    Transforms/AggregatingInOrderTransform.cpp
-    QueryPlan/AddingDelayedSourceStep.cpp
-    QueryPlan/AggregatingStep.cpp
-    QueryPlan/ConvertingStep.cpp
-    QueryPlan/CreatingSetsStep.cpp
-    QueryPlan/CubeStep.cpp
-    QueryPlan/DistinctStep.cpp
-    QueryPlan/ExpressionStep.cpp
-    QueryPlan/ExtremesStep.cpp
-    QueryPlan/FillingStep.cpp
-    QueryPlan/FilterStep.cpp
-    QueryPlan/FinishSortingStep.cpp
-    QueryPlan/ISourceStep.cpp
-    QueryPlan/ITransformingStep.cpp
-    QueryPlan/IQueryPlanStep.cpp
-    QueryPlan/LimitByStep.cpp
-    QueryPlan/LimitStep.cpp
-    QueryPlan/MergeSortingStep.cpp
-    QueryPlan/MergingAggregatedStep.cpp
-    QueryPlan/MergingSortedStep.cpp
-    QueryPlan/OffsetStep.cpp
-    QueryPlan/PartialSortingStep.cpp
-    QueryPlan/UnionStep.cpp
-    QueryPlan/ReadFromPreparedSource.cpp
-    QueryPlan/ReadFromStorageStep.cpp
-    QueryPlan/ReadNothingStep.cpp
-    QueryPlan/RollupStep.cpp
-    QueryPlan/TotalsHavingStep.cpp
-    QueryPlan/QueryPlan.cpp
+
 )
 
 END()

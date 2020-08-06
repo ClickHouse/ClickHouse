@@ -53,7 +53,7 @@ struct NonGlobalTableData
 private:
     void renameIfNeeded(ASTPtr & database_and_table)
     {
-        const SettingDistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
+        const DistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
 
         StoragePtr storage = tryGetTable(database_and_table, context);
         if (!storage || !checker.hasAtLeastTwoShards(*storage))

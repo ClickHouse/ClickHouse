@@ -1,0 +1,11 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+)
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -P 'S3|HDFS' | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

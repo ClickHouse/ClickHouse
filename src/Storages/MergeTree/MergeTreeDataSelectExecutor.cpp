@@ -1,4 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
+#include <ext/scope_guard.h>
 #include <optional>
 
 #include <Poco/File.h>
@@ -613,7 +614,16 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             ThreadPool pool(num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
-                pool.scheduleOrThrowOnError([&, part_index] { process_part(part_index); });
+                pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()] {
+                    SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                    );
+                    if (thread_group)
+                        CurrentThread::attachTo(thread_group);
+
+                    process_part(part_index);
+                });
 
             pool.wait();
         }
@@ -1343,7 +1353,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
     {
-        LOG_TRACE(log, "Not using index on part {}", part->name);
+        LOG_TRACE(log, "Not using primary index on part {}", part->name);
 
         if (has_final_mark)
             res.push_back(MarkRange(0, marks_count - 1));

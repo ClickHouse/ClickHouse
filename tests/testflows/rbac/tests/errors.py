@@ -84,3 +84,7 @@ def unknown_setting(setting):
 def cluster_not_found(cluster):
     return (170, f"Exception: Requested cluster '{cluster}' not found")
 
+## Privileges
+
+def not_enough_privileges(name):
+    return (241, f"Exception: {name}: Not enough privileges.")
