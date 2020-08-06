@@ -47,7 +47,8 @@ public:
     RuleColumnArgExpr = 31, RuleColumnLambdaExpr = 32, RuleColumnIdentifier = 33, 
     RuleTableExpr = 34, RuleTableIdentifier = 35, RuleTableFunctionExpr = 36, 
     RuleTableArgList = 37, RuleTableArgExpr = 38, RuleDatabaseIdentifier = 39, 
-    RuleLiteral = 40, RuleIdentifier = 41, RuleUnaryOp = 42, RuleBinaryOp = 43
+    RuleLiteral = 40, RuleKeyword = 41, RuleIdentifier = 42, RuleUnaryOp = 43, 
+    RuleBinaryOp = 44
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -101,6 +102,7 @@ public:
   class TableArgExprContext;
   class DatabaseIdentifierContext;
   class LiteralContext;
+  class KeywordContext;
   class IdentifierContext;
   class UnaryOpContext;
   class BinaryOpContext; 
@@ -760,17 +762,6 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
-  class  ColumnExprParensContext : public ColumnExprContext {
-  public:
-    ColumnExprParensContext(ColumnExprContext *ctx);
-
-    antlr4::tree::TerminalNode *LPAREN();
-    ColumnExprContext *columnExpr();
-    antlr4::tree::TerminalNode *RPAREN();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
   class  ColumnExprUnaryOpContext : public ColumnExprContext {
   public:
     ColumnExprUnaryOpContext(ColumnExprContext *ctx);
@@ -914,8 +905,8 @@ public:
   public:
     ColumnArgExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    ColumnExprContext *columnExpr();
     ColumnLambdaExprContext *columnLambdaExpr();
+    ColumnExprContext *columnExpr();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1103,11 +1094,98 @@ public:
 
   LiteralContext* literal();
 
+  class  KeywordContext : public antlr4::ParserRuleContext {
+  public:
+    KeywordContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ALL();
+    antlr4::tree::TerminalNode *AND();
+    antlr4::tree::TerminalNode *ANTI();
+    antlr4::tree::TerminalNode *ANY();
+    antlr4::tree::TerminalNode *ARRAY();
+    antlr4::tree::TerminalNode *AS();
+    antlr4::tree::TerminalNode *ASCENDING();
+    antlr4::tree::TerminalNode *ASOF();
+    antlr4::tree::TerminalNode *BETWEEN();
+    antlr4::tree::TerminalNode *BOTH();
+    antlr4::tree::TerminalNode *BY();
+    antlr4::tree::TerminalNode *CASE();
+    antlr4::tree::TerminalNode *CAST();
+    antlr4::tree::TerminalNode *COLLATE();
+    antlr4::tree::TerminalNode *CROSS();
+    antlr4::tree::TerminalNode *DAY();
+    antlr4::tree::TerminalNode *DESCENDING();
+    antlr4::tree::TerminalNode *DISTINCT();
+    antlr4::tree::TerminalNode *ELSE();
+    antlr4::tree::TerminalNode *END();
+    antlr4::tree::TerminalNode *EXTRACT();
+    antlr4::tree::TerminalNode *FINAL();
+    antlr4::tree::TerminalNode *FIRST();
+    antlr4::tree::TerminalNode *FORMAT();
+    antlr4::tree::TerminalNode *FROM();
+    antlr4::tree::TerminalNode *FULL();
+    antlr4::tree::TerminalNode *GLOBAL();
+    antlr4::tree::TerminalNode *GROUP();
+    antlr4::tree::TerminalNode *HAVING();
+    antlr4::tree::TerminalNode *HOUR();
+    antlr4::tree::TerminalNode *IN();
+    antlr4::tree::TerminalNode *INNER();
+    antlr4::tree::TerminalNode *INSERT();
+    antlr4::tree::TerminalNode *INTERVAL();
+    antlr4::tree::TerminalNode *INTO();
+    antlr4::tree::TerminalNode *IS();
+    antlr4::tree::TerminalNode *JOIN();
+    antlr4::tree::TerminalNode *LAST();
+    antlr4::tree::TerminalNode *LEADING();
+    antlr4::tree::TerminalNode *LEFT();
+    antlr4::tree::TerminalNode *LIKE();
+    antlr4::tree::TerminalNode *LIMIT();
+    antlr4::tree::TerminalNode *LOCAL();
+    antlr4::tree::TerminalNode *MINUTE();
+    antlr4::tree::TerminalNode *MONTH();
+    antlr4::tree::TerminalNode *NOT();
+    antlr4::tree::TerminalNode *NULL_SQL();
+    antlr4::tree::TerminalNode *NULLS();
+    antlr4::tree::TerminalNode *OFFSET();
+    antlr4::tree::TerminalNode *ON();
+    antlr4::tree::TerminalNode *OR();
+    antlr4::tree::TerminalNode *ORDER();
+    antlr4::tree::TerminalNode *OUTER();
+    antlr4::tree::TerminalNode *OUTFILE();
+    antlr4::tree::TerminalNode *PREWHERE();
+    antlr4::tree::TerminalNode *QUARTER();
+    antlr4::tree::TerminalNode *RIGHT();
+    antlr4::tree::TerminalNode *SAMPLE();
+    antlr4::tree::TerminalNode *SECOND();
+    antlr4::tree::TerminalNode *SELECT();
+    antlr4::tree::TerminalNode *SEMI();
+    antlr4::tree::TerminalNode *SETTINGS();
+    antlr4::tree::TerminalNode *THEN();
+    antlr4::tree::TerminalNode *TOTALS();
+    antlr4::tree::TerminalNode *TRAILING();
+    antlr4::tree::TerminalNode *TRIM();
+    antlr4::tree::TerminalNode *UNION();
+    antlr4::tree::TerminalNode *USING();
+    antlr4::tree::TerminalNode *WEEK();
+    antlr4::tree::TerminalNode *WHEN();
+    antlr4::tree::TerminalNode *WHERE();
+    antlr4::tree::TerminalNode *WITH();
+    antlr4::tree::TerminalNode *YEAR();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  KeywordContext* keyword();
+
   class  IdentifierContext : public antlr4::ParserRuleContext {
   public:
     IdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *INTERVAL_TYPE();
+    KeywordContext *keyword();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

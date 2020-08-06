@@ -248,8 +248,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinExpr(self):
         current = self.create_node(UnparserRule(name='joinExpr'))
-        choice = self.choice([0 if [7, 9, 9, 9][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_91', i), 1) for i, w in enumerate([1, 1, 1, 1])])
-        self.unlexer.weights[('alt_91', choice)] = self.unlexer.weights.get(('alt_91', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [7, 9, 9, 9][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_88', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        self.unlexer.weights[('alt_88', choice)] = self.unlexer.weights.get(('alt_88', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current = self.joinExpr_JoinExprTable()
         elif choice == 1:
@@ -283,8 +283,8 @@ class ClickHouseUnparser(Grammarinator):
         current += self.joinExpr()
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
-                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_97', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_97', choice)] = self.unlexer.weights.get(('alt_97', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_94', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_94', choice)] = self.unlexer.weights.get(('alt_94', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.GLOBAL()
                 elif choice == 1:
@@ -309,8 +309,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinOp(self):
         current = self.create_node(UnparserRule(name='joinOp'))
-        choice = self.choice([0 if [3, 3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_100', i), 1) for i, w in enumerate([1, 1, 1])])
-        self.unlexer.weights[('alt_100', choice)] = self.unlexer.weights.get(('alt_100', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [3, 3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_97', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_97', choice)] = self.unlexer.weights.get(('alt_97', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current = self.joinOp_JoinOpInner()
         elif choice == 1:
@@ -323,8 +323,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinOp_JoinOpInner(self):
         current = self.create_node(UnparserRule(name='joinOp_JoinOpInner'))
-        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_104', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_104', choice)] = self.unlexer.weights.get(('alt_104', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_101', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_101', choice)] = self.unlexer.weights.get(('alt_101', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
@@ -343,13 +343,13 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinOp_JoinOpLeftRight(self):
         current = self.create_node(UnparserRule(name='joinOp_JoinOpLeftRight'))
-        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_109', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_109', choice)] = self.unlexer.weights.get(('alt_109', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_106', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_106', choice)] = self.unlexer.weights.get(('alt_106', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
-                    choice = self.choice([0 if [2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_113', i), 1) for i, w in enumerate([1, 1, 1, 1, 1])])
-                    self.unlexer.weights[('alt_113', choice)] = self.unlexer.weights.get(('alt_113', choice), 1) * self.unlexer.cooldown
+                    choice = self.choice([0 if [2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_110', i), 1) for i, w in enumerate([1, 1, 1, 1, 1])])
+                    self.unlexer.weights[('alt_110', choice)] = self.unlexer.weights.get(('alt_110', choice), 1) * self.unlexer.cooldown
                     if choice == 0:
                         current += self.unlexer.OUTER()
                     elif choice == 1:
@@ -361,23 +361,23 @@ class ClickHouseUnparser(Grammarinator):
                     elif choice == 4:
                         current += self.unlexer.ASOF()
 
+            choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_116', i), 1) for i, w in enumerate([1, 1])])
+            self.unlexer.weights[('alt_116', choice)] = self.unlexer.weights.get(('alt_116', choice), 1) * self.unlexer.cooldown
+            if choice == 0:
+                current += self.unlexer.LEFT()
+            elif choice == 1:
+                current += self.unlexer.RIGHT()
+        elif choice == 1:
             choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_119', i), 1) for i, w in enumerate([1, 1])])
             self.unlexer.weights[('alt_119', choice)] = self.unlexer.weights.get(('alt_119', choice), 1) * self.unlexer.cooldown
             if choice == 0:
                 current += self.unlexer.LEFT()
             elif choice == 1:
                 current += self.unlexer.RIGHT()
-        elif choice == 1:
-            choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_122', i), 1) for i, w in enumerate([1, 1])])
-            self.unlexer.weights[('alt_122', choice)] = self.unlexer.weights.get(('alt_122', choice), 1) * self.unlexer.cooldown
-            if choice == 0:
-                current += self.unlexer.LEFT()
-            elif choice == 1:
-                current += self.unlexer.RIGHT()
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
-                    choice = self.choice([0 if [2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_126', i), 1) for i, w in enumerate([1, 1, 1, 1, 1])])
-                    self.unlexer.weights[('alt_126', choice)] = self.unlexer.weights.get(('alt_126', choice), 1) * self.unlexer.cooldown
+                    choice = self.choice([0 if [2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_123', i), 1) for i, w in enumerate([1, 1, 1, 1, 1])])
+                    self.unlexer.weights[('alt_123', choice)] = self.unlexer.weights.get(('alt_123', choice), 1) * self.unlexer.cooldown
                     if choice == 0:
                         current += self.unlexer.OUTER()
                     elif choice == 1:
@@ -395,13 +395,13 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinOp_JoinOpFull(self):
         current = self.create_node(UnparserRule(name='joinOp_JoinOpFull'))
-        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_132', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_132', choice)] = self.unlexer.weights.get(('alt_132', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_129', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_129', choice)] = self.unlexer.weights.get(('alt_129', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
-                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_136', i), 1) for i, w in enumerate([1, 1])])
-                    self.unlexer.weights[('alt_136', choice)] = self.unlexer.weights.get(('alt_136', choice), 1) * self.unlexer.cooldown
+                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_133', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_133', choice)] = self.unlexer.weights.get(('alt_133', choice), 1) * self.unlexer.cooldown
                     if choice == 0:
                         current += self.unlexer.OUTER()
                     elif choice == 1:
@@ -412,8 +412,8 @@ class ClickHouseUnparser(Grammarinator):
             current += self.unlexer.FULL()
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
-                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_140', i), 1) for i, w in enumerate([1, 1])])
-                    self.unlexer.weights[('alt_140', choice)] = self.unlexer.weights.get(('alt_140', choice), 1) * self.unlexer.cooldown
+                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_137', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_137', choice)] = self.unlexer.weights.get(('alt_137', choice), 1) * self.unlexer.cooldown
                     if choice == 0:
                         current += self.unlexer.OUTER()
                     elif choice == 1:
@@ -425,13 +425,13 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinOpCross(self):
         current = self.create_node(UnparserRule(name='joinOpCross'))
-        choice = self.choice([0 if [2, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_143', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_143', choice)] = self.unlexer.weights.get(('alt_143', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [2, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_140', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_140', choice)] = self.unlexer.weights.get(('alt_140', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
-                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_147', i), 1) for i, w in enumerate([1, 1])])
-                    self.unlexer.weights[('alt_147', choice)] = self.unlexer.weights.get(('alt_147', choice), 1) * self.unlexer.cooldown
+                    choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_144', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_144', choice)] = self.unlexer.weights.get(('alt_144', choice), 1) * self.unlexer.cooldown
                     if choice == 0:
                         current += self.unlexer.GLOBAL()
                     elif choice == 1:
@@ -447,8 +447,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinConstraintClause(self):
         current = self.create_node(UnparserRule(name='joinConstraintClause'))
-        choice = self.choice([0 if [4, 4, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_150', i), 1) for i, w in enumerate([1, 1, 1])])
-        self.unlexer.weights[('alt_150', choice)] = self.unlexer.weights.get(('alt_150', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [4, 4, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_147', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_147', choice)] = self.unlexer.weights.get(('alt_147', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.ON()
             current += self.columnExprList()
@@ -469,8 +469,8 @@ class ClickHouseUnparser(Grammarinator):
         current += self.unlexer.NUMBER_LITERAL()
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
-                choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_155', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_155', choice)] = self.unlexer.weights.get(('alt_155', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_152', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_152', choice)] = self.unlexer.weights.get(('alt_152', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.COMMA()
                 elif choice == 1:
@@ -498,8 +498,8 @@ class ClickHouseUnparser(Grammarinator):
         current += self.columnExpr()
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
-                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_160', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_160', choice)] = self.unlexer.weights.get(('alt_160', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_157', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_157', choice)] = self.unlexer.weights.get(('alt_157', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.ASCENDING()
                 elif choice == 1:
@@ -508,8 +508,8 @@ class ClickHouseUnparser(Grammarinator):
         if self.unlexer.max_depth >= 2:
             for _ in self.zero_or_one():
                 current += self.unlexer.NULLS()
-                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_164', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_164', choice)] = self.unlexer.weights.get(('alt_164', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_161', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_161', choice)] = self.unlexer.weights.get(('alt_161', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.FIRST()
                 elif choice == 1:
@@ -568,45 +568,43 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def columnExpr(self):
         current = self.create_node(UnparserRule(name='columnExpr'))
-        choice = self.choice([0 if [4, 2, 5, 4, 5, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_170', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
-        self.unlexer.weights[('alt_170', choice)] = self.unlexer.weights.get(('alt_170', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [4, 2, 5, 2, 4, 4, 4, 4, 5, 4, 4, 4, 4, 4, 4, 4, 4, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_167', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
+        self.unlexer.weights[('alt_167', choice)] = self.unlexer.weights.get(('alt_167', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current = self.columnExpr_ColumnExprLiteral()
         elif choice == 1:
             current = self.columnExpr_ColumnExprAsterisk()
         elif choice == 2:
-            current = self.columnExpr_ColumnExprIdentifier()
-        elif choice == 3:
-            current = self.columnExpr_ColumnExprParens()
-        elif choice == 4:
             current = self.columnExpr_ColumnExprTuple()
-        elif choice == 5:
+        elif choice == 3:
             current = self.columnExpr_ColumnExprArray()
-        elif choice == 6:
-            current = self.columnExpr_ColumnExprArrayAccess()
-        elif choice == 7:
-            current = self.columnExpr_ColumnExprTupleAccess()
-        elif choice == 8:
-            current = self.columnExpr_ColumnExprUnaryOp()
-        elif choice == 9:
-            current = self.columnExpr_ColumnExprIsNull()
-        elif choice == 10:
-            current = self.columnExpr_ColumnExprBinaryOp()
-        elif choice == 11:
-            current = self.columnExpr_ColumnExprTernaryOp()
-        elif choice == 12:
-            current = self.columnExpr_ColumnExprBetween()
-        elif choice == 13:
+        elif choice == 4:
             current = self.columnExpr_ColumnExprCase()
-        elif choice == 14:
+        elif choice == 5:
             current = self.columnExpr_ColumnExprExtract()
-        elif choice == 15:
+        elif choice == 6:
             current = self.columnExpr_ColumnExprTrim()
-        elif choice == 16:
+        elif choice == 7:
             current = self.columnExpr_ColumnExprInterval()
-        elif choice == 17:
+        elif choice == 8:
+            current = self.columnExpr_ColumnExprIdentifier()
+        elif choice == 9:
             current = self.columnExpr_ColumnExprFunction()
-        elif choice == 18:
+        elif choice == 10:
+            current = self.columnExpr_ColumnExprArrayAccess()
+        elif choice == 11:
+            current = self.columnExpr_ColumnExprTupleAccess()
+        elif choice == 12:
+            current = self.columnExpr_ColumnExprUnaryOp()
+        elif choice == 13:
+            current = self.columnExpr_ColumnExprIsNull()
+        elif choice == 14:
+            current = self.columnExpr_ColumnExprBinaryOp()
+        elif choice == 15:
+            current = self.columnExpr_ColumnExprTernaryOp()
+        elif choice == 16:
+            current = self.columnExpr_ColumnExprBetween()
+        elif choice == 17:
             current = self.columnExpr_ColumnExprAlias()
         return current
     columnExpr.min_depth = 2
@@ -624,22 +622,6 @@ class ClickHouseUnparser(Grammarinator):
         current += self.unlexer.ASTERISK()
         return current
     columnExpr_ColumnExprAsterisk.min_depth = 1
-
-    @depthcontrol
-    def columnExpr_ColumnExprIdentifier(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprIdentifier'))
-        current += self.columnIdentifier()
-        return current
-    columnExpr_ColumnExprIdentifier.min_depth = 4
-
-    @depthcontrol
-    def columnExpr_ColumnExprParens(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprParens'))
-        current += self.unlexer.LPAREN()
-        current += self.columnExpr()
-        current += self.unlexer.RPAREN()
-        return current
-    columnExpr_ColumnExprParens.min_depth = 3
 
     @depthcontrol
     def columnExpr_ColumnExprTuple(self):
@@ -661,6 +643,100 @@ class ClickHouseUnparser(Grammarinator):
         current += self.unlexer.RBRACKET()
         return current
     columnExpr_ColumnExprArray.min_depth = 1
+
+    @depthcontrol
+    def columnExpr_ColumnExprCase(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprCase'))
+        current += self.unlexer.CASE()
+        if self.unlexer.max_depth >= 3:
+            for _ in self.zero_or_one():
+                current += self.columnExpr()
+
+        if self.unlexer.max_depth >= 0:
+            for _ in self.one_or_more():
+                current += self.unlexer.WHEN()
+                current += self.columnExpr()
+                current += self.unlexer.THEN()
+                current += self.columnExpr()
+
+        if self.unlexer.max_depth >= 3:
+            for _ in self.zero_or_one():
+                current += self.unlexer.ELSE()
+                current += self.columnExpr()
+
+        current += self.unlexer.END()
+        return current
+    columnExpr_ColumnExprCase.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprExtract(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprExtract'))
+        current += self.unlexer.EXTRACT()
+        current += self.unlexer.LPAREN()
+        current += self.unlexer.INTERVAL_TYPE()
+        current += self.unlexer.FROM()
+        current += self.columnExpr()
+        current += self.unlexer.RPAREN()
+        return current
+    columnExpr_ColumnExprExtract.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprTrim(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprTrim'))
+        current += self.unlexer.TRIM()
+        current += self.unlexer.LPAREN()
+        choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_189', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_189', choice)] = self.unlexer.weights.get(('alt_189', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.BOTH()
+        elif choice == 1:
+            current += self.unlexer.LEADING()
+        elif choice == 2:
+            current += self.unlexer.TRAILING()
+        current += self.unlexer.STRING_LITERAL()
+        current += self.unlexer.FROM()
+        current += self.columnExpr()
+        current += self.unlexer.RPAREN()
+        return current
+    columnExpr_ColumnExprTrim.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprInterval(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprInterval'))
+        current += self.unlexer.INTERVAL()
+        current += self.columnExpr()
+        current += self.unlexer.INTERVAL_TYPE()
+        return current
+    columnExpr_ColumnExprInterval.min_depth = 3
+
+    @depthcontrol
+    def columnExpr_ColumnExprIdentifier(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprIdentifier'))
+        current += self.columnIdentifier()
+        return current
+    columnExpr_ColumnExprIdentifier.min_depth = 4
+
+    @depthcontrol
+    def columnExpr_ColumnExprFunction(self):
+        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprFunction'))
+        current += self.identifier()
+        if self.unlexer.max_depth >= 1:
+            for _ in self.zero_or_one():
+                current += self.unlexer.LPAREN()
+                if self.unlexer.max_depth >= 4:
+                    for _ in self.zero_or_one():
+                        current += self.columnParamList()
+
+                current += self.unlexer.RPAREN()
+
+        current += self.unlexer.LPAREN()
+        if self.unlexer.max_depth >= 5:
+            for _ in self.zero_or_one():
+                current += self.columnArgList()
+
+        current += self.unlexer.RPAREN()
+        return current
+    columnExpr_ColumnExprFunction.min_depth = 3
 
     @depthcontrol
     def columnExpr_ColumnExprArrayAccess(self):
@@ -738,93 +814,6 @@ class ClickHouseUnparser(Grammarinator):
     columnExpr_ColumnExprBetween.min_depth = 3
 
     @depthcontrol
-    def columnExpr_ColumnExprCase(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprCase'))
-        current += self.unlexer.CASE()
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                current += self.columnExpr()
-
-        if self.unlexer.max_depth >= 0:
-            for _ in self.one_or_more():
-                current += self.unlexer.WHEN()
-                current += self.columnExpr()
-                current += self.unlexer.THEN()
-                current += self.columnExpr()
-
-        if self.unlexer.max_depth >= 3:
-            for _ in self.zero_or_one():
-                current += self.unlexer.ELSE()
-                current += self.columnExpr()
-
-        current += self.unlexer.END()
-        return current
-    columnExpr_ColumnExprCase.min_depth = 3
-
-    @depthcontrol
-    def columnExpr_ColumnExprExtract(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprExtract'))
-        current += self.unlexer.EXTRACT()
-        current += self.unlexer.LPAREN()
-        current += self.unlexer.INTERVAL_TYPE()
-        current += self.unlexer.FROM()
-        current += self.columnExpr()
-        current += self.unlexer.RPAREN()
-        return current
-    columnExpr_ColumnExprExtract.min_depth = 3
-
-    @depthcontrol
-    def columnExpr_ColumnExprTrim(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprTrim'))
-        current += self.unlexer.TRIM()
-        current += self.unlexer.LPAREN()
-        choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_195', i), 1) for i, w in enumerate([1, 1, 1])])
-        self.unlexer.weights[('alt_195', choice)] = self.unlexer.weights.get(('alt_195', choice), 1) * self.unlexer.cooldown
-        if choice == 0:
-            current += self.unlexer.BOTH()
-        elif choice == 1:
-            current += self.unlexer.LEADING()
-        elif choice == 2:
-            current += self.unlexer.TRAILING()
-        current += self.unlexer.STRING_LITERAL()
-        current += self.unlexer.FROM()
-        current += self.columnExpr()
-        current += self.unlexer.RPAREN()
-        return current
-    columnExpr_ColumnExprTrim.min_depth = 3
-
-    @depthcontrol
-    def columnExpr_ColumnExprInterval(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprInterval'))
-        current += self.unlexer.INTERVAL()
-        current += self.columnExpr()
-        current += self.unlexer.INTERVAL_TYPE()
-        return current
-    columnExpr_ColumnExprInterval.min_depth = 3
-
-    @depthcontrol
-    def columnExpr_ColumnExprFunction(self):
-        current = self.create_node(UnparserRule(name='columnExpr_ColumnExprFunction'))
-        current += self.identifier()
-        if self.unlexer.max_depth >= 1:
-            for _ in self.zero_or_one():
-                current += self.unlexer.LPAREN()
-                if self.unlexer.max_depth >= 4:
-                    for _ in self.zero_or_one():
-                        current += self.columnParamList()
-
-                current += self.unlexer.RPAREN()
-
-        current += self.unlexer.LPAREN()
-        if self.unlexer.max_depth >= 5:
-            for _ in self.zero_or_one():
-                current += self.columnArgList()
-
-        current += self.unlexer.RPAREN()
-        return current
-    columnExpr_ColumnExprFunction.min_depth = 3
-
-    @depthcontrol
     def columnExpr_ColumnExprAlias(self):
         current = self.create_node(UnparserRule(name='columnExpr_ColumnExprAlias'))
         current += self.columnExpr()
@@ -860,20 +849,20 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def columnArgExpr(self):
         current = self.create_node(UnparserRule(name='columnArgExpr'))
-        choice = self.choice([0 if [3, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_204', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_204', choice)] = self.unlexer.weights.get(('alt_204', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [4, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_200', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_200', choice)] = self.unlexer.weights.get(('alt_200', choice), 1) * self.unlexer.cooldown
         if choice == 0:
-            current += self.columnExpr()
-        elif choice == 1:
             current += self.columnLambdaExpr()
+        elif choice == 1:
+            current += self.columnExpr()
         return current
     columnArgExpr.min_depth = 3
 
     @depthcontrol
     def columnLambdaExpr(self):
         current = self.create_node(UnparserRule(name='columnLambdaExpr'))
-        choice = self.choice([0 if [3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_207', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_207', choice)] = self.unlexer.weights.get(('alt_207', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_203', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_203', choice)] = self.unlexer.weights.get(('alt_203', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.LPAREN()
             current += self.identifier()
@@ -910,8 +899,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def tableExpr(self):
         current = self.create_node(UnparserRule(name='tableExpr'))
-        choice = self.choice([0 if [5, 5, 6, 7][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_213', i), 1) for i, w in enumerate([1, 1, 1, 1])])
-        self.unlexer.weights[('alt_213', choice)] = self.unlexer.weights.get(('alt_213', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [5, 5, 6, 7][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_209', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        self.unlexer.weights[('alt_209', choice)] = self.unlexer.weights.get(('alt_209', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current = self.tableExpr_TableExprIdentifier()
         elif choice == 1:
@@ -995,8 +984,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def tableArgExpr(self):
         current = self.create_node(UnparserRule(name='tableArgExpr'))
-        choice = self.choice([0 if [3, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_221', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_221', choice)] = self.unlexer.weights.get(('alt_221', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [3, 4][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_217', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_217', choice)] = self.unlexer.weights.get(('alt_217', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.literal()
         elif choice == 1:
@@ -1014,8 +1003,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def literal(self):
         current = self.create_node(UnparserRule(name='literal'))
-        choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_224', i), 1) for i, w in enumerate([1, 1, 1])])
-        self.unlexer.weights[('alt_224', choice)] = self.unlexer.weights.get(('alt_224', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_220', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_220', choice)] = self.unlexer.weights.get(('alt_220', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.NUMBER_LITERAL()
         elif choice == 1:
@@ -1026,17 +1015,178 @@ class ClickHouseUnparser(Grammarinator):
     literal.min_depth = 2
 
     @depthcontrol
+    def keyword(self):
+        current = self.create_node(UnparserRule(name='keyword'))
+        choice = self.choice([0 if [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_224', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
+        self.unlexer.weights[('alt_224', choice)] = self.unlexer.weights.get(('alt_224', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.ALL()
+        elif choice == 1:
+            current += self.unlexer.AND()
+        elif choice == 2:
+            current += self.unlexer.ANTI()
+        elif choice == 3:
+            current += self.unlexer.ANY()
+        elif choice == 4:
+            current += self.unlexer.ARRAY()
+        elif choice == 5:
+            current += self.unlexer.AS()
+        elif choice == 6:
+            current += self.unlexer.ASCENDING()
+        elif choice == 7:
+            current += self.unlexer.ASOF()
+        elif choice == 8:
+            current += self.unlexer.BETWEEN()
+        elif choice == 9:
+            current += self.unlexer.BOTH()
+        elif choice == 10:
+            current += self.unlexer.BY()
+        elif choice == 11:
+            current += self.unlexer.CASE()
+        elif choice == 12:
+            current += self.unlexer.CAST()
+        elif choice == 13:
+            current += self.unlexer.COLLATE()
+        elif choice == 14:
+            current += self.unlexer.CROSS()
+        elif choice == 15:
+            current += self.unlexer.DAY()
+        elif choice == 16:
+            current += self.unlexer.DESCENDING()
+        elif choice == 17:
+            current += self.unlexer.DISTINCT()
+        elif choice == 18:
+            current += self.unlexer.ELSE()
+        elif choice == 19:
+            current += self.unlexer.END()
+        elif choice == 20:
+            current += self.unlexer.EXTRACT()
+        elif choice == 21:
+            current += self.unlexer.FINAL()
+        elif choice == 22:
+            current += self.unlexer.FIRST()
+        elif choice == 23:
+            current += self.unlexer.FORMAT()
+        elif choice == 24:
+            current += self.unlexer.FROM()
+        elif choice == 25:
+            current += self.unlexer.FULL()
+        elif choice == 26:
+            current += self.unlexer.GLOBAL()
+        elif choice == 27:
+            current += self.unlexer.GROUP()
+        elif choice == 28:
+            current += self.unlexer.HAVING()
+        elif choice == 29:
+            current += self.unlexer.HOUR()
+        elif choice == 30:
+            current += self.unlexer.IN()
+        elif choice == 31:
+            current += self.unlexer.INNER()
+        elif choice == 32:
+            current += self.unlexer.INSERT()
+        elif choice == 33:
+            current += self.unlexer.INTERVAL()
+        elif choice == 34:
+            current += self.unlexer.INTO()
+        elif choice == 35:
+            current += self.unlexer.IS()
+        elif choice == 36:
+            current += self.unlexer.JOIN()
+        elif choice == 37:
+            current += self.unlexer.LAST()
+        elif choice == 38:
+            current += self.unlexer.LEADING()
+        elif choice == 39:
+            current += self.unlexer.LEFT()
+        elif choice == 40:
+            current += self.unlexer.LIKE()
+        elif choice == 41:
+            current += self.unlexer.LIMIT()
+        elif choice == 42:
+            current += self.unlexer.LOCAL()
+        elif choice == 43:
+            current += self.unlexer.MINUTE()
+        elif choice == 44:
+            current += self.unlexer.MONTH()
+        elif choice == 45:
+            current += self.unlexer.NOT()
+        elif choice == 46:
+            current += self.unlexer.NULL_SQL()
+        elif choice == 47:
+            current += self.unlexer.NULLS()
+        elif choice == 48:
+            current += self.unlexer.OFFSET()
+        elif choice == 49:
+            current += self.unlexer.ON()
+        elif choice == 50:
+            current += self.unlexer.OR()
+        elif choice == 51:
+            current += self.unlexer.ORDER()
+        elif choice == 52:
+            current += self.unlexer.OUTER()
+        elif choice == 53:
+            current += self.unlexer.OUTFILE()
+        elif choice == 54:
+            current += self.unlexer.PREWHERE()
+        elif choice == 55:
+            current += self.unlexer.QUARTER()
+        elif choice == 56:
+            current += self.unlexer.RIGHT()
+        elif choice == 57:
+            current += self.unlexer.SAMPLE()
+        elif choice == 58:
+            current += self.unlexer.SECOND()
+        elif choice == 59:
+            current += self.unlexer.SELECT()
+        elif choice == 60:
+            current += self.unlexer.SEMI()
+        elif choice == 61:
+            current += self.unlexer.SETTINGS()
+        elif choice == 62:
+            current += self.unlexer.THEN()
+        elif choice == 63:
+            current += self.unlexer.TOTALS()
+        elif choice == 64:
+            current += self.unlexer.TRAILING()
+        elif choice == 65:
+            current += self.unlexer.TRIM()
+        elif choice == 66:
+            current += self.unlexer.UNION()
+        elif choice == 67:
+            current += self.unlexer.USING()
+        elif choice == 68:
+            current += self.unlexer.WEEK()
+        elif choice == 69:
+            current += self.unlexer.WHEN()
+        elif choice == 70:
+            current += self.unlexer.WHERE()
+        elif choice == 71:
+            current += self.unlexer.WITH()
+        elif choice == 72:
+            current += self.unlexer.YEAR()
+        return current
+    keyword.min_depth = 2
+
+    @depthcontrol
     def identifier(self):
         current = self.create_node(UnparserRule(name='identifier'))
-        current += self.unlexer.IDENTIFIER()
+        choice = self.choice([0 if [2, 3, 3][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_298', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_298', choice)] = self.unlexer.weights.get(('alt_298', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.IDENTIFIER()
+        elif choice == 1:
+            current += self.unlexer.INTERVAL_TYPE()
+        elif choice == 2:
+            current += self.keyword()
         return current
     identifier.min_depth = 2
 
     @depthcontrol
     def unaryOp(self):
         current = self.create_node(UnparserRule(name='unaryOp'))
-        choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_228', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_228', choice)] = self.unlexer.weights.get(('alt_228', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [1, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_302', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_302', choice)] = self.unlexer.weights.get(('alt_302', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.DASH()
         elif choice == 1:
@@ -1047,8 +1197,8 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def binaryOp(self):
         current = self.create_node(UnparserRule(name='binaryOp'))
-        choice = self.choice([0 if [1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_231', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
-        self.unlexer.weights[('alt_231', choice)] = self.unlexer.weights.get(('alt_231', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_305', i), 1) for i, w in enumerate([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])])
+        self.unlexer.weights[('alt_305', choice)] = self.unlexer.weights.get(('alt_305', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.CONCAT()
         elif choice == 1:
@@ -1062,28 +1212,30 @@ class ClickHouseUnparser(Grammarinator):
         elif choice == 5:
             current += self.unlexer.PERCENT()
         elif choice == 6:
-            current += self.unlexer.EQ()
+            current += self.unlexer.EQ_DOUBLE()
         elif choice == 7:
-            current += self.unlexer.NOT_EQ()
+            current += self.unlexer.EQ_SINGLE()
         elif choice == 8:
-            current += self.unlexer.LE()
+            current += self.unlexer.NOT_EQ()
         elif choice == 9:
-            current += self.unlexer.GE()
+            current += self.unlexer.LE()
         elif choice == 10:
-            current += self.unlexer.LT()
+            current += self.unlexer.GE()
         elif choice == 11:
-            current += self.unlexer.GT()
+            current += self.unlexer.LT()
         elif choice == 12:
-            current += self.unlexer.AND()
+            current += self.unlexer.GT()
         elif choice == 13:
-            current += self.unlexer.OR()
+            current += self.unlexer.AND()
         elif choice == 14:
+            current += self.unlexer.OR()
+        elif choice == 15:
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
                     current += self.unlexer.NOT()
 
             current += self.unlexer.LIKE()
-        elif choice == 15:
+        elif choice == 16:
             if self.unlexer.max_depth >= 2:
                 for _ in self.zero_or_one():
                     current += self.unlexer.GLOBAL()

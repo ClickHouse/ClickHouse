@@ -185,10 +185,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -282,6 +278,10 @@ public:
   }
 
   virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *ctx) override {
     return visitChildren(ctx);
   }
 

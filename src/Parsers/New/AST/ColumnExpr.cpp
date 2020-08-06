@@ -343,11 +343,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprLiteral(ClickHouseParser::ColumnE
     return AST::ColumnExpr::createLiteral(ctx->literal()->accept(this).as<AST::PtrTo<AST::Literal>>());
 }
 
-antlrcpp::Any ParseTreeVisitor::visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *ctx)
-{
-    return ctx->columnExpr()->accept(this);
-}
-
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::ColumnExprTernaryOpContext *ctx)
 {
     return AST::ColumnExpr::createTernaryOp(
@@ -368,6 +363,10 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTrim(ClickHouseParser::ColumnExpr
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *ctx)
 {
+    if (ctx->columnExprList()->columnExpr().size() == 1)
+        // Not a tuple - just an expression in parens
+        return ctx->columnExprList()->columnExpr(0)->accept(this);
+
     return AST::ColumnExpr::createTuple(
         ctx->columnExprList() ? ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>() : nullptr);
 }

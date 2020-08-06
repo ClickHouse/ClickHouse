@@ -5,6 +5,7 @@ lexer grammar ClickHouseLexer;
 INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 
 // Keywords
+// NOTE: don't forget to add new keywords to the parser rule "keyword"!
 
 ALL: A L L;
 AND: A N D;

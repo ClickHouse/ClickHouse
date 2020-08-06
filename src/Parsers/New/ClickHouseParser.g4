@@ -80,12 +80,15 @@ columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
     : literal                                                                        # ColumnExprLiteral
     | ASTERISK                                                                       # ColumnExprAsterisk
-    | columnIdentifier                                                               # ColumnExprIdentifier
-    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens
-    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
+    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple // or a single expression in parens
     | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
-
-    // NOTE: rules below are sorted according to operators' priority - the most priority on top.
+    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
+    // TODO: | CAST LPAREN columnExpr AS identifier RPAREN                                    # ColumnExprCast
+    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
+    | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
+    | columnIdentifier                                                               # ColumnExprIdentifier
+    | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
     | columnExpr DOT NUMBER_LITERAL                                                  # ColumnExprTupleAccess
     | unaryOp columnExpr                                                             # ColumnExprUnaryOp
@@ -93,17 +96,11 @@ columnExpr
     | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
-    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
-    // TODO: | CAST LPAREN columnExpr AS identifier RPAREN                                    # ColumnExprCast
-    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
-    | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
-    | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
     | columnExpr AS identifier                                                       # ColumnExprAlias
     ;
 columnParamList: literal (COMMA literal)*;
 columnArgList: columnArgExpr (COMMA columnArgExpr)*;
-columnArgExpr: columnExpr | columnLambdaExpr;
+columnArgExpr: columnLambdaExpr | columnExpr;
 columnLambdaExpr:
     ( LPAREN identifier (COMMA identifier)* RPAREN
     |        identifier (COMMA identifier)*
@@ -135,7 +132,15 @@ databaseIdentifier: identifier;
 // Basics
 
 literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
-identifier: IDENTIFIER; // TODO: not complete!
+keyword // do not use directly in grammar - this rule allows to use keywords as identifiers.
+    : ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | COLLATE
+    | CROSS | DAY | DESCENDING | DISTINCT | ELSE | END | EXTRACT | FINAL | FIRST | FORMAT | FROM | FULL
+    | GLOBAL | GROUP | HAVING | HOUR | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | LAST | LEADING | LEFT
+    | LIKE | LIMIT | LOCAL | MINUTE | MONTH | NOT | NULL_SQL | NULLS | OFFSET | ON | OR | ORDER | OUTER
+    | OUTFILE | PREWHERE | QUARTER | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SETTINGS | THEN | TOTALS
+    | TRAILING | TRIM | UNION | USING | WEEK | WHEN | WHERE | WITH | YEAR
+    ;
+identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;
 binaryOp
     : CONCAT

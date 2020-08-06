@@ -104,8 +104,6 @@ public:
 
     virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *context) = 0;
 
-    virtual antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *context) = 0;
-
     virtual antlrcpp::Any visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext *context) = 0;
@@ -153,6 +151,8 @@ public:
     virtual antlrcpp::Any visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *context) = 0;
 
     virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *context) = 0;
+
+    virtual antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *context) = 0;
 
     virtual antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *context) = 0;
 

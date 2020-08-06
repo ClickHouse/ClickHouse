@@ -58,7 +58,14 @@ antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnId
 
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
 {
-    return std::make_shared<AST::Identifier>(ctx->IDENTIFIER()->getText());
+    if (ctx->IDENTIFIER()) return std::make_shared<AST::Identifier>(ctx->IDENTIFIER()->getText());
+    if (ctx->keyword()) return std::make_shared<AST::Identifier>(ctx->keyword()->getText());
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitKeyword(ClickHouseParser::KeywordContext *)
+{
+    __builtin_unreachable();
 }
 
 }
