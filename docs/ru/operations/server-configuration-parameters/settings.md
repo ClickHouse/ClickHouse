@@ -576,9 +576,9 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 -   `endpoint` – путь по которому будет осуществляться экспорт данных метрик по HTTP протоколу для сбора с помощью prometheus. Должен начинаться с ‘/’.
 -   `port` – порт по которому будет доступен endpoint для сбора метрик.
--   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables.md#system_tables-metrics).
--   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables.md#system_tables-events).
--   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous\_metrics](../system-tables.md#system_tables-asynchronous_metrics).
+-   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
+-   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
+-   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous\_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
 
 **Пример**
 

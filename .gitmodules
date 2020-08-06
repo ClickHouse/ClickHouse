@@ -91,10 +91,10 @@
 	url = https://github.com/ClickHouse-Extras/libunwind.git
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
-	url = https://github.com/lemire/simdjson.git
+	url = https://github.com/ClickHouse-Extras/simdjson.git
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
-	url = https://github.com/Tencent/rapidjson
+	url = https://github.com/ClickHouse-Extras/rapidjson
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse-Extras/fastops
@@ -173,7 +173,7 @@
 	url = https://github.com/fmtlib/fmt.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
-	url = https://github.com/getsentry/sentry-native.git
+	url = https://github.com/ClickHouse-Extras/sentry-native.git
 [submodule "contrib/gcem"]
 	path = contrib/gcem
 	url = https://github.com/kthohr/gcem.git
