@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+
 #include <Core/Types.h>
 #include <Core/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
@@ -42,3 +48,4 @@ struct MaterializeMetadata
 
 }
 
+#endif
