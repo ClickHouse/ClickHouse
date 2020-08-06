@@ -40,13 +40,13 @@ Required parameters:
 
 Optional parameters:
 
--   `rabbitmq_exchange_type` – The type of RabbitMQ exchange: `direct`, `fanout`, `topic`, `headers`, `consistent-hash`. Default: `fanout`.
+-   `rabbitmq_exchange_type` – The type of RabbitMQ exchange: `direct`, `fanout`, `topic`, `headers`, `consistent_hash`. Default: `fanout`.
 -   `rabbitmq_routing_key_list` – A comma-separated list of routing keys.
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 -   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient.
 -   `rabbitmq_transactional_channel` – Wrap insert queries in transactions. Default: `0`.
--   `rabbitmq_queue_base` - Specify a base name for queues that will be declared. This settings should be used to be able to restore reading from declared durable queues in case of some failure when not all messages were successfully consumed. Note: it makes sence only if messages are sent with delivery mode 2 (marked 'persistent', durable). To be able to resume consumption from one specific queue in case of failure - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To be able to resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`.
+-   `rabbitmq_queue_base` - Specify a base name for queues that will be declared.
 -   `rabbitmq_deadletter_exchange` - Specify name for a [dead letter exchange](https://www.rabbitmq.com/dlx.html). You can create another table with this exchange name and collect messages in cases when they are republished to dead letter exchange. By default dead letter exchange is not specified.
 -   `persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
 
@@ -95,10 +95,17 @@ Exchange type options:
 -   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
 -   `consistent-hash` - Data is evenly distributed between all bound tables (where exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
+Setting `rabbitmq_queue_base` may be used for the following cases:
+-   to be able to restore reading from certain durable queues when not all messages were successfully consumed. Note: it makes sence only if messages are sent with delivery mode 2 - marked 'persistent', durable. To be able to resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To be able to resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
+-   to reuse queues as they are declared durable and not auto-deleted.
+-   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
+
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 
 -   `rabbitmq-consistent-hash-exchange` plugin must be enabled.
 -   `message_id` property of the published messages must be specified (unique for each message/batch).
+
+For insert query there is message metadata, which is added for each published message: messageID and republished flag - can be accessed via message headers.
 
 Do not use the same table for inserts and materialized views.
 
@@ -116,7 +123,7 @@ Example:
                             rabbitmq_num_consumers = 5;
 
   CREATE TABLE daily (key UInt64, value UInt64)
-    ENGINE = MergeTree();
+    ENGINE = MergeTree() ORDER BY key;
 
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT key, value FROM queue;
