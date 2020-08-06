@@ -23,7 +23,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Выводит содержимое таблицы [system.processes](../../operations/system-tables.md#system_tables-processes), которая содержит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
+Выводит содержимое таблицы [system.processes](../../operations/system-tables/processes.md#system_tables-processes), которая содержит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
 
 Запрос `SELECT * FROM system.processes` возвращает данные обо всех текущих запросах.
 
