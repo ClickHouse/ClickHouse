@@ -611,4 +611,21 @@ template <> bool decimalEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32
 template <> bool decimalLess(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLess(x, y, x_scale, y_scale); }
 template <> bool decimalLessOrEqual(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale) { return decLessOrEqual(x, y, x_scale, y_scale); }
 
+inline void writeText(const Null &, WriteBuffer & buf)
+{
+    writeText(std::string("Null"), buf);
+}
+
+String toString(const Field & x)
+{
+    return Field::dispatch(
+        [] (const auto & value)
+        {
+            // Use explicit type to prevent implicit construction of Field and
+            // infinite recursion into toString<Field>.
+            return toString<decltype(value)>(value);
+        },
+        x);
+}
+
 }
