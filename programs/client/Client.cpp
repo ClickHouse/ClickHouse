@@ -232,7 +232,7 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (auto setting : context.getSettingsRef().allUnchanged())
+        for (const auto & setting : context.getSettingsRef().allUnchanged())
         {
             const auto & name = setting.getName();
             if (config().has(name))
@@ -2252,7 +2252,7 @@ public:
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (auto setting : context.getSettingsRef().all())
+        for (const auto & setting : context.getSettingsRef().all())
         {
             const auto & name = setting.getName();
             if (options.count(name))
