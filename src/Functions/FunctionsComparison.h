@@ -885,6 +885,13 @@ private:
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
             throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
 
+        auto & res = block.getByPosition(result);
+        if (res.type->onlyNull())
+        {
+            res.column = res.type->createColumnConstWithDefaultValue(input_rows_count);
+            return;
+        }
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
