@@ -451,7 +451,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0. Set the [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1, to enables `+nan`, `-nan`, `+inf`, `-inf` values in output.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
@@ -462,9 +462,106 @@ If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact numb
 
 `extremes` – Extreme values (when extremes are set to 1).
 
+
+
+
+
+
+
+
+
+
+
+
+
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output.
+
+```sql
+SELECT days/0 FROM test_table FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(value1, 0)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(value1, 0)": null
+                },
+                {
+                        "divide(value1, 0)": null
+,
+                {
+                        "divide(value1, 0)": null
+,
+                {
+                        "divide(value1, 0)": null
+
+        ],
+
+        "rows": 4,
+
+        "statistics":
+        {
+                "elapsed": 0.000120303,
+                "rows_read": 4,
+                "bytes_read": 16
+        }
+}
+```
+
+Set the [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1, to enables `+nan`, `-nan`, `+inf`, `-inf` values in output.
+
+
+```sql
+SELECT days/0 FROM test_table FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(value1, 0)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(value1, 0)": "-inf"
+                },
+                {
+                        "divide(value1, 0)": "-inf"
+,
+                {
+                        "divide(value1, 0)": "-nan"
+,
+                {
+                        "divide(value1, 0)": "inf"
+
+        ],
+
+        "rows": 4,
+
+        "statistics":
+        {
+                "elapsed": 0.000113395,
+                "rows_read": 4,
+                "bytes_read": 16
+        }
+}
+```
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
