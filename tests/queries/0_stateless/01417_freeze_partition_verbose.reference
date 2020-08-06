@@ -1,0 +1,18 @@
+command_type	partition_id	part_name	backup_name
+FREEZE ALL	0	0_1_1_0	test_01417
+FREEZE ALL	1	1_2_2_0	test_01417
+FREEZE ALL	2	2_3_3_0	test_01417
+FREEZE ALL	3	3_4_4_0	test_01417
+FREEZE ALL	4	4_5_5_0	test_01417
+FREEZE ALL	5	5_6_6_0	test_01417
+FREEZE ALL	6	6_7_7_0	test_01417
+FREEZE ALL	7	7_8_8_0	test_01417
+FREEZE ALL	8	8_9_9_0	test_01417
+FREEZE ALL	9	9_10_10_0	test_01417
+command_type	partition_id	part_name	backup_name
+FREEZE PARTITION	3	3_4_4_0	test_01417_single_part
+command_type	partition_id	part_name	old_part_name
+ATTACH PARTITION	3	3_12_12_0	3_4_4_0
+command_type	partition_id	part_name	backup_name	old_part_name
+FREEZE PARTITION	7	7_8_8_0	test_01417_single_part_7	
+ATTACH PART	5	5_13_13_0		5_6_6_0

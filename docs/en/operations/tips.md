@@ -121,7 +121,7 @@ tickTime=2000
 # The number of ticks that the initial
 # synchronization phase can take
 # This value is not quite motivated
-initLimit=30000
+initLimit=300
 # The number of ticks that can pass between
 # sending a request and getting an acknowledgement
 syncLimit=10

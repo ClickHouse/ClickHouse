@@ -22,7 +22,11 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
-String Macros::expand(const String & s, size_t level, const String & database_name, const String & table_name) const
+String Macros::expand(const String & s,
+                      size_t level,
+                      const String & database_name,
+                      const String & table_name,
+                      const UUID & uuid) const
 {
     if (s.find('{') == String::npos)
         return s;
@@ -64,10 +68,12 @@ String Macros::expand(const String & s, size_t level, const String & database_na
             res += database_name;
         else if (macro_name == "table" && !table_name.empty())
             res += table_name;
+        else if (macro_name == "uuid" && uuid != UUIDHelpers::Nil)
+            res += toString(uuid);
         else
             throw Exception("No macro '" + macro_name +
-                "' in config while processing substitutions in '" + s + "' at "
-                + toString(begin), ErrorCodes::SYNTAX_ERROR);
+                "' in config while processing substitutions in '" + s + "' at '"
+                + toString(begin) + "' or macro is not supported here", ErrorCodes::SYNTAX_ERROR);
 
         pos = end + 1;
     }
@@ -82,9 +88,9 @@ String Macros::getValue(const String & key) const
     throw Exception("No macro " + key + " in config", ErrorCodes::SYNTAX_ERROR);
 }
 
-String Macros::expand(const String & s, const String & database_name, const String & table_name) const
+String Macros::expand(const String & s, const StorageID & table_id, bool allow_uuid) const
 {
-    return expand(s, 0, database_name, table_name);
+    return expand(s, 0, table_id.database_name, table_id.table_name, allow_uuid ? table_id.uuid : UUIDHelpers::Nil);
 }
 
 Names Macros::expand(const Names & source_names, size_t level) const
