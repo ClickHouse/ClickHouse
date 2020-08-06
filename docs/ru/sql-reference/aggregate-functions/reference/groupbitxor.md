@@ -44,3 +44,5 @@ SELECT groupBitXor(num) FROM t
 binary     decimal
 01101000 = 104
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/) <!--hide-->

@@ -39,3 +39,5 @@ GROUP BY timeslot
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/summap/) <!--hide-->

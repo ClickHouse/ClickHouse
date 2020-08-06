@@ -29,7 +29,7 @@ echo "TSAN_OPTIONS='halt_on_error=1 history_size=7 ignore_noninstrumented_module
 echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment
 echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
 
-service clickhouse-server start
+timeout 120 service clickhouse-server start
 
 wait_server
 
@@ -37,7 +37,9 @@ wait_server
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
-service clickhouse-server restart
+
+timeout 120 service clickhouse-server stop
+timeout 120 service clickhouse-server start
 
 wait_server
 
@@ -49,7 +51,8 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 ./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION"
 
-service clickhouse-server restart
+timeout 120 service clickhouse-server stop
+timeout 120 service clickhouse-server start
 
 wait_server
 

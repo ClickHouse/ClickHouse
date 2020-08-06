@@ -4,19 +4,37 @@
 namespace DB
 {
 
-ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, DataStreamTraits traits, bool collect_processors_)
-    : collect_processors(collect_processors_)
+ITransformingStep::ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_)
+    : transform_traits(std::move(traits.transform_traits))
+    , collect_processors(collect_processors_)
+    , data_stream_traits(std::move(traits.data_stream_traits))
 {
-    output_stream = DataStream{.header = std::move(output_header)};
-
-    if (traits.preserves_distinct_columns)
-        output_stream->distinct_columns = input_stream.distinct_columns;
-
-    output_stream->has_single_port = traits.returns_single_stream
-                                     || (input_stream.has_single_port && traits.preserves_number_of_streams);
-
     input_streams.emplace_back(std::move(input_stream));
+    output_stream = createOutputStream(input_streams.front(), std::move(output_header), data_stream_traits);
 }
+
+DataStream ITransformingStep::createOutputStream(
+    const DataStream & input_stream,
+    Block output_header,
+    const DataStreamTraits & stream_traits)
+{
+    DataStream output_stream{.header = std::move(output_header)};
+
+    if (stream_traits.preserves_distinct_columns)
+        output_stream.distinct_columns = input_stream.distinct_columns;
+
+    output_stream.has_single_port = stream_traits.returns_single_stream
+                                     || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
+
+    if (stream_traits.preserves_sorting)
+    {
+        output_stream.sort_description = input_stream.sort_description;
+        output_stream.sort_mode = input_stream.sort_mode;
+    }
+
+    return output_stream;
+}
+
 
 QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines)
 {
