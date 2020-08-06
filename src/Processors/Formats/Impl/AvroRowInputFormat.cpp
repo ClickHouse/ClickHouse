@@ -708,7 +708,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
     {
         return false;
     }
-    // skip tombstone records (kafka messages with null value)
+    /// Skip tombstone records (kafka messages with null value)
     if (in.available() == 0)
     {
         return false;
@@ -722,7 +722,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
 
 void AvroConfluentRowInputFormat::syncAfterError()
 {
-    // skip until the end of current kafka message
+    /// Skip until the end of current kafka message
     in.tryIgnore(in.available());
 }
 
