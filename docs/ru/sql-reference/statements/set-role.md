@@ -54,4 +54,4 @@ SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
 
 
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/set-role/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/set-role/) <!--hide-->

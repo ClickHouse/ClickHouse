@@ -22,4 +22,4 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
     Запрос `OPTIMIZE` не может устранить причину появления ошибки «Too many parts».
 
     
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/optimize/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/optimize/) <!--hide-->

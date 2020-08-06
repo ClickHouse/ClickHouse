@@ -81,4 +81,4 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 
 
 
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/drop/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/drop/) <!--hide-->

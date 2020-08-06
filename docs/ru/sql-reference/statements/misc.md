@@ -1,3 +1,8 @@
+---
+toc_hidden: true
+toc_priority: 41
+---
+
 # Прочие виды запросов {#prochie-vidy-zaprosov}
 
 -   [ATTACH](../../sql-reference/statements/attach.md)
@@ -15,4 +20,4 @@
 -   [USE](../../sql-reference/statements/use.md)
 
 
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/misc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/misc/) <!--hide-->

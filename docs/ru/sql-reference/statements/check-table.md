@@ -41,4 +41,4 @@ CHECK TABLE [db.]name
 4.  Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
 
 
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/statements/check-table/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/check-table/) <!--hide-->
