@@ -48,6 +48,10 @@ String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { 
 String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal256> & x) const { return formatQuotedWithPrefix(x, "Decimal256_"); }
+String FieldVisitorDump::operator() (const bUInt128 & x) const { return formatQuotedWithPrefix(x, "UInt128_"); }
+String FieldVisitorDump::operator() (const bInt128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
+String FieldVisitorDump::operator() (const bUInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
+String FieldVisitorDump::operator() (const bInt256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
 String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
 
 
@@ -100,11 +104,6 @@ String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
     wb << ')';
     return wb.str();
 }
-
-String FieldVisitorDump::operator() (const bUInt128 & x) const { return formatQuotedWithPrefix(x, "UInt128_"); }
-String FieldVisitorDump::operator() (const bInt128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
-String FieldVisitorDump::operator() (const bUInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
-String FieldVisitorDump::operator() (const bInt256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
 
 /** In contrast to writeFloatText (and writeQuoted),
   *  even if number looks like integer after formatting, prints decimal point nevertheless (for example, Float64(1) is printed as 1.).

@@ -96,7 +96,7 @@ template <typename T>
 class DecimalField
 {
 public:
-    DecimalField(T value = 0, UInt32 scale_ = 0)
+    DecimalField(T value = {}, UInt32 scale_ = 0)
     :   dec(value),
         scale(scale_)
     {}

@@ -360,7 +360,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     if (exponent > 0)
     {
         scale = 0;
-        if (common::mulOverflow(value.value, T::getScaleMultiplier(exponent), value.value))
+        if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
@@ -372,7 +372,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 template void readQuoted<Decimal32>(DecimalField<Decimal32> & x, ReadBuffer & buf);
 template void readQuoted<Decimal64>(DecimalField<Decimal64> & x, ReadBuffer & buf);
 template void readQuoted<Decimal128>(DecimalField<Decimal128> & x, ReadBuffer & buf);
-
+template void readQuoted<Decimal256>(DecimalField<Decimal256> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf)
 {
@@ -413,6 +413,34 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         return value;
     }
 
+    prefix = std::string_view{"Int128_"};
+    if (dump.starts_with(prefix))
+    {
+        bInt128 value = parseFromString<bInt128>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"UInt128_"};
+    if (dump.starts_with(prefix))
+    {
+        bUInt128 value = parseFromString<bUInt128>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"Int256_"};
+    if (dump.starts_with(prefix))
+    {
+        bInt256 value = parseFromString<bInt256>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"UInt256_"};
+    if (dump.starts_with(prefix))
+    {
+        bUInt256 value = parseFromString<bUInt256>(dump.substr(prefix.length()));
+        return value;
+    }
+
     prefix = std::string_view{"Float64_"};
     if (dump.starts_with(prefix))
     {
@@ -442,6 +470,15 @@ Field Field::restoreFromDump(const std::string_view & dump_)
     if (dump_.starts_with(prefix))
     {
         DecimalField<Decimal128> decimal;
+        ReadBufferFromString buf{dump.substr(prefix.length())};
+        readQuoted(decimal, buf);
+        return decimal;
+    }
+
+    prefix = std::string_view{"Decimal256_"};
+    if (dump_.starts_with(prefix))
+    {
+        DecimalField<Decimal256> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
         return decimal;
