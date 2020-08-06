@@ -60,6 +60,8 @@ void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
         writeChunk(mono_chunk, PortKind::Main);
         mono_chunk.clear();
     }
+
+    PrettyBlockOutputFormat::writeSuffixIfNot();
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
