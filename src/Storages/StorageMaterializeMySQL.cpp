@@ -13,8 +13,8 @@
 namespace DB
 {
 
-StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_)
-    : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_)
+StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_)
+    : IStorage(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     ColumnsDescription columns_desc;
     const auto & nested_memory_metadata = nested_storage->getInMemoryMetadata();
@@ -38,6 +38,9 @@ Pipes StorageMaterializeMySQL::read(
     size_t max_block_size,
     unsigned int num_streams)
 {
+    /// If the background synchronization thread has exception.
+    database->rethrowExceptionIfNeed();
+
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
@@ -95,6 +98,9 @@ Pipes StorageMaterializeMySQL::read(
 
 NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
 {
+    /// If the background synchronization thread has exception.
+    database->rethrowExceptionIfNeed();
+
     NamesAndTypesList virtuals;
     Block nested_header = nested_storage->getInMemoryMetadata().getSampleBlockNonMaterialized();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);

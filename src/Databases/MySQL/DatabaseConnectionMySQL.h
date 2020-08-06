@@ -50,7 +50,7 @@ public:
 
     void createTable(const Context &, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(Context &, bool) override;
+    void loadStoredObjects(Context &, bool, bool force_attach) override;
 
     StoragePtr detachTable(const String & table_name) override;
 

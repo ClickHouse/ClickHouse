@@ -33,13 +33,7 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
 {
 }
 
-void DatabaseMaterializeMySQL::setException(const std::exception_ptr & exception_)
-{
-    std::unique_lock<std::mutex> lock(mutex);
-    exception = exception_;
-}
-
-DatabasePtr DatabaseMaterializeMySQL::getNestedDatabase() const
+void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
 {
     std::unique_lock<std::mutex> lock(mutex);
 
@@ -54,8 +48,12 @@ DatabasePtr DatabaseMaterializeMySQL::getNestedDatabase() const
             throw Exception(ex);
         }
     }
+}
 
-    return nested_database;
+void DatabaseMaterializeMySQL::setException(const std::exception_ptr & exception_)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    exception = exception_;
 }
 
 ASTPtr DatabaseMaterializeMySQL::getCreateDatabaseQuery() const
@@ -65,17 +63,21 @@ ASTPtr DatabaseMaterializeMySQL::getCreateDatabaseQuery() const
     create_query->set(create_query->storage, engine_define);
     return create_query;
 }
-void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
+
+void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     try
     {
-        getNestedDatabase()->loadStoredObjects(context, has_force_restore_data_flag);
+        std::unique_lock<std::mutex> lock(mutex);
+        nested_database->loadStoredObjects(context, has_force_restore_data_flag, force_attach);
         materialize_thread.startSynchronization();
     }
     catch (...)
     {
         tryLogCurrentException(log, "Cannot load MySQL nested database stored objects.");
-        throw;
+
+        if (!force_attach)
+            throw;
     }
 }
 
@@ -92,42 +94,42 @@ void DatabaseMaterializeMySQL::shutdown()
 
 bool DatabaseMaterializeMySQL::empty() const
 {
-    return getNestedDatabase()->empty();
+    return nested_database->empty();
 }
 
 String DatabaseMaterializeMySQL::getDataPath() const
 {
-    return getNestedDatabase()->getDataPath();
+    return nested_database->getDataPath();
 }
 
 String DatabaseMaterializeMySQL::getMetadataPath() const
 {
-    return getNestedDatabase()->getMetadataPath();
+    return nested_database->getMetadataPath();
 }
 
 String DatabaseMaterializeMySQL::getTableDataPath(const String & table_name) const
 {
-    return getNestedDatabase()->getTableDataPath(table_name);
+    return nested_database->getTableDataPath(table_name);
 }
 
 String DatabaseMaterializeMySQL::getTableDataPath(const ASTCreateQuery & query) const
 {
-    return getNestedDatabase()->getTableDataPath(query);
+    return nested_database->getTableDataPath(query);
 }
 
 String DatabaseMaterializeMySQL::getObjectMetadataPath(const String & table_name) const
 {
-    return getNestedDatabase()->getObjectMetadataPath(table_name);
+    return nested_database->getObjectMetadataPath(table_name);
 }
 
 UUID DatabaseMaterializeMySQL::tryGetTableUUID(const String & table_name) const
 {
-    return getNestedDatabase()->tryGetTableUUID(table_name);
+    return nested_database->tryGetTableUUID(table_name);
 }
 
 time_t DatabaseMaterializeMySQL::getObjectMetadataModificationTime(const String & name) const
 {
-    return getNestedDatabase()->getObjectMetadataModificationTime(name);
+    return nested_database->getObjectMetadataModificationTime(name);
 }
 
 void DatabaseMaterializeMySQL::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
@@ -135,7 +137,7 @@ void DatabaseMaterializeMySQL::createTable(const Context & context, const String
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MaterializeMySQL database not support create table.", ErrorCodes::NOT_IMPLEMENTED);
 
-    getNestedDatabase()->createTable(context, name, table, query);
+    nested_database->createTable(context, name, table, query);
 }
 
 void DatabaseMaterializeMySQL::dropTable(const Context & context, const String & name, bool no_delay)
@@ -143,7 +145,7 @@ void DatabaseMaterializeMySQL::dropTable(const Context & context, const String &
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MaterializeMySQL database not support drop table.", ErrorCodes::NOT_IMPLEMENTED);
 
-    getNestedDatabase()->dropTable(context, name, no_delay);
+    nested_database->dropTable(context, name, no_delay);
 }
 
 void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -151,7 +153,7 @@ void DatabaseMaterializeMySQL::attachTable(const String & name, const StoragePtr
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MaterializeMySQL database not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
 
-    getNestedDatabase()->attachTable(name, table, relative_table_path);
+    nested_database->attachTable(name, table, relative_table_path);
 }
 
 StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
@@ -159,7 +161,7 @@ StoragePtr DatabaseMaterializeMySQL::detachTable(const String & name)
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MaterializeMySQL database not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
 
-    return getNestedDatabase()->detachTable(name);
+    return nested_database->detachTable(name);
 }
 
 void DatabaseMaterializeMySQL::renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary)
@@ -176,7 +178,7 @@ void DatabaseMaterializeMySQL::renameTable(const Context & context, const String
     if (to_database.getDatabaseName() != getDatabaseName())
         throw Exception("Cannot rename with other database for MaterializeMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
 
-    getNestedDatabase()->renameTable(context, name, *getNestedDatabase(), to_name, exchange, dictionary);
+    nested_database->renameTable(context, name, *nested_database, to_name, exchange, dictionary);
 }
 
 void DatabaseMaterializeMySQL::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
@@ -184,7 +186,7 @@ void DatabaseMaterializeMySQL::alterTable(const Context & context, const Storage
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
         throw Exception("MaterializeMySQL database not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
 
-    getNestedDatabase()->alterTable(context, table_id, metadata);
+    nested_database->alterTable(context, table_id, metadata);
 }
 
 bool DatabaseMaterializeMySQL::shouldBeEmptyOnDetach() const
@@ -194,14 +196,14 @@ bool DatabaseMaterializeMySQL::shouldBeEmptyOnDetach() const
 
 void DatabaseMaterializeMySQL::drop(const Context & context)
 {
-    DatabasePtr database = getNestedDatabase();
-
-    if (database->shouldBeEmptyOnDetach())
+    if (nested_database->shouldBeEmptyOnDetach())
     {
-        for (auto iterator = database->getTablesIterator(context, {}); iterator->isValid(); iterator->next())
+        for (auto iterator = nested_database->getTablesIterator(context, {}); iterator->isValid(); iterator->next())
         {
-            TableExclusiveLockHolder table_lock = iterator->table()->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            database->dropTable(context, iterator->name(), true);
+            TableExclusiveLockHolder table_lock = iterator->table()->lockExclusively(
+                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+            nested_database->dropTable(context, iterator->name(), true);
         }
 
         /// Remove metadata info
@@ -211,38 +213,38 @@ void DatabaseMaterializeMySQL::drop(const Context & context)
             metadata.remove(false);
     }
 
-    database->drop(context);
+    nested_database->drop(context);
 }
 
 bool DatabaseMaterializeMySQL::isTableExist(const String & name, const Context & context) const
 {
-    return getNestedDatabase()->isTableExist(name, context);
+    return nested_database->isTableExist(name, context);
 }
 
 StoragePtr DatabaseMaterializeMySQL::tryGetTable(const String & name, const Context & context) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
-        StoragePtr nested_storage = getNestedDatabase()->tryGetTable(name, context);
+        StoragePtr nested_storage = nested_database->tryGetTable(name, context);
 
         if (!nested_storage)
             return {};
 
-        return std::make_shared<StorageMaterializeMySQL>(std::move(nested_storage));
+        return std::make_shared<StorageMaterializeMySQL>(std::move(nested_storage), this);
     }
 
-    return getNestedDatabase()->tryGetTable(name, context);
+    return nested_database->tryGetTable(name, context);
 }
 
 DatabaseTablesIteratorPtr DatabaseMaterializeMySQL::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
-        DatabaseTablesIteratorPtr iterator = getNestedDatabase()->getTablesIterator(context, filter_by_table_name);
-        return std::make_unique<DatabaseMaterializeTablesIterator>(std::move(iterator));
+        DatabaseTablesIteratorPtr iterator = nested_database->getTablesIterator(context, filter_by_table_name);
+        return std::make_unique<DatabaseMaterializeTablesIterator>(std::move(iterator), this);
     }
 
-    return getNestedDatabase()->getTablesIterator(context, filter_by_table_name);
+    return nested_database->getTablesIterator(context, filter_by_table_name);
 }
 
 }
