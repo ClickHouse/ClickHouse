@@ -8,6 +8,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace MySQLParser
 {
@@ -68,6 +72,12 @@ public:
     ASTPtr clone() const override;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
+
+protected:
+    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    {
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTAlterCommand.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 class ParserAlterCommand : public IParserBase

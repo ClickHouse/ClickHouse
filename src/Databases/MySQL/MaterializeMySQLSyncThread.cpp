@@ -43,7 +43,10 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context 
     {
         Context context(context_);
         CurrentThread::QueryScope query_scope(context);
-        context.unsafeSetCurrentDatabase(database);
+
+        if (!database.empty())
+            context.setCurrentDatabase(database);
+
         context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         context.setCurrentQueryId(""); // generate random query_id
 
@@ -250,7 +253,7 @@ static inline void dumpDataForTables(
     {
         const auto & table_name = iterator->first;
         String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        tryToExecuteQuery(query_prefix + " " + iterator->second, context, mysql_database_name, comment); /// create table.
+        tryToExecuteQuery(query_prefix + " " + iterator->second, context, database_name, comment); /// create table.
 
         auto out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
         MySQLBlockInputStream input(
@@ -579,7 +582,8 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         try
         {
             String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
-            tryToExecuteQuery(query_prefix + query_event.query, global_context, query_event.schema, comment);
+            String event_database = query_event.schema == mysql_database_name ? database_name : "";
+            tryToExecuteQuery(query_prefix + query_event.query, global_context, event_database, comment);
         }
         catch (Exception & exception)
         {

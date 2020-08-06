@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace MySQLParser
 {
 
@@ -30,6 +35,12 @@ public:
     ASTPtr clone() const override;
 
     String getID(char /*delimiter*/) const override { return "options declaration"; }
+
+protected:
+    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    {
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTDeclareOptions.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 class ParserAlwaysTrue : public IParserBase

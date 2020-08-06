@@ -64,7 +64,6 @@ static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_
     ParserKeyword k_key("KEY");
     ParserKeyword k_index("INDEX");
 
-    ParserExpression p_expression;
     ParserIdentifier p_identifier;
 
     if (ParserKeyword("SPATIAL").ignore(pos, expected))
@@ -172,7 +171,6 @@ bool ParserDeclareIndex::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
     ASTPtr index_columns;
     ASTPtr index_options;
     ASTPtr declare_reference;
-    ParserIndexColumn p_expression;
 
     ParserDeclareOptions p_index_options{
         {
