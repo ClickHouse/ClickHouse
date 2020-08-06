@@ -76,6 +76,7 @@ body[data-spy] #content {
 #content pre {
     background: #efefef;
     padding: 1rem;
+    line-height: 1.25;
 }
 
 #docsearch-input:focus, #docsearch-input:active {
