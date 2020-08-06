@@ -288,8 +288,18 @@ def add_report_errors():
     errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while building the report</a>']);
 
 def add_errors_explained():
+    if not errors_explained:
+        return
+
+    text = tableStart('Error summary')
+    text += '<a name="fail1"/>'
+    text += tableHeader(['Description'])
+    for row in errors_explained:
+        text += tableRow(row)
+    text += tableEnd()
+
     global tables
-    addSimpleTable('Error summary', ['Description'], errors_explained, 1)
+    tables.insert(1, text)
 
 
 if args.report == 'main':
