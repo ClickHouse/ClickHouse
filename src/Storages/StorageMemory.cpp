@@ -31,7 +31,7 @@ public:
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
         , begin(begin_)
-        , end(end_)
+        , end(end_) /// [begin, end]
         , it(begin)
     {
     }
@@ -41,7 +41,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (it == end)
+        if (finished)
         {
             return {};
         }
@@ -55,7 +55,10 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            ++it;
+            if (it == end)
+                finished = true;
+            else
+                ++it;
             return Chunk(std::move(columns), src.rows());
         }
     }
@@ -64,6 +67,7 @@ private:
     BlocksList::iterator begin;
     BlocksList::iterator end;
     BlocksList::iterator it;
+    bool finished = false;
 };
 
 
@@ -128,6 +132,11 @@ Pipes StorageMemory::read(
 
         std::advance(begin, stream * size / num_streams);
         std::advance(end, (stream + 1) * size / num_streams);
+
+        if (begin == end)
+            continue;
+        else
+            --end;
 
         pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this, metadata_snapshot));
     }
