@@ -775,7 +775,7 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr current_unit_ptr;
 
-        while (!update_request.empty() && update_queue.tryPop(current_unit_ptr))
+        while (update_request.size() < current_queue_size + 1 && update_queue.tryPop(current_unit_ptr))
             update_request.emplace_back(std::move(current_unit_ptr));
 
         BunchUpdateUnit bunch_update_unit(update_request);
@@ -815,7 +815,7 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
     bool result = is_update_finished.wait_for(
             update_lock,
             std::chrono::milliseconds(timeout_for_wait),
-            [&] {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
+            [&] { return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (!result)
     {
