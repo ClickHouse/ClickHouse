@@ -503,15 +503,11 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    if (update_channel_id)
-        next_channel_id += num_queues;
-    update_channel_id = true;
-
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         consumer_channel, setup_channel, event_handler, consumer_exchange,
-        next_channel_id, queue_base, log, row_delimiter, hash_exchange, num_queues,
+        ++consumer_id, queue_base, log, row_delimiter, hash_exchange, num_queues,
         deadletter_exchange, stream_cancelled);
 }
 
@@ -520,7 +516,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
         parsed_address, global_context, login_password, routing_keys, exchange_name, exchange_type,
-        log, use_transactional_channel, persistent,
+        ++producer_id, use_transactional_channel, persistent, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
