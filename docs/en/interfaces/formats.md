@@ -462,18 +462,6 @@ If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact numb
 
 `extremes` – Extreme values (when extremes are set to 1).
 
-
-
-
-
-
-
-
-
-
-
-
-
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output.
@@ -481,6 +469,7 @@ ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `n
 ```sql
 SELECT days/0 FROM test_table FORMAT JSON;
 ```
+
 
 ```json
 {
@@ -520,7 +509,6 @@ SELECT days/0 FROM test_table FORMAT JSON;
 ```
 
 Set the [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1, to enables `+nan`, `-nan`, `+inf`, `-inf` values in output.
-
 
 ```sql
 SELECT days/0 FROM test_table FORMAT JSON;
@@ -562,6 +550,8 @@ SELECT days/0 FROM test_table FORMAT JSON;
         }
 }
 ```
+
+
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
