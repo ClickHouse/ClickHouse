@@ -512,8 +512,6 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
             SELECT *, _consumer_tag AS consumer_tag FROM test.rabbitmq;
     ''')
 
-    time.sleep(1)
-
     i = [0]
     messages_num = 10000
 
@@ -1546,7 +1544,7 @@ def test_rabbitmq_queue_resume_1(rabbitmq_cluster):
     ''')
 
     i = [0]
-    messages_num = 5000
+    messages_num = 1000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
@@ -1635,7 +1633,7 @@ def test_rabbitmq_queue_resume_2(rabbitmq_cluster):
     ''')
 
     i = [0]
-    messages_num = 5000
+    messages_num = 10000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
@@ -1689,8 +1687,6 @@ def test_rabbitmq_queue_resume_2(rabbitmq_cluster):
         if int(result1) > collected:
             break
 
-    result2 = instance.query("SELECT count(DISTINCT consumer_tag) FROM test.view")
-
     instance.query('''
         DROP TABLE IF EXISTS test.rabbitmq_queue_resume;
         DROP TABLE IF EXISTS test.consumer;
@@ -1698,7 +1694,6 @@ def test_rabbitmq_queue_resume_2(rabbitmq_cluster):
     ''')
 
     assert int(result1) > collected, 'ClickHouse lost some messages: {}'.format(result)
-    assert int(result2) == 2
 
 
 @pytest.mark.timeout(420)
@@ -1778,8 +1773,6 @@ def test_rabbitmq_consumer_acknowledgements(rabbitmq_cluster):
         if int(result1) >= messages_num * threads_num:
             break
 
-    #result2 = instance.query("SELECT count(DISTINCT consumer_tag) FROM test.view")
-
     instance.query('''
         DROP TABLE IF EXISTS test.rabbitmq_consumer_acks;
         DROP TABLE IF EXISTS test.consumer;
@@ -1788,6 +1781,91 @@ def test_rabbitmq_consumer_acknowledgements(rabbitmq_cluster):
 
     # >= because at-least-once
     assert int(result1) >= messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination(key UInt64, value UInt64, consumer_tag String)
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+    num_tables = 4
+    for table_id in range(num_tables):
+        print("Setting up table {}".format(table_id))
+        instance.query('''
+            DROP TABLE IF EXISTS test.many_consumers_{0};
+            DROP TABLE IF EXISTS test.many_consumers_{0}_mv;
+            CREATE TABLE test.many_consumers_{0} (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_exchange_name = 'many_consumers',
+                         rabbitmq_num_queues = 2,
+                         rabbitmq_num_consumers = 2,
+                         rabbitmq_queue_base = 'many_consumers',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_row_delimiter = '\\n';
+            CREATE MATERIALIZED VIEW test.many_consumers_{0}_mv TO test.destination AS
+            SELECT key, value, _consumer_tag as consumer_tag FROM test.many_consumers_{0};
+        '''.format(table_id))
+
+    i = [0]
+    messages_num = 1000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        current = 0
+        for message in messages:
+            current += 1
+            mes_id = str(current)
+            channel.basic_publish(exchange='many_consumers', routing_key='',
+                    properties=pika.BasicProperties(message_id=mes_id), body=message)
+        connection.close()
+
+    threads = []
+    threads_num = 20
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    result1 = ''
+    while True:
+        result1 = instance.query('SELECT count() FROM test.destination')
+        time.sleep(1)
+        if int(result1) == messages_num * threads_num:
+            break
+
+    result2 = instance.query("SELECT count(DISTINCT consumer_tag) FROM test.destination")
+
+    for thread in threads:
+        thread.join()
+
+    for consumer_id in range(num_tables):
+        instance.query('''
+            DROP TABLE IF EXISTS test.many_consumers_{0};
+            DROP TABLE IF EXISTS test.many_consumers_{0}_mv;
+        '''.format(consumer_id))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
+    assert int(result1) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+    # 4 tables, 2 consumers for each table => 8 consumer tags
+    assert int(result2) == 8
 
 
 if __name__ == '__main__':
