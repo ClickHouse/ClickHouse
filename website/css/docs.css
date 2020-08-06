@@ -38,10 +38,6 @@ summary {
     margin-left: .5rem;
 }
 
-body[data-spy] #content {
-    overflow-x: scroll;
-}
-
 #content table {
     border: 1px solid #dee2e6;
     width: 100%;
