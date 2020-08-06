@@ -3,7 +3,6 @@
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
-#include <cmath>
 #include <algorithm>
 #include <cmath>
 
