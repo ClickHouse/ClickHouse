@@ -5,3 +5,5 @@ This table contains a single String column called ‘name’ – the name of a d
 Each database that the server knows about has a corresponding entry in the table.
 
 This system table is used for implementing the `SHOW DATABASES` query.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/databases) <!--hide-->
