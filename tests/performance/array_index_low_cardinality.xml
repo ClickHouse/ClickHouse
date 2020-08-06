@@ -7,8 +7,8 @@
 
     <create_query>
         INSERT INTO perf_lc (str)
-        SELECT concat('asdf', toString(number % 1000))
-        FROM numbers(100000000)
+        SELECT concat('asdf', toString(number % 10000))
+        FROM numbers(1000000000)
     </create_query>
 
     <query>SELECT count() FROM perf_lc WHERE str = 'asdf337'</query>

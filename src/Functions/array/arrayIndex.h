@@ -63,8 +63,6 @@ struct IndexCount
 /**
  * @tparam Initial Initial integral data type (array's).
  * @tparam Result Resulting integral data type (col_res's).
- * @tparam InvokedNotFromLCSpec For invokation from the low cardinality specialisation, we do not re-resize the
- *      result column and do not override the result[i] if the value was not found (as it is invoked multiple times).
  */
 template <
     class Initial,
@@ -100,15 +98,12 @@ private:
     template <size_t Case, class Data, class Target>
     static void process(
         const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result,
-        const NullMap * const null_map_data, const NullMap * const null_map_item)
+        [[maybe_unused]] const NullMap * const null_map_data,
+        [[maybe_unused]] const NullMap * const null_map_item)
     {
-        UNUSED(null_map_data);
-        UNUSED(null_map_item);
-
         const size_t size = offsets.size();
 
-        if constexpr (InvokedNotFromLCSpec)
-            result.resize(size);
+        result.resize(size);
 
         ArrOffset current_offset = 0;
 
@@ -127,7 +122,7 @@ private:
                     if (hasNull(null_map_data, current_offset + j))
                         continue;
 
-                if constexpr (Case == 4)
+                if constexpr (Case == 4) /// Both args are nullable
                 {
                     const bool right_is_null = hasNull(null_map_data, current_offset + j);
                     const bool left_is_null = hasNull(null_map_item, i);
@@ -755,8 +750,6 @@ private:
             return false;
 
         auto col_result = ResultColumnType::create();
-        col_result->getData().resize_fill(col_array->getOffsets().size());
-
         const IColumn * const col_arg = block.getByPosition(arguments[1]).column.get();
 
         /**
@@ -799,7 +792,8 @@ private:
         const IColumn & lc_indices = col_lc->getIndexes();
         MutableColumnPtr col_arg_indices = lc_indices.cloneResized(arg_size);
 
-        auto fill_col = [&col_lc, &col_arg_cloned, arg_size]<class T>(ColumnVector<T>& col_indices)
+        // bloody Arcadia does not support templated lambdas
+        auto fill_col = [&col_lc, &col_arg_cloned, arg_size](auto& col_indices)
         {
             // Need to clone the column to build its index.
             auto col_lc_dict_mutated_icol = IColumn::mutate(col_lc->getDictionaryPtr());
