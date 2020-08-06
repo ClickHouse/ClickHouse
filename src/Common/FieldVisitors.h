@@ -81,8 +81,6 @@ public:
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 
-    String operator() (const bUInt128 & x) const;
-    String operator() (const bInt128 & x) const;
     String operator() (const bUInt256 & x) const;
     String operator() (const bInt256 & x) const;
 };
@@ -106,8 +104,6 @@ public:
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 
-    String operator() (const bUInt128 & x) const;
-    String operator() (const bInt128 & x) const;
     String operator() (const bUInt256 & x) const;
     String operator() (const bInt256 & x) const;
 };
@@ -220,8 +216,6 @@ public:
     void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
 
-    void operator() (const bUInt128 & x) const;
-    void operator() (const bInt128 & x) const;
     void operator() (const bUInt256 & x) const;
     void operator() (const bInt256 & x) const;
 };

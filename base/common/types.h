@@ -24,13 +24,9 @@ using UInt32 = uint32_t;
 using UInt64 = uint64_t;
 
 /// We have to use 127 and 255 bit integers to safe a bit for a sign serialization
-//using bInt128 = boost::multiprecision::int128_t;
 //using bInt256 = boost::multiprecision::int256_t;
-using bInt128 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
-    127, 127, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void>>;
 using bInt256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
     255, 255, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void> >;
-using bUInt128 = boost::multiprecision::uint128_t;
 using bUInt256 = boost::multiprecision::uint256_t;
 
 
@@ -45,7 +41,6 @@ struct is_signed
     static constexpr bool value = std::is_signed_v<T>;
 };
 
-template <> struct is_signed<bInt128> { static constexpr bool value = true; };
 template <> struct is_signed<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
@@ -57,7 +52,6 @@ struct is_unsigned
     static constexpr bool value = std::is_unsigned_v<T>;
 };
 
-template <> struct is_unsigned<bUInt128> { static constexpr bool value = true; };
 template <> struct is_unsigned<bUInt256> { static constexpr bool value = true; };
 
 template <typename T>
@@ -70,8 +64,6 @@ struct is_integral_or_big
     static constexpr bool value = std::is_integral_v<T>;
 };
 
-template <> struct is_integral_or_big<bUInt128> { static constexpr bool value = true; };
-template <> struct is_integral_or_big<bInt128> { static constexpr bool value = true; };
 template <> struct is_integral_or_big<bUInt256> { static constexpr bool value = true; };
 template <> struct is_integral_or_big<bInt256> { static constexpr bool value = true; };
 
@@ -94,8 +86,6 @@ struct make_unsigned
     typedef std::make_unsigned_t<T> type;
 };
 
-template <> struct make_unsigned<bInt128>  { typedef bUInt128 type; };
-template <> struct make_unsigned<bUInt128> { typedef bUInt128 type; };
 template <> struct make_unsigned<bInt256>  { typedef bUInt256 type; };
 template <> struct make_unsigned<bUInt256> { typedef bUInt256 type; };
 
@@ -107,8 +97,6 @@ struct make_signed
     typedef std::make_signed_t<T> type;
 };
 
-template <> struct make_signed<bInt128>  { typedef bInt128 type; };
-template <> struct make_signed<bUInt128> { typedef bInt128 type; };
 template <> struct make_signed<bInt256>  { typedef bInt256 type; };
 template <> struct make_signed<bUInt256> { typedef bInt256 type; };
 
@@ -120,8 +108,6 @@ struct is_big_int
     static constexpr bool value = false;
 };
 
-template <> struct is_big_int<bUInt128> { static constexpr bool value = true; };
-template <> struct is_big_int<bInt128> { static constexpr bool value = true; };
 template <> struct is_big_int<bUInt256> { static constexpr bool value = true; };
 template <> struct is_big_int<bInt256> { static constexpr bool value = true; };
 

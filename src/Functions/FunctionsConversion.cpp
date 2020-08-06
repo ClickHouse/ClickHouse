@@ -19,13 +19,11 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUInt16>();
     factory.registerFunction<FunctionToUInt32>();
     factory.registerFunction<FunctionToUInt64>();
-    factory.registerFunction<FunctionToUInt128>();
     factory.registerFunction<FunctionToUInt256>();
     factory.registerFunction<FunctionToInt8>();
     factory.registerFunction<FunctionToInt16>();
     factory.registerFunction<FunctionToInt32>();
     factory.registerFunction<FunctionToInt64>();
-    factory.registerFunction<FunctionToInt128>();
     factory.registerFunction<FunctionToInt256>();
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
@@ -50,13 +48,11 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUInt16OrZero>();
     factory.registerFunction<FunctionToUInt32OrZero>();
     factory.registerFunction<FunctionToUInt64OrZero>();
-    factory.registerFunction<FunctionToUInt128OrZero>();
     factory.registerFunction<FunctionToUInt256OrZero>();
     factory.registerFunction<FunctionToInt8OrZero>();
     factory.registerFunction<FunctionToInt16OrZero>();
     factory.registerFunction<FunctionToInt32OrZero>();
     factory.registerFunction<FunctionToInt64OrZero>();
-    factory.registerFunction<FunctionToInt128OrZero>();
     factory.registerFunction<FunctionToInt256OrZero>();
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
@@ -73,7 +69,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUInt16OrNull>();
     factory.registerFunction<FunctionToUInt32OrNull>();
     factory.registerFunction<FunctionToUInt64OrNull>();
-    factory.registerFunction<FunctionToUInt128OrNull>();
     factory.registerFunction<FunctionToUInt256OrNull>();
     factory.registerFunction<FunctionToInt8OrNull>();
     factory.registerFunction<FunctionToInt16OrNull>();

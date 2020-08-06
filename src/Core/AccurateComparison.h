@@ -105,7 +105,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
     if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
         return static_cast<TInt>(static_cast<UInt16>(a)) > static_cast<TInt>(b);
     else if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>)
-        return static_cast<bUInt128>(a) > b;
+        return static_cast<bUInt256>(a) > b;
     else
         return static_cast<TInt>(a) > b;
 }

@@ -211,20 +211,6 @@ void readBinary(Tuple & x, ReadBuffer & buf)
                 x.push_back(value);
                 break;
             }
-            case Field::Types::bUInt128:
-            {
-                bUInt128 value;
-                DB::readBinary(value, buf);
-                x.push_back(value);
-                break;
-            }
-            case Field::Types::bInt128:
-            {
-                bInt128 value;
-                DB::readBinary(value, buf);
-                x.push_back(value);
-                break;
-            }
             case Field::Types::bUInt256:
             {
                 bUInt256 value;
@@ -301,16 +287,6 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
             case Field::Types::String:
             {
                 DB::writeStringBinary(get<std::string>(elem), buf);
-                break;
-            }
-            case Field::Types::bUInt128:
-            {
-                DB::writeBinary(get<bUInt128>(elem), buf);
-                break;
-            }
-            case Field::Types::bInt128:
-            {
-                DB::writeBinary(get<bInt128>(elem), buf);
                 break;
             }
             case Field::Types::bUInt256:
@@ -416,14 +392,7 @@ Field Field::restoreFromDump(const std::string_view & dump_)
     prefix = std::string_view{"Int128_"};
     if (dump.starts_with(prefix))
     {
-        bInt128 value = parseFromString<bInt128>(dump.substr(prefix.length()));
-        return value;
-    }
-
-    prefix = std::string_view{"UInt128_"};
-    if (dump.starts_with(prefix))
-    {
-        bUInt128 value = parseFromString<bUInt128>(dump.substr(prefix.length()));
+        Int128 value = parseFromString<Int128>(dump.substr(prefix.length()));
         return value;
     }
 

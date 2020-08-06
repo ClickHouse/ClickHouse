@@ -64,8 +64,6 @@ public:
     bool writeNumber(UInt64 value) { return writeValueIfPossible(&IConverter::writeUInt64, value); }
     bool writeNumber(UInt128 value) { return writeValueIfPossible(&IConverter::writeUInt128, value); }
 
-    bool writeNumber(bInt128 value) { return writeValueIfPossible(&IConverter::writebInt128, value); }
-    bool writeNumber(bUInt128 value) { return writeValueIfPossible(&IConverter::writebUInt128, value); }
     bool writeNumber(bInt256 value) { return writeValueIfPossible(&IConverter::writebInt256, value); }
     bool writeNumber(bUInt256 value) { return writeValueIfPossible(&IConverter::writebUInt256, value); }
 
@@ -156,8 +154,6 @@ private:
         virtual void writeUInt64(UInt64) = 0;
         virtual void writeUInt128(const UInt128 &) = 0;
 
-        virtual void writebInt128(const bInt128 &) = 0;
-        virtual void writebUInt128(const bUInt128 &) = 0;
         virtual void writebInt256(const bInt256 &) = 0;
         virtual void writebUInt256(const bUInt256 &) = 0;
 
@@ -268,8 +264,6 @@ public:
     bool writeNumber(Int64 /* value */) { return false; }
     bool writeNumber(UInt64 /* value */) { return false; }
     bool writeNumber(UInt128 /* value */) { return false; }
-    bool writeNumber(bInt128 /* value */) { return false; }
-    bool writeNumber(bUInt128 /* value */) { return false; }
     bool writeNumber(bInt256 /* value */) { return false; }
     bool writeNumber(bUInt256 /* value */) { return false; }
     bool writeNumber(Float32 /* value */) { return false; }

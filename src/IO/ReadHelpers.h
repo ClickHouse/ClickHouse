@@ -119,12 +119,12 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
+/// FIXME
+#if 1
 template <typename T>
 void readBigIntBinary(T & x, ReadBuffer & buf)
 {
     size_t bytesize = 32;
-    if constexpr (std::is_same_v<T, bUInt128> || std::is_same_v<T, bInt128>)
-        bytesize = 16;
 
     [[maybe_unused]] char is_negative;
     if constexpr (is_signed_v<T>)
@@ -141,6 +141,7 @@ void readBigIntBinary(T & x, ReadBuffer & buf)
             x = -x;
     }
 }
+#endif
 
 inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
@@ -821,8 +822,6 @@ inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf)
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readBigIntBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(bUInt128 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
-inline void readBinary(bInt128 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 inline void readBinary(bUInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 inline void readBinary(bInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 
@@ -958,8 +957,6 @@ inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
      */
     throw Exception("UInt128 cannot be read as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
-inline void readCSV(bUInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(bInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(bUInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(bInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 

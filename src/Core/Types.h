@@ -22,14 +22,12 @@ enum class TypeIndex
     UInt32,
     UInt64,
     UInt128,
-    bUInt128,
     bUInt256,
     Int8,
     Int16,
     Int32,
     Int64,
     Int128,
-    bInt128,
     bInt256,
     Float32,
     Float64,
@@ -60,14 +58,12 @@ using UInt8 = ::UInt8;
 using UInt16 = ::UInt16;
 using UInt32 = ::UInt32;
 using UInt64 = ::UInt64;
-using bUInt128 = ::bUInt128;
 using bUInt256 = ::bUInt256;
 
 using Int8 = ::Int8;
 using Int16 = ::Int16;
 using Int32 = ::Int32;
 using Int64 = ::Int64;
-using bInt128 = ::bInt128;
 using bInt256 = ::bInt256;
 
 using Float32 = float;
@@ -84,13 +80,11 @@ template <> inline constexpr bool IsNumber<UInt8> = true;
 template <> inline constexpr bool IsNumber<UInt16> = true;
 template <> inline constexpr bool IsNumber<UInt32> = true;
 template <> inline constexpr bool IsNumber<UInt64> = true;
-template <> inline constexpr bool IsNumber<bUInt128> = true;
 template <> inline constexpr bool IsNumber<bUInt256> = true;
 template <> inline constexpr bool IsNumber<Int8> = true;
 template <> inline constexpr bool IsNumber<Int16> = true;
 template <> inline constexpr bool IsNumber<Int32> = true;
 template <> inline constexpr bool IsNumber<Int64> = true;
-template <> inline constexpr bool IsNumber<bInt128> = true;
 template <> inline constexpr bool IsNumber<bInt256> = true;
 template <> inline constexpr bool IsNumber<Float32> = true;
 template <> inline constexpr bool IsNumber<Float64> = true;
@@ -101,13 +95,11 @@ template <> struct TypeName<UInt8>   { static constexpr const char * get() { ret
 template <> struct TypeName<UInt16>  { static constexpr const char * get() { return "UInt16";  } };
 template <> struct TypeName<UInt32>  { static constexpr const char * get() { return "UInt32";  } };
 template <> struct TypeName<UInt64>  { static constexpr const char * get() { return "UInt64";  } };
-template <> struct TypeName<bUInt128> { static constexpr const char * get() { return "UInt128"; } };
 template <> struct TypeName<bUInt256> { static constexpr const char * get() { return "UInt256"; } };
 template <> struct TypeName<Int8>    { static constexpr const char * get() { return "Int8";    } };
 template <> struct TypeName<Int16>   { static constexpr const char * get() { return "Int16";   } };
 template <> struct TypeName<Int32>   { static constexpr const char * get() { return "Int32";   } };
 template <> struct TypeName<Int64>   { static constexpr const char * get() { return "Int64";   } };
-template <> struct TypeName<bInt128> { static constexpr const char * get() { return "Int128";  } };
 template <> struct TypeName<bInt256> { static constexpr const char * get() { return "Int256";  } };
 template <> struct TypeName<Float32> { static constexpr const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static constexpr const char * get() { return "Float64"; } };
@@ -118,13 +110,11 @@ template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = T
 template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16;  };
 template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32;  };
 template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };
-template <> struct TypeId<bUInt128>   { static constexpr const TypeIndex value = TypeIndex::bUInt128;  };
 template <> struct TypeId<bUInt256>   { static constexpr const TypeIndex value = TypeIndex::bUInt256;  };
 template <> struct TypeId<Int8>     { static constexpr const TypeIndex value = TypeIndex::Int8;  };
 template <> struct TypeId<Int16>    { static constexpr const TypeIndex value = TypeIndex::Int16; };
 template <> struct TypeId<Int32>    { static constexpr const TypeIndex value = TypeIndex::Int32; };
 template <> struct TypeId<Int64>    { static constexpr const TypeIndex value = TypeIndex::Int64; };
-template <> struct TypeId<bInt128>    { static constexpr const TypeIndex value = TypeIndex::bInt128; };
 template <> struct TypeId<bInt256>    { static constexpr const TypeIndex value = TypeIndex::bInt256; };
 template <> struct TypeId<Float32>  { static constexpr const TypeIndex value = TypeIndex::Float32;  };
 template <> struct TypeId<Float64>  { static constexpr const TypeIndex value = TypeIndex::Float64;  };
@@ -241,14 +231,12 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::UInt32:     return TypeName<UInt32>::get();
         case TypeIndex::UInt64:     return TypeName<UInt64>::get();
         case TypeIndex::UInt128:    return "UInt128";
-        case TypeIndex::bUInt128:     return TypeName<bUInt128>::get();
         case TypeIndex::bUInt256:     return TypeName<bUInt256>::get();
         case TypeIndex::Int8:       return TypeName<Int8>::get();
         case TypeIndex::Int16:      return TypeName<Int16>::get();
         case TypeIndex::Int32:      return TypeName<Int32>::get();
         case TypeIndex::Int64:      return TypeName<Int64>::get();
         case TypeIndex::Int128:     return TypeName<Int128>::get();
-        case TypeIndex::bInt128:     return TypeName<bInt128>::get();
         case TypeIndex::bInt256:     return TypeName<bInt256>::get();
         case TypeIndex::Float32:    return TypeName<Float32>::get();
         case TypeIndex::Float64:    return TypeName<Float64>::get();

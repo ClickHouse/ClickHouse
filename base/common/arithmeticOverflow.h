@@ -36,7 +36,7 @@ namespace common
         res = x + y;
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
-
+#if 0
     template <>
     inline bool addOverflow(bInt128 x, bInt128 y, bInt128 & res)
     {
@@ -55,7 +55,7 @@ namespace common
         res = x + y;
         return x > max_uint128 - y;
     }
-
+#endif
     template <>
     inline bool addOverflow(bInt256 x, bInt256 y, bInt256 & res)
     {
@@ -107,7 +107,7 @@ namespace common
         res = x - y;
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
     }
-
+#if 0
     template <>
     inline bool subOverflow(bInt128 x, bInt128 y, bInt128 & res)
     {
@@ -124,7 +124,7 @@ namespace common
         res = x - y;
         return x < y;
     }
-
+#endif
     template <>
     inline bool subOverflow(bInt256 x, bInt256 y, bInt256 & res)
     {
@@ -177,7 +177,7 @@ namespace common
         unsigned __int128 b = (y > 0) ? y : -y;
         return (a * b) / b != a;
     }
-
+#if 0
     template <>
     inline bool mulOverflow(bInt128 x, bInt128 y, bInt128 & res)
     {
@@ -198,7 +198,7 @@ namespace common
             return false;
         return (x * y) / y != x;
     }
-
+#endif
     template <>
     inline bool mulOverflow(bInt256 x, bInt256 y, bInt256 & res)
     {

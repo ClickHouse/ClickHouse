@@ -95,10 +95,13 @@ struct BigIntPayload
     static constexpr size_t size = 0;
 };
 
-template <> struct BigIntPayload<bUInt128> { static constexpr size_t size = 16; };
-template <> struct BigIntPayload<bInt128> { static constexpr size_t size = 16; };
 template <> struct BigIntPayload<bUInt256> { static constexpr size_t size = 32; };
-template <> struct BigIntPayload<bInt256> { static constexpr size_t size = 32; };
+
+template <> struct BigIntPayload<bInt256>
+{
+    using UnsingedType = bUInt256;
+    static constexpr size_t size = 32;
+};
 
 template <typename T>
 struct BigInt : BigIntPayload<T>
@@ -114,11 +117,15 @@ struct BigInt : BigIntPayload<T>
     {
         if constexpr (is_signed_v<T>)
         {
-            T tmp = x;
-            bit_unset(tmp, lastBit());
+            using UnsignedT = typename BigIntPayload<T>::UnsingedType;
+
             if (x < 0)
-                bit_set(tmp, lastBit());
-            export_bits(tmp, pos, 8, false);
+            {
+                UnsignedT unsigned_x = UnsignedT{0} - static_cast<UnsignedT>(-x);
+                export_bits(unsigned_x, pos, 8, false);
+            }
+            else
+                export_bits(x, pos, 8, false);
         }
         else
             export_bits(x, pos, 8, false);
@@ -127,17 +134,24 @@ struct BigInt : BigIntPayload<T>
 
     static T deserialize(const char * pos)
     {
-        T x;
-        import_bits(x, pos, pos + size, false);
-
         if constexpr (is_signed_v<T>)
         {
-            bool is_negative = bit_test(x, lastBit());
-            bit_unset(x, lastBit());
+            using UnsignedT = typename BigIntPayload<T>::UnsingedType;
+
+            UnsignedT unsigned_x;
+            import_bits(unsigned_x, pos, pos + size, false);
+
+            bool is_negative = bit_test(unsigned_x, lastBit());
             if (is_negative)
-                return -x;
+                unsigned_x = UnsignedT{0} - unsigned_x;
+            return static_cast<T>(unsigned_x);
         }
-        return x;
+        else
+        {
+            T x;
+            import_bits(x, pos, pos + size, false);
+            return x;
+        }
     }
 };
 

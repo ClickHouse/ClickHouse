@@ -455,8 +455,6 @@ public:
         cannotConvertType("UInt128");
     }
 
-    bool readbInt128(bInt128 &) override { cannotConvertType("Int128"); }
-    bool readbUInt128(bUInt128 &) override { cannotConvertType("UInt128"); }
     bool readbInt256(bInt256 &) override { cannotConvertType("Int256"); }
     bool readbUInt256(bUInt256 &) override { cannotConvertType("UInt256"); }
 
