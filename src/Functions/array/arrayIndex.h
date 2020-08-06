@@ -792,8 +792,12 @@ private:
         const IColumn & lc_indices = col_lc->getIndexes();
         MutableColumnPtr col_arg_indices = lc_indices.cloneResized(arg_size);
 
-        // bloody Arcadia does not support templated lambdas
+#if !defined(ARCADIA_BUILD)
+        auto fill_col = [&col_lc, &col_arg_cloned, arg_size]<class T>(ColumnVector<T>& col_indices)
+#else
+        /// Wait until Arcadia supports templated lambdas from C++20
         auto fill_col = [&col_lc, &col_arg_cloned, arg_size](auto& col_indices)
+#endif
         {
             // Need to clone the column to build its index.
             auto col_lc_dict_mutated_icol = IColumn::mutate(col_lc->getDictionaryPtr());
