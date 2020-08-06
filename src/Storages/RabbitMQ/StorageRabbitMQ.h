@@ -95,7 +95,7 @@ private:
     bool hash_exchange;
     size_t num_queues;
     const bool use_transactional_channel;
-    const String queue_base;
+    String queue_base;
     const String deadletter_exchange;
     const bool persistent;
 
@@ -111,7 +111,7 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    String local_exchange, bridge_exchange, consumer_exchange;
+    String sharding_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag;
     size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;

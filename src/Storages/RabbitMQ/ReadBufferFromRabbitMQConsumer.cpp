@@ -79,7 +79,10 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
         if (msgcount)
             LOG_TRACE(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
 
-        /// Binding key must be a string integer in case of hash exchange (here it is either hash or fanout).
+       /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
+        * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
+        * fanout exchange it can be arbitrary.
+        */
         setup_channel->bindQueue(exchange_name, queue_name, std::to_string(channel_id))
         .onSuccess([&]
         {
@@ -104,15 +107,11 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
         queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
     }
 
-    if (!queue_base.empty())
-    {
-        const String queue_name = !hash_exchange ? queue_base : queue_base + "_" + std::to_string(channel_id) + "_" + std::to_string(queue_id);
-        setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-    }
-    else
-    {
-        setup_channel->declareQueue(AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-    }
+    /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
+     * specific queue when its name is specified in queue_base setting.
+     */
+    const String queue_name = !hash_exchange ? queue_base : queue_base + "_" + std::to_string(channel_id) + "_" + std::to_string(queue_id);
+    setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
     while (!bindings_created && !bindings_error)
     {
@@ -128,8 +127,9 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         consumer_channel->consume(queue_name)
         .onSuccess([&](const std::string & consumer)
         {
-            consumer_tag = consumer;
-            LOG_TRACE(log, "Consumer {} (consumer tag: {}) is subscribed to queue {}", channel_id, consumer, queue_name);
+            if (consumer_tag.empty())
+                consumer_tag = consumer;
+            LOG_TRACE(log, "Consumer {} is subscribed to queue {}, consumer tag {}", channel_id, queue_name, consumer);
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
