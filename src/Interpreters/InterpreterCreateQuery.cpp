@@ -209,7 +209,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             renamed = true;
         }
 
-        database->loadStoredObjects(context, has_force_restore_data_flag);
+        database->loadStoredObjects(context, has_force_restore_data_flag, create.attach && force_attach);
     }
     catch (...)
     {

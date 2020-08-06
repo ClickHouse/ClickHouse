@@ -25,6 +25,8 @@ public:
         const IAST * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
         MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
 
+    void rethrowExceptionIfNeed() const;
+
     void setException(const std::exception_ptr & exception);
 protected:
     const Context & global_context;
@@ -38,14 +40,12 @@ protected:
 
     std::exception_ptr exception;
 
-    DatabasePtr getNestedDatabase() const;
-
 public:
-    String getEngineName() const override { return "MySQL"; }
+    String getEngineName() const override { return "MaterializeMySQL"; }
 
     ASTPtr getCreateDatabaseQuery() const override;
 
-    void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     void shutdown() override;
 

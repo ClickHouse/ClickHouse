@@ -2,6 +2,7 @@
 
 #include <Databases/IDatabase.h>
 #include <Storages/StorageMaterializeMySQL.h>
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
 namespace DB
 {
@@ -23,18 +24,21 @@ public:
 
     const StoragePtr & table() const override
     {
-        StoragePtr storage = std::make_shared<StorageMaterializeMySQL>(nested_iterator->table());
+        StoragePtr storage = std::make_shared<StorageMaterializeMySQL>(nested_iterator->table(), database);
         return tables.emplace_back(storage);
     }
 
     UUID uuid() const override { return nested_iterator->uuid(); }
 
-    DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_) : nested_iterator(std::move(nested_iterator_))
-    {}
+    DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, DatabaseMaterializeMySQL * database_)
+        : nested_iterator(std::move(nested_iterator_)), database(database_)
+    {
+    }
 
 private:
     mutable std::vector<StoragePtr> tables;
     DatabaseTablesIteratorPtr nested_iterator;
+    DatabaseMaterializeMySQL * database;
 
 };
 
