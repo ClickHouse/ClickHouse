@@ -33,6 +33,9 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
+    /// Clear and release all resources.
+    void reset();
+
     bool initialized() { return !pipe.empty(); }
     bool isCompleted() { return pipe.isCompleted(); }
 

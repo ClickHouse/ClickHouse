@@ -132,7 +132,7 @@ Pipe StorageMemory::read(
         pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this, metadata_snapshot));
     }
 
-    return Pipe::unitePipes(pipes);
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

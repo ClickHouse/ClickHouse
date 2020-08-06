@@ -82,7 +82,7 @@ protected:
         const Context & context,
         QueryProcessingStage::Enum processed_stage);
 
-    Pipes createSources(
+    Pipe createSources(
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,

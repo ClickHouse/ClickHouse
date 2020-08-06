@@ -130,7 +130,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        pipes.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage).getPipe());
+        pipes.emplace_back(QueryPipeline::getPipe(createLocalStream(modified_query_ast, header, context, processed_stage)));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -270,7 +270,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return createLocalStream(modified_query_ast, header, context, stage).getPipe();
+                return QueryPipeline::getPipe(createLocalStream(modified_query_ast, header, context, stage));
             else
             {
                 std::vector<IConnectionPool::Entry> connections;

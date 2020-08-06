@@ -89,7 +89,7 @@ BlockIO InterpreterAlterQuery::execute()
         table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
         auto partition_commands_pipe = table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
         if (!partition_commands_pipe.empty())
-            res.pipeline.init(std::move(partition_commands_pipes));
+            res.pipeline.init(std::move(partition_commands_pipe));
     }
 
     if (!live_view_commands.empty())

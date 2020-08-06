@@ -467,7 +467,7 @@ Pipe StorageGenerateRandom::read(
     for (UInt64 i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));
 
-    return Pipe::unitePipes(pipes);
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 }

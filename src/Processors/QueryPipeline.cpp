@@ -66,10 +66,16 @@ void QueryPipeline::init(Pipe pipe_)
     if (initialized())
         throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
 
-    if (pipe.empty())
+    if (pipe_.empty())
         throw Exception("Can't initialize pipeline with empty pipe.", ErrorCodes::LOGICAL_ERROR);
 
     pipe = std::move(pipe_);
+}
+
+void QueryPipeline::reset()
+{
+    Pipe pipe_to_destroy(std::move(pipe));
+    *this = QueryPipeline();
 }
 
 void QueryPipeline::addSimpleTransform(const Pipe::ProcessorGetter & getter)
