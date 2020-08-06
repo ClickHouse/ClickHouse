@@ -785,37 +785,9 @@ private:
             : col_arg->getPtr();
 
         const size_t col_arg_is_const = isColumnConst(*col_arg);
-        const size_t arg_size = col_arg_is_const
-            ? 1 // We have a column with just one value. Arbitrary n is allowed (as the column is const), so take 0.
-            : col_arg->size();
 
         const IColumn & lc_indices = col_lc->getIndexes();
-        MutableColumnPtr col_arg_indices = lc_indices.cloneResized(arg_size);
-
-        // bloody Arcadia does not support templated lambdas
-        auto fill_col = [&col_lc, &col_arg_cloned, arg_size](auto& col_indices)
-        {
-            // Need to clone the column to build its index.
-            auto col_lc_dict_mutated_icol = IColumn::mutate(col_lc->getDictionaryPtr());
-            IColumnUnique * const col_lc_dict_mutated = static_cast<IColumnUnique *>(col_lc_dict_mutated_icol.get());
-
-            for (size_t i = 0; i < arg_size; ++i)
-            {
-                const StringRef elem = col_arg_cloned->getDataAt(i);
-
-                col_indices.getElement(i) = (elem == EMPTY_STRING_REF)
-                    ? 0 // NULL value index
-                    : col_lc_dict_mutated->getValueIndex(elem);
-            }
-        };
-
-        switch (col_lc->getSizeOfIndexType())
-        {
-            case sizeof(UInt8): fill_col(*typeid_cast<ColumnUInt8 *>(col_arg_indices.get())); break;
-            case sizeof(UInt16): fill_col(*typeid_cast<ColumnUInt16 *>(col_arg_indices.get())); break;
-            case sizeof(UInt32): fill_col(*typeid_cast<ColumnUInt32 *>(col_arg_indices.get())); break;
-            case sizeof(UInt64): fill_col(*typeid_cast<ColumnUInt64 *>(col_arg_indices.get())); break;
-        }
+        const MutableColumnPtr col_arg_indices = col_lc->buildIndexColumn(*col_arg_cloned.get());
 
         const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
         PaddedPODArray<ResultType> & res_data = col_result->getData();

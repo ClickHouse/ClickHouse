@@ -88,6 +88,13 @@ public:
      */
     virtual UInt64 getValueIndex(StringRef value) = 0;
 
+    /**
+     * Same as above, but operates on the columns.
+     * Given a #origin column, writes to another column #target (of type equal to the current column's index type)
+     * with indices corresponding to values in the original column.
+     */
+    virtual void buildIndexColumn(size_t origin_index_type_size, IColumn& target, const IColumn& origin) = 0;
+
     void insert(const Field &) override
     {
         throw Exception("Method insert is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);

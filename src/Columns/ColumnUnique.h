@@ -114,6 +114,33 @@ public:
 
     inline UInt64 getValueIndex(StringRef value) override { return reverse_index.getInsertionPoint(value); }
 
+    inline void buildIndexColumn(size_t origin_index_type_size, IColumn& target, const IColumn& origin) override
+    {
+        const size_t origin_size = isColumnConst(origin)
+            ? 1
+            : origin.size();
+
+        auto fill_col = [this, origin_size, &origin](auto& col)
+        {
+            for (size_t i = 0; i < origin_size; ++i)
+            {
+                const StringRef elem = origin.getDataAt(i);
+
+                col.getElement(i) = (elem == EMPTY_STRING_REF)
+                    ? 0 // NULL value index
+                    : reverse_index.getInsertionPoint(elem);
+            }
+        };
+
+        switch (origin_index_type_size)
+        {
+            case sizeof(UInt8): fill_col(*typeid_cast<ColumnUInt8 *>(&target)); break;
+            case sizeof(UInt16): fill_col(*typeid_cast<ColumnUInt16 *>(&target)); break;
+            case sizeof(UInt32): fill_col(*typeid_cast<ColumnUInt32 *>(&target)); break;
+            case sizeof(UInt64): fill_col(*typeid_cast<ColumnUInt64 *>(&target)); break;
+        }
+    }
+
 private:
     IColumn::WrappedPtr column_holder;
     bool is_nullable;

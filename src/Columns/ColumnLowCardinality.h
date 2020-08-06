@@ -196,6 +196,22 @@ public:
         }
     }
 
+    inline MutableColumnPtr buildIndexColumn(const IColumn& origin) const
+    {
+        const size_t origin_size = isColumnConst(origin)
+            ? 1
+            : origin.size();
+
+        MutableColumnPtr target = getIndexes().cloneResized(origin_size);
+
+        auto dict_clone = IColumn::mutate(getDictionaryPtr());
+        IColumnUnique * const col_dict_clone = static_cast<IColumnUnique *>(dict_clone.get());
+
+        col_dict_clone->buildIndexColumn(getSizeOfIndexType(), *target.get(), origin);
+
+        return target;
+    }
+
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 
     /// Set shared ColumnUnique for empty low cardinality column.
