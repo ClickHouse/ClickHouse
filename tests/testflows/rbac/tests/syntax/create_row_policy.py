@@ -30,7 +30,7 @@ def feature(self, node="clickhouse1"):
         finally:
             with Finally(f"I drop the row policy on {on}"):
                 node.query(f"DROP ROW POLICY IF EXISTS {policy} ON {on}")
-    
+
     def create_policy(policy, on="default.foo"):
         with Given(f"I ensure I do have policy {policy} on {on}"):
                 node.query(f"CREATE ROW POLICY OR REPLACE {policy} ON {on}")
@@ -47,7 +47,7 @@ def feature(self, node="clickhouse1"):
             with cleanup("policy0"):
                 with When("I create row policy"):
                     node.query("CREATE ROW POLICY policy0 ON default.foo")
-        
+
         with Scenario("I create row policy using short syntax with no options", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_Create("1.0"),
                 RQ_SRS_006_RBAC_RowPolicy_Create_On("1.0")]):
@@ -89,7 +89,7 @@ def feature(self, node="clickhouse1"):
             with cleanup("policy3"):
                 with When("I create row policy with or replace"):
                     node.query("CREATE ROW POLICY OR REPLACE policy3 ON default.foo")
-        
+
         with Scenario("I create row policy or replace, policy does exist", flags=TE, requirements=[
                 RQ_SRS_006_RBAC_RowPolicy_Create_Replace("1.0"),
                 RQ_SRS_006_RBAC_RowPolicy_Create_On("1.0")]):

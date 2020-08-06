@@ -14,7 +14,7 @@ namespace DB
 namespace
 {
 
-bool extractIdentifiers(const ASTFunction & func, std::vector<ASTPtr *> & identifiers)
+bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> & identifiers)
 {
     for (auto & arg : func.arguments->children)
     {
@@ -30,7 +30,7 @@ bool extractIdentifiers(const ASTFunction & func, std::vector<ASTPtr *> & identi
                 return false;
         }
         else if (arg->as<ASTIdentifier>())
-            identifiers.emplace_back(&arg);
+            identifiers.emplace(&arg);
     }
 
     return true;
@@ -67,7 +67,7 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
         return;
     }
 
-    std::vector<ASTPtr *> identifiers;
+    std::unordered_set<ASTPtr *> identifiers; /// implicit remove duplicates
     if (!extractIdentifiers(func, identifiers))
         return;
 

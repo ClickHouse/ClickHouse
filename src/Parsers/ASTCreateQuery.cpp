@@ -186,8 +186,13 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->select, select->clone());
     if (tables)
         res->set(res->tables, tables->clone());
+
     if (dictionary)
+    {
+        assert(is_dictionary);
+        res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         res->set(res->dictionary, dictionary->clone());
+    }
 
     cloneOutputOptions(*res);
 

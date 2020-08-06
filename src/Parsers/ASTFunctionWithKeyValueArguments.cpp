@@ -15,13 +15,7 @@ ASTPtr ASTPair::clone() const
 {
     auto res = std::make_shared<ASTPair>(*this);
     res->children.clear();
-
-    if (second)
-    {
-        res->second = second;
-        res->children.push_back(second);
-    }
-
+    res->set(res->second, second->clone());
     return res;
 }
 
@@ -54,7 +48,7 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
     if (elements)
     {
-        res->elements->clone();
+        res->elements = elements->clone();
         res->children.push_back(res->elements);
     }
 
