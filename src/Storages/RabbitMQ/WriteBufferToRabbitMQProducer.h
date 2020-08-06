@@ -24,9 +24,10 @@ public:
             const Names & routing_keys_,
             const String & exchange_name_,
             const AMQP::ExchangeType exchange_type_,
-            Poco::Logger * log_,
-            const bool use_transactional_channel_,
+            const size_t channel_id_,
+            const bool use_tx_,
             const bool persistent_,
+            Poco::Logger * log_,
             std::optional<char> delimiter,
             size_t rows_per_message,
             size_t chunk_size_
@@ -46,14 +47,15 @@ private:
     bool setupConnection();
     void setupChannel();
     void removeConfirmed(UInt64 received_delivery_tag, bool multiple, bool republish);
-    void publish(ConcurrentBoundedQueue<String> & message, bool republishing);
+    void publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & message, bool republishing);
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
     const Names routing_keys;
     const String exchange_name;
     AMQP::ExchangeType exchange_type;
-    const bool use_transactional_channel;
+    const String channel_id;
+    const bool use_tx;
     const bool persistent;
 
     AMQP::Table key_arguments;
@@ -64,12 +66,12 @@ private:
     std::unique_ptr<AMQP::TcpConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
 
-    ConcurrentBoundedQueue<String> payloads, returned;
+    ConcurrentBoundedQueue<std::pair<UInt64, String>> payloads, returned;
     UInt64 delivery_tag = 0;
     std::atomic<bool> wait_all = true;
     std::atomic<UInt64> wait_num = 0;
     UInt64 payload_counter = 0;
-    std::map<UInt64, String> delivery_record;
+    std::map<UInt64, std::pair<UInt64, String>> delivery_record;
 
     Poco::Logger * log;
     const std::optional<char> delim;

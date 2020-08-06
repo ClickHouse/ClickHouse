@@ -113,8 +113,7 @@ private:
 
     String sharding_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag;
-    size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
-    bool update_channel_id = false;
+    size_t producer_id = 0, consumer_id = 0;
     std::atomic<bool> loop_started = false, exchange_removed = false;
     ChannelPtr setup_channel;
     std::mutex connection_mutex, restore_connection;

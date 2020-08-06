@@ -24,9 +24,10 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         const Names & routing_keys_,
         const String & exchange_name_,
         const AMQP::ExchangeType exchange_type_,
-        Poco::Logger * log_,
-        const bool use_transactional_channel_,
+        const size_t channel_id_,
+        const bool use_tx_,
         const bool persistent_,
+        Poco::Logger * log_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_)
@@ -36,7 +37,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , routing_keys(routing_keys_)
         , exchange_name(exchange_name_)
         , exchange_type(exchange_type_)
-        , use_transactional_channel(use_transactional_channel_)
+        , channel_id(std::to_string(channel_id_))
+        , use_tx(use_tx_)
         , persistent(persistent_)
         , payloads(BATCH)
         , returned(BATCH << 6)
@@ -50,7 +52,9 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     uv_loop_init(loop.get());
     event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
 
-    /// New coonection for each publisher because cannot publish from different threads with the same connection.(https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086)
+    /* New coonection for each publisher because cannot publish from different threads with the same connection.
+     * (See https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086)
+     */
     if (setupConnection())
         setupChannel();
 
@@ -99,15 +103,17 @@ void WriteBufferToRabbitMQProducer::countRow()
         chunks.clear();
         set(nullptr, 0);
 
-        payloads.push(payload);
         ++payload_counter;
+        payloads.push(std::make_pair(payload_counter, payload));
     }
 }
 
 
 bool WriteBufferToRabbitMQProducer::setupConnection()
 {
-    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
+    /// Need to manually restore connection if it is lost.
+    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
+            AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
     LOG_TRACE(log, "Trying to set up connection");
     size_t cnt_retries = 0;
@@ -118,10 +124,7 @@ bool WriteBufferToRabbitMQProducer::setupConnection()
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
-    if (!connection->ready())
-        return false;
-
-    return true;
+    return connection->ready();
 }
 
 
@@ -133,8 +136,13 @@ void WriteBufferToRabbitMQProducer::setupChannel()
     {
         LOG_ERROR(log, "Producer error: {}", message);
 
-        /// Means channel ends up in an error state and is not usable anymore.
+        /* Means channel ends up in an error state and is not usable anymore.
+         * (See https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/36#issuecomment-125112236)
+         */
         producer_channel->close();
+
+        if (use_tx)
+            return;
 
         for (auto record = delivery_record.begin(); record != delivery_record.end(); record++)
             returned.tryPush(record->second);
@@ -151,7 +159,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
     {
         LOG_DEBUG(log, "Producer channel is ready");
 
-        if (use_transactional_channel)
+        if (use_tx)
         {
             producer_channel->startTransaction();
         }
@@ -211,23 +219,30 @@ void WriteBufferToRabbitMQProducer::removeConfirmed(UInt64 received_delivery_tag
 }
 
 
-void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<String> & messages, bool republishing)
+void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & messages, bool republishing)
 {
-    String payload;
+    std::pair<UInt64, String> payload;
     while (!messages.empty() && producer_channel->usable())
     {
         messages.pop(payload);
-        AMQP::Envelope envelope(payload.data(), payload.size());
+        AMQP::Envelope envelope(payload.second.data(), payload.second.size());
+
+        /// if headers exchange - routing keys are added here via headers, else - it is just empty.
         AMQP::Table message_settings = key_arguments;
 
         /* There is the case when connection is lost in the period after some messages were published and before ack/nack was sent by the
          * server, then it means that publisher will never now whether those messages were delivered or not, and therefore those records
-         * that received no ack/nack before connection loss will be republished, so there might be duplicates. To let consumer know that
-         * received message might be a possible duplicate - a "republished" field is added to message metadata.
+         * that received no ack/nack before connection loss will be republished (see onError() callback), so there might be duplicates. To
+         * let consumer know that received message might be a possible duplicate - a "republished" field is added to message metadata.
          */
         message_settings["republished"] = std::to_string(republishing);
 
         envelope.setHeaders(message_settings);
+
+        /* Adding here a message_id property to message metadata.
+         * (See https://stackoverflow.com/questions/59384305/rabbitmq-how-to-handle-unwanted-duplicate-un-ack-message-after-connection-lost)
+         */
+        envelope.setMessageID(channel_id + "-" + std::to_string(payload.first));
 
         /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse.
         if (persistent)
@@ -249,7 +264,7 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<String> & mes
         ++delivery_tag;
         delivery_record.insert(delivery_record.end(), {delivery_tag, payload});
 
-        /// Need to break to let event loop run, because no publishing actually happend before looping.
+        /// Need to break at some point to let event loop run, because no publishing actually happend before looping.
         if (delivery_tag % BATCH == 0)
             break;
     }
@@ -270,12 +285,14 @@ void WriteBufferToRabbitMQProducer::writingFunc()
             publish(returned, true);
         else if (!payloads.empty() && producer_channel->usable())
             publish(payloads, false);
+        else if (use_tx)
+            break;
 
         iterateEventLoop();
 
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
-            wait_all.store(false);
-        else if ((!producer_channel->usable() && connection->usable()) || (!connection->usable() && setupConnection()))
+            wait_all = false;
+        else if ((!producer_channel->usable() && connection->usable()) || (!use_tx && !connection->usable() && setupConnection()))
             setupChannel();
     }
 
@@ -285,7 +302,12 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
 void WriteBufferToRabbitMQProducer::commit()
 {
-    if (!use_transactional_channel)
+    /* Actually have not yet found any information about how is it supposed work once any error occurs with a channel, because  any channel
+     * error closes this channel and any operation on a closed channel will fail (but transaction is unique to channel).
+     * RabbitMQ transactions seem not trust-worthy at all - see https://www.rabbitmq.com/semantics.html. Seems like its best to always
+     * use "publisher confirms" rather than transactions (and by default it is so). Probably even need to delete this option.
+     */
+    if (!use_tx || !producer_channel->usable())
         return;
 
     std::atomic<bool> answer_received = false, wait_rollback = false;
@@ -293,13 +315,11 @@ void WriteBufferToRabbitMQProducer::commit()
     .onSuccess([&]()
     {
         answer_received = true;
-        wait_all.store(false);
         LOG_TRACE(log, "All messages were successfully published");
     })
     .onError([&](const char * message1)
     {
         answer_received = true;
-        wait_all.store(false);
         LOG_TRACE(log, "Publishing not successful: {}", message1);
 
         wait_rollback = true;
