@@ -940,7 +940,7 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
