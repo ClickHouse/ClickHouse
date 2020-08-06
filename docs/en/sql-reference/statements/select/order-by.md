@@ -89,7 +89,7 @@ Optimization is supported in the following table engines:
 - [Buffer](../../../engines/table-engines/special/buffer.md) 
 - [MaterializedView](../../../engines/table-engines/special/materializedview.md) storages with underlying `MergeTree` tables
 
-In `MaterializedView`-egine tables the optimization works with saved queries like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the saved query doesn't have `ORDER BY` clause.
+In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query doesn't have the `ORDER BY` clause.
 
 ## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
