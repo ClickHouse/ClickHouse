@@ -515,7 +515,7 @@ int main(int argc, char ** argv)
 
     /// Aggregate
     Stopwatch watch;
-    Float res;
+    Float res{};
 
     switch (variant)
     {
