@@ -475,12 +475,10 @@ namespace detail
 /** sizeof - 64 bytes.
   * If there are not enough of them - allocates up to 20 KB of memory in addition.
   */
-template <typename T>     /// Unused template parameter is for AggregateFunctionQuantile.
+template <typename>     /// Unused template parameter is for AggregateFunctionQuantile.
 class QuantileTiming : private boost::noncopyable
 {
 private:
-    static_assert(sizeof(T) <= sizeof(UInt64));
-
     union
     {
         detail::QuantileTimingTiny tiny;
