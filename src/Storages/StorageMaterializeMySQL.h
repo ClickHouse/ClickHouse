@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config_core.h"
+
+#if USE_MYSQL
+
 #include <Storages/IStorage.h>
 #include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
@@ -30,3 +34,5 @@ private:
 };
 
 }
+
+#endif

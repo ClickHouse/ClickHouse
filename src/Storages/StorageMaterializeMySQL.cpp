@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+
 #include <Storages/StorageMaterializeMySQL.h>
 
 #include <Parsers/ASTFunction.h>
@@ -114,3 +120,5 @@ NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
 }
 
 }
+
+#endif
