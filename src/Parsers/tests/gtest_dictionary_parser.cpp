@@ -74,7 +74,7 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     /// layout test
     auto * layout = create->dictionary->layout;
     EXPECT_EQ(layout->layout_type, "flat");
-    EXPECT_EQ(layout->children.size(), 0);
+    EXPECT_EQ(layout->parameters->children.size(), 0);
 
     /// lifetime test
     auto * lifetime = create->dictionary->lifetime;
