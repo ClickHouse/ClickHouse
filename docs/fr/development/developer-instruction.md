@@ -9,7 +9,7 @@ La construction de ClickHouse est prise en charge sous Linux, FreeBSD et Mac OS 
 
 # Si Vous Utilisez Windows {#if-you-use-windows}
 
-Si vous utilisez Windows, vous devez créer une machine virtuelle avec Ubuntu. Pour commencer à travailler avec une machine virtuelle, installez VirtualBox. Vous pouvez télécharger Ubuntu sur le site: https://www.ubuntu.com/\#download. veuillez créer une machine virtuelle à partir de l'image téléchargée (vous devez réserver au moins 4 Go de RAM pour cela). Pour exécuter un terminal de ligne de commande dans Ubuntu, recherchez un programme contenant le mot “terminal” dans son nom (gnome-terminal, konsole etc.) ou appuyez simplement sur Ctrl + Alt + T.
+Si vous utilisez Windows, vous devez créer une machine virtuelle avec Ubuntu. Pour commencer à travailler avec une machine virtuelle, installez VirtualBox. Vous pouvez télécharger Ubuntu sur le site: https://www.ubuntu.com/#download. veuillez créer une machine virtuelle à partir de l'image téléchargée (vous devez réserver au moins 4 Go de RAM pour cela). Pour exécuter un terminal de ligne de commande dans Ubuntu, recherchez un programme contenant le mot “terminal” dans son nom (gnome-terminal, konsole etc.) ou appuyez simplement sur Ctrl + Alt + T.
 
 # Si vous utilisez un système 32 bits {#if-you-use-a-32-bit-system}
 

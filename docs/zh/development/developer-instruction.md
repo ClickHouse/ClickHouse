@@ -2,7 +2,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 # Windows使用指引 {#windowsshi-yong-zhi-yin}
 
-如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/\#download 。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用«terminal»程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
+如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/#download 。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用«terminal»程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
 
 # 在GitHub上创建源码库 {#zai-githubshang-chuang-jian-yuan-ma-ku}
 

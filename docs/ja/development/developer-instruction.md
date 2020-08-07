@@ -9,7 +9,7 @@ ClickHouseのビルドはLinux、FreeBSD、Mac OS Xでサポートされてい�
 
 # Windowsを使用する場合 {#if-you-use-windows}
 
-Windowsを使用する場合は、Ubuntuで仮想マシンを作成する必要があります。 するのは、仮想マシンをインストールしてくださいVirtualBox. ダウンロードできますUbuntuのウェブサイト：https://www.ubuntu.com/\#download. を作成してください仮想マシンからダウンロードした画像を保少なくとも4GB RAMめます。 Ubuntuでコマンドライン端末を実行するには、その単語を含むプログラムを見つけてください “terminal” その名前で（gnome-terminal、konsoleなど。）または単にCtrl+Alt+Tを押します。
+Windowsを使用する場合は、Ubuntuで仮想マシンを作成する必要があります。 するのは、仮想マシンをインストールしてくださいVirtualBox. ダウンロードできますUbuntuのウェブサイト：https://www.ubuntu.com/#download. を作成してください仮想マシンからダウンロードした画像を保少なくとも4GB RAMめます。 Ubuntuでコマンドライン端末を実行するには、その単語を含むプログラムを見つけてください “terminal” その名前で（gnome-terminal、konsoleなど。）または単にCtrl+Alt+Tを押します。
 
 # 32ビットシステムを使用する場合 {#if-you-use-a-32-bit-system}
 
