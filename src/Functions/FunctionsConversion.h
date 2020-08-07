@@ -276,7 +276,8 @@ struct ToDateTimeTransformSigned
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if (from < 0) return 0;
+        if (from < 0)
+            return 0;
         return from;
     }
 };
@@ -288,7 +289,8 @@ struct ToDateTimeTransform64Signed
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if (from < 0) return 0;
+        if (from < 0)
+            return 0;
         return std::min(time_t(from), time_t(0xFFFFFFFF));
     }
 };
