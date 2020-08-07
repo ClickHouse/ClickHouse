@@ -1052,7 +1052,7 @@ SELECT days/0 FROM test_table FORMAT JSON;
 }
 ```
 
-When `output\_format\_json\_quote\_denormals = 1`, the query returns:
+When `output_format_json_quote_denormals = 1`, the query returns:
 
 ```json
 {
