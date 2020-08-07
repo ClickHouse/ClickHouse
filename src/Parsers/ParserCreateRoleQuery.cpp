@@ -6,7 +6,6 @@
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
 #include <Parsers/parseUserName.h>
-#include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
@@ -24,7 +23,7 @@ namespace
         });
     }
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::vector<std::shared_ptr<ASTSettingsProfileElement>> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -32,12 +31,13 @@ namespace
                 return false;
 
             ASTPtr new_settings_ast;
-            ParserSettingsProfileElements elements_p;
-            elements_p.useIDMode(id_mode);
-            if (!elements_p.parse(pos, new_settings_ast, expected))
+            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<const ASTSettingsProfileElements &>().elements);
+            if (!settings)
+                settings = std::make_shared<ASTSettingsProfileElements>();
+            const auto & new_settings = new_settings_ast->as<const ASTSettingsProfileElements &>();
+            settings->elements.insert(settings->elements.end(), new_settings.elements.begin(), new_settings.elements.end());
             return true;
         });
     }
@@ -84,8 +84,8 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             or_replace = true;
     }
 
-    Strings names;
-    if (!parseRoleNames(pos, expected, names))
+    String name;
+    if (!parseRoleName(pos, expected, name))
         return false;
 
     String new_name;
@@ -94,17 +94,11 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
+        if (alter && parseRenameTo(pos, expected, new_name))
             continue;
 
-        std::vector<std::shared_ptr<ASTSettingsProfileElement>> new_settings;
-        if (parseSettings(pos, expected, attach_mode, new_settings))
-        {
-            if (!settings)
-                settings = std::make_shared<ASTSettingsProfileElements>();
-            boost::range::push_back(settings->elements, std::move(new_settings));
+        if (parseSettings(pos, expected, attach_mode, settings))
             continue;
-        }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
@@ -121,7 +115,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
     query->cluster = std::move(cluster);
-    query->names = std::move(names);
+    query->name = std::move(name);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
 

@@ -2,12 +2,11 @@
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/ColumnDefault.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
-class Context;
 
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
 class AddingDefaultsBlockInputStream : public IBlockInputStream

@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -16,7 +15,6 @@ SRCS(
     DatabaseOrdinary.cpp
     DatabasesCommon.cpp
     DatabaseWithDictionaries.cpp
-
 )
 
 END()

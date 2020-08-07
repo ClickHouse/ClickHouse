@@ -5,6 +5,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>

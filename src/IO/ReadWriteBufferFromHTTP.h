@@ -14,7 +14,6 @@
 #include <Poco/URI.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
-#include <Common/RemoteHostFilter.h>
 #include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
@@ -44,14 +43,14 @@ protected:
     UInt64 redirects { 0 };
     Poco::URI initial_uri;
     const ConnectionTimeouts & timeouts;
-    UInt64 max_redirects;
+    SettingUInt64 max_redirects;
 
 public:
     virtual void buildNewSession(const Poco::URI & uri) = 0;
 
     explicit UpdatableSessionBase(const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
-        UInt64 max_redirects_)
+        SettingUInt64 max_redirects_)
         : initial_uri { uri }
         , timeouts { timeouts_ }
         , max_redirects { max_redirects_ }
@@ -127,7 +126,7 @@ namespace detail
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Poco::Logger::get("ReadWriteBufferFromHTTP")), "Sending request to {}", uri.toString());
+            LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
             auto sess = session->getSession();
 
@@ -228,7 +227,7 @@ class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
 public:
     explicit UpdatableSession(const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
-        const UInt64 max_redirects_)
+        const SettingUInt64 max_redirects_)
         : Parent(uri, timeouts_, max_redirects_)
     {
         session = makeHTTPSession(initial_uri, timeouts);
@@ -249,7 +248,7 @@ public:
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
         const ConnectionTimeouts & timeouts,
-        const UInt64 max_redirects = 0,
+        const SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const HTTPHeaderEntries & http_header_entries_ = {},
@@ -269,7 +268,7 @@ private:
 public:
     explicit UpdatablePooledSession(const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
-        const UInt64 max_redirects_,
+        const SettingUInt64 max_redirects_,
         size_t per_endpoint_pool_size_)
         : Parent(uri, timeouts_, max_redirects_)
         , per_endpoint_pool_size { per_endpoint_pool_size_ }
@@ -294,7 +293,7 @@ public:
         const ConnectionTimeouts & timeouts_ = {},
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        const UInt64 max_redirects = 0,
+        const SettingUInt64 max_redirects = 0,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
         : Parent(std::make_shared<UpdatablePooledSession>(uri_, timeouts_, max_redirects, max_connections_per_endpoint),
               uri_,

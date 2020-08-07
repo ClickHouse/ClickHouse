@@ -64,13 +64,6 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
     {
         SortCursor current = queue.current();
 
-        if (current->isLast() && skipLastRowFor(current->order))
-        {
-            /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
-        }
-
         RowRef current_row;
 
         Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
@@ -89,7 +82,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
                 num_rows_to_insert = 1;
         }
 
-        /// Insert ready rows if any.
+        /// Insert ready roes if any.
         while (num_rows_to_insert)
         {
             const auto & row = current_keys.front();
