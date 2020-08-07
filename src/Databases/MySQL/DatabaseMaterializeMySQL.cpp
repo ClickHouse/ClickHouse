@@ -37,7 +37,7 @@ void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
 {
     std::unique_lock<std::mutex> lock(mutex);
 
-    if (exception)
+    if (!settings->allows_query_when_mysql_lost && exception)
     {
         try
         {
