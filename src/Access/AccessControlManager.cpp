@@ -123,6 +123,10 @@ AccessControlManager::AccessControlManager()
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>())
 {
+    /// Allow UsersConfigAccessStorage to check the names of settings which it will read from users.xml.
+    auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };
+    auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
+    users_config_access_storage.setCheckSettingNameFunction(check_setting_name_function);
 }
 
 
