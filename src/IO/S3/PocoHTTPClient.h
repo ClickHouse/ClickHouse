@@ -13,10 +13,17 @@ class StandardHttpResponse;
 namespace DB::S3
 {
 
+struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
+{
+    const RemoteHostFilter & remote_host_filter;
+
+    PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_);
+};
+
 class PocoHTTPClient : public Aws::Http::HttpClient
 {
 public:
-    explicit PocoHTTPClient(const ExtendedClientConfiguration & clientConfiguration);
+    explicit PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration);
     ~PocoHTTPClient() override = default;
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(
         Aws::Http::HttpRequest & request,

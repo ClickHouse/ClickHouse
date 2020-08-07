@@ -38,14 +38,24 @@ namespace DB::ErrorCodes
 
 namespace DB::S3
 {
-PocoHTTPClient::PocoHTTPClient(const ExtendedClientConfiguration & clientConfiguration)
+
+PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
+        const Aws::Client::ClientConfiguration & cfg,
+        const RemoteHostFilter & remote_host_filter_)
+    : Aws::Client::ClientConfiguration(cfg)
+    , remote_host_filter(remote_host_filter_)
+{
+}
+
+
+PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration)
     : per_request_configuration(clientConfiguration.perRequestConfiguration)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000), /// send timeout.
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
-    , remote_host_filter(clientConfiguration.context.getRemoteHostFilter())
+    , remote_host_filter(clientConfiguration.remote_host_filter)
 {
 }
 

@@ -23,17 +23,6 @@ namespace DB
 namespace DB::S3
 {
 
-struct ExtendedClientConfiguration : public Aws::Client::ClientConfiguration
-{
-    const Context & context;
-
-    ExtendedClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const Context & context_):
-        Aws::Client::ClientConfiguration(cfg),
-        context(context_)
-    {
-    }
-};
-
 class ClientFactory
 {
 public:

@@ -186,7 +186,7 @@ namespace S3
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        ExtendedClientConfiguration client_configuration(cfg, context);
+        PocoHTTPClientConfiguration client_configuration(cfg, context.getRemoteHostFilter());
 
         if (!client_configuration.endpointOverride.empty())
         {
@@ -219,7 +219,7 @@ namespace S3
         HeaderCollection headers,
         const Context & context)
     {
-        ExtendedClientConfiguration cfg({}, context);
+        PocoHTTPClientConfiguration cfg({}, context.getRemoteHostFilter());
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
