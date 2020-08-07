@@ -197,7 +197,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在这种情况下，ClickHouse将使用位于当前目录中的配置文件。您可以从任何目录运行`Clickhouse server`，并将配置文件`--config-file`的路径指定为命令行参数。
 
-在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/programs/` 并运行`clickhouse client`。
+在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/programs/` 并运行`./clickhouse client`。
 
 如果您在Mac OS X 或者 FreeBSD上收到`Connection refused`的消息，请尝试指定主机地址为127.0.0.1：
 

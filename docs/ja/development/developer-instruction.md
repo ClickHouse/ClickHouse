@@ -212,7 +212,7 @@ Mac OS X:
 
 この場合、ClickHouseは現在のディレクトリにある設定ファイルを使用します。 実行できます `clickhouse server` からのディレクトリのパスを指定し、設定ファイルとしてコマンドラインパラメータ `--config-file`.
 
-別のターミナルでclickhouse-clientを使用してClickHouseに接続するには、次の場所に移動します `ClickHouse/build/programs/` と実行 `clickhouse client`.
+別のターミナルでclickhouse-clientを使用してClickHouseに接続するには、次の場所に移動します `ClickHouse/build/programs/` と実行 `./clickhouse client`.
 
 あなたが得る場合 `Connection refused` メッセージMac OS XまたはFreeBSDでは、ホストアドレス127.0.0.1を指定してみます:
 
