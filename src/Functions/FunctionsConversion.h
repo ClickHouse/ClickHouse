@@ -196,7 +196,9 @@ struct ToDateTransform32Or64
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        return (from < 0xFFFF) ? from : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+        return (from < 0xFFFF)
+            ? from
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -207,8 +209,12 @@ struct ToDateTransform32Or64Signed
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        if (from < 0) return 0;
-        return (from < 0xFFFF) ? from : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+        /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
+        if (from < 0)
+            return 0;
+        return (from < 0xFFFF)
+            ? from
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -219,7 +225,8 @@ struct ToDateTransform8Or16Signed
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if (from < 0) return 0;
+        if (from < 0)
+            return 0;
         return from;
     }
 };
