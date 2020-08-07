@@ -470,7 +470,6 @@ ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `n
 SELECT days/0 FROM test_table FORMAT JSON;
 ```
 
-
 ```json
 {
         "meta":
@@ -550,8 +549,6 @@ SELECT days/0 FROM test_table FORMAT JSON;
         }
 }
 ```
-
-
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
