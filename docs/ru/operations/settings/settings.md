@@ -1413,4 +1413,19 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
+## optimize_read_in_order {#optimize_read_in_order}
+
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) при работе с таблицами семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `1`.
+
+**См. также**
+
+-   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

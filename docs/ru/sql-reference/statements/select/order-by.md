@@ -70,6 +70,25 @@ toc_title: ORDER BY
 
 Внешняя сортировка работает существенно менее эффективно, чем сортировка в оперативке.
 
+## Оптимизация чтения данных {#optimize_read_in_order}
+
+ Если в списке выражений в секции `ORDER BY` первыми указаны те поля, по которым проиндексирована таблица, по которой строится выборка, такой запрос можно оптимизировать — для этого используйте настройку [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order).  
+ 
+ Когда настройка `optimize_read_in_order` включена, при выполнении запроса сервер использует табличные индексы и считывает данные в том порядке, который задан списком выражений `ORDER BY`. Поэтому если в запросе установлен [LIMIT](../../../sql-reference/statements/select/limit.md), сервер не станет считывать лишние данные. Таким образом, запросы к большим таблицам, но имеющие ограничения по числу записей, выполняются быстрее.
+
+Оптимизация работает при любом порядке сортировки `ASC` или `DESC`, но не работает при использовании группировки [GROUP BY](../../../sql-reference/statements/select/group-by.md) и модификатора [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
+
+Когда настройка `optimize_read_in_order` отключена, при выполнении запросов `SELECT` табличные индексы не используются.
+
+Для запросов с сортировкой `ORDER BY`, большим значением `LIMIT` и условиями отбора [WHERE](../../../sql-reference/statements/select/where.md), требующими чтения больших объемов данных, рекомендуется отключать `optimize_read_in_order` вручную.
+
+Оптимизация чтения данных поддерживается в следующих движках:
+
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
+- [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md) и [MaterializedView](../../../engines/table-engines/special/materializedview.md), работающими с таблицами `MergeTree`
+
+В движке `MaterializedView` оптимизация поддерживается при работе с сохраненными запросами (представлениями) вида `SELECT ... FROM merge_tree_table ORDER BY pk`. Но оптимизация не поддерживается для запросов вида `SELECT ... FROM view ORDER BY pk`, если в сохраненном запросе нет секции `ORDER BY`.
+
 ## Модификатор ORDER BY expr WITH FILL  {#orderby-with-fill}
 
 Этот модификатор также может быть скобинирован с модификатором [LIMIT ... WITH TIES](../../../sql-reference/statements/select/limit.md#limit-with-ties)
