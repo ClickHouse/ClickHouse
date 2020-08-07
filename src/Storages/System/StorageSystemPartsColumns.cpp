@@ -71,7 +71,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getColumns())
+    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)

@@ -4,6 +4,7 @@
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
+#include <algorithm>
 
 namespace DB
 {
@@ -383,27 +384,47 @@ bool ReadBufferFromKafkaConsumer::poll()
         {
             messages = std::move(new_messages);
             current = messages.begin();
-            LOG_TRACE(log, "Polled batch of {} messages. Offset position: {}", messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+            LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",
+                messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
             break;
         }
     }
 
-    while (auto err = current->get_error())
+    filterMessageErrors();
+    if (current == messages.end())
     {
-        ++current;
-
-        // TODO: should throw exception instead
-        LOG_ERROR(log, "Consumer error: {}", err);
-        if (current == messages.end())
-        {
-            LOG_ERROR(log, "No actual messages polled, errors only.");
-            stalled_status = ERRORS_RETURNED;
-            return false;
-        }
+        LOG_ERROR(log, "Only errors left");
+        stalled_status = ERRORS_RETURNED;
+        return false;
     }
+
     stalled_status = NOT_STALLED;
     allowed = true;
     return true;
+}
+
+size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
+{
+    assert(current == messages.begin());
+
+    auto new_end = std::remove_if(messages.begin(), messages.end(), [this](auto & message)
+    {
+        if (auto error = message.get_error())
+        {
+            LOG_ERROR(log, "Consumer error: {}", error);
+            return true;
+        }
+        return false;
+    });
+
+    size_t skipped = std::distance(new_end, messages.end());
+    if (skipped)
+    {
+        LOG_ERROR(log, "There were {} messages with an error", skipped);
+        messages.erase(new_end, messages.end());
+    }
+
+    return skipped;
 }
 
 void ReadBufferFromKafkaConsumer::resetIfStopped()
@@ -420,12 +441,6 @@ void ReadBufferFromKafkaConsumer::resetIfStopped()
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
-
-    /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
-    ///       If we failed to poll any message once - don't try again.
-    ///       Otherwise, the |poll_timeout| expectations get flawn.
-    resetIfStopped();
-
     if (!allowed || !hasMorePolledMessages())
         return false;
 

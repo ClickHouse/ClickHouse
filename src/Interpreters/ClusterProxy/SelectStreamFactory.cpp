@@ -80,7 +80,7 @@ QueryPipeline createLocalStream(
     pipeline.addSimpleTransform([&](const Block & source_header)
     {
         return std::make_shared<ConvertingTransform>(
-                source_header, header, ConvertingTransform::MatchColumnsMode::Name);
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name, true);
     });
 
     /** Materialization is needed, since from remote servers the constants come materialized.
@@ -170,7 +170,9 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "There is no table {} on local replica of shard {}, will try remote replicas.", main_table.getNameForLogs(), shard_info.shard_num);
+                LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
+                    "There is no table {} on local replica of shard {}, will try remote replicas.",
+                    main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
             }
             else
@@ -254,7 +256,8 @@ void SelectStreamFactory::createForShard(
             catch (const Exception & ex)
             {
                 if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-                    LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "Connections to remote replicas of local shard {} failed, will use stale local replica", shard_num);
+                    LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
+                        "Connections to remote replicas of local shard {} failed, will use stale local replica", shard_num);
                 else
                     throw;
             }
@@ -282,7 +285,7 @@ void SelectStreamFactory::createForShard(
             }
         };
 
-        res.emplace_back(createDelayedPipe(header, lazily_create_stream));
+        res.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
     }
     else
         emplace_remote_stream();

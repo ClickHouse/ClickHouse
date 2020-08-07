@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -263,6 +264,7 @@ namespace DB
         for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
         {
             ColumnWithTypeAndName header_column = header.getByPosition(column_i);
+            const auto column_type = recursiveRemoveLowCardinality(header_column.type);
 
             if (name_to_column_ptr.find(header_column.name) == name_to_column_ptr.end())
                 // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
@@ -273,13 +275,13 @@ namespace DB
             arrow::Type::type arrow_type = arrow_column->type()->id();
 
             // TODO: check if a column is const?
-            if (!header_column.type->isNullable() && arrow_column->null_count())
+            if (!column_type->isNullable() && arrow_column->null_count())
             {
                 throw Exception{"Can not insert NULL data into non-nullable column \"" + header_column.name + "\"",
                                 ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
             }
 
-            const bool target_column_is_nullable = header_column.type->isNullable() || arrow_column->null_count();
+            const bool target_column_is_nullable = column_type->isNullable() || arrow_column->null_count();
 
             DataTypePtr internal_nested_type;
 
@@ -304,15 +306,6 @@ namespace DB
 
             const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type)
                                                                         : internal_nested_type;
-            const std::string internal_nested_type_name = internal_nested_type->getName();
-
-            const DataTypePtr column_nested_type = header_column.type->isNullable()
-                                                   ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
-                                                   : header_column.type;
-
-            const DataTypePtr column_type = header_column.type;
-
-            const std::string column_nested_type_name = column_nested_type->getName();
 
             ColumnWithTypeAndName column;
             column.name = header_column.name;
@@ -373,8 +366,8 @@ namespace DB
             else
                 column.column = std::move(read_column);
 
-            column.column = castColumn(column, column_type);
-            column.type = column_type;
+            column.column = castColumn(column, header_column.type);
+            column.type = header_column.type;
             num_rows = column.column->size();
             columns_list.push_back(std::move(column.column));
         }

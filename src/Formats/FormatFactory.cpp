@@ -10,7 +10,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -85,6 +84,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
             context.getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
+    format_settings.avro.allow_missing_fields = settings.input_format_avro_allow_missing_fields;
 
     return format_settings;
 }
@@ -104,6 +104,9 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ?
+                                     FormatSettings::Pretty::Charset::ASCII :
+                                     FormatSettings::Pretty::Charset::UTF8;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
@@ -199,19 +202,6 @@ BlockInputStreamPtr FormatFactory::getInput(
 BlockOutputStreamPtr FormatFactory::getOutput(
     const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
-    if (name == "PrettyCompactMonoBlock")
-    {
-        /// TODO: rewrite
-        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-        auto res = std::make_shared<SquashingBlockOutputStream>(
-                std::make_shared<OutputStreamToOutputFormat>(format),
-                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
-
-        res->disableFlush();
-
-        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
-    }
-
     if (!getCreators(name).output_processor_creator)
     {
         const auto & output_getter = getCreators(name).output_creator;
@@ -361,6 +351,7 @@ FormatFactory::FormatFactory()
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
+    registerOutputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
     registerInputFormatProcessorArrow(*this);

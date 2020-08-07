@@ -21,6 +21,8 @@ IColumn::Selector createBlockSelector(
     const std::vector<UInt64> & slots)
 {
     const auto total_weight = slots.size();
+    assert(total_weight != 0);
+
     size_t num_rows = column.size();
     IColumn::Selector selector(num_rows);
 

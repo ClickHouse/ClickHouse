@@ -20,14 +20,14 @@ inline NO_SANITIZE_UNDEFINED uint64_t intExp2(int x)
     return 1ULL << x;
 }
 
-inline uint64_t intExp10(int x)
+constexpr inline uint64_t intExp10(int x)
 {
     if (x < 0)
         return 0;
     if (x > 19)
         return std::numeric_limits<uint64_t>::max();
 
-    static const uint64_t table[20] =
+    constexpr uint64_t table[20] =
     {
         1ULL,                   10ULL,                   100ULL,
         1000ULL,                10000ULL,                100000ULL,
@@ -44,9 +44,10 @@ inline uint64_t intExp10(int x)
 namespace common
 {
 
-inline int exp10_i32(int x)
+constexpr inline int exp10_i32(int x)
 {
-    static const int values[] = {
+    constexpr int values[] =
+    {
         1,
         10,
         100,
@@ -61,74 +62,76 @@ inline int exp10_i32(int x)
     return values[x];
 }
 
-inline int64_t exp10_i64(int x)
+constexpr inline int64_t exp10_i64(int x)
 {
-    static const int64_t values[] = {
-        1ll,
-        10ll,
-        100ll,
-        1000ll,
-        10000ll,
-        100000ll,
-        1000000ll,
-        10000000ll,
-        100000000ll,
-        1000000000ll,
-        10000000000ll,
-        100000000000ll,
-        1000000000000ll,
-        10000000000000ll,
-        100000000000000ll,
-        1000000000000000ll,
-        10000000000000000ll,
-        100000000000000000ll,
-        1000000000000000000ll
+    constexpr int64_t values[] =
+    {
+        1LL,
+        10LL,
+        100LL,
+        1000LL,
+        10000LL,
+        100000LL,
+        1000000LL,
+        10000000LL,
+        100000000LL,
+        1000000000LL,
+        10000000000LL,
+        100000000000LL,
+        1000000000000LL,
+        10000000000000LL,
+        100000000000000LL,
+        1000000000000000LL,
+        10000000000000000LL,
+        100000000000000000LL,
+        1000000000000000000LL
     };
     return values[x];
 }
 
-inline __int128 exp10_i128(int x)
+constexpr inline __int128 exp10_i128(int x)
 {
-    static const __int128 values[] = {
-        static_cast<__int128>(1ll),
-        static_cast<__int128>(10ll),
-        static_cast<__int128>(100ll),
-        static_cast<__int128>(1000ll),
-        static_cast<__int128>(10000ll),
-        static_cast<__int128>(100000ll),
-        static_cast<__int128>(1000000ll),
-        static_cast<__int128>(10000000ll),
-        static_cast<__int128>(100000000ll),
-        static_cast<__int128>(1000000000ll),
-        static_cast<__int128>(10000000000ll),
-        static_cast<__int128>(100000000000ll),
-        static_cast<__int128>(1000000000000ll),
-        static_cast<__int128>(10000000000000ll),
-        static_cast<__int128>(100000000000000ll),
-        static_cast<__int128>(1000000000000000ll),
-        static_cast<__int128>(10000000000000000ll),
-        static_cast<__int128>(100000000000000000ll),
-        static_cast<__int128>(1000000000000000000ll),
-        static_cast<__int128>(1000000000000000000ll) * 10ll,
-        static_cast<__int128>(1000000000000000000ll) * 100ll,
-        static_cast<__int128>(1000000000000000000ll) * 1000ll,
-        static_cast<__int128>(1000000000000000000ll) * 10000ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000ll,
-        static_cast<__int128>(1000000000000000000ll) * 1000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 10000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 1000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 10000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 1000000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 10000000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 1000000000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 10000000000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll * 10ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll * 100ll,
-        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll * 1000ll
+    constexpr __int128 values[] =
+    {
+        static_cast<__int128>(1LL),
+        static_cast<__int128>(10LL),
+        static_cast<__int128>(100LL),
+        static_cast<__int128>(1000LL),
+        static_cast<__int128>(10000LL),
+        static_cast<__int128>(100000LL),
+        static_cast<__int128>(1000000LL),
+        static_cast<__int128>(10000000LL),
+        static_cast<__int128>(100000000LL),
+        static_cast<__int128>(1000000000LL),
+        static_cast<__int128>(10000000000LL),
+        static_cast<__int128>(100000000000LL),
+        static_cast<__int128>(1000000000000LL),
+        static_cast<__int128>(10000000000000LL),
+        static_cast<__int128>(100000000000000LL),
+        static_cast<__int128>(1000000000000000LL),
+        static_cast<__int128>(10000000000000000LL),
+        static_cast<__int128>(100000000000000000LL),
+        static_cast<__int128>(1000000000000000000LL),
+        static_cast<__int128>(1000000000000000000LL) * 10LL,
+        static_cast<__int128>(1000000000000000000LL) * 100LL,
+        static_cast<__int128>(1000000000000000000LL) * 1000LL,
+        static_cast<__int128>(1000000000000000000LL) * 10000LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000LL,
+        static_cast<__int128>(1000000000000000000LL) * 1000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 10000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 1000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 10000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 1000000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 10000000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 1000000000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 10000000000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL * 10LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL * 100LL,
+        static_cast<__int128>(1000000000000000000LL) * 100000000000000000LL * 1000LL
     };
     return values[x];
 }
@@ -138,7 +141,7 @@ inline __int128 exp10_i128(int x)
 
 /// intExp10 returning the type T.
 template <typename T>
-inline T intExp10OfSize(int x)
+constexpr inline T intExp10OfSize(int x)
 {
     if constexpr (sizeof(T) <= 8)
         return intExp10(x);

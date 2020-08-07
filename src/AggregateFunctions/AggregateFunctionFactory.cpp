@@ -162,6 +162,52 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(
 }
 
 
+std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPropertiesImpl(const String & name_param, int recursion_level) const
+{
+    String name = getAliasToOrName(name_param);
+    Value found;
+
+    /// Find by exact match.
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
+    {
+        found = it->second;
+    }
+    /// Find by case-insensitive name.
+    /// Combinators cannot apply for case insensitive (SQL-style) aggregate function names. Only for native names.
+    else if (recursion_level == 0)
+    {
+        if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+            found = jt->second;
+    }
+
+    if (found.creator)
+        return found.properties;
+
+    /// Combinators of aggregate functions.
+    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    ///  that can have different number and/or types of arguments, different result type and different behaviour.
+
+    if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+    {
+        if (combinator->isForInternalUsageOnly())
+            return {};
+
+        String nested_name = name.substr(0, name.size() - combinator->getName().size());
+
+        /// NOTE: It's reasonable to also allow to transform properties by combinator.
+        return tryGetPropertiesImpl(nested_name, recursion_level + 1);
+    }
+
+    return {};
+}
+
+
+std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(const String & name) const
+{
+    return tryGetPropertiesImpl(name, 0);
+}
+
+
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
     if (aggregate_functions.count(name) || isAlias(name))

@@ -168,7 +168,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `FILE`
     - `URL`
     - `REMOTE`
-    - `YSQL`
+    - `MYSQL`
     - `ODBC`
     - `JDBC`
     - `HDFS`
@@ -295,7 +295,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### CREATE {#grant-create}
 
-Разрешает выполнять DDL-запросы [CREATE](create.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять DDL-запросы [CREATE](../../sql-reference/statements/create/index.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
 
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
@@ -476,4 +476,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/grant/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/grant/) <!--hide-->

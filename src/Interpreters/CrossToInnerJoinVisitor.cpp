@@ -132,7 +132,7 @@ public:
         {
             /// leave other comparisons as is
         }
-        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE
+        else if (functionIsLikeOperator(node.name) || /// LIKE, NOT LIKE, ILIKE, NOT ILIKE
                  functionIsInOperator(node.name))  /// IN, NOT IN
         {
             /// leave as is. It's not possible to make push down here cause of unknown aliases and not implemented JOIN predicates.

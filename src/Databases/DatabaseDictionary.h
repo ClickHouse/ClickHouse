@@ -47,8 +47,6 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, const Context & context, bool throw_on_error) const override;
 
 private:
-    mutable std::mutex mutex;
-
     Poco::Logger * log;
     const Context & global_context;
 

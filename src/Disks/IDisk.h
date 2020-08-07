@@ -25,6 +25,7 @@ using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
+using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -171,6 +172,12 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    /// Truncate file to specified size.
+    virtual void truncateFile(const String & path, size_t size);
+
+    /// Return disk type - "local", "s3", etc.
+    virtual const String getType() const = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
