@@ -23,7 +23,7 @@ ClickHouse не работает и не собирается на 32-битны
     sudo apt update
     sudo apt install git
 
-Краткое руководство по использованию Git: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf
+Краткое руководство по использованию Git: https://education.github.com/git-cheat-sheet-education.pdf
 
 Подробное руководство по использованию Git: https://git-scm.com/book/ru/v2
 

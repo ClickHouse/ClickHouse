@@ -34,7 +34,7 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
     sudo apt update
     sudo apt install git
 
-کتابچه راهنمای مختصر در استفاده از دستگاه گوارش را می توان یافت: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+کتابچه راهنمای مختصر در استفاده از دستگاه گوارش را می توان یافت: https://education.github.com/git-cheat-sheet-education.pdf.
 برای یک کتابچه راهنمای دقیق در دستگاه گوارش را ببینید https://git-scm.com/book/en/v2.
 
 # شبیه سازی یک مخزن به دستگاه توسعه خود را {#cloning-a-repository-to-your-development-machine}

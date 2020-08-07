@@ -32,7 +32,7 @@ Bunu Ubuntu'da yapmak için komut satırı terminalinde çalışırsınız:
     sudo apt update
     sudo apt install git
 
-Git kullanımı ile ilgili kısa bir el kitabı burada bulunabilir: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+Git kullanımı ile ilgili kısa bir el kitabı burada bulunabilir: https://education.github.com/git-cheat-sheet-education.pdf.
 Git ile ilgili ayrıntılı bir el kitabı için bkz. https://git-scm.com/book/en/v2.
 
 # Geliştirme Makinenize bir depo klonlama {#cloning-a-repository-to-your-development-machine}
