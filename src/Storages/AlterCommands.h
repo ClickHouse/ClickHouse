@@ -54,8 +54,11 @@ struct AlterCommand
     /// For COMMENT column
     std::optional<String> comment;
 
-    /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
+    /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
     String after_column;
+
+    /// For ADD_COLUMN, MODIFY_COLUMN - Add to the begin if it is true.
+    bool first = false;
 
     /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
     bool if_exists = false;
@@ -110,6 +113,10 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
+    /// Check that alter command require data modification (mutation) to be
+    /// executed. For example, cast from Date to UInt16 type can be executed
+    /// without any data modifications. But column drop or modify from UInt16 to
+    /// UInt32 require data modification.
     bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
     /// Checks that only settings changed by alter

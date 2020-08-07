@@ -2,11 +2,9 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <common/defines.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -120,7 +118,9 @@ void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_d
         res[i] = i;
 }
 
-void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const {}
+void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const
+{
+}
 
 void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 {

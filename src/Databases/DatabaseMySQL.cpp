@@ -4,7 +4,6 @@
 
 #if USE_MYSQL
 #    include <string>
-#    include <Core/SettingsCollection.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
@@ -42,7 +41,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const SettingSeconds lock_acquire_timeout{10};
+static const std::chrono::seconds lock_acquire_timeout{10};
 
 static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 {
@@ -100,7 +99,7 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const Context &, cons
         if (!remove_or_detach_tables.count(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
             tables[table_name] = modify_time_and_storage.second;
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
 bool DatabaseMySQL::isTableExist(const String & name, const Context &) const
@@ -139,7 +138,8 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
         create_table_query->table = table_id.table_name;
         create_table_query->database = table_id.database_name;
 
-        for (const auto & column_type_and_name : storage->getColumns().getOrdinary())
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
         {
             const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
             column_declaration->name = column_type_and_name.name;
@@ -187,7 +187,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = database_name;
+    create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
     return create_query;
 }
@@ -361,7 +361,7 @@ void DatabaseMySQL::cleanOutdatedTables()
                 ++iterator;
             else
             {
-                const auto table_lock = (*iterator)->lockAlterIntention(RWLockImpl::NO_QUERY, lock_acquire_timeout);
+                const auto table_lock = (*iterator)->lockExclusively(RWLockImpl::NO_QUERY, lock_acquire_timeout);
 
                 (*iterator)->shutdown();
                 (*iterator)->is_dropped = true;
@@ -378,11 +378,11 @@ void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & st
     std::lock_guard<std::mutex> lock{mutex};
 
     if (!local_tables_cache.count(table_name))
-        throw Exception("Cannot attach table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) +
+        throw Exception("Cannot attach table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) +
             " because it does not exist.", ErrorCodes::UNKNOWN_TABLE);
 
     if (!remove_or_detach_tables.count(table_name))
-        throw Exception("Cannot attach table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) +
+        throw Exception("Cannot attach table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) +
             " because it already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     /// We use the new storage to replace the original storage, because the original storage may have been dropped
@@ -401,11 +401,11 @@ StoragePtr DatabaseMySQL::detachTable(const String & table_name)
     std::lock_guard<std::mutex> lock{mutex};
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " is dropped",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
             ErrorCodes::TABLE_IS_DROPPED);
 
     if (!local_tables_cache.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
             ErrorCodes::UNKNOWN_TABLE);
 
     remove_or_detach_tables.emplace(table_name);
@@ -441,16 +441,16 @@ void DatabaseMySQL::dropTable(const Context &, const String & table_name, bool /
     Poco::File remove_flag(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
 
     if (remove_or_detach_tables.count(table_name))
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " is dropped",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " is dropped",
             ErrorCodes::TABLE_IS_DROPPED);
 
     if (remove_flag.exists())
-        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(getDatabaseName()) +
+        throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(database_name) +
             "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
 
     auto table_iter = local_tables_cache.find(table_name);
     if (table_iter == local_tables_cache.end())
-        throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+        throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
             ErrorCodes::UNKNOWN_TABLE);
 
     remove_or_detach_tables.emplace(table_name);

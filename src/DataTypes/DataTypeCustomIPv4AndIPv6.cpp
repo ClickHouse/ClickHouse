@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeCustomSimpleTextSerialization.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCoding.h>
 
 namespace DB
@@ -112,6 +111,10 @@ void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
         return std::make_pair(DataTypeFactory::instance().get("FixedString(16)"),
                               std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("IPv6"), std::make_unique<DataTypeCustomIPv6Serialization>()));
     });
+
+    /// MySQL, MariaDB
+    factory.registerAlias("INET4", "IPv4", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INET6", "IPv6", DataTypeFactory::CaseInsensitive);
 }
 
 }

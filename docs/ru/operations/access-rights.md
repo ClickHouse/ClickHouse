@@ -31,7 +31,7 @@ ClickHouse поддерживает управление доступом на �
 Если вы начали пользоваться ClickHouse недавно, попробуйте следующий сценарий:
 
 1. [Включите](#enabling-access-control) SQL-ориентированное управление доступом для пользователя `default`.
-2. Войдите под пользователем `default` и создайте всех необходимых пользователей. Не забудьте создать аккаунт администратора (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+2. Войдите под пользователем `default` и создайте всех необходимых пользователей. Не забудьте создать аккаунт администратора (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
 3. [Ограничьте разрешения](settings/permissions-for-queries.md#permissions_for_queries) для пользователя `default` и отключите для него SQL-ориентированное управление доступом.
 
 ### Особенности реализации {#access-control-properties}
@@ -55,7 +55,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+- [CREATE USER](../sql-reference/statements/create/user.md#create-user-statement)
 - [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
 - [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
 - [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
@@ -82,7 +82,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+- [CREATE ROLE](../sql-reference/statements/create/index.md#create-role-statement)
 - [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
 - [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
 - [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
@@ -97,7 +97,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+- [CREATE ROW POLICY](../sql-reference/statements/create/index.md#create-row-policy-statement)
 - [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
 - [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
 - [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
@@ -109,7 +109,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+- [CREATE SETTINGS PROFILE](../sql-reference/statements/create/index.md#create-settings-profile-statement)
 - [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
 - [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
 - [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
@@ -123,7 +123,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+- [CREATE QUOTA](../sql-reference/statements/create/index.md#create-quota-statement)
 - [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
 - [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
 - [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)

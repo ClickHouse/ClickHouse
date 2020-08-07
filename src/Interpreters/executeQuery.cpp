@@ -195,6 +195,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.event_time = current_time;
     elem.query_start_time = current_time;
 
+    elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
@@ -351,8 +352,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     StoragePtr storage = context.executeTableFunction(input_function);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
-                        input_storage.getSampleBlock(), context, input_function);
+                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
+                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(
+                        ast, istr, input_metadata_snapshot->getSampleBlock(), context, input_function);
                     input_storage.setInputStream(input_stream);
                 }
             }
@@ -461,6 +463,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.event_time = current_time;
             elem.query_start_time = current_time;
 
+            elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
 
             elem.client_info = context.getClientInfo();
@@ -478,7 +481,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
+            auto finish_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type]
+                (IBlockInputStream * stream_in, IBlockOutputStream * stream_out, QueryPipeline * query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context.getProcessListElement();
 
@@ -525,6 +529,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().read_rows;
                         elem.result_bytes = counting_stream->getProgress().read_bytes;
+                    }
+                }
+                else if (query_pipeline)
+                {
+                    if (const auto * output_format = query_pipeline->getOutputFormat())
+                    {
+                        elem.result_rows = output_format->getResultRows();
+                        elem.result_bytes = output_format->getResultBytes();
                     }
                 }
 
@@ -685,7 +697,7 @@ void executeQuery(
     const char * end;
 
     /// If 'istr' is empty now, fetch next data into buffer.
-    if (istr.buffer().size() == 0)
+    if (!istr.hasPendingData())
         istr.next();
 
     size_t max_query_size = context.getSettingsRef().max_query_size;

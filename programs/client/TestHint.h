@@ -22,8 +22,9 @@ namespace ErrorCodes
 class TestHint
 {
 public:
-    TestHint(bool enabled_, const String & query)
-    :   enabled(enabled_)
+    TestHint(bool enabled_, const String & query_)
+    : enabled(enabled_)
+    , query(query_)
     {
         if (!enabled_)
             return;
@@ -71,7 +72,7 @@ public:
 
         if (lostExpectedError(actual_server_error, actual_client_error))
         {
-            std::cerr << "Success when error expected. It expects server error "
+            std::cerr << "Success when error expected in query: " << query << "It expects server error "
                 << server_error << ", client error " << client_error << "." << std::endl;
             got_exception = true;
             last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::UNEXPECTED_ERROR_CODE); /// return error to OS
@@ -86,6 +87,7 @@ public:
 
 private:
     bool enabled = false;
+    const String & query;
     int server_error = 0;
     int client_error = 0;
 

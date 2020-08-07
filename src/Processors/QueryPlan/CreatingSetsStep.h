@@ -6,6 +6,7 @@
 namespace DB
 {
 
+/// Creates sets for subqueries and JOIN. See CreatingSetsTransform.
 class CreatingSetsStep : public ITransformingStep
 {
 public:
@@ -18,6 +19,8 @@ public:
     String getName() const override { return "CreatingSets"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     SubqueriesForSets subqueries_for_sets;

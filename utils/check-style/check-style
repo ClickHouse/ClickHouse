@@ -62,3 +62,6 @@ find $ROOT_PATH/docs/ru -name '*.md' | xargs grep -l -F 'machine_translated: tru
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
 find $ROOT_PATH/tests/queries -iname '*fail*' | grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
+
+# All the submodules should be from https://github.com/
+find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done

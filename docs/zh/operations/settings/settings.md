@@ -1048,17 +1048,6 @@ ClickHouse生成异常
 
 默认值：0
 
-## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
-
-重置 [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) 对于嵌套 `Distributed` 表
-
-可能的值:
-
--   1 — Enabled.
--   0 — Disabled.
-
-默认值：0。
-
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 启用或禁用抛出异常，如果 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) 查询未执行合并。

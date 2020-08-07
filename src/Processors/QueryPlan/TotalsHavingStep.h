@@ -9,6 +9,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 enum class TotalsMode;
 
+/// Execute HAVING and calculate totals. See TotalsHavingTransform.
 class TotalsHavingStep : public ITransformingStep
 {
 public:
@@ -24,6 +25,8 @@ public:
     String getName() const override { return "TotalsHaving"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     bool overflow_row;

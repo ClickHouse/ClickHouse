@@ -240,7 +240,7 @@ public:
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
@@ -276,7 +276,8 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).set.insert(typename Data::Set::value_type(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
+        this->data(place).set.insert(typename Data::Set::value_type(
+            UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -294,7 +295,7 @@ public:
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }

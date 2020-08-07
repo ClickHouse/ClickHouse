@@ -269,6 +269,8 @@ bool DNSResolver::updateCache()
     LOG_DEBUG(log, "Updating DNS cache");
 
     {
+        String updated_host_name = Poco::Net::DNS::hostName();
+
         std::lock_guard lock(impl->drop_mutex);
 
         for (const auto & host : impl->new_hosts)
@@ -279,7 +281,7 @@ bool DNSResolver::updateCache()
             impl->known_addresses.insert(address);
         impl->new_addresses.clear();
 
-        impl->host_name.emplace(Poco::Net::DNS::hostName());
+        impl->host_name.emplace(updated_host_name);
     }
 
     /// FIXME Updating may take a long time becouse we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).

@@ -55,19 +55,21 @@ ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-serv
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/;
 
-ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/; \
-    ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/; \
-    ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/; \
-    ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
-    ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
-    ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
-    ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
+ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/metric_log.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
+ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/
+ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
+ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
+
+# Retain any pre-existing config and allow ClickHouse to load those if required
+ln -s --backup=simple --suffix=_original.xml \
+    /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
 
 
 service zookeeper start
@@ -105,7 +107,12 @@ LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABL
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+
+if cat /usr/bin/clickhouse-test | grep -q -- "--use-skip-list"; then
+    SKIP_LIST_OPT="--use-skip-list"
+fi
+
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 

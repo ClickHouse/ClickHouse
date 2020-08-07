@@ -78,7 +78,7 @@ Il peut y avoir d'autres clauses après le `ENGINE` la clause dans la requête. 
 La description de colonne peut spécifier une expression pour une valeur par défaut, de l'une des manières suivantes:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Exemple: `URLDomain String DEFAULT domain(URL)`.
 
-Si une expression pour la valeur par défaut n'est pas définie, les valeurs par défaut seront définies sur zéros pour les nombres, chaînes vides pour les chaînes, tableaux vides pour les tableaux et `0000-00-00` pour les dates ou `0000-00-00 00:00:00` pour les dates avec le temps. Les valeurs NULL ne sont pas prises en charge.
+Si une expression pour la valeur par défaut n'est pas définie, les valeurs par défaut seront définies sur zéros pour les nombres, chaînes vides pour les chaînes, tableaux vides pour les tableaux et `1970-01-01` pour les dates ou zero unix timestamp pour les dates avec le temps. Les valeurs NULL ne sont pas prises en charge.
 
 Si l'expression par défaut est définie, le type de colonne est facultatif. S'il n'y a pas de type explicitement défini, le type d'expression par défaut est utilisé. Exemple: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ type sera utilisé pour la ‘EventDate’ colonne.
 
@@ -155,7 +155,7 @@ Si un codec est spécifié, le codec par défaut ne s'applique pas. Les Codecs p
 La Compression est prise en charge pour les moteurs de tableau suivants:
 
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) famille. Prend en charge les codecs de compression de colonne et la sélection de la méthode de compression par défaut par [compression](../../operations/server-configuration-parameters/settings.md#server-settings-compression) paramètre.
--   [Journal](../../engines/table-engines/log-family/log-family.md) famille. Utilise le `lz4` méthode de compression par défaut et prend en charge les codecs de compression de colonne.
+-   [Journal](../../engines/table-engines/log-family/index.md) famille. Utilise le `lz4` méthode de compression par défaut et prend en charge les codecs de compression de colonne.
 -   [Définir](../../engines/table-engines/special/set.md). Uniquement pris en charge la compression par défaut.
 -   [Rejoindre](../../engines/table-engines/special/join.md). Uniquement pris en charge la compression par défaut.
 

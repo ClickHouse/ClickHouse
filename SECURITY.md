@@ -11,9 +11,11 @@ currently being supported with security updates:
 | 18.x   | :x:                |
 | 19.x   | :x:                |
 | 19.14   | :white_check_mark: |
-| 20.x   | :white_check_mark: |
+| 20.1   | :x: |
+| 20.3   | :white_check_mark: |
+| 20.4   | :white_check_mark: |
+| 20.5   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
-To report a potential vulnerability in ClickHouse please use the security advisory feature of GitHub:
-https://github.com/ClickHouse/ClickHouse/security/advisories
+To report a potential vulnerability in ClickHouse please send the details about it to [clickhouse-feedback@yandex-team.com](mailto:clickhouse-feedback@yandex-team.com).

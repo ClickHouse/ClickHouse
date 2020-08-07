@@ -8,9 +8,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Poco/Exception.h>
-#include <Poco/Net/NetException.h>
-
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif

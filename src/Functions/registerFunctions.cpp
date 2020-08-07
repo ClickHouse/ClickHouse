@@ -41,6 +41,10 @@ void registerFunctionBitHammingDistance(FunctionFactory & factory);
 void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
 
+#if !defined(ARCADIA_BUILD)
+void registerFunctionBayesAB(FunctionFactory &);
+#endif
+
 
 void registerFunctions()
 {
@@ -85,6 +89,11 @@ void registerFunctions()
     registerFunctionBitHammingDistance(factory);
     registerFunctionTupleHammingDistance(factory);
     registerFunctionsStringHash(factory);
+
+#if !defined(ARCADIA_BUILD)
+    registerFunctionBayesAB(factory);
+#endif
+
 }
 
 }
