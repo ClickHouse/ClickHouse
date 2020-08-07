@@ -9,7 +9,7 @@ ClickHouse binası Linux, FreeBSD ve Mac OS X üzerinde desteklenmektedir.
 
 # Windows Kullanıyorsanız {#if-you-use-windows}
 
-Windows kullanıyorsanız, Ubuntu ile bir sanal makine oluşturmanız gerekir. Bir sanal makine ile çalışmaya başlamak için VirtualBox yükleyin. UB :unt :u'yu web sitesinden indirebilirsiniz: https://www.ubuntu.com/\#download. lütfen indirilen görüntüden bir sanal makine oluşturun (bunun için en az 4GB RAM ayırmalısınız). Ubuntu'da bir komut satırı terminali çalıştırmak için lütfen kelimeyi içeren bir program bulun “terminal” adına (gnome-terminal, konsole vb.)) veya sadece Ctrl+Alt+T tuşlarına basın.
+Windows kullanıyorsanız, Ubuntu ile bir sanal makine oluşturmanız gerekir. Bir sanal makine ile çalışmaya başlamak için VirtualBox yükleyin. UB :unt :u'yu web sitesinden indirebilirsiniz: https://www.ubuntu.com/#download. lütfen indirilen görüntüden bir sanal makine oluşturun (bunun için en az 4GB RAM ayırmalısınız). Ubuntu'da bir komut satırı terminali çalıştırmak için lütfen kelimeyi içeren bir program bulun “terminal” adına (gnome-terminal, konsole vb.)) veya sadece Ctrl+Alt+T tuşlarına basın.
 
 # 32 bit sistem kullanıyorsanız {#if-you-use-a-32-bit-system}
 
