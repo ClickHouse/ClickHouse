@@ -1,8 +1,6 @@
 version: '2.3'
 services:
-  mysqljs1:
-    build:
-      context: ./
-      network: host
+  java1:
+    image: yandex/clickhouse-mysql-java-client
     # to keep container running
     command: sleep infinity

@@ -1,8 +1,6 @@
 version: '2.2'
 services:
   java:
-    build:
-      context: ./
-      network: host
+    image: yandex/clickhouse-postgresql-java-client
     # to keep container running
     command: sleep infinity
