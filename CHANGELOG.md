@@ -1,7 +1,7 @@
 
 ## ClickHouse release 20.6
 
-### ClickHouse release v20.6.2.15-prestable FIXME as compared to v20.5.4.40-stable
+## ClickHouse release v20.6.2.15-prestable FIXME as compared to v20.5.4.40-stable
 
 #### New Feature
 
@@ -127,40 +127,10 @@
 * Install `ca-certificates` before the first `apt-get update` in Dockerfile. [#12095](https://github.com/ClickHouse/ClickHouse/pull/12095) ([Ivan Blinkov](https://github.com/blinkov)).
 * Add new type of tests based on Testflows framework. [#12090](https://github.com/ClickHouse/ClickHouse/pull/12090) ([vzakaznikov](https://github.com/vzakaznikov)).
 
-#### NO CL ENTRY
-
-* NO CL ENTRY:  'Backport [#12700](https://github.com/ClickHouse/ClickHouse/issues/12700) to 20.6: Fix performance with large tuples'. [#13187](https://github.com/ClickHouse/ClickHouse/pull/13187) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#13075](https://github.com/ClickHouse/ClickHouse/issues/13075) to 20.6: Fix 11327'. [#13184](https://github.com/ClickHouse/ClickHouse/pull/13184) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#13081](https://github.com/ClickHouse/ClickHouse/issues/13081) to 20.6: Fix wrong index analysis with functions'. [#13146](https://github.com/ClickHouse/ClickHouse/pull/13146) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#13009](https://github.com/ClickHouse/ClickHouse/issues/13009) to 20.6: Fix 12623'. [#13051](https://github.com/ClickHouse/ClickHouse/pull/13051) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12989](https://github.com/ClickHouse/ClickHouse/issues/12989) to 20.6: Fix `Block structure mismatch` error for queries with  UNION and JOIN'. [#13049](https://github.com/ClickHouse/ClickHouse/pull/13049) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12982](https://github.com/ClickHouse/ClickHouse/issues/12982) to 20.6: Merging [#12548](https://github.com/ClickHouse/ClickHouse/issues/12548) - Correction to `merge_with_ttl_timeout` logic by @excitoon'. [#13031](https://github.com/ClickHouse/ClickHouse/pull/13031) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12760](https://github.com/ClickHouse/ClickHouse/issues/12760) to 20.6: Sticking mutations bug'. [#13011](https://github.com/ClickHouse/ClickHouse/pull/13011) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12664](https://github.com/ClickHouse/ClickHouse/issues/12664) to 20.6: Fix move_functions_out_of_any optimisation with lambda'. [#12994](https://github.com/ClickHouse/ClickHouse/pull/12994) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12658](https://github.com/ClickHouse/ClickHouse/issues/12658) to 20.6: Fix SIGSEGV in StorageKafka when broker is unavailable'. [#12971](https://github.com/ClickHouse/ClickHouse/pull/12971) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12663](https://github.com/ClickHouse/ClickHouse/issues/12663) to 20.6: ISSUES-12293 allow push predicate when subquery contains with clause'. [#12868](https://github.com/ClickHouse/ClickHouse/pull/12868) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12672](https://github.com/ClickHouse/ClickHouse/issues/12672) to 20.6: Fix memory tracking for input_format_parallel_parsing'. [#12864](https://github.com/ClickHouse/ClickHouse/pull/12864) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12492](https://github.com/ClickHouse/ClickHouse/issues/12492) to 20.6: Make read buffer size lower, while reading from compact parts'. [#12862](https://github.com/ClickHouse/ClickHouse/pull/12862) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12659](https://github.com/ClickHouse/ClickHouse/issues/12659) to 20.6: ISSUES-10572 fix bloom filter with const column'. [#12858](https://github.com/ClickHouse/ClickHouse/pull/12858) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12480](https://github.com/ClickHouse/ClickHouse/issues/12480) to 20.6: [RFC] Fix SETTINGS parse after FORMAT'. [#12803](https://github.com/ClickHouse/ClickHouse/pull/12803) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12458](https://github.com/ClickHouse/ClickHouse/issues/12458) to 20.6: Fix crash in 'JOIN dict ON expr(dict_key) = k''. [#12725](https://github.com/ClickHouse/ClickHouse/pull/12725) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12302](https://github.com/ClickHouse/ClickHouse/issues/12302) to 20.6: kafka: fix SIGSEGV if there is a message with error in the middle of the batch'. [#12724](https://github.com/ClickHouse/ClickHouse/pull/12724) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12382](https://github.com/ClickHouse/ClickHouse/issues/12382) to 20.6: Better errors for CLEAR/DROP columns (possibly in partitions)'. [#12723](https://github.com/ClickHouse/ClickHouse/pull/12723) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12519](https://github.com/ClickHouse/ClickHouse/issues/12519) to 20.6: Fixing race condition in live view tables which could cause data duplication and live view tests'. [#12722](https://github.com/ClickHouse/ClickHouse/pull/12722) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12545](https://github.com/ClickHouse/ClickHouse/issues/12545) to 20.6: Fix loading parts without checksums'. [#12721](https://github.com/ClickHouse/ClickHouse/pull/12721) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12624](https://github.com/ClickHouse/ClickHouse/issues/12624) to 20.6: Fix error message about granularity'. [#12720](https://github.com/ClickHouse/ClickHouse/pull/12720) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12618](https://github.com/ClickHouse/ClickHouse/issues/12618) to 20.6: Fix external sort pipeline stuck'. [#12699](https://github.com/ClickHouse/ClickHouse/pull/12699) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12633](https://github.com/ClickHouse/ClickHouse/issues/12633) to 20.6: Fix "There is no supertype" error on ALTER UPDATE [#7306](https://github.com/ClickHouse/ClickHouse/issues/7306)'. [#12698](https://github.com/ClickHouse/ClickHouse/pull/12698) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12648](https://github.com/ClickHouse/ClickHouse/issues/12648) to 20.6: Add support for function if with Array(UUID) arguments'. [#12697](https://github.com/ClickHouse/ClickHouse/pull/12697) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12625](https://github.com/ClickHouse/ClickHouse/issues/12625) to 20.6: Better exception during directories creation'. [#12696](https://github.com/ClickHouse/ClickHouse/pull/12696) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-* NO CL ENTRY:  'Backport [#12613](https://github.com/ClickHouse/ClickHouse/issues/12613) to 20.6: Remove sort description from streams'. [#12695](https://github.com/ClickHouse/ClickHouse/pull/12695) ([robot-clickhouse](https://github.com/robot-clickhouse)).
-
 #### NO CL CATEGORY
 
 * ... [#12431](https://github.com/ClickHouse/ClickHouse/pull/12431) ([Tom Bombadil](https://github.com/ithangzhou)).
 * * Not for changelog. [#12265](https://github.com/ClickHouse/ClickHouse/pull/12265) ([Alexander Kuzmenkov](https://github.com/akuzm)).
-
-
 
 ## ClickHouse release 20.5
 
