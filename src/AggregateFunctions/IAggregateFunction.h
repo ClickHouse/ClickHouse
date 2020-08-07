@@ -360,7 +360,7 @@ public:
 
         static constexpr size_t UNROLL_COUNT = 4;
 
-        Data places[256 * UNROLL_COUNT];
+        std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
         bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
 
         size_t i = 0;
