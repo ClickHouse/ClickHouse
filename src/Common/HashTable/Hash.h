@@ -178,14 +178,21 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 template <typename T>
 inline size_t DefaultHash64(T key)
 {
-    union
+    if constexpr (is_big_int_v<T>)
     {
-        T in{}; // is this okey?
-        DB::UInt64 out;
-    } u;
-    u.out = 0;
-    u.in = key;
-    return intHash64(u.out);
+        return intHash64(static_cast<UInt64>(key));
+    }
+    else
+    {
+        union
+        {
+            T in;
+            DB::UInt64 out;
+        } u;
+        u.out = 0;
+        u.in = key;
+        return intHash64(u.out);
+    }
 }
 
 template <typename T, typename Enable = void>
@@ -327,6 +334,9 @@ struct IntHash32
 {
     size_t operator() (const T & key) const
     {
-        return intHash32<salt>(static_cast<DB::UInt64>(key));
+        if constexpr (is_big_int_v<T>)
+            return intHash32<salt>(static_cast<DB::UInt64>(key));
+        else
+            return intHash32<salt>(key);
     }
 };

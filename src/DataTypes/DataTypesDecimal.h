@@ -19,9 +19,9 @@ namespace ErrorCodes
 /// Int32    9
 /// Int64   18
 /// Int128  38
-/// Int256  77
+/// Int256  76
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38, 77); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
@@ -118,37 +118,9 @@ template <typename FromDataType, typename ToDataType>
 inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsNumber<typename ToDataType::FieldType>, typename ToDataType::FieldType>
 convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
-    // using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
 
-    // if constexpr (std::is_floating_point_v<ToFieldType> || is_big_int_v<ToFieldType>)
-        return DecimalUtils::convertTo<ToFieldType>(value, scale);
-    // else
-    // {
-    //     FromFieldType converted_value = convertDecimals<FromDataType, FromDataType>(value, scale, 0);
-
-    //     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType) || !std::numeric_limits<ToFieldType>::is_signed)
-    //     {
-    //         if constexpr (std::numeric_limits<ToFieldType>::is_signed)
-    //         {
-    //             if (converted_value.value < std::numeric_limits<ToFieldType>::min() ||
-    //                 converted_value.value > std::numeric_limits<ToFieldType>::max())
-    //                 throw Exception(std::string(FromDataType::family_name) + " convert overflow",
-    //                                 ErrorCodes::DECIMAL_OVERFLOW);
-    //         }
-    //         else
-    //         {
-    //             using CastIntType = std::conditional_t<std::is_same_v<ToFieldType, UInt64>, Int128, Int64>;
-
-    //             if (converted_value < 0 ||
-    //                 converted_value > static_cast<CastIntType>(std::numeric_limits<ToFieldType>::max()))
-    //                 throw Exception(std::string(FromDataType::family_name) + " convert overflow",
-    //                                 ErrorCodes::DECIMAL_OVERFLOW);
-    //         }
-    //     }
-
-    //     return static_cast<ToFieldType>(converted_value.value);
-    // }
+    return DecimalUtils::convertTo<ToFieldType>(value, scale);
 }
 
 template <typename FromDataType, typename ToDataType>

@@ -50,9 +50,9 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 /// Int32    9
 /// Int64   18
 /// Int128  38
-/// Int256  77
+/// Int256  76
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38, 77); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
 class DataTypeDecimalBase : public DataTypeWithSimpleSerialization

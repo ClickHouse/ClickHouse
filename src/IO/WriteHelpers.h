@@ -841,7 +841,6 @@ inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(),
 template <typename T>
 String decimalFractional(const T & x, UInt32 scale)
 {
-#if 0
     if constexpr (std::is_same_v<T, bInt256>)
     {
         static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
@@ -860,7 +859,7 @@ String decimalFractional(const T & x, UInt32 scale)
         else if (x <= std::numeric_limits<UInt64>::max())
             return decimalFractional(static_cast<UInt64>(x), scale);
     }
-#endif
+
     String str(scale, '0');
     T value = x;
     for (Int32 pos = scale - 1; pos >= 0; --pos, value /= 10)

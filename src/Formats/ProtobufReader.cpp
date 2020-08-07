@@ -651,7 +651,7 @@ public:
     bool readDecimal32(Decimal32 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
     bool readDecimal64(Decimal64 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
     bool readDecimal128(Decimal128 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
-    // bool readDecimal256(Decimal256 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
+    bool readDecimal256(Decimal256 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
 
     bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) override
     {
