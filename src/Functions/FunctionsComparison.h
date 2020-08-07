@@ -895,8 +895,8 @@ private:
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
-        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
+        const auto * x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
+        const auto * y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
 
         Columns x_columns;
         Columns y_columns;
