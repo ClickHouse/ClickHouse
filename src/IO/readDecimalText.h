@@ -1,7 +1,27 @@
 #pragma once
 
+#include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
+
+
+/// This is only needed for non-official, "unbundled" build.
+/// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
+#if !defined(_LIBCPP_LIMITS) && !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
+namespace std
+{
+    template <>
+    struct numeric_limits<__int128_t>
+    {
+        static constexpr bool is_specialized = true;
+        static constexpr bool is_signed = true;
+        static constexpr bool is_integer = true;
+        static constexpr int radix = 2;
+        static constexpr int digits = 127;
+        static constexpr int digits10 = 38;
+    };
+}
+#endif
 
 
 namespace DB
@@ -160,12 +180,24 @@ inline void readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_
 
     if (static_cast<int32_t>(scale) + exponent < 0)
     {
-        /// Too many digits after point. Just cut off excessive digits.
-        auto divisor = intExp10OfSize<T>(-exponent - static_cast<int32_t>(scale));
-        assert(divisor > 0);    /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
-        x.value /= divisor;
-        scale = 0;
-        return;
+        auto divisor_exp = -exponent - static_cast<int32_t>(scale);
+
+        if (divisor_exp >= std::numeric_limits<typename T::NativeType>::digits10)
+        {
+            /// Too big negative exponent
+            x.value = 0;
+            scale = 0;
+            return;
+        }
+        else
+        {
+            /// Too many digits after point. Just cut off excessive digits.
+            auto divisor = intExp10OfSize<T>(divisor_exp);
+            assert(divisor > 0);    /// This is for Clang Static Analyzer. It is not smart enough to infer it automatically.
+            x.value /= divisor;
+            scale = 0;
+            return;
+        }
     }
 
     scale += exponent;
