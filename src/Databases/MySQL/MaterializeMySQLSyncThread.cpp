@@ -196,7 +196,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
 
 void MaterializeMySQLSyncThread::stopSynchronization()
 {
-    if (!sync_quit)
+    if (!sync_quit && background_thread_pool)
     {
         {
             sync_quit = true;
