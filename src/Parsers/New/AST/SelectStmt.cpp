@@ -102,87 +102,89 @@ SettingsClause::SettingsClause(PtrTo<SettingExprList> expr_list) : exprs(expr_li
 
 SelectStmt::SelectStmt(PtrTo<ColumnExprList> expr_list)
 {
-    columns = expr_list;
+    children.resize(MAX_INDEX);
+
+    children[COLUMNS] = expr_list;
 }
 
 void SelectStmt::setWithClause(PtrTo<WithClause> clause)
 {
-    with = clause;
+    children[WITH] = clause;
 }
 
 void SelectStmt::setFromClause(PtrTo<FromClause> clause)
 {
-    from = clause;
+    children[FROM] = clause;
 }
 
 void SelectStmt::setSampleClause(PtrTo<SampleClause> clause)
 {
-    sample = clause;
+    children[SAMPLE] = clause;
 }
 
 void SelectStmt::setArrayJoinClause(PtrTo<ArrayJoinClause> clause)
 {
-    array_join = clause;
+    children[ARRAY_JOIN] = clause;
 }
 
 void SelectStmt::setPrewhereClause(PtrTo<PrewhereClause> clause)
 {
-    prewhere = clause;
+    children[PREWHERE] = clause;
 }
 
 void SelectStmt::setWhereClause(PtrTo<WhereClause> clause)
 {
-    where = clause;
+    children[WHERE] = clause;
 }
 
 void SelectStmt::setGroupByClause(PtrTo<GroupByClause> clause)
 {
-    group_by = clause;
+    children[GROUP_BY] = clause;
 }
 
 void SelectStmt::setHavingClause(PtrTo<HavingClause> clause)
 {
-    having = clause;
+    children[HAVING] = clause;
 }
 
 void SelectStmt::setOrderByClause(PtrTo<OrderByClause> clause)
 {
-    order_by = clause;
+    children[ORDER_BY] = clause;
 }
 
 void SelectStmt::setLimitByClause(PtrTo<LimitByClause> clause)
 {
-    limit_by = clause;
+    children[LIMIT_BY] = clause;
 }
 
 void SelectStmt::setLimitClause(PtrTo<LimitClause> clause)
 {
-    limit = clause;
+    children[LIMIT] = clause;
 }
 
 void SelectStmt::setSettingsClause(PtrTo<SettingsClause> clause)
 {
-    settings = clause;
+    children[SETTINGS] = clause;
 }
 
 ASTPtr SelectStmt::convertToOld() const
 {
     auto old_select = std::make_shared<ASTSelectQuery>();
 
-    old_select->setExpression(ASTSelectQuery::Expression::SELECT, columns->convertToOld());
+    old_select->setExpression(ASTSelectQuery::Expression::SELECT, children[COLUMNS]->convertToOld());
 
-    if (with) old_select->setExpression(ASTSelectQuery::Expression::WITH, with->convertToOld());
-    if (from) old_select->setExpression(ASTSelectQuery::Expression::TABLES, from->convertToOld());
+    if (children[WITH]) old_select->setExpression(ASTSelectQuery::Expression::WITH, children[WITH]->convertToOld());
+    if (children[FROM]) old_select->setExpression(ASTSelectQuery::Expression::TABLES, children[FROM]->convertToOld());
     // TODO: SAMPLE
     // TODO: ARRAY JOIN
-    if (prewhere) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, prewhere->convertToOld());
-    if (where) old_select->setExpression(ASTSelectQuery::Expression::WHERE, where->convertToOld());
-    if (group_by) old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by->convertToOld());
-    if (having) old_select->setExpression(ASTSelectQuery::Expression::HAVING, having->convertToOld());
-    if (order_by) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by->convertToOld());
+    if (children[PREWHERE]) old_select->setExpression(ASTSelectQuery::Expression::PREWHERE, children[PREWHERE]->convertToOld());
+    if (children[WHERE]) old_select->setExpression(ASTSelectQuery::Expression::WHERE, children[WHERE]->convertToOld());
+    if (children[GROUP_BY]) old_select->setExpression(ASTSelectQuery::Expression::GROUP_BY, children[GROUP_BY]->convertToOld());
+    if (children[HAVING]) old_select->setExpression(ASTSelectQuery::Expression::HAVING, children[HAVING]->convertToOld());
+    if (children[ORDER_BY]) old_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, children[ORDER_BY]->convertToOld());
     // TODO: LIMIT BY
     // TODO: LIMIT
-    if (settings) old_select->setExpression(ASTSelectQuery::Expression::SETTINGS, settings->convertToOld());
+    if (children[SETTINGS]) old_select->setExpression(ASTSelectQuery::Expression::SETTINGS, children[SETTINGS]->convertToOld());
 
     return old_select;
 }

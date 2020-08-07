@@ -148,20 +148,24 @@ class SelectStmt : public INode
         ASTPtr convertToOld() const override;
 
     private:
-        PtrTo<ColumnExprList> columns;
+        enum ChildIndex
+        {
+            COLUMNS = 0,
+            WITH,
+            FROM,
+            SAMPLE,
+            ARRAY_JOIN,
+            PREWHERE,
+            WHERE,
+            GROUP_BY,
+            HAVING,
+            ORDER_BY,
+            LIMIT_BY,
+            LIMIT,
+            SETTINGS,
 
-        PtrTo<WithClause> with;
-        PtrTo<FromClause> from;
-        PtrTo<SampleClause> sample;
-        PtrTo<ArrayJoinClause> array_join;
-        PtrTo<PrewhereClause> prewhere;
-        PtrTo<WhereClause> where;
-        PtrTo<GroupByClause> group_by;
-        PtrTo<HavingClause> having;
-        PtrTo<OrderByClause> order_by;
-        PtrTo<LimitByClause> limit_by;
-        PtrTo<LimitClause> limit;
-        PtrTo<SettingsClause> settings;
+            MAX_INDEX,
+        };
 };
 
 }

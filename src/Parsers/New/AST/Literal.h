@@ -55,6 +55,8 @@ class Literal : public INode
 
     private:
         LiteralType type;
+
+        String dumpInfo() const override { return token->getSymbol()->getText(); }
 };
 
 class NumberLiteral : public Literal

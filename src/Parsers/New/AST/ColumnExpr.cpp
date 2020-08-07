@@ -1,5 +1,4 @@
 #include <memory>
-#include <stdexcept>
 #include <Parsers/New/AST/ColumnExpr.h>
 
 #include <Parsers/New/AST/Identifier.h>
@@ -7,34 +6,21 @@
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTFunction.h>
+
 #include <support/Any.h>
-#include "Parsers/New/AST/fwd_decl.h"
+
 
 
 namespace DB::AST
 {
 
-ColumnArgExpr::ColumnArgExpr(PtrTo<ColumnExpr> expr) : type(ArgType::EXPR)
-{
-    children.push_back(expr);
-    (void)type; // TODO: remove this.
-}
-
-ColumnArgExpr::ColumnArgExpr(PtrTo<ColumnLambdaExpr> expr) : type(ArgType::LAMBDA)
-{
-    children.push_back(expr);
-}
-
-ColumnLambdaExpr::ColumnLambdaExpr(PtrTo<List<Identifier, ','>> params, PtrTo<ColumnExpr> expr)
-{
-    children.push_back(expr);
-    for (const auto & param : *params) children.push_back(param);
-}
-
 // static
-PtrTo<ColumnExpr> ColumnExpr::createLiteral(PtrTo<Literal> literal)
+PtrTo<ColumnExpr> ColumnExpr::createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias)
 {
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::LITERAL, {literal}));
+    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::ALIAS, {expr, alias}));
 }
 
 // static
@@ -44,83 +30,27 @@ PtrTo<ColumnExpr> ColumnExpr::createAsterisk()
 }
 
 // static
+PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnExprList> args)
+{
+    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::FUNCTION, {name, params, args}));
+}
+
+// static
 PtrTo<ColumnExpr> ColumnExpr::createIdentifier(PtrTo<ColumnIdentifier> identifier)
 {
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::IDENTIFIER, {identifier}));
 }
 
 // static
-PtrTo<ColumnExpr> ColumnExpr::createTuple(PtrTo<ColumnExprList> list)
+PtrTo<ColumnExpr> ColumnExpr::createLambda(PtrTo<List<Identifier, ','> > params, PtrTo<ColumnExpr> expr)
 {
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::TUPLE, PtrList(list->begin(), list->end())));
+    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::LAMBDA, {params, expr}));
 }
 
 // static
-PtrTo<ColumnExpr> ColumnExpr::createArray(PtrTo<ColumnExprList> list)
+PtrTo<ColumnExpr> ColumnExpr::createLiteral(PtrTo<Literal> literal)
 {
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::ARRAY, PtrList(list->begin(), list->end())));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createArrayAccess(PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::ARRAY_ACCESS, {expr1, expr2}));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createTupleAccess(PtrTo<ColumnExpr> expr, PtrTo<NumberLiteral> literal)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::TUPLE_ACCESS, {expr, literal}));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createUnaryOp(UnaryOpType op, PtrTo<ColumnExpr> expr)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(op, expr));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createBinaryOp(BinaryOpType op, PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(op, expr1, expr2));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createTernaryOp(PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2, PtrTo<ColumnExpr> expr3)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(TernaryOpType::IF, expr1, expr2, expr3));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createBetween(bool not_op, PtrTo<ColumnExpr> expr1, PtrTo<ColumnExpr> expr2, PtrTo<ColumnExpr> expr3)
-{
-    if (not_op) return PtrTo<ColumnExpr>(new ColumnExpr(TernaryOpType::NOT_BETWEEN, expr1, expr2, expr3));
-    else return PtrTo<ColumnExpr>(new ColumnExpr(TernaryOpType::BETWEEN, expr1, expr2, expr3));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createCase(
-    PtrTo<ColumnExpr> expr, std::list<std::pair<PtrTo<ColumnExpr>, PtrTo<ColumnExpr>>> cases, PtrTo<ColumnExpr> else_expr)
-{
-    PtrList list = {expr, else_expr};
-    for (const auto & pair : cases)
-    {
-        list.emplace_back(pair.first);
-        list.emplace_back(pair.second);
-    }
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::CASE, list));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnArgList> args)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::FUNCTION, {name, params, args}));
-}
-
-// static
-PtrTo<ColumnExpr> ColumnExpr::createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias)
-{
-    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::ALIAS, {expr, alias}));
+    return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::LITERAL, {literal}));
 }
 
 ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, PtrList exprs) : expr_type(type)
@@ -128,32 +58,51 @@ ColumnExpr::ColumnExpr(ColumnExpr::ExprType type, PtrList exprs) : expr_type(typ
     children = exprs;
 }
 
-ColumnExpr::ColumnExpr(ColumnExpr::UnaryOpType type, Ptr expr) : expr_type(ExprType::UNARY_OP), unary_op_type(type)
-{
-    children.push_back(expr);
-}
-
-ColumnExpr::ColumnExpr(ColumnExpr::BinaryOpType type, Ptr expr1, Ptr expr2) : expr_type(ExprType::BINARY_OP), binary_op_type(type)
-{
-    children = {expr1, expr2};
-}
-
-ColumnExpr::ColumnExpr(ColumnExpr::TernaryOpType type, Ptr expr1, Ptr expr2, Ptr expr3) : expr_type(ExprType::TERNARY_OP), ternary_op_type(type)
-{
-    children = {expr1, expr2, expr3};
-}
-
 ASTPtr ColumnExpr::convertToOld() const
 {
     switch (expr_type)
     {
-        case ExprType::LITERAL:
-            return children[LITERAL]->convertToOld();
+        case ExprType::ASTERISK:
+            return std::make_shared<ASTAsterisk>();
+        case ExprType::FUNCTION:
+        {
+            auto func = std::make_shared<ASTFunction>();
+
+            func->name = children[NAME]->as<Identifier>()->getName();
+            if (children[ARGS])
+            {
+                func->arguments = children[ARGS]->convertToOld();
+                func->children.push_back(func->arguments);
+            }
+            if (children[PARAMS])
+            {
+                func->parameters = children[PARAMS]->convertToOld();
+                func->children.push_back(func->parameters);
+            }
+
+            return func;
+        }
         case ExprType::IDENTIFIER:
             return children[IDENTIFIER]->convertToOld();
+        case ExprType::LITERAL:
+            return children[LITERAL]->convertToOld();
         default:
             throw std::logic_error("Unsupported type of column expression");
     }
+}
+
+String ColumnExpr::dumpInfo() const
+{
+    switch(expr_type)
+    {
+        case ExprType::ALIAS: return "ALIAS";
+        case ExprType::ASTERISK: return "ASTERISK";
+        case ExprType::FUNCTION: return "FUNCTION";
+        case ExprType::IDENTIFIER: return "IDENTIFIER";
+        case ExprType::LAMBDA: return "LAMBDA";
+        case ExprType::LITERAL: return "LITERAL";
+    }
+    __builtin_unreachable();
 }
 
 }
@@ -163,35 +112,35 @@ namespace DB
 
 antlrcpp::Any ParseTreeVisitor::visitBinaryOp(ClickHouseParser::BinaryOpContext *ctx)
 {
-    if (ctx->CONCAT()) return AST::ColumnExpr::BinaryOpType::CONCAT;
-    if (ctx->ASTERISK()) return AST::ColumnExpr::BinaryOpType::MULTIPLY;
-    if (ctx->SLASH()) return AST::ColumnExpr::BinaryOpType::DIVIDE;
-    if (ctx->PERCENT()) return AST::ColumnExpr::BinaryOpType::MODULO;
-    if (ctx->PLUS()) return AST::ColumnExpr::BinaryOpType::PLUS;
-    if (ctx->DASH()) return AST::ColumnExpr::BinaryOpType::MINUS;
-    if (ctx->EQ_DOUBLE() || ctx->EQ_SINGLE()) return AST::ColumnExpr::BinaryOpType::EQ;
-    if (ctx->NOT_EQ()) return AST::ColumnExpr::BinaryOpType::NOT_EQ;
-    if (ctx->LE()) return AST::ColumnExpr::BinaryOpType::LE;
-    if (ctx->GE()) return AST::ColumnExpr::BinaryOpType::GE;
-    if (ctx->LT()) return AST::ColumnExpr::BinaryOpType::LT;
-    if (ctx->GT()) return AST::ColumnExpr::BinaryOpType::GT;
-    if (ctx->AND()) return AST::ColumnExpr::BinaryOpType::AND;
-    if (ctx->OR()) return AST::ColumnExpr::BinaryOpType::OR;
+    if (ctx->CONCAT()) return String("concat");
+    if (ctx->ASTERISK()) return String("multiply");
+    if (ctx->SLASH()) return String("divide");
+    if (ctx->PERCENT()) return String("modulo");
+    if (ctx->PLUS()) return String("plus");
+    if (ctx->DASH()) return String("minus");
+    if (ctx->EQ_DOUBLE() || ctx->EQ_SINGLE()) return String("equals");
+    if (ctx->NOT_EQ()) return String("notEquals");
+    if (ctx->LE()) return String("lessOrEquals");
+    if (ctx->GE()) return String("greaterOrEquals");
+    if (ctx->LT()) return String("less");
+    if (ctx->GT()) return String("greater");
+    if (ctx->AND()) return String("and");
+    if (ctx->OR()) return String("or");
     if (ctx->LIKE())
     {
-        if (ctx->NOT()) return AST::ColumnExpr::BinaryOpType::NOT_LIKE;
-        else return AST::ColumnExpr::BinaryOpType::LIKE;
+        if (ctx->NOT()) return String("notLike");
+        else return String("like");
     }
     if (ctx->IN())
     {
         if (ctx->GLOBAL())
         {
-            if (ctx->NOT()) return AST::ColumnExpr::BinaryOpType::GLOBAL_NOT_IN;
-            else return AST::ColumnExpr::BinaryOpType::GLOBAL_IN;
+            if (ctx->NOT()) return String("globalNotIn");
+            else return String("globalIn");
         }
         else {
-            if (ctx->NOT()) return AST::ColumnExpr::BinaryOpType::NOT_IN;
-            else return AST::ColumnExpr::BinaryOpType::IN;
+            if (ctx->NOT()) return String("notIn");
+            else return String("in");
         }
     }
     __builtin_unreachable();
@@ -199,18 +148,16 @@ antlrcpp::Any ParseTreeVisitor::visitBinaryOp(ClickHouseParser::BinaryOpContext 
 
 antlrcpp::Any ParseTreeVisitor::visitColumnArgExpr(ClickHouseParser::ColumnArgExprContext *ctx)
 {
-    if (ctx->columnExpr())
-        return std::make_shared<AST::ColumnArgExpr>(ctx->columnExpr()->accept(this).as<AST::PtrTo<AST::ColumnExpr>>());
-    if (ctx->columnLambdaExpr())
-        return std::make_shared<AST::ColumnArgExpr>(ctx->columnLambdaExpr()->accept(this).as<AST::PtrTo<AST::ColumnLambdaExpr>>());
+    if (ctx->columnExpr()) return ctx->columnExpr()->accept(this);
+    if (ctx->columnLambdaExpr()) return ctx->columnLambdaExpr()->accept(this);
     __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnArgList(ClickHouseParser::ColumnArgListContext *ctx)
 {
-    auto arg_list = std::make_shared<AST::ColumnArgList>();
-    for (auto* arg : ctx->columnArgExpr()) arg_list->append(arg->accept(this));
-    return arg_list;
+    auto list = std::make_shared<AST::ColumnExprList>();
+    for (auto * arg : ctx->columnArgExpr()) list->append(arg->accept(this));
+    return list;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAlias(ClickHouseParser::ColumnExprAliasContext *ctx)
@@ -220,12 +167,19 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprAlias(ClickHouseParser::ColumnExp
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprArray(ClickHouseParser::ColumnExprArrayContext *ctx)
 {
-    return AST::ColumnExpr::createArray(ctx->columnExprList()->accept(this));
+    auto name = std::make_shared<AST::Identifier>("array");
+    auto args = ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>();
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprArrayAccess(ClickHouseParser::ColumnExprArrayAccessContext *ctx)
 {
-    return AST::ColumnExpr::createArrayAccess(ctx->columnExpr(0)->accept(this), ctx->columnExpr(1)->accept(this));
+    auto name = std::make_shared<AST::Identifier>("arrayElement");
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprAsterisk(ClickHouseParser::ColumnExprAsteriskContext *)
@@ -235,50 +189,53 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprAsterisk(ClickHouseParser::Column
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *ctx)
 {
-    return AST::ColumnExpr::createBetween(
-        !!ctx->NOT(), ctx->columnExpr(0)->accept(this), ctx->columnExpr(1)->accept(this), ctx->columnExpr(2)->accept(this));
+    AST::PtrTo<AST::ColumnExpr> expr1, expr2;
+
+    {
+        auto name = std::make_shared<AST::Identifier>(ctx->NOT() ? "lessOrEquals" : "greaterOrEquals");
+        auto args = std::make_shared<AST::ColumnExprList>();
+        args->append(ctx->columnExpr(0)->accept(this));
+        args->append(ctx->columnExpr(1)->accept(this));
+        expr1 = AST::ColumnExpr::createFunction(name, nullptr, args);
+    }
+
+    {
+        auto name = std::make_shared<AST::Identifier>(ctx->NOT() ? "greaterOrEquals" : "lessOrEquals");
+        auto args = std::make_shared<AST::ColumnExprList>();
+        args->append(ctx->columnExpr(0)->accept(this));
+        args->append(ctx->columnExpr(2)->accept(this));
+        expr2 = AST::ColumnExpr::createFunction(name, nullptr, args);
+    }
+
+    auto name = std::make_shared<AST::Identifier>("and");
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    args->append(expr1);
+    args->append(expr2);
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprBinaryOp(ClickHouseParser::ColumnExprBinaryOpContext *ctx)
 {
-    return AST::ColumnExpr::createBinaryOp(
-        ctx->binaryOp()->accept(this), ctx->columnExpr(0)->accept(this), ctx->columnExpr(1)->accept(this));
+    auto name = std::make_shared<AST::Identifier>(ctx->binaryOp()->accept(this).as<String>());
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExprCaseContext *ctx)
 {
-    AST::PtrTo<AST::ColumnExpr> first_expr, else_expr;
-    std::list<std::pair<AST::PtrTo<AST::ColumnExpr> /* when */, AST::PtrTo<AST::ColumnExpr> /* then */>> cases;
+    auto has_case_expr = (ctx->ELSE() && ctx->columnExpr().size() % 2 == 0) || (!ctx->ELSE() && ctx->columnExpr().size() % 2 == 1);
+    auto name = std::make_shared<AST::Identifier>(has_case_expr ? "caseWithExpression" : "multiIf");
+    auto args = std::make_shared<AST::ColumnExprList>();
 
-    auto visit_cases = [this, ctx, &cases] (size_t i)
-    {
-        for (; i + 1 < ctx->columnExpr().size(); i += 2)
-            cases.emplace_back(ctx->columnExpr(i)->accept(this), ctx->columnExpr(i + 1)->accept(this));
-    };
+    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+    // TODO: if (!ctx->ELSE()) args->append(AST::Literal::createNull(???));
 
-    if (ctx->ELSE())
-    {
-        if (ctx->columnExpr().size() % 2 == 0)
-        {
-            first_expr = ctx->columnExpr(0)->accept(this);
-            visit_cases(1);
-        }
-        else
-            visit_cases(0);
-        else_expr = ctx->columnExpr().back()->accept(this);
-    }
-    else
-    {
-        if (ctx->columnExpr().size() % 2 == 0)
-            visit_cases(0);
-        else
-        {
-            first_expr = ctx->columnExpr(0)->accept(this);
-            visit_cases(1);
-        }
-    }
-
-    return AST::ColumnExpr::createCase(first_expr, cases, else_expr);
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 // antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
@@ -294,13 +251,14 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExpr
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
 {
-    auto args = std::make_shared<AST::ColumnArgList>();
+    auto name = std::make_shared<AST::Identifier>("extract");
+    auto args = std::make_shared<AST::ColumnExprList>();
     auto params = std::make_shared<AST::ColumnParamList>();
 
     args->append(ctx->columnExpr()->accept(this));
     // TODO: params->append(AST::Literal::createString(???));
 
-    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("EXTRACT"), params, args);
+    return AST::ColumnExpr::createFunction(name, params, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx)
@@ -316,26 +274,31 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::Colu
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprInterval(ClickHouseParser::ColumnExprIntervalContext *ctx)
 {
-    auto args = std::make_shared<AST::ColumnArgList>();
+    auto name = std::make_shared<AST::Identifier>("interval");
+    auto args = std::make_shared<AST::ColumnExprList>();
     auto params = std::make_shared<AST::ColumnParamList>();
 
     args->append(ctx->columnExpr()->accept(this));
     // TODO: params->append(AST::Literal::createString(???));
 
-    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("INTERVAL"), params, args);
+    return AST::ColumnExpr::createFunction(name, params, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIsNull(ClickHouseParser::ColumnExprIsNullContext *ctx)
 {
-    return AST::ColumnExpr::createUnaryOp(
-        ctx->NOT() ? AST::ColumnExpr::UnaryOpType::IS_NOT_NULL : AST::ColumnExpr::UnaryOpType::IS_NULL, ctx->columnExpr()->accept(this));
+    auto name = std::make_shared<AST::Identifier>(ctx->NOT() ? "isNotNull" : "isNull");
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    args->append(ctx->columnExpr()->accept(this));
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprList(ClickHouseParser::ColumnExprListContext *ctx)
 {
-    auto expr_list = std::make_shared<AST::ColumnExprList>();
-    for (auto* expr : ctx->columnExpr()) expr_list->append(expr->accept(this));
-    return expr_list;
+    auto list = std::make_shared<AST::ColumnExprList>();
+    for (auto * expr : ctx->columnExpr()) list->append(expr->accept(this));
+    return list;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *ctx)
@@ -345,20 +308,25 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprLiteral(ClickHouseParser::ColumnE
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::ColumnExprTernaryOpContext *ctx)
 {
-    return AST::ColumnExpr::createTernaryOp(
-        ctx->columnExpr(0)->accept(this), ctx->columnExpr(1)->accept(this), ctx->columnExpr(2)->accept(this));
+    auto name = std::make_shared<AST::Identifier>("if");
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *ctx)
 {
-    auto args = std::make_shared<AST::ColumnArgList>();
+    auto name = std::make_shared<AST::Identifier>("trim");
+    auto args = std::make_shared<AST::ColumnExprList>();
     auto params = std::make_shared<AST::ColumnParamList>();
 
     args->append(ctx->columnExpr()->accept(this));
     // TODO: params->append(AST::Literal::createString(???));
     params->append(AST::Literal::createString(ctx->STRING_LITERAL()));
 
-    return AST::ColumnExpr::createFunction(std::make_shared<AST::Identifier>("TRIM"), params, args);
+    return AST::ColumnExpr::createFunction(name, params, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *ctx)
@@ -367,27 +335,38 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTuple(ClickHouseParser::ColumnExp
         // Not a tuple - just an expression in parens
         return ctx->columnExprList()->columnExpr(0)->accept(this);
 
-    return AST::ColumnExpr::createTuple(
-        ctx->columnExprList() ? ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>() : nullptr);
+    auto name = std::make_shared<AST::Identifier>("tuple");
+    auto args = ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>();
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTupleAccess(ClickHouseParser::ColumnExprTupleAccessContext *ctx)
 {
-    return AST::ColumnExpr::createTupleAccess(ctx->columnExpr()->accept(this), AST::Literal::createNumber(ctx->NUMBER_LITERAL()));
+    auto name = std::make_shared<AST::Identifier>("tupleElement");
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    args->append(ctx->columnExpr()->accept(this));
+    args->append(AST::ColumnExpr::createLiteral(AST::Literal::createNumber(ctx->NUMBER_LITERAL())));
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprUnaryOp(ClickHouseParser::ColumnExprUnaryOpContext *ctx)
 {
-    return AST::ColumnExpr::createUnaryOp(ctx->unaryOp()->accept(this), ctx->columnExpr()->accept(this));
+    auto name = std::make_shared<AST::Identifier>(ctx->unaryOp()->accept(this).as<String>());
+    auto args = std::make_shared<AST::ColumnExprList>();
+
+    args->append(ctx->columnExpr()->accept(this));
+
+    return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLambdaExprContext *ctx)
 {
     auto params = std::make_shared<AST::List<AST::Identifier, ','>>();
-
     for (auto * id : ctx->identifier()) params->append(id->accept(this));
-
-    return std::make_shared<AST::ColumnLambdaExpr>(params, ctx->columnExpr()->accept(this));
+    return AST::ColumnExpr::createLambda(params, ctx->columnExpr()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnParamList(ClickHouseParser::ColumnParamListContext *ctx)
@@ -399,8 +378,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnParamList(ClickHouseParser::ColumnPar
 
 antlrcpp::Any ParseTreeVisitor::visitUnaryOp(ClickHouseParser::UnaryOpContext *ctx)
 {
-    if (ctx->DASH()) return AST::ColumnExpr::UnaryOpType::DASH;
-    if (ctx->NOT()) return AST::ColumnExpr::UnaryOpType::NOT;
+    if (ctx->DASH()) return "negate";
+    if (ctx->NOT()) return "not";
     __builtin_unreachable();
 }
 

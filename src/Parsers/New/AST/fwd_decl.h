@@ -16,7 +16,6 @@ using PtrTo = std::shared_ptr<T>;
 using Ptr = PtrTo<>;
 using PtrList = std::vector<Ptr>;
 
-class ColumnArgExpr;
 class ColumnExpr;
 class ColumnFunctionExpr;
 class ColumnIdentifier;
@@ -35,7 +34,6 @@ class StringLiteral;
 class TableExpr;
 class TableIdentifier;
 
-using ColumnArgList = List<ColumnArgExpr, ','>;
 using ColumnExprList = List<ColumnExpr, ','>;
 using ColumnParamList = List<Literal, ','>;
 using OrderExprList = List<OrderExpr, ','>;

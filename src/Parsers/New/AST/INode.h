@@ -2,8 +2,11 @@
 
 #include <Parsers/New/AST/fwd_decl.h>
 
+#include <common/demangle.h>
 #include <Common/TypePromotion.h>
 #include <Parsers/ASTExpressionList.h>
+
+#include <iostream>
 
 
 namespace DB::AST
@@ -15,8 +18,20 @@ class INode : public TypePromotion<INode>
         virtual ~INode() = default;
         virtual ASTPtr convertToOld() const { return ASTPtr(); }
 
+        void dump() const { dump(0); }
+
     protected:
-        PtrList children;
+        PtrList children;  // children potentially may point to |nullptr|
+
+    private:
+        void dump(int indentation) const
+        {
+            for (auto i = 0; i < indentation; ++i) std::cout << " ";
+            std::cout << "⭸ " << dumpInfo() << " (" << demangle(typeid(*this).name()) << ")" << std::endl;
+            for (const auto & child : children) if (child) child->dump(indentation + 1);
+        }
+
+        virtual String dumpInfo() const { return ""; }
 };
 
 template <class T, char Separator>

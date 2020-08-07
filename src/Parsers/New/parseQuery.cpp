@@ -34,6 +34,8 @@ ASTPtr parseQuery(const std::string & query)
 
     AST::PtrTo<AST::QueryList> new_ast = visitor.visit(parser.queryList());
 
+    new_ast->dump();
+
     return (*new_ast->begin())->convertToOld();
 }
 

@@ -79,11 +79,12 @@ settingExpr: identifier EQ_SINGLE literal;
 columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
     : literal                                                                        # ColumnExprLiteral
+    // TODO: don't forget qualified asterisk
     | ASTERISK                                                                       # ColumnExprAsterisk
     | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple // or a single expression in parens
     | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
     | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
-    // TODO: | CAST LPAREN columnExpr AS identifier RPAREN                                    # ColumnExprCast
+    // TODO: | CAST LPAREN columnExpr AS identifier RPAREN                           # ColumnExprCast
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval

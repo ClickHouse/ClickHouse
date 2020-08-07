@@ -11,7 +11,7 @@ namespace DB::AST
 
 void SelectUnionQuery::appendSelect(PtrTo<SelectStmt> stmt)
 {
-    selects.push_back(stmt);
+    children.push_back(stmt);
 }
 
 ASTPtr SelectUnionQuery::convertToOld() const
@@ -20,7 +20,7 @@ ASTPtr SelectUnionQuery::convertToOld() const
     old_select_union->list_of_selects = std::make_shared<ASTExpressionList>();
     old_select_union->children.push_back(old_select_union->list_of_selects);
 
-    for (const auto & select : selects) old_select_union->list_of_selects->children.push_back(select->convertToOld());
+    for (const auto & select : children) old_select_union->list_of_selects->children.push_back(select->convertToOld());
 
     return old_select_union;
 }

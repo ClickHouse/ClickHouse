@@ -21,6 +21,8 @@ class Identifier : public INode
 
     private:
         const std::string name;
+
+        String dumpInfo() const override { return getQualifiedName(); }
 };
 
 class DatabaseIdentifier : public Identifier

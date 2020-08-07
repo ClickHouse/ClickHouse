@@ -16,9 +16,6 @@ class SelectUnionQuery : public Query
         void appendSelect(PtrTo<SelectStmt> stmt);
 
         ASTPtr convertToOld() const override;
-
-    private:
-        std::list<PtrTo<SelectStmt>> selects;
 };
 
 }
