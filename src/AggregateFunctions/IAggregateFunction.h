@@ -350,7 +350,7 @@ public:
 
         /// If the function is complex or too large, use more generic algorithm.
 
-        if (func.allocatesMemoryInArena() || func.sizeOfData() > 16 || func.sizeOfData() != sizeof(Data))
+        if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
         {
             IAggregateFunctionHelper<Derived>::addBatchLookupTable8(batch_size, map, place_offset, init, key, columns, arena);
             return;
