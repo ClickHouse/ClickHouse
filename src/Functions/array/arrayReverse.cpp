@@ -41,11 +41,11 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override;
 
 private:
     template <typename T>
-    static bool executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
+    bool executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
 
     static bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
     static bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
@@ -53,7 +53,7 @@ private:
 };
 
 
-void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const
+void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t)
 {
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (!array)
@@ -142,7 +142,7 @@ bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnA
             if (src == src_end)
                 continue;
 
-            auto * dst = &res_vec[src_offsets[i] - 1];
+            auto *dst = &res_vec[src_offsets[i] - 1];
 
             while (src < src_end)
             {

@@ -42,8 +42,7 @@ namespace
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
 {
-    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary
-    {
+    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary{
         {"UInt8", AttributeUnderlyingType::utUInt8},
         {"UInt16", AttributeUnderlyingType::utUInt16},
         {"UInt32", AttributeUnderlyingType::utUInt32},
@@ -57,19 +56,12 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
         {"Float64", AttributeUnderlyingType::utFloat64},
         {"String", AttributeUnderlyingType::utString},
         {"Date", AttributeUnderlyingType::utUInt16},
+        {"DateTime", AttributeUnderlyingType::utUInt32},
     };
 
     const auto it = dictionary.find(type);
     if (it != std::end(dictionary))
         return it->second;
-
-    /// Can contain arbitrary scale and timezone parameters.
-    if (type.find("DateTime64") == 0)
-        return AttributeUnderlyingType::utUInt64;
-
-    /// Can contain arbitrary timezone as parameter.
-    if (type.find("DateTime") == 0)
-        return AttributeUnderlyingType::utUInt32;
 
     if (type.find("Decimal") == 0)
     {
@@ -163,7 +155,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         if (id->name.empty())
             throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
-        const char * range_default_type = "Date";
+        const auto *const range_default_type = "Date";
         if (config.has(config_prefix + ".range_min"))
             range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
 

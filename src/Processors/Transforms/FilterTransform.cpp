@@ -27,7 +27,7 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
     }
 }
 
-Block FilterTransform::transformHeader(
+static Block transformHeader(
     Block header,
     const ExpressionActionsPtr & expression,
     const String & filter_column_name,
@@ -96,7 +96,7 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    size_t num_rows_before_filtration;
+    size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     {

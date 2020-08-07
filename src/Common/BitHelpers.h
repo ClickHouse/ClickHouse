@@ -1,9 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <cassert>
 #include <type_traits>
-#include <common/defines.h>
 
 
 /** Returns log2 of number, rounded down.
@@ -12,21 +10,16 @@
   */
 inline unsigned int bitScanReverse(unsigned int x)
 {
-    assert(x != 0);
     return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
 }
 
 
 /** For zero argument, result is zero.
-  * For arguments with most significand bit set, result is n.
+  * For arguments with most significand bit set, result is zero.
   * For other arguments, returns value, rounded up to power of two.
   */
 inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 {
-    // if MSB is set, return n, to avoid return zero
-    if (unlikely(n >= 0x8000000000000000ULL))
-        return n;
-
     --n;
     n |= n >> 1;
     n |= n >> 2;
@@ -60,10 +53,12 @@ inline size_t getLeadingZeroBits(T x)
     }
 }
 
-// Unsafe since __builtin_ctz()-family explicitly state that result is undefined on x == 0
 template <typename T>
-inline size_t getTrailingZeroBitsUnsafe(T x)
+inline size_t getTrailingZeroBits(T x)
 {
+    if (!x)
+        return sizeof(x) * 8;
+
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
         return __builtin_ctz(x);
@@ -76,15 +71,6 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     {
         return __builtin_ctzll(x);
     }
-}
-
-template <typename T>
-inline size_t getTrailingZeroBits(T x)
-{
-    if (!x)
-        return sizeof(x) * 8;
-
-    return getTrailingZeroBitsUnsafe(x);
 }
 
 /** Returns a mask that has '1' for `bits` LSB set:

@@ -119,7 +119,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
                 /// and quickly checking for the next expected field, instead of searching the hash table.
 
-                auto * it = name_map.find(name_ref);
+                auto *it = name_map.find(name_ref);
                 if (!it)
                 {
                     if (!format_settings.skip_unknown_fields)

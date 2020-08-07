@@ -1,9 +1,12 @@
 #pragma once
 
+#include "config_core.h"
 #include <Core/Block.h>
 
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
+#if USE_POCO_REDIS
+
+#    include "DictionaryStructure.h"
+#    include "IDictionarySource.h"
 
 namespace Poco
 {
@@ -98,3 +101,4 @@ namespace ErrorCodes
     };
 
 }
+#endif

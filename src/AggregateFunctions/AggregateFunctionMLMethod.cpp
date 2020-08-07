@@ -130,7 +130,7 @@ LinearModelData::LinearModelData(
     gradient_batch.resize(param_num_ + 1, Float64{0.0});
 }
 
-void LinearModelData::updateState()
+void LinearModelData::update_state()
 {
     if (batch_size == 0)
         return;
@@ -197,7 +197,7 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     if (iter_num == 0 && rhs.iter_num == 0)
         return;
 
-    updateState();
+    update_state();
     /// can't update rhs state because it's constant
 
     /// squared mean is more stable (in sence of quality of prediction) when two states with quietly different number of learning steps are merged
@@ -219,13 +219,13 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
     Float64 target = (*columns[0]).getFloat64(row_num);
 
     /// Here we have columns + 1 as first column corresponds to target value, and others - to features
-    weights_updater->addToBatch(
+    weights_updater->add_to_batch(
         gradient_batch, *gradient_computer, weights, bias, l2_reg_coef, target, columns + 1, row_num);
 
     ++batch_size;
     if (batch_size == batch_capacity)
     {
-        updateState();
+        update_state();
     }
 }
 
@@ -300,7 +300,7 @@ void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & b
     beta2_powered_ *= beta2_;
 }
 
-void Adam::addToBatch(
+void Adam::add_to_batch(
         std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
@@ -358,7 +358,7 @@ void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64
     bias += accumulated_gradient[weights.size()];
 }
 
-void Nesterov::addToBatch(
+void Nesterov::add_to_batch(
     std::vector<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
     const std::vector<Float64> & weights,
@@ -432,7 +432,7 @@ void StochasticGradientDescent::update(
     bias += (learning_rate * batch_gradient[weights.size()]) / batch_size;
 }
 
-void IWeightsUpdater::addToBatch(
+void IWeightsUpdater::add_to_batch(
     std::vector<Float64> & batch_gradient,
     IGradientComputer & gradient_computer,
     const std::vector<Float64> & weights,

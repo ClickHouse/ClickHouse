@@ -21,7 +21,7 @@ namespace DB
 class DistinctSortedBlockInputStream : public IBlockInputStream
 {
 public:
-    /// Empty columns_ means all columns.
+    /// Empty columns_ means all collumns.
     DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSorted"; }

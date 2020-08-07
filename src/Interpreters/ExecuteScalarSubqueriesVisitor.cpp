@@ -64,7 +64,7 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 ///  blacklist them here.
 static bool worthConvertingToLiteral(const Block & scalar)
 {
-    const auto * scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
+    const auto *scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
     std::set<String> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     return !useless_literal_types.count(scalar_type_name);
 }
@@ -111,11 +111,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            auto stream = interpreter.execute().getInputStream();
+            BlockIO res = interpreter.execute();
 
             try
             {
-                block = stream->read();
+                block = res.in->read();
 
                 if (!block)
                 {
@@ -126,7 +126,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     return;
                 }
 
-                if (block.rows() != 1 || stream->read())
+                if (block.rows() != 1 || res.in->read())
                     throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
             catch (const Exception & e)

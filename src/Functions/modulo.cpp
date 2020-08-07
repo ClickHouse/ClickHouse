@@ -1,8 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2 1
+#ifdef __SSE2__
+    #define LIBDIVIDE_USE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -25,7 +25,7 @@ struct ModuloByConstantImpl
     using ResultType = typename ModuloImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
-    static NO_INLINE void vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
+    static NO_INLINE void vector_constant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -102,7 +102,6 @@ using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
 void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
-    factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
 }
 
 }

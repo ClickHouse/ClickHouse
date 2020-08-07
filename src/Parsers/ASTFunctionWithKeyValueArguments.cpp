@@ -15,7 +15,13 @@ ASTPtr ASTPair::clone() const
 {
     auto res = std::make_shared<ASTPair>(*this);
     res->children.clear();
-    res->set(res->second, second->clone());
+
+    if (second)
+    {
+        res->second = second;
+        res->children.push_back(second);
+    }
+
     return res;
 }
 
@@ -48,7 +54,7 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
     if (elements)
     {
-        res->elements = elements->clone();
+        res->elements->clone();
         res->children.push_back(res->elements);
     }
 
@@ -58,9 +64,9 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
 void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << "(";
     elements->formatImpl(settings, state, frame);
-    settings.ostr << (has_brackets ? ")" : "");
+    settings.ostr << ")";
     settings.ostr << (settings.hilite ? hilite_none : "");
 }
 

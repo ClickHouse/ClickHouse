@@ -27,8 +27,8 @@ namespace ErrorCodes
 class FunctionArrayHasAllAny : public IFunction
 {
 public:
-    FunctionArrayHasAllAny(GatherUtils::ArraySearchType search_type_, const char * name_)
-        : search_type(search_type_), name(name_) {}
+    FunctionArrayHasAllAny(const Context & context_, bool all_, const char * name_)
+        : context(context_), all(all_), name(name_) {}
 
     String getName() const override { return name; }
 
@@ -48,7 +48,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
@@ -81,7 +81,7 @@ public:
 
             /// Converts Array(Nothing) or Array(Nullable(Nothing) to common type. Example: hasAll([Null, 1], [Null]) -> 1
             if (typeid_cast<const DataTypeNothing *>(removeNullable(nested_type).get()))
-                preprocessed_column = castColumn(argument, commonType());
+                preprocessed_column = castColumn(argument, commonType(), context);
 
             preprocessed_columns[i] = std::move(preprocessed_column);
         }
@@ -106,7 +106,7 @@ public:
 
         auto result_column = ColumnUInt8::create(rows);
         auto result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
-        GatherUtils::sliceHas(*sources[0], *sources[1], search_type, *result_column_ptr);
+        GatherUtils::sliceHas(*sources[0], *sources[1], all, *result_column_ptr);
 
         block.getByPosition(result).column = std::move(result_column);
     }
@@ -114,7 +114,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    GatherUtils::ArraySearchType search_type;
+    const Context & context;
+    bool all;
     const char * name;
 };
 

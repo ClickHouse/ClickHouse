@@ -117,7 +117,7 @@ static llvm::TargetMachine * getNativeMachine()
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
     auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    const auto *target = llvm::TargetRegistry::lookupTarget(triple, error);
     if (!target)
         throw Exception("Could not initialize native target: " + error, ErrorCodes::CANNOT_COMPILE_CODE);
     llvm::SubtargetFeatures features;
@@ -137,7 +137,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 {
     llvm::LegacyJITSymbolResolver & impl;
 
-    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
     llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
     {
@@ -313,7 +313,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), context.module.get());
-    auto * args = func->args().begin();
+    auto *args = func->args().begin();
     llvm::Value * counter_arg = &*args++;
     llvm::Value * columns_arg = &*args++;
 
@@ -510,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const Block & sample_block) const
+bool LLVMFunction::isInjective(const Block & sample_block)
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))
@@ -528,27 +528,27 @@ bool LLVMFunction::hasInformationAboutMonotonicity() const
 
 LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
 {
-    const IDataType * type_ptr = &type;
-    Field left_mut = left;
-    Field right_mut = right;
+    const IDataType * type_ = &type;
+    Field left_ = left;
+    Field right_ = right;
     Monotonicity result(true, true, true);
     /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
     for (size_t i = 0; i < originals.size(); ++i)
     {
-        Monotonicity m = originals[i]->getMonotonicityForRange(*type_ptr, left_mut, right_mut);
+        Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
         if (!m.is_monotonic)
             return m;
         result.is_positive ^= !m.is_positive;
         result.is_always_monotonic &= m.is_always_monotonic;
         if (i + 1 < originals.size())
         {
-            if (left_mut != Field())
-                applyFunction(*originals[i], left_mut);
-            if (right_mut != Field())
-                applyFunction(*originals[i], right_mut);
+            if (left_ != Field())
+                applyFunction(*originals[i], left_);
+            if (right_ != Field())
+                applyFunction(*originals[i], right_);
             if (!m.is_positive)
-                std::swap(left_mut, right_mut);
-            type_ptr = originals[i]->getReturnType().get();
+                std::swap(left_, right_);
+            type_ = originals[i]->getReturnType().get();
         }
     }
     return result;

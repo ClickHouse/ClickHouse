@@ -33,14 +33,14 @@ def get_last_exception(dictionary_name):
 
 
 def get_loading_start_time(dictionary_name):
-    s = instance.query("SELECT toTimeZone(loading_start_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
-    if s == "1970-01-01 00:00:00":
+    s = instance.query("SELECT loading_start_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    if s == "0000-00-00 00:00:00":
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 
 def get_last_successful_update_time(dictionary_name):
-    s = instance.query("SELECT toTimeZone(last_successful_update_time, 'UTC') FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
-    if s == "1970-01-01 00:00:00":
+    s = instance.query("SELECT last_successful_update_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    if s == "0000-00-00 00:00:00":
         return None
     return time.strptime(s, "%Y-%m-%d %H:%M:%S")
 
@@ -111,10 +111,6 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "10\n"
 
     # Change the dictionaries' data.
-    # FIXME we sleep before this, because Poco 1.x has one-second granularity
-    # for mtime, and clickhouse will miss the update if we change the file too
-    # soon. Should probably be fixed by switching to use std::filesystem.
-    time.sleep(1)
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '8', '81')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '10', '101')
 
@@ -128,7 +124,6 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "101\n"
 
     # SYSTEM RELOAD DICTIONARIES reloads all loaded dictionaries.
-    time.sleep(1) # see the comment above
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '81', '82')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '101', '102')
     query("SYSTEM RELOAD DICTIONARIES")
@@ -136,11 +131,9 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "102\n"
 
     # Configuration files are reloaded and lifetimes are checked automatically once in 5 seconds.
-    # Wait slightly more, to be sure it did reload.
-    time.sleep(1) # see the comment above
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '82', '83')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '102', '103')
-    time.sleep(7)
+    time.sleep(5)
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "103\n"
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "83\n"
 

@@ -32,6 +32,8 @@ public:
 
 protected:
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;
+
+    static void writeAlias(const String & name, const FormatSettings & settings) ;
 };
 
 /// helper for setting aliases and chaining result to other functions

@@ -28,7 +28,9 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbor>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
+
+    FunctionNeighbor(const Context & context_) : context(context_) {}
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -74,7 +76,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const DataTypePtr & result_type = block.getByPosition(result).type;
 
@@ -82,14 +84,14 @@ public:
         const ColumnWithTypeAndName & offset_elem = block.getByPosition(arguments[1]);
         bool has_defaults = arguments.size() == 3;
 
-        ColumnPtr source_column_casted = castColumn(source_elem, result_type);
+        ColumnPtr source_column_casted = castColumn(source_elem, result_type, context);
         ColumnPtr offset_column = offset_elem.column;
 
         ColumnPtr default_column_casted;
         if (has_defaults)
         {
             const ColumnWithTypeAndName & default_elem = block.getByPosition(arguments[2]);
-            default_column_casted = castColumn(default_elem, result_type);
+            default_column_casted = castColumn(default_elem, result_type, context);
         }
 
         bool source_is_constant = isColumnConst(*source_column_casted);
@@ -114,7 +116,7 @@ public:
 
             /// Protection from possible overflow.
             if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+                throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             auto result_column = result_type->createColumn();
 
@@ -177,7 +179,7 @@ public:
 
                 /// Protection from possible overflow.
                 if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+                    throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
                 Int64 src_idx = row + offset;
 
@@ -192,6 +194,9 @@ public:
             block.getByPosition(result).column = std::move(result_column);
         }
     }
+
+private:
+    const Context & context;
 };
 
 void registerFunctionNeighbor(FunctionFactory & factory)

@@ -12,7 +12,7 @@ instance_test_reconnect = cluster.add_instance('instance_test_reconnect', main_c
 instance_test_inserts_batching = cluster.add_instance(
     'instance_test_inserts_batching',
     main_configs=['configs/remote_servers.xml'], user_configs=['configs/enable_distributed_inserts_batching.xml'])
-remote = cluster.add_instance('remote', main_configs=['configs/forbid_background_merges.xml'])
+remote = cluster.add_instance('remote', user_configs=['configs/forbid_background_merges.xml'])
 
 instance_test_inserts_local_cluster = cluster.add_instance(
     'instance_test_inserts_local_cluster',
@@ -132,7 +132,6 @@ def test_inserts_batching(started_cluster):
         for i in range(10, 13):
             instance.query("INSERT INTO distributed(d, x) VALUES ('2000-01-01', {})".format(i))
 
-    instance.query("SYSTEM FLUSH DISTRIBUTED distributed")
     time.sleep(1.0)
 
     result = remote.query("SELECT _part, groupArray(x) FROM local2 GROUP BY _part ORDER BY _part")

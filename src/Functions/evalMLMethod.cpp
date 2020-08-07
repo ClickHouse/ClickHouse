@@ -2,12 +2,16 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <iostream>
 
 #include <Common/PODArray.h>
+#include <Columns/ColumnArray.h>
 
 namespace DB
 {
@@ -31,7 +35,7 @@ public:
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
+    FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override
@@ -61,7 +65,7 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);

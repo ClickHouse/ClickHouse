@@ -35,7 +35,7 @@ public:
         return 1;
     }
 
-    bool isInjective(const Block &) const override
+    bool isInjective(const Block &) override
     {
         return is_injective;
     }
@@ -51,7 +51,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -63,7 +63,7 @@ public:
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
-            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
+            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
         }
         else

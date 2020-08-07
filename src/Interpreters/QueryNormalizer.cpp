@@ -26,7 +26,7 @@ namespace ErrorCodes
 class CheckASTDepth
 {
 public:
-    explicit CheckASTDepth(QueryNormalizer::Data & data_)
+    CheckASTDepth(QueryNormalizer::Data & data_)
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
@@ -47,7 +47,7 @@ private:
 class RestoreAliasOnExitScope
 {
 public:
-    explicit RestoreAliasOnExitScope(String & alias_)
+    RestoreAliasOnExitScope(String & alias_)
         : alias(alias_)
         , copy(alias_)
     {}

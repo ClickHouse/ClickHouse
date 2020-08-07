@@ -74,13 +74,13 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 String getFilesystemName([[maybe_unused]] const String & mount_point)
 {
 #if defined(__linux__)
-    FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
+    auto *mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
     mntent fs_info;
     constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
-    std::vector<char> buf(buf_size);
-    while (getmntent_r(mounted_filesystems, &fs_info, buf.data(), buf_size) && fs_info.mnt_dir != mount_point)
+    char buf[buf_size];
+    while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point)
         ;
     endmntent(mounted_filesystems);
     if (fs_info.mnt_dir != mount_point)

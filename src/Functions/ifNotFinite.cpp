@@ -15,7 +15,7 @@ class FunctionIfNotFinite : public IFunction
 public:
     static constexpr auto name = "ifNotFinite";
 
-    explicit FunctionIfNotFinite(const Context & context_) : context(context_) {}
+    FunctionIfNotFinite(const Context & context_) : context(context_) {}
 
     static FunctionPtr create(const Context & context)
     {
@@ -39,7 +39,7 @@ public:
         return if_type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         Block temp_block = block;
 

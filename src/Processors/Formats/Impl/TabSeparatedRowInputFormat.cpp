@@ -3,7 +3,6 @@
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-#include <Processors/Formats/Impl/TabSeparatedRawRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -127,7 +126,7 @@ void TabSeparatedRowInputFormat::fillUnreadColumnsWithDefaults(MutableColumns & 
 
 void TabSeparatedRowInputFormat::readPrefix()
 {
-    if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
+    if (with_names || with_types)
     {
         /// In this format, we assume that column name or type cannot contain BOM,
         ///  so, if format has header,
@@ -341,15 +340,14 @@ void TabSeparatedRowInputFormat::syncAfterError()
 void TabSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
-    const auto & sample = getPort().getHeader();
-    read_columns.assign(sample.columns(), false);
     column_indexes_for_input_fields.clear();
+    read_columns.clear();
     columns_to_fill_with_default_values.clear();
 }
 
 void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 {
-    for (const auto * name : {"TabSeparated", "TSV"})
+    for (const auto *name : {"TabSeparated", "TSV"})
     {
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
@@ -361,19 +359,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
-    {
-        factory.registerInputFormatProcessor(name, [](
-            ReadBuffer & buf,
-            const Block & sample,
-            IRowInputFormat::Params params,
-            const FormatSettings & settings)
-        {
-            return std::make_shared<TabSeparatedRawRowInputFormat>(sample, buf, params, false, false, settings);
-        });
-    }
-
-    for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
+    for (const auto *name : {"TabSeparatedWithNames", "TSVWithNames"})
     {
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
@@ -385,7 +371,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
+    for (const auto *name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
     {
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
@@ -432,7 +418,7 @@ static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<>
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     // We can use the same segmentation engine for TSKV.
-    for (const auto * name : {"TabSeparated", "TSV", "TSKV"})
+    for (const auto *name : {"TabSeparated", "TSV", "TSKV"})
     {
         factory.registerFileSegmentationEngine(name, &fileSegmentationEngineTabSeparatedImpl);
     }

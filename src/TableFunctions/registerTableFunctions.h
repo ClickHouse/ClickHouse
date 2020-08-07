@@ -1,9 +1,6 @@
 #pragma once
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
 
 namespace DB
 {
@@ -20,7 +17,6 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
-void registerTableFunctionCOS(TableFunctionFactory & factory);
 #endif
 
 #if USE_HDFS

@@ -1,7 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
+#include <Common/config.h>
 #if USE_SSL
 #include "OpenSSLHelpers.h"
 #include <ext/scope_guard.h>
@@ -26,7 +23,7 @@ String getOpenSSLErrors()
     SCOPE_EXIT(BIO_free(mem));
     ERR_print_errors(mem);
     char * buf = nullptr;
-    size_t size = BIO_get_mem_data(mem, &buf);
+    long size = BIO_get_mem_data(mem, &buf);
     return String(buf, size);
 }
 

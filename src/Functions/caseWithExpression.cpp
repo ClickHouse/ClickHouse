@@ -20,7 +20,8 @@ public:
     static constexpr auto name = "caseWithExpression";
     static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
 
-    explicit FunctionCaseWithExpression(const Context & context_) : context(context_) {}
+
+    FunctionCaseWithExpression(const Context & context_) : context(context_) {}
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
@@ -43,7 +44,7 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {
         if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",

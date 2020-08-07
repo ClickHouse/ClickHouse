@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -136,13 +137,13 @@ void validateArgumentsImpl(const IFunction & func,
 
         const auto & arg = arguments[i + argument_offset];
         const auto descriptor = descriptors[i];
-        if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
+        if (int errorCode = descriptor.isValid(arg.type, arg.column); errorCode != 0)
             throw Exception("Illegal type of argument #" + std::to_string(i)
                             + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
                             + " of function " + func.getName()
                             + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
                             + (arg.type ? ", got " + arg.type->getName() : String{}),
-                            error_code);
+                            errorCode);
     }
 }
 
@@ -166,7 +167,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto join_argument_types = [](const auto & args, const String sep = ", ")
+        auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
         {
             String result;
             for (const auto & a : args)
@@ -193,11 +194,11 @@ void validateFunctionArgumentTypes(const IFunction & func,
 
         throw Exception("Incorrect number of arguments for function " + func.getName()
                         + " provided " + std::to_string(arguments.size())
-                        + (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{})
+                        + (!arguments.empty() ? " (" + joinArgumentTypes(arguments) + ")" : String{})
                         + ", expected " + std::to_string(mandatory_args.size())
                         + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
-                        + " (" + join_argument_types(mandatory_args)
-                        + (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : "")
+                        + " (" + joinArgumentTypes(mandatory_args)
+                        + (!optional_args.empty() ? ", [" + joinArgumentTypes(optional_args) + "]" : "")
                         + ")",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }

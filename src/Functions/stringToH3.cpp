@@ -1,13 +1,15 @@
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/GatherUtils/GatherUtils.h>
-#include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
+#include "config_functions.h"
+#if USE_H3
+#    include <Functions/GatherUtils/GatherUtils.h>
+#    include <Functions/GatherUtils/Sources.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Columns/ColumnString.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <Common/typeid_cast.h>
 
-#include <h3api.h>
+#    include <h3api.h>
 
 
 namespace DB
@@ -34,7 +36,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * arg = arguments[0].get();
+        const auto *arg = arguments[0].get();
         if (!WhichDataType(arg).isStringOrFixedString())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be String or FixedString",
@@ -43,9 +45,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto *const col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -97,3 +99,4 @@ void registerFunctionStringToH3(FunctionFactory & factory)
 }
 
 }
+#endif

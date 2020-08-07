@@ -1,5 +1,8 @@
+#include "config_functions.h"
+#if USE_H3
 #include <array>
 #include <math.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -7,7 +10,11 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
-#include <h3api.h>
+#if __has_include(<h3/h3api.h>)
+#    include <h3/h3api.h>
+#else
+#    include <h3api.h>
+#endif
 
 
 namespace DB
@@ -33,7 +40,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto * arg = arguments[0].get();
+        const auto *arg = arguments[0].get();
         if (!WhichDataType(arg).isFloat64())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be Float64",
@@ -54,11 +61,11 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto * col_lon = block.getByPosition(arguments[0]).column.get();
-        const auto * col_lat = block.getByPosition(arguments[1]).column.get();
-        const auto * col_res = block.getByPosition(arguments[2]).column.get();
+        const auto *const col_lon = block.getByPosition(arguments[0]).column.get();
+        const auto *const col_lat = block.getByPosition(arguments[1]).column.get();
+        const auto *const col_res = block.getByPosition(arguments[2]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -90,3 +97,4 @@ void registerFunctionGeoToH3(FunctionFactory & factory)
 }
 
 }
+#endif

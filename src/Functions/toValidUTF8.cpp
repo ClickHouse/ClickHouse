@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8Encoding.h>
 
@@ -123,7 +124,7 @@ struct ToValidUTF8Impl
         write_buffer.finalize();
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Column of type FixedString is not supported by toValidUTF8 function", ErrorCodes::ILLEGAL_COLUMN);
     }

@@ -277,7 +277,7 @@ SOFTWARE.
             len -= 16;
         };
 
-        while (len >= 16) // NOLINT
+        while (len >= 16)
             check_packed(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
 
         /// 0 <= len <= 15 for now. Reading data from data - 1 because of right padding of 15 and left padding
@@ -304,9 +304,9 @@ SOFTWARE.
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
+    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
 
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
     {
         size_t size = data.size() / n;
         for (size_t i = 0; i < size; ++i)

@@ -423,8 +423,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     T min, max;
     findMinMax<T>(src, bytes_size, min, max);
-    MinMaxType min64 = min; // NOLINT
-    MinMaxType max64 = max; // NOLINT
+    MinMaxType min64 = min;
+    MinMaxType max64 = max;
 
     /// Write header
     {
@@ -628,6 +628,16 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     }
 
     throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
+}
+
+void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)
+{
+    if (data_type)
+    {
+        type_idx = typeIdx(data_type);
+        if (type_idx == TypeIndex::Nothing)
+            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+    }
 }
 
 uint8_t CompressionCodecT64::getMethodByte() const

@@ -15,7 +15,7 @@ public:
     /// Name or key of pair
     String first;
     /// Value of pair, which can be also list of pairs
-    IAST * second = nullptr;
+    ASTPtr second;
     /// Value is closed in brackets (HOST '127.0.0.1')
     bool second_with_brackets;
 
@@ -44,13 +44,6 @@ public:
     String name;
     /// Expression list
     ASTPtr elements;
-    /// Has brackets around arguments
-    bool has_brackets;
-
-    ASTFunctionWithKeyValueArguments(bool has_brackets_ = true)
-        : has_brackets(has_brackets_)
-    {
-    }
 
 public:
     String getID(char delim) const override;

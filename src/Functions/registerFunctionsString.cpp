@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 namespace DB
 {
@@ -22,7 +20,6 @@ void registerFunctionReverse(FunctionFactory &);
 void registerFunctionReverseUTF8(FunctionFactory &);
 void registerFunctionsConcat(FunctionFactory &);
 void registerFunctionFormat(FunctionFactory &);
-void registerFunctionFormatRow(FunctionFactory &);
 void registerFunctionSubstring(FunctionFactory &);
 void registerFunctionCRC(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
@@ -55,7 +52,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionReverseUTF8(factory);
     registerFunctionsConcat(factory);
     registerFunctionFormat(factory);
-    registerFunctionFormatRow(factory);
     registerFunctionSubstring(factory);
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
