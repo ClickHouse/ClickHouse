@@ -78,7 +78,7 @@ public:
     /// Get `sizeof` of structure with data.
     virtual size_t sizeOfData() const = 0;
 
-    /// How the data structure should be aligned. NOTE: Currently not used (structures with aggregation state are put without alignment).
+    /// How the data structure should be aligned.
     virtual size_t alignOfData() const = 0;
 
     /** Adds a value into aggregation data on which place points to.
@@ -332,7 +332,6 @@ public:
         return sizeof(Data);
     }
 
-    /// NOTE: Currently not used (structures with aggregation state are put without alignment).
     size_t alignOfData() const override
     {
         return alignof(Data);
