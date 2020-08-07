@@ -120,24 +120,50 @@ public:
             ? 1
             : origin.size();
 
-        auto fill_col = [this, origin_size, &origin](auto& col)
-        {
-            for (size_t i = 0; i < origin_size; ++i)
-            {
-                const StringRef elem = origin.getDataAt(i);
+        auto dispatch_target_col = [this, origin_size, &origin](auto & target_dispatched) {
+            auto dispatch_origin_col = [this, origin_size, &target_dispatched](auto & origin_dispatched) {
+                for (size_t i = 0; i < origin_size; ++i)
+                {
+                    const StringRef elem = origin_dispatched.getDataAt(i);
 
-                col.getElement(i) = (elem == EMPTY_STRING_REF)
-                    ? 0 // NULL value index
-                    : reverse_index.getInsertionPoint(elem);
+                    target_dispatched.getElement(i) = (elem == EMPTY_STRING_REF)
+                        ? 0 // NULL value index
+                        : reverse_index.getInsertionPoint(elem);
+                }
+            };
+
+#define dispatch(TYPE) case TypeIndex::TYPE: dispatch_origin_col(*typeid_cast<const Column##TYPE *>(&origin)); break;
+
+            switch (origin.getDataType())
+            {
+                dispatch(UInt8)
+                dispatch(UInt16)
+                dispatch(UInt32)
+                dispatch(UInt64)
+                dispatch(UInt128)
+                dispatch(Int8)
+                dispatch(Int16)
+                dispatch(Int32)
+                dispatch(Int64)
+                dispatch(Float32)
+                dispatch(Float64)
+                dispatch(String)
+                dispatch(FixedString)
+                // dispatch(Array) cannot be forward-declared -- typeid on incomplete type is prohibited
+                // dispatch(Tuple)
+                // dispatch(Set)
+                // dispatch(Interval)
+                dispatch(Nullable)
+                default: dispatch_origin_col(origin); break;
             }
         };
 
         switch (origin_index_type_size)
         {
-            case sizeof(UInt8): fill_col(*typeid_cast<ColumnUInt8 *>(&target)); break;
-            case sizeof(UInt16): fill_col(*typeid_cast<ColumnUInt16 *>(&target)); break;
-            case sizeof(UInt32): fill_col(*typeid_cast<ColumnUInt32 *>(&target)); break;
-            case sizeof(UInt64): fill_col(*typeid_cast<ColumnUInt64 *>(&target)); break;
+            case sizeof(UInt8): dispatch_target_col(*typeid_cast<ColumnUInt8 *>(&target)); break;
+            case sizeof(UInt16): dispatch_target_col(*typeid_cast<ColumnUInt16 *>(&target)); break;
+            case sizeof(UInt32): dispatch_target_col(*typeid_cast<ColumnUInt32 *>(&target)); break;
+            case sizeof(UInt64): dispatch_target_col(*typeid_cast<ColumnUInt64 *>(&target)); break;
         }
     }
 
