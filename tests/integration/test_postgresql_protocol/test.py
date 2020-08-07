@@ -20,6 +20,7 @@ psycopg2.extras.register_uuid()
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 config_dir = os.path.join(SCRIPT_DIR, './configs')
+DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', config_dir=config_dir, env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
@@ -38,7 +39,7 @@ def server_address():
 
 @pytest.fixture(scope='module')
 def psql_client():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'psql', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_psql_1')
 
@@ -61,7 +62,7 @@ def psql_server(psql_client):
 
 @pytest.fixture(scope='module')
 def java_container():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'java', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql_java_client.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java_1')
 

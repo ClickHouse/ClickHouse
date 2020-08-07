@@ -1,8 +1,6 @@
 version: '2.3'
 services:
-  java1:
-    build:
-      context: ./
-      network: host
+  golang1:
+    image: yandex/clickhouse-mysql-golang-client
     # to keep container running
     command: sleep infinity
