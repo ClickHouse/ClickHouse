@@ -210,6 +210,8 @@ public:
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
 
+std::cerr << "=============== FunctionCaptureOverloadResolver expr " << expression_actions->dumpActions() << std::endl;
+
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
         const auto & all_arguments = expression_actions->getRequiredColumnsWithTypes();

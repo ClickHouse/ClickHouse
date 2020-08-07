@@ -93,7 +93,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         auto * left_generic = block.getByPosition(arguments[0]).type.get();
         auto * right_generic = block.getByPosition(arguments[1]).type.get();
