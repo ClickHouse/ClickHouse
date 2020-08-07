@@ -244,7 +244,7 @@ Mac OS X:
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
-Список задач: https://github.com/ClickHouse/ClickHouse/contribute
+Список задач: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Тестовые данные {#testovye-dannye}
 

@@ -249,7 +249,7 @@ La Guía de estilo de código: https://clickhouse.tech/docs/en/development/style
 
 Pruebas de escritura: https://clickhouse.tech/docs/en/development/tests/
 
-Lista de tareas: https://github.com/ClickHouse/ClickHouse/contribute
+Lista de tareas: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Datos de prueba {#test-data}
 

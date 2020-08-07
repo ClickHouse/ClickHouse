@@ -249,7 +249,7 @@ KDevelopとQTCreatorは、ClickHouseを開発するためのIDEの他の優れ�
 
 筆記試験：https://clickhouse.tech/docs/en/development/tests/
 
-タスクのリスト：https://github.com/ClickHouse/ClickHouse/contribute
+タスクのリスト：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # テストデータ {#test-data}
 
