@@ -1,9 +1,7 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
-    contrib/libs/poco/MongoDB
 )
 
 NO_COMPILER_WARNINGS()
@@ -33,7 +31,6 @@ SRCS(
     materializeBlock.cpp
     MaterializingBlockInputStream.cpp
     MergingSortedBlockInputStream.cpp
-    MongoDBBlockInputStream.cpp
     narrowBlockInputStreams.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
@@ -47,7 +44,6 @@ SRCS(
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLBlockInputStream.cpp
-
 )
 
 END()

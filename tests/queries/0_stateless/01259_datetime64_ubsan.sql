@@ -1,2 +1,2 @@
-select now64(10); -- { serverError 69 }
+select now64(10); -- { serverError 407 }
 select length(toString(now64(9)));

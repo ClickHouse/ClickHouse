@@ -4,7 +4,6 @@
 namespace DB
 {
 
-/// Step which takes empty pipeline and initializes it. Returns single logical DataStream.
 class ISourceStep : public IQueryPlanStep
 {
 public:
@@ -13,12 +12,6 @@ public:
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
     virtual void initializePipeline(QueryPipeline & pipeline) = 0;
-
-    void describePipeline(FormatSettings & settings) const override;
-
-private:
-    /// We collect processors got after pipeline transformation.
-    Processors processors;
 };
 
 }

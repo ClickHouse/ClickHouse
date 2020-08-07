@@ -43,7 +43,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
-            if (res.empty())
+            if (res.size() == 0)
                 continue;
 
             return res;
@@ -75,8 +75,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             const auto * table_function = table_func_ptr->as<ASTFunction>();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
-            auto storage_ptr = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
-            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
+            return table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName())->getColumns();
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -85,10 +84,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     else
     {
         if (shard_info.isLocal())
-        {
-            auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
-        }
+            return DatabaseCatalog::instance().getTable(table_id, context)->getColumns();
 
         /// Request for a table description
         query = "DESC TABLE " + table_id.getFullTableName();

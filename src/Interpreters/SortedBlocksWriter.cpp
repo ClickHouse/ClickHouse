@@ -203,7 +203,7 @@ BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) 
 
 String SortedBlocksWriter::getPath() const
 {
-    return volume->getDisk()->getPath();
+    return volume->getNextDisk()->getPath();
 }
 
 

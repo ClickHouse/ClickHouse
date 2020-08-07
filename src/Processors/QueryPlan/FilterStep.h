@@ -7,7 +7,6 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
 {
 public:
@@ -19,8 +18,6 @@ public:
 
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipeline & pipeline) override;
-
-    void describeActions(FormatSettings & settings) const override;
 
 private:
     ExpressionActionsPtr expression;

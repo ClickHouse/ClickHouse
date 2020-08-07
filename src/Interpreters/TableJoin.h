@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsCollection.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -24,8 +24,8 @@ class DictionaryReader;
 
 struct Settings;
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class TableJoin
 {
@@ -41,7 +41,7 @@ class TableJoin
       * It's possible to use name `expr(t2 columns)`.
       */
 
-    friend class TreeRewriter;
+    friend class SyntaxAnalyzer;
 
     const SizeLimits size_limits;
     const size_t default_max_bytes = 0;
@@ -71,11 +71,11 @@ class TableJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    VolumePtr tmp_volume;
+    VolumeJBODPtr tmp_volume;
 
 public:
     TableJoin() = default;
-    TableJoin(const Settings &, VolumePtr tmp_volume);
+    TableJoin(const Settings &, VolumeJBODPtr tmp_volume);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
@@ -97,7 +97,7 @@ public:
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
+    VolumeJBODPtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
@@ -113,7 +113,6 @@ public:
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
-    bool needStreamWithNonJoinedRows() const;
 
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
@@ -149,10 +148,6 @@ public:
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
-
-    /// Split key and other columns by keys name list
-    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
-    Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     static bool sameJoin(const TableJoin * x, const TableJoin * y);
 };

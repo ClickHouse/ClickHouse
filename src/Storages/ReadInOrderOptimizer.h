@@ -18,9 +18,9 @@ public:
     ReadInOrderOptimizer(
         const ManyExpressionActions & elements_actions,
         const SortDescription & required_sort_description,
-        const TreeRewriterResultPtr & syntax_result);
+        const SyntaxAnalyzerResultPtr & syntax_result);
 
-    InputOrderInfoPtr getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const;
+    InputOrderInfoPtr getInputOrder(const StoragePtr & storage) const;
 
 private:
     /// Actions for every element of order expression to analyze functions for monotonicity

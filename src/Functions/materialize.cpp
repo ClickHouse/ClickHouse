@@ -16,11 +16,6 @@ public:
         return std::make_shared<FunctionMaterialize>();
     }
 
-    bool useDefaultImplementationForNulls() const override
-    {
-        return false;
-    }
-
     /// Get the function name.
     String getName() const override
     {
@@ -37,7 +32,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         block.getByPosition(result).column = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
     }

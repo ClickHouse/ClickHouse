@@ -40,24 +40,21 @@ struct StaticVisitor
 template <typename Visitor, typename F>
 auto applyVisitor(Visitor && visitor, F && field)
 {
-    return Field::dispatch(std::forward<Visitor>(visitor),
-        std::forward<F>(field));
+    return Field::dispatch(visitor, field);
 }
 
 template <typename Visitor, typename F1, typename F2>
 auto applyVisitor(Visitor && visitor, F1 && field1, F2 && field2)
 {
-    return Field::dispatch(
-        [&field2, &visitor](auto & field1_value)
+    return Field::dispatch([&](auto & field1_value)
         {
-            return Field::dispatch(
-                [&field1_value, &visitor](auto & field2_value)
+            return Field::dispatch([&](auto & field2_value)
                 {
                     return visitor(field1_value, field2_value);
                 },
-                std::forward<F2>(field2));
+                field2);
         },
-        std::forward<F1>(field1));
+        field1);
 }
 
 
@@ -210,6 +207,90 @@ public:
     {
         x += get<DecimalField<T>>(rhs);
         return x.getValue() != 0;
+    }
+};
+
+/** Implements `Max` operation.
+ *  Returns true if changed
+ */
+class FieldVisitorMax : public StaticVisitor<bool>
+{
+private:
+    const Field & rhs;
+public:
+    explicit FieldVisitorMax(const Field & rhs_) : rhs(rhs_) {}
+
+    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Array &) const { throw Exception("Cannot compare Arrays", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Tuple &) const { throw Exception("Cannot compare Tuples", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+
+    template <typename T>
+    bool operator() (DecimalField<T> & x) const
+    {
+        auto val = get<DecimalField<T>>(rhs);
+        if (val > x)
+        {
+            x = val;
+            return true;
+        }
+
+        return false;
+    }
+
+    template <typename T>
+    bool operator() (T & x) const
+    {
+        auto val = get<T>(rhs);
+        if (val > x)
+        {
+            x = val;
+            return true;
+        }
+
+        return false;
+    }
+};
+
+/** Implements `Min` operation.
+ *  Returns true if changed
+ */
+class FieldVisitorMin : public StaticVisitor<bool>
+{
+private:
+    const Field & rhs;
+public:
+    explicit FieldVisitorMin(const Field & rhs_) : rhs(rhs_) {}
+
+    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+
+    template <typename T>
+    bool operator() (DecimalField<T> & x) const
+    {
+        auto val = get<DecimalField<T>>(rhs);
+        if (val < x)
+        {
+            x = val;
+            return true;
+        }
+
+        return false;
+    }
+
+    template <typename T>
+    bool operator() (T & x) const
+    {
+        auto val = get<T>(rhs);
+        if (val < x)
+        {
+            x = val;
+            return true;
+        }
+
+        return false;
     }
 };
 

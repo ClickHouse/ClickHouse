@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -106,22 +106,22 @@ private:
 
     template <typename Method>
     void executeMethod(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-            const NullMap * null_map, ColumnUInt32::Container & res_values) const;
+            const NullMap * null_map, ColumnUInt32::Container & res_values);
 
     template <typename Method, bool has_null_map>
     void executeMethodImpl(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-            const NullMap * null_map, ColumnUInt32::Container & res_values) const;
+            const NullMap * null_map, ColumnUInt32::Container & res_values);
 
     template <typename T>
-    bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
-    bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
-    bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
-    bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
+    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
 };
 
 
-void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
     const size_t num_arguments = arguments.size();
@@ -205,7 +205,7 @@ void FunctionArrayUniq::executeMethodImpl(
     const ColumnRawPtrs & columns,
     const Sizes & key_sizes,
     [[maybe_unused]] const NullMap * null_map,
-    ColumnUInt32::Container & res_values) const
+    ColumnUInt32::Container & res_values)
 {
     typename Method::Set set;
     typename Method::Method method(columns, key_sizes, nullptr);
@@ -242,7 +242,7 @@ void FunctionArrayUniq::executeMethod(
     const ColumnRawPtrs & columns,
     const Sizes & key_sizes,
     const NullMap * null_map,
-    ColumnUInt32::Container & res_values) const
+    ColumnUInt32::Container & res_values)
 {
     if (null_map)
         executeMethodImpl<Method, true>(offsets, columns, key_sizes, null_map, res_values);
@@ -252,7 +252,7 @@ void FunctionArrayUniq::executeMethod(
 }
 
 template <typename T>
-bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
+bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
     const auto * nested = checkAndGetColumn<ColumnVector<T>>(&data);
     if (!nested)
@@ -262,7 +262,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, cons
     return true;
 }
 
-bool FunctionArrayUniq::executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
+bool FunctionArrayUniq::executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
     const auto * nested = checkAndGetColumn<ColumnString>(&data);
     if (nested)
@@ -271,7 +271,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray::Offsets & offsets, cons
     return nested;
 }
 
-bool FunctionArrayUniq::executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
+bool FunctionArrayUniq::executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
     const auto * nested = checkAndGetColumn<ColumnFixedString>(&data);
     if (nested)
@@ -283,7 +283,7 @@ bool FunctionArrayUniq::executeFixedString(const ColumnArray::Offsets & offsets,
 bool FunctionArrayUniq::execute128bit(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
-        ColumnUInt32::Container & res_values) const
+        ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
     size_t keys_bytes = 0;
@@ -307,7 +307,7 @@ bool FunctionArrayUniq::execute128bit(
 void FunctionArrayUniq::executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
-        ColumnUInt32::Container & res_values) const
+        ColumnUInt32::Container & res_values)
 {
     executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
 }

@@ -1,7 +1,7 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -20,12 +20,10 @@ namespace ErrorCodes
 TTLBlockInputStream::TTLBlockInputStream(
     const BlockInputStreamPtr & input_,
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
     time_t current_time_,
     bool force_)
     : storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
     , data_part(data_part_)
     , current_time(current_time_)
     , force(force_)
@@ -36,11 +34,11 @@ TTLBlockInputStream::TTLBlockInputStream(
     children.push_back(input_);
     header = children.at(0)->getHeader();
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto & storage_columns = storage.getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
 
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
-    for (const auto & [name, _] : metadata_snapshot->getColumnTTLs())
+    for (const auto & [name, _] : storage.getColumnTTLs())
     {
         auto it = column_defaults.find(name);
         if (it != column_defaults.end())
@@ -67,12 +65,13 @@ TTLBlockInputStream::TTLBlockInputStream(
 
     if (!default_expr_list->children.empty())
     {
-        auto syntax_result = TreeRewriter(storage.global_context).analyze(default_expr_list, metadata_snapshot->getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(storage.global_context).analyze(
+            default_expr_list, storage.getColumns().getAllPhysical());
         defaults_expression = ExpressionAnalyzer{default_expr_list, syntax_result, storage.global_context}.getActions(true);
     }
 
-    auto storage_rows_ttl = metadata_snapshot->getRowsTTL();
-    if (metadata_snapshot->hasRowsTTL() && storage_rows_ttl.mode == TTLMode::GROUP_BY)
+    auto storage_rows_ttl = storage.getRowsTTL();
+    if (storage.hasRowsTTL() && storage_rows_ttl.mode == TTLMode::GROUP_BY)
     {
         current_key_value.resize(storage_rows_ttl.group_by_keys.size());
 
@@ -91,7 +90,8 @@ TTLBlockInputStream::TTLBlockInputStream(
         const Settings & settings = storage.global_context.getSettingsRef();
 
         Aggregator::Params params(header, keys, aggregates,
-            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
+            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+            SettingUInt64(0), SettingUInt64(0),
             settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
             storage.global_context.getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
         aggregator = std::make_unique<Aggregator>(params);
@@ -106,14 +106,13 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
-    auto storage_rows_ttl = metadata_snapshot->getRowsTTL();
-    if (metadata_snapshot->hasRowsTTL() && !storage_rows_ttl.where_expression && storage_rows_ttl.mode != TTLMode::GROUP_BY
-        && isTTLExpired(old_ttl_infos.table_ttl.max))
+    auto storage_rows_ttl = storage.getRowsTTL();
+    if (storage.hasRowsTTL() && !storage_rows_ttl.where_expression &&
+        storage_rows_ttl.mode != TTLMode::GROUP_BY && isTTLExpired(old_ttl_infos.table_ttl.max))
     {
         rows_removed = data_part->rows_count;
         return {};
     }
-
 
     Block block = children.at(0)->read();
     if (!block)
@@ -128,7 +127,7 @@ Block TTLBlockInputStream::readImpl()
         return block;
     }
 
-    if (metadata_snapshot->hasRowsTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
+    if (storage.hasRowsTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
         removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
@@ -154,7 +153,7 @@ void TTLBlockInputStream::readSuffixImpl()
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
-    auto rows_ttl = metadata_snapshot->getRowsTTL();
+    auto rows_ttl = storage.getRowsTTL();
 
     rows_ttl.expression->execute(block);
     if (rows_ttl.where_expression)
@@ -202,7 +201,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
         size_t rows_with_current_key = 0;
-        auto storage_rows_ttl = metadata_snapshot->getRowsTTL();
+        auto storage_rows_ttl = storage.getRowsTTL();
         for (size_t i = 0; i < block.rows(); ++i)
         {
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
@@ -279,7 +278,7 @@ void TTLBlockInputStream::finalizeAggregates(MutableColumns & result_columns)
     if (!agg_result.empty())
     {
         auto aggregated_res = aggregator->convertToBlocks(agg_result, true, 1);
-        auto storage_rows_ttl = metadata_snapshot->getRowsTTL();
+        auto storage_rows_ttl = storage.getRowsTTL();
         for (auto & agg_block : aggregated_res)
         {
             for (const auto & it : storage_rows_ttl.set_parts)
@@ -311,7 +310,7 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
     }
 
     std::vector<String> columns_to_remove;
-    for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
+    for (const auto & [name, ttl_entry] : storage.getColumnTTLs())
     {
         /// If we read not all table columns. E.g. while mutation.
         if (!block.has(name))
@@ -372,7 +371,7 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
 void TTLBlockInputStream::updateMovesTTL(Block & block)
 {
     std::vector<String> columns_to_remove;
-    for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+    for (const auto & ttl_entry : storage.getMoveTTLs())
     {
         auto & new_ttl_info = new_ttl_infos.moves_ttl[ttl_entry.result_column];
 

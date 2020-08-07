@@ -5,7 +5,6 @@
 namespace DB
 {
 
-/// Execute DISTINCT for specified columns.
 class DistinctStep : public ITransformingStep
 {
 public:
@@ -19,8 +18,6 @@ public:
     String getName() const override { return "Distinct"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
-
-    void describeActions(FormatSettings & settings) const override;
 
 private:
     SizeLimits set_size_limits;

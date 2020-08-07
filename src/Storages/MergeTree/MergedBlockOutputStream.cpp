@@ -15,18 +15,12 @@ namespace ErrorCodes
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec,
     bool blocks_are_granules_size)
     : MergedBlockOutputStream(
-        data_part,
-        metadata_snapshot_,
-        columns_list_,
-        skip_indices,
-        default_codec,
-        {},
+        data_part, columns_list_, skip_indices, default_codec, {},
         data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size)
 {
@@ -34,18 +28,17 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
     bool blocks_are_granules_size)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 {
     MergeTreeWriterSettings writer_settings(
-        storage.global_context.getSettings(),
+        data_part->storage.global_context.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         aio_threshold,
         blocks_are_granules_size);
@@ -60,10 +53,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    if (!part_path.empty())
-        volume->getDisk()->createDirectories(part_path);
+    volume->getDisk()->createDirectories(part_path);
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
+    writer = data_part->getWriter(columns_list, skip_indices, default_codec, writer_settings);
     writer->initPrimaryIndex();
     writer->initSkipIndices();
 }
@@ -109,24 +101,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     else
         part_columns = *total_columns_list;
 
-    if (new_part->isStoredOnDisk())
-        finalizePartOnDisk(new_part, part_columns, checksums);
-
-    new_part->setColumns(part_columns);
-    new_part->rows_count = rows_count;
-    new_part->modification_time = time(nullptr);
-    new_part->index = writer->releaseIndexColumns();
-    new_part->checksums = checksums;
-    new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
-    new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsSizesOnDisk();
-}
-
-void MergedBlockOutputStream::finalizePartOnDisk(
-    const MergeTreeData::MutableDataPartPtr & new_part,
-    NamesAndTypesList & part_columns,
-    MergeTreeData::DataPart::Checksums & checksums)
-{
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
         new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
@@ -167,6 +141,15 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         auto out = volume->getDisk()->writeFile(part_path + "checksums.txt", 4096);
         checksums.write(*out);
     }
+
+    new_part->setColumns(part_columns);
+    new_part->rows_count = rows_count;
+    new_part->modification_time = time(nullptr);
+    new_part->index = writer->releaseIndexColumns();
+    new_part->checksums = checksums;
+    new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
+    new_part->index_granularity = writer->getIndexGranularity();
+    new_part->calculateColumnsSizesOnDisk();
 }
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
@@ -177,17 +160,17 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     std::unordered_set<String> skip_indexes_column_names_set;
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    for (const auto & index : storage.getSecondaryIndices())
         std::copy(index.column_names.cbegin(), index.column_names.cend(),
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
-    Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+    Block primary_key_block = getBlockAndPermute(block, storage.getPrimaryKeyColumns(), permutation);
     Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
 
     writer->write(block, permutation, primary_key_block, skip_indexes_block);
-    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
-    writer->calculateAndSerializePrimaryIndex(primary_key_block);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
+    writer->calculateAndSerializePrimaryIndex(primary_key_block, rows);
     writer->next();
 
     rows_count += rows;
