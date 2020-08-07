@@ -14,7 +14,7 @@ function find_reference_sha
     # master, the merge base is the tested commit itself, so we have to step back
     # once.
     start_ref=$(git -C right/ch merge-base origin/master pr)
-    if [ "PR_TO_TEST" == "0" ]
+    if [ "$PR_TO_TEST" == "0" ]
     then
         start_ref=$start_ref~
     fi

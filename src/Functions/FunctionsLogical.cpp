@@ -98,10 +98,15 @@ static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
     {
-        if (!isColumnConst(*in[i]))
+        UInt8 x;
+
+        if (in[i]->onlyNull())
+            x = func(Null());
+        else if (isColumnConst(*in[i]))
+            x = func((*in[i])[0]);
+        else
             continue;
 
-        UInt8 x = func((*in[i])[0]);
         if (has_res)
         {
             res = Op::apply(res, x);
@@ -199,12 +204,20 @@ struct ValueGetterBuilderImpl<Type, Types...>
 {
     static TernaryValueGetter build(const IColumn * x)
     {
-        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
+        if (x->onlyNull())
+        {
+            return [](size_t){ return Ternary::Null; };
+        }
+        else if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
             if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
-                return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
-                { return Ternary::makeValue(column_data[i], null_data[i]); };
+                return [
+                    &null_data = nullable_column->getNullMapData(),
+                    &column_data = nested_column->getData()](size_t i)
+                {
+                    return Ternary::makeValue(column_data[i], null_data[i]);
+                };
             }
             else
                 return ValueGetterBuilderImpl<Types...>::build(x);

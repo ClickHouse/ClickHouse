@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01107"
 $CLICKHOUSE_CLIENT --allow_experimental_database_atomic=1 -q "CREATE DATABASE test_01107 ENGINE=Atomic"
@@ -18,7 +18,7 @@ wait
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE test_01107.mt"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01107.mt"
 $CLICKHOUSE_CLIENT -q "DETACH DATABASE test_01107"
-$CLICKHOUSE_CLIENT --allow_experimental_database_atomic=1 -q "ATTACH DATABASE test_01107 ENGINE=Atomic"
+$CLICKHOUSE_CLIENT --allow_experimental_database_atomic=1 -q "ATTACH DATABASE test_01107"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01107.mt"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01107.mt SELECT number + sleepEachRow(1) FROM numbers(5)" && echo "end" &

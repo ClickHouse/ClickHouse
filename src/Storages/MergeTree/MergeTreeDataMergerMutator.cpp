@@ -23,7 +23,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/SimpleIncrement.h>
@@ -175,8 +175,12 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
     size_t free_entries = pool_size - pool_used;
     const auto data_settings = data.getSettings();
 
+    /// Always allow maximum size if one or less pool entries is busy.
+    /// One entry is probably the entry where this function is executed.
+    /// This will protect from bad settings.
+
     UInt64 max_size = 0;
-    if (free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+    if (pool_used <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
         max_size = interpolateExponential(
@@ -197,7 +201,8 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
-    if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
+    if (busy_threads_in_pool <= 1
+        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
@@ -794,8 +799,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             break;
     }
 
-    Pipe merged_pipe(std::move(pipes), std::move(merged_transform));
-    BlockInputStreamPtr merged_stream = std::make_shared<TreeExecutorBlockInputStream>(std::move(merged_pipe));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
+    pipeline.setMaxThreads(1);
+    BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
@@ -910,8 +917,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
 
-                column_part_streams[part_num] = std::make_shared<TreeExecutorBlockInputStream>(
-                        Pipe(std::move(column_part_source)));
+                QueryPipeline column_part_pipeline;
+                column_part_pipeline.init(Pipe(std::move(column_part_source)));
+                column_part_pipeline.setMaxThreads(1);
+
+                column_part_streams[part_num] =
+                        std::make_shared<PipelineExecutingBlockInputStream>(std::move(column_part_pipeline));
             }
 
             rows_sources_read_buf.seek(0, 0);
@@ -1019,7 +1030,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             commands_for_part.emplace_back(command);
     }
 
-    if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(storage_from_source_part, metadata_snapshot, commands_for_part, context_for_reading))
+    if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+        storage_from_source_part, metadata_snapshot, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info, metadata_snapshot);
@@ -1031,7 +1043,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     BlockInputStreamPtr in = nullptr;
     Block updated_header;
-    std::optional<MutationsInterpreter> interpreter;
+    std::unique_ptr<MutationsInterpreter> interpreter;
 
     const auto data_settings = data.getSettings();
     MutationCommands for_interpreter;
@@ -1046,7 +1058,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (!for_interpreter.empty())
     {
-        interpreter.emplace(storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
+        interpreter = std::make_unique<MutationsInterpreter>(
+            storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
         in = interpreter->execute();
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
