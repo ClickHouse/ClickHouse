@@ -887,7 +887,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
     if (scale)
     {
         writeChar('.', ostr);
-        part = x.value - part;
+        part = DecimalUtils::getFractionalPart(x, scale);
         String fractional = decimalFractional(part, scale);
         ostr.write(fractional.data(), scale);
     }
