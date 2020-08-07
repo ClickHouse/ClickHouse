@@ -149,6 +149,9 @@ struct ConvertImpl
                         throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
+#if 0 /// Original line before big int support. TODO: cleanup
+                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+#else
                 {
                     if constexpr (is_big_int_v<ToFieldType> && std::is_same_v<FromFieldType, UInt8>)
                         vec_to[i] = static_cast<ToFieldType>(static_cast<UInt16>(vec_from[i]));
@@ -163,6 +166,7 @@ struct ConvertImpl
                     else
                         vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                 }
+#endif
             }
 
             block.getByPosition(result).column = std::move(col_to);
@@ -1349,10 +1353,10 @@ struct ToNumberMonotonicity
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
-            if (left_float >= static_cast<double>(std::numeric_limits<T>::min())
-                && left_float <= static_cast<double>(std::numeric_limits<T>::max())
-                && right_float >= static_cast<double>(std::numeric_limits<T>::min())
-                && right_float <= static_cast<double>(std::numeric_limits<T>::max()))
+            if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
+                && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
+                && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
+                && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
                 return { true };
 
             return {};
