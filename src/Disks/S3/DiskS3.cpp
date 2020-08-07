@@ -416,12 +416,44 @@ private:
     CurrentMetrics::Increment metric_increment;
 };
 
+/// Runs tasks asynchronously using global thread pool.
+class AsyncExecutor : public Executor
+{
+public:
+    explicit AsyncExecutor() = default;
+
+    std::future<void> execute(std::function<void()> task)
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+
+        GlobalThreadPool::instance().scheduleOrThrowOnError(
+            [promise, task]()
+            {
+                try
+                {
+                    task();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Failed to run async task");
+
+                    try
+                    {
+                        promise->set_exception(std::current_exception());
+                    } catch (...) { }
+                }
+            });
+
+        return promise->get_future();
+    }
+};
+
 
 DiskS3::DiskS3(
     String name_,
     std::shared_ptr<Aws::S3::S3Client> client_,
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
-    BackgroundProcessingPool & pool_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
@@ -431,7 +463,6 @@ DiskS3::DiskS3(
     : name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
-    , pool(pool_)
     , bucket(std::move(bucket_))
     , s3_root_path(std::move(s3_root_path_))
     , metadata_path(std::move(metadata_path_))
@@ -691,28 +722,9 @@ void DiskS3::setReadOnly(const String & path)
     Poco::File(metadata_path + path).setReadOnly(true);
 }
 
-std::future<void> DiskS3::runAsync(std::function<void()> task)
+std::unique_ptr<Executor> DiskS3::getExecutor()
 {
-    std::promise<void> promise;
-
-    pool.addTask(
-        [&promise, &task]()
-        {
-            try
-            {
-                LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Executing async task...");
-
-                task();
-                promise.set_value();
-            }
-            catch (...)
-            {
-                promise.set_exception(std::current_exception());
-            }
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-        });
-
-    return promise.get_future();
+    return std::make_unique<AsyncExecutor>();
 }
 
 DiskS3Reservation::~DiskS3Reservation()

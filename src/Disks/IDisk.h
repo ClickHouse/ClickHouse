@@ -29,6 +29,7 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+class Executor;
 
 /**
  * Mode of opening a file for write.
@@ -178,6 +179,10 @@ public:
 
     /// Return disk type - "local", "s3", etc.
     virtual const String getType() const = 0;
+
+private:
+    /// Returns executor to perform asynchronous operations.
+    virtual std::unique_ptr<Executor> getExecutor();
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

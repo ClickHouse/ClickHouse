@@ -1,11 +1,12 @@
 #include "IDisk.h"
-#include <IO/copyData.h>
+#include "Disks/Executor.h"
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include "future"
-#include "Disks/DiskAsyncSupport.h"
 
 namespace DB
 {
@@ -20,28 +21,6 @@ bool IDisk::isDirectoryEmpty(const String & path)
     return !iterateDirectory(path)->isValid();
 }
 
-/// Executes task synchronously in case when destination disk doesn't support async operations.
-class NoAsync : public DiskAsyncSupport
-{
-public:
-    NoAsync() = default;
-    ~NoAsync() override = default;
-    std::future<void> runAsync(std::function<void()> task) override
-    {
-        std::promise<void> promise;
-        try
-        {
-            task();
-            promise.set_value();
-        }
-        catch (...)
-        {
-            promise.set_exception(std::current_exception());
-        }
-        return promise.get_future();
-    }
-};
-
 void copyFile(IDisk & from_disk, const String & from_path, IDisk & to_disk, const String & to_path)
 {
     LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} {} to {} {}.", from_disk.getName(), from_path, to_disk.getName(), to_path);
@@ -51,16 +30,21 @@ void copyFile(IDisk & from_disk, const String & from_path, IDisk & to_disk, cons
     copyData(*in, *out);
 }
 
-std::future<void> asyncCopy(IDisk & from_disk, const String & from_path, IDisk & to_disk, const String & to_path, DiskAsyncSupport & async)
+
+using ResultsCollector = std::vector<std::future<void>>;
+
+void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results)
 {
     if (from_disk.isFile(from_path))
     {
-        return async.runAsync(
-            [&from_disk, &from_path, &to_disk, &to_path]()
+        auto result = exec.execute(
+            [&from_disk, from_path, &to_disk, to_path]()
             {
+                setThreadName("DiskCopier");
                 DB::copyFile(from_disk, from_path, to_disk, to_path + fileName(from_path));
-            }
-        );
+            });
+
+        results.push_back(std::move(result));
     }
     else
     {
@@ -69,44 +53,52 @@ std::future<void> asyncCopy(IDisk & from_disk, const String & from_path, IDisk &
         const String dest = to_path + dir_name + "/";
         to_disk.createDirectories(dest);
 
-        std::vector<std::future<void>> futures;
-        std::promise<void> promise;
-
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            futures.push_back(asyncCopy(from_disk, it->path(), to_disk, dest, async));
-
-        for (auto & future : futures)
-        {
-            future.wait();
-            try
-            {
-                future.get();
-            }
-            catch (...)
-            {
-                promise.set_exception(std::current_exception());
-            }
-        }
-
-        return promise.get_future();
+            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results);
     }
 }
 
 void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
-    std::future<void> future;
-    if (auto async = std::dynamic_pointer_cast<DiskAsyncSupport>(to_disk))
-    {
-        future = asyncCopy(*this, from_path, *to_disk, to_path, *async);
-    }
-    else
-    {
-        auto no_async = std::make_unique<NoAsync>();
-        future = asyncCopy(*this, from_path, *to_disk, to_path, *no_async);
-    }
+    auto exec = to_disk->getExecutor();
+    ResultsCollector results;
 
-    future.wait();
-    future.get();
+    asyncCopy(*this, from_path, *to_disk, to_path, *exec, results);
+
+    for (auto & result : results)
+        result.wait();
+    for (auto & result : results)
+        result.get();
+}
+
+/// Executes task synchronously in case when disk doesn't support async operations.
+class SyncExecutor : public Executor
+{
+public:
+    SyncExecutor() = default;
+    std::future<void> execute(std::function<void()> task) override
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+        try
+        {
+            task();
+            promise->set_value();
+        }
+        catch (...)
+        {
+            try
+            {
+                promise->set_exception(std::current_exception());
+            }
+            catch (...) { }
+        }
+        return promise->get_future();
+    }
+};
+
+std::unique_ptr<Executor> IDisk::getExecutor()
+{
+    return std::make_unique<SyncExecutor>();
 }
 
 void IDisk::truncateFile(const String &, size_t)
