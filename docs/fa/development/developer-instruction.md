@@ -251,7 +251,7 @@ KDevelop و QTCreator دیگر از جایگزین های بسیار خوبی ا
 
 تست نوشتن: https://clickhouse.فناوری / اسناد/توسعه/تست/
 
-فهرست تکلیفها: https://github.com/ClickHouse/ClickHouse/contribute
+فهرست تکلیفها: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # داده های تست {#test-data}
 

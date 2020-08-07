@@ -249,7 +249,7 @@ Kod stili Kılavuzu: https://clickhouse.tech / doscs / TR / development / style/
 
 Yazma testleri: https://clickhouse.teknoloji / doscs / TR / geliştirme / testler/
 
-Görevlerin listesi: https://github.com/ClickHouse/ClickHouse/contribute
+Görevlerin listesi: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # Test Verileri {#test-data}
 

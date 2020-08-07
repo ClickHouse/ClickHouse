@@ -234,7 +234,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
 编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
-任务列表：https://github.com/ClickHouse/ClickHouse/contribute
+任务列表：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # 测试数据 {#ce-shi-shu-ju}
 
