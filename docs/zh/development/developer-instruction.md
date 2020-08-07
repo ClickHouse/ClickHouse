@@ -21,7 +21,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
     sudo apt update
     sudo apt install git
 
-在https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2 。
+在https://education.github.com/git-cheat-sheet-education.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2 。
 
 # 拷贝源码库到开发机 {#kao-bei-yuan-ma-ku-dao-kai-fa-ji}
 

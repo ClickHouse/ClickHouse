@@ -28,7 +28,7 @@ To do that in Ubuntu you would run in the command line terminal:
     sudo apt update
     sudo apt install git
 
-A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+A brief manual on using Git can be found here: https://education.github.com/git-cheat-sheet-education.pdf.
 For a detailed manual on Git see https://git-scm.com/book/en/v2.
 
 ## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}

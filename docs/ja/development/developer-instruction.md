@@ -32,7 +32,7 @@ Ubuntuでこれを行うには、コマンドラインターミナルで実行�
     sudo apt update
     sudo apt install git
 
-簡単なマニュアルを使用Gitで、できるだけ早く送ってくださhttps://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+簡単なマニュアルを使用Gitで、できるだけ早く送ってくださhttps://education.github.com/git-cheat-sheet-education.pdf.
 詳細なマニュアルGit見https://git-scm.com/book/en/v2.
 
 # 開発マシンへのリポジトリの複製 {#cloning-a-repository-to-your-development-machine}

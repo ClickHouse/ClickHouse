@@ -32,7 +32,7 @@ Pour ce faire dans Ubuntu vous exécutez dans le terminal de ligne de commande:
     sudo apt update
     sudo apt install git
 
-Un bref manuel sur l'utilisation de Git peut être trouvé ici: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+Un bref manuel sur l'utilisation de Git peut être trouvé ici: https://education.github.com/git-cheat-sheet-education.pdf.
 Pour un manuel détaillé sur Git voir https://git-scm.com/book/en/v2.
 
 # Clonage D'un référentiel sur votre machine de développement {#cloning-a-repository-to-your-development-machine}
