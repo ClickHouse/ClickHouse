@@ -431,11 +431,7 @@ public:
             Pos token_end = nullptr;
 
             while (generator.get(token_begin, token_end))
-            {
-                // Somehow Decimal is getting here
-                auto x = String(token_begin, token_end - token_begin);
-                dst.push_back(x);
-            }
+                dst.push_back(String(token_begin, token_end - token_begin));
 
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_const_str->size(), dst);
         }
