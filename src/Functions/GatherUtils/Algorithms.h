@@ -34,6 +34,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
+#if 1
         if constexpr ((std::is_same_v<T, UInt8> && is_big_int_v<U>) || (std::is_same_v<U, UInt8> && is_big_int_v<T>))
             sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
         else if constexpr (IsDecimalNumber<T> && is_big_int_v<U>)
@@ -57,6 +58,10 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
             sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
         else
             sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
+#else
+        /// It's an original line before big int support. TODO: simplify code above
+        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
+#endif
         ++sink.current_offset;
     }
 }
