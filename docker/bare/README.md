@@ -34,5 +34,4 @@ sudo chroot . /clickhouse server
 
 - creation of `clickhouse` user to run the server;
 - VOLUME for server;
-- CA Certificates;
-- most of the details, see other docker images for comparison;
+- most of the details, see other docker images for comparison.

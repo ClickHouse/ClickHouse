@@ -46,11 +46,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     void perform(Block & block, const ColumnNumbers & arguments, size_t result,
-                     ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const;
+                     ArrayImpl::NullMapBuilder & builder, size_t input_rows_count);
 
     template <typename DataType>
     static bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
@@ -81,11 +81,11 @@ private:
 
     template <typename IndexType>
     bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result,
-                             ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const;
+                             ArrayImpl::NullMapBuilder & builder, size_t input_rows_count);
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
-    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const;
+    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count);
 };
 
 
@@ -636,7 +636,7 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
 
 template <typename IndexType>
 bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & arguments, size_t result,
-                                           ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const
+                                           ArrayImpl::NullMapBuilder & builder, size_t input_rows_count)
 {
     auto index = checkAndGetColumn<ColumnVector<IndexType>>(block.getByPosition(arguments[1]).column.get());
 
@@ -667,7 +667,7 @@ bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & 
     return true;
 }
 
-bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
 
@@ -748,7 +748,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
     return array_type->getNestedType();
 }
 
-void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     /// Check nullability.
     bool is_array_of_nullable = false;
@@ -842,7 +842,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
 }
 
 void FunctionArrayElement::perform(Block & block, const ColumnNumbers & arguments, size_t result,
-                                   ArrayImpl::NullMapBuilder & builder, size_t input_rows_count) const
+                                   ArrayImpl::NullMapBuilder & builder, size_t input_rows_count)
 {
     if (executeTuple(block, arguments, result, input_rows_count))
     {

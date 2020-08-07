@@ -6,7 +6,8 @@ namespace DB
 
 ASTPtr ASTDictionaryRange::clone() const
 {
-    auto res = std::make_shared<ASTDictionaryRange>();
+    auto res = std::make_shared<ASTDictionaryRange>(*this);
+    res->children.clear();
     res->min_attr_name = min_attr_name;
     res->max_attr_name = max_attr_name;
     return res;
@@ -34,7 +35,8 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
 
 ASTPtr ASTDictionaryLifetime::clone() const
 {
-    auto res = std::make_shared<ASTDictionaryLifetime>();
+    auto res = std::make_shared<ASTDictionaryLifetime>(*this);
+    res->children.clear();
     res->min_sec = min_sec;
     res->max_sec = max_sec;
     return res;
@@ -62,10 +64,16 @@ void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
 
 ASTPtr ASTDictionaryLayout::clone() const
 {
-    auto res = std::make_shared<ASTDictionaryLayout>();
+    auto res = std::make_shared<ASTDictionaryLayout>(*this);
+    res->children.clear();
     res->layout_type = layout_type;
-    res->set(res->parameters, parameters->clone());
+    res->parameters.clear();
     res->has_brackets = has_brackets;
+    for (const auto & parameter : parameters)
+    {
+        res->parameters.emplace_back(parameter.first, nullptr);
+        res->set(res->parameters.back().second, parameter.second->clone());
+    }
     return res;
 }
 
@@ -85,7 +93,18 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
     if (has_brackets)
         settings.ostr << "(";
 
-    parameters->formatImpl(settings, state, frame);
+    bool first = true;
+    for (const auto & parameter : parameters)
+    {
+        settings.ostr << (first ? "" : " ")
+                      << (settings.hilite ? hilite_keyword : "")
+                      << Poco::toUpper(parameter.first)
+                      << (settings.hilite ? hilite_none : "")
+                      << " ";
+
+        parameter.second->formatImpl(settings, state, frame);
+        first = false;
+    }
 
     if (has_brackets)
         settings.ostr << ")";
@@ -95,7 +114,8 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
 
 ASTPtr ASTDictionarySettings::clone() const
 {
-    auto res = std::make_shared<ASTDictionarySettings>();
+    auto res = std::make_shared<ASTDictionarySettings>(*this);
+    res->children.clear();
     res->changes = changes;
 
     return res;
@@ -123,13 +143,14 @@ void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
 
 ASTPtr ASTDictionary::clone() const
 {
-    auto res = std::make_shared<ASTDictionary>();
-
-    if (primary_key)
-        res->set(res->primary_key, primary_key->clone());
+    auto res = std::make_shared<ASTDictionary>(*this);
+    res->children.clear();
 
     if (source)
         res->set(res->source, source->clone());
+
+    if (primary_key)
+        res->set(res->primary_key, primary_key->clone());
 
     if (lifetime)
         res->set(res->lifetime, lifetime->clone());

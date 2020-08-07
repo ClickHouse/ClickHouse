@@ -3,6 +3,7 @@
 
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB

@@ -30,7 +30,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
-void registerStorageCOS(StorageFactory & factory);
 #endif
 
 #if USE_HDFS

@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -17,8 +16,8 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
-    ASTDictionaryAttributeDeclaration.cpp
     ASTDictionary.cpp
+    ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
@@ -79,10 +78,10 @@ SRCS(
     ParserCreateRowPolicyQuery.cpp
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
-    ParserDataType.cpp
     ParserDescribeTableQuery.cpp
-    ParserDictionaryAttributeDeclaration.cpp
+    ParserDataType.cpp
     ParserDictionary.cpp
+    ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
@@ -116,9 +115,8 @@ SRCS(
     ParserWatchQuery.cpp
     parseUserName.cpp
     queryToString.cpp
-    QueryWithOutputSettingsPushDownVisitor.cpp
     TokenIterator.cpp
-
+    QueryWithOutputSettingsPushDownVisitor.cpp
 )
 
 END()

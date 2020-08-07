@@ -6,12 +6,9 @@
 #include <Common/QueryProfiler.h>
 #include <Common/TraceCollector.h>
 
-
 namespace DB
 {
 
-/** Information from sampling profilers.
-  */
 struct TraceLogElement
 {
     using TraceDataType = DataTypeEnum8;

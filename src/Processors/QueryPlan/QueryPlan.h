@@ -33,8 +33,6 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void optimize();
-
     QueryPipelinePtr buildQueryPipeline();
 
     struct ExplainPlanOptions
@@ -62,14 +60,13 @@ public:
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 
+private:
     /// Tree node. Step and it's children.
     struct Node
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
     };
-
-private:
 
     using Nodes = std::list<Node>;
     Nodes nodes;

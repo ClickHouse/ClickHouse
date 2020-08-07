@@ -104,7 +104,6 @@ ReturnType parseDateTimeBestEffortImpl(
             return false;
     };
 
-    res = 0;
     UInt16 year = 0;
     UInt8 month = 0;
     UInt8 day_of_month = 0;
@@ -346,6 +345,8 @@ ReturnType parseDateTimeBestEffortImpl(
                         }
                         else
                           return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
+
+
                     }
 
                     if (month > 12)
@@ -554,7 +555,7 @@ ReturnType parseDateTimeBestEffortImpl(
     };
 
     if (!check_date(is_leap_year, month, day_of_month))
-        return on_error("Cannot read DateTime: unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::CANNOT_PARSE_DATETIME);
+        return on_error("Cannot read DateTime: logical error, unexpected date: " + std::to_string(year) + "-" + std::to_string(month) + "-" + std::to_string(day_of_month), ErrorCodes::LOGICAL_ERROR);
 
     if (is_pm && hour < 12)
         hour += 12;

@@ -231,10 +231,13 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
         auto & out_header = transform ? transform->getOutputs().front().getHeader()
                                       : stream->getHeader();
 
-        if (header)
-            assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
-        else
-            header = out_header;
+        if (stream_type != StreamType::Totals)
+        {
+            if (header)
+                assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
+            else
+                header = out_header;
+        }
 
         if (transform)
         {
@@ -336,12 +339,6 @@ void QueryPipeline::addPipe(Processors pipe)
         else
             header = output.getHeader();
     }
-
-    if (totals_having_port)
-        assertBlocksHaveEqualStructure(header, totals_having_port->getHeader(), "QueryPipeline");
-
-    if (extremes_port)
-        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "QueryPipeline");
 
     processors.emplace(pipe);
     current_header = std::move(header);

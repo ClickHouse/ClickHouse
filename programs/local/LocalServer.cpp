@@ -20,6 +20,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -213,9 +214,6 @@ try
         context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
     /// Skip networking
-
-    /// Sets external authenticators config (LDAP).
-    context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
 

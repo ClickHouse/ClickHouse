@@ -16,19 +16,13 @@ static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & d
     return columns_already_distinct;
 }
 
-static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_distinct_columns)
+static ITransformingStep::DataStreamTraits getTraits(bool pre_distinct, bool already_distinct_columns)
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = already_distinct_columns, /// Will be calculated separately otherwise
             .returns_single_stream = !pre_distinct && !already_distinct_columns,
             .preserves_number_of_streams = pre_distinct || already_distinct_columns,
-            .preserves_sorting = true, /// Sorting is preserved indeed because of implementation.
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
     };
 }
 

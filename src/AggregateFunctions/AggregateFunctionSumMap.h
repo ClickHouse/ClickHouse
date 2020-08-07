@@ -5,7 +5,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -27,7 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 template <typename T>
@@ -91,15 +89,13 @@ public:
             }
             else
             {
-                auto value_type_without_nullable = removeNullable(value_type);
-
                 // No overflow, meaning we promote the types if necessary.
-                if (!value_type_without_nullable->canBePromoted())
-                    throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
-                        getName(), value_type->getName()};
+                if (!value_type->canBePromoted())
+                {
+                    throw Exception{"Values for " + getName() + " are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                }
 
-                result_type = value_type_without_nullable->promoteNumericType();
+                result_type = value_type->promoteNumericType();
             }
 
             types.emplace_back(std::make_shared<DataTypeArray>(result_type));
@@ -152,10 +148,9 @@ public:
                 auto key = key_column.operator[](keys_vec_offset + i).get<T>();
 
                 if (!keepKey(key))
+                {
                     continue;
-
-                if (value.isNull())
-                    continue;
+                }
 
                 typename std::decay_t<decltype(merged_maps)>::iterator it;
                 if constexpr (IsDecimalNumber<T>)
@@ -379,92 +374,6 @@ public:
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
 };
-
-
-/** Implements `Max` operation.
- *  Returns true if changed
- */
-class FieldVisitorMax : public StaticVisitor<bool>
-{
-private:
-    const Field & rhs;
-public:
-    explicit FieldVisitorMax(const Field & rhs_) : rhs(rhs_) {}
-
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Array &) const { throw Exception("Cannot compare Arrays", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Tuple &) const { throw Exception("Cannot compare Tuples", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
-
-    template <typename T>
-    bool operator() (DecimalField<T> & x) const
-    {
-        auto val = get<DecimalField<T>>(rhs);
-        if (val > x)
-        {
-            x = val;
-            return true;
-        }
-
-        return false;
-    }
-
-    template <typename T>
-    bool operator() (T & x) const
-    {
-        auto val = get<T>(rhs);
-        if (val > x)
-        {
-            x = val;
-            return true;
-        }
-
-        return false;
-    }
-};
-
-/** Implements `Min` operation.
- *  Returns true if changed
- */
-class FieldVisitorMin : public StaticVisitor<bool>
-{
-private:
-    const Field & rhs;
-public:
-    explicit FieldVisitorMin(const Field & rhs_) : rhs(rhs_) {}
-
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
-
-    template <typename T>
-    bool operator() (DecimalField<T> & x) const
-    {
-        auto val = get<DecimalField<T>>(rhs);
-        if (val < x)
-        {
-            x = val;
-            return true;
-        }
-
-        return false;
-    }
-
-    template <typename T>
-    bool operator() (T & x) const
-    {
-        auto val = get<T>(rhs);
-        if (val < x)
-        {
-            x = val;
-            return true;
-        }
-
-        return false;
-    }
-};
-
 
 template <typename T, bool tuple_argument>
 class AggregateFunctionMinMap final :

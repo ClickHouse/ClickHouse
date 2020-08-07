@@ -6,19 +6,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
     };
 }
 
@@ -33,13 +27,6 @@ LimitStep::LimitStep(
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
-}
-
-void LimitStep::updateInputStream(DataStream input_stream)
-{
-    input_streams.clear();
-    input_streams.emplace_back(std::move(input_stream));
-    output_stream = createOutputStream(input_streams.front(), output_stream->header, getDataStreamTraits());
 }
 
 void LimitStep::transformPipeline(QueryPipeline & pipeline)

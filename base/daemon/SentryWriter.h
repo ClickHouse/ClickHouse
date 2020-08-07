@@ -23,5 +23,7 @@ namespace SentryWriter
     void onFault(
         int sig,
         const std::string & error_message,
-        const StackTrace & stack_trace);
+        const StackTrace & stack_trace,
+        const std::string & build_id_hex
+    );
 };

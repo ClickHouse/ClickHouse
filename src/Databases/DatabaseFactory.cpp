@@ -12,7 +12,6 @@
 #include <Common/parseAddress.h>
 #include "DatabaseFactory.h"
 #include <Poco/File.h>
-#include <Poco/Path.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -35,19 +34,15 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DATABASE;
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, Context & context)
+DatabasePtr DatabaseFactory::get(
+    const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
     bool created = false;
 
     try
     {
-        /// Creates store/xxx/ for Atomic
-        Poco::File(Poco::Path(metadata_path).makeParent()).createDirectories();
-        /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
-        /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
-        /// So we should remove metadata directory if database creation failed.
         created = Poco::File(metadata_path).createDirectory();
-        return getImpl(create, metadata_path, context);
+        return getImpl(database_name, metadata_path, engine_define, context);
     }
     catch (...)
     {
@@ -69,12 +64,10 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, Context & context)
+DatabasePtr DatabaseFactory::getImpl(
+    const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
-    const auto * engine_define = create.storage;
-    const String & database_name = create.database;
-    const String & engine_name = engine_define->engine->name;
-    const UUID & uuid = create.uuid;
+    String engine_name = engine_define->engine->name;
 
     if (engine_name != "MySQL" && engine_name != "Lazy" && engine_define->engine->arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
@@ -87,7 +80,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     else if (engine_name == "Atomic")
-        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
+        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);
     else if (engine_name == "Dictionary")

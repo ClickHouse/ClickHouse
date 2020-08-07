@@ -287,7 +287,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-if (OS_LINUX OR OS_ANDROID)
+if (OS_LINUX)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
@@ -378,7 +378,6 @@ include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
-include (cmake/find/stats.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

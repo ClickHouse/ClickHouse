@@ -54,7 +54,6 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        bool attach,
         size_t max_compress_block_size_);
 
 private:

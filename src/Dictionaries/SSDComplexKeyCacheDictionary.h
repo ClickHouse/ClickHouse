@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -522,7 +522,7 @@ class SSDComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
     SSDComplexKeyCacheDictionary(
-            const StorageID & dict_id_,
+            const std::string & name_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             const DictionaryLifetime dict_lifetime_,
@@ -533,6 +533,10 @@ public:
             const size_t read_buffer_size_,
             const size_t write_buffer_size_,
             const size_t max_stored_keys_);
+
+    const std::string & getDatabase() const override { return name; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return getName(); }
 
     std::string getKeyDescription() const { return dict_struct.getKeyDescription(); }
 
@@ -555,7 +559,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDComplexKeyCacheDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, path,
+        return std::make_shared<SSDComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
                 max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
     }
 

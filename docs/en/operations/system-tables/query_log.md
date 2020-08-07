@@ -1,4 +1,4 @@
-# system.query_log {#system_tables-query_log}
+# system.query\_log {#system_tables-query_log}
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
@@ -136,6 +136,3 @@ Settings.Values:      ['0','random','1','10000000000']
 **See Also**
 
 -   [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
-
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/query_log) <!--hide-->
-

@@ -29,9 +29,7 @@ RUN apt-get update \
 
 COPY * /
 
-SHELL ["/bin/bash", "-c"]
-CMD set -o pipefail \
-    && cd /workspace \
+CMD cd /workspace \
     && /run-fuzzer.sh 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
 
 # docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-fuzzer

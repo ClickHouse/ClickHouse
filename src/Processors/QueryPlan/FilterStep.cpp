@@ -7,19 +7,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ExpressionActionsPtr & expression)
+static ITransformingStep::DataStreamTraits getTraits(const ExpressionActionsPtr & expression)
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = !expression->hasJoinOrArrayJoin(), /// I suppose it actually never happens
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
-        },
-        {
-            .preserves_number_of_rows = false,
-        }
     };
 }
 

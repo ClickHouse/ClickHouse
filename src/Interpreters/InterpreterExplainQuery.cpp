@@ -248,8 +248,6 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
 
-        plan.optimize();
-
         WriteBufferFromOStream buffer(ss);
         plan.explainPlan(buffer, settings.query_plan_options);
     }

@@ -49,7 +49,8 @@ public:
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
         if (auto * func = node->as<ASTFunction>())
-            return func->name == "and";
+            if (func->name == "equals")
+                return false;
         return true;
     }
 
@@ -60,6 +61,8 @@ private:
     static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & expr, const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
     static size_t getTableForIdentifiers(std::vector<const ASTIdentifier *> & identifiers, const Data & data);
+
+    [[noreturn]] static void throwSyntaxException(const String & msg);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.
