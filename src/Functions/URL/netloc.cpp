@@ -53,10 +53,11 @@ struct ExtractNetloc
                         case '&':
                             return StringRef{};
                         default:
-                            pos = scheme_end; /// exit from the loop
+                            goto exloop;
                     }
                 }
             }
+            exloop:
             if (pos + 2 < scheme_end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/')
                 pos += 3;
             else
