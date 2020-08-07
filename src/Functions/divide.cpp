@@ -5,13 +5,13 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename Result, typename A, typename B>
 inline Result applySpecial(A /*a*/, B /*b*/)
 {
-    throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template <typename A, typename B>

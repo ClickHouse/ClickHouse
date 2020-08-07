@@ -5,6 +5,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -12,7 +13,7 @@ template <typename Result, typename A, typename B>
 inline Result applySpecial([[maybe_unused]] A a, [[maybe_unused]] B b)
 {
     // Big integers are not in 2p representation, what should the result be?
-    throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template <typename A, typename B>

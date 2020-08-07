@@ -5,6 +5,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -12,7 +13,7 @@ template <typename Result, typename A, typename B>
 inline Result applySpecial([[maybe_unused]] A a, [[maybe_unused]] B b)
 {
     if constexpr (is_big_int_v<B>)
-        throw Exception("BitRotate is not implemented for big integers as second argument", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("BitRotate is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
     else if constexpr (std::is_same_v<B, UInt8>)
         return static_cast<Result>(a) >> static_cast<UInt16>(b);
     else

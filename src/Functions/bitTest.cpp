@@ -7,14 +7,14 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename A, typename B>
 inline UInt8 applySpecial([[maybe_unused]] A a, [[maybe_unused]] B b)
 {
     if constexpr (!std::is_same_v<B, UInt32>)
-        throw Exception("Bit test for big integers is implemented only with UInt32 as second argument", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Bit test for big integers is implemented only with UInt32 as second argument", ErrorCodes::NOT_IMPLEMENTED);
     else
         return bit_test(a, b);
 }
