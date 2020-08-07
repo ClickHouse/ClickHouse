@@ -1009,6 +1009,88 @@ Possible values:
 
 Default value: 0.
 
+For example, when this setting disabled, the query returns null values in output:
+
+```sql
+SELECT days/0 FROM test_table FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(value1, 0)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(value1, 0)": null
+                },
+                {
+                        "divide(value1, 0)": null
+,
+                {
+                        "divide(value1, 0)": null
+,
+                {
+                        "divide(value1, 0)": null
+
+        ],
+
+        "rows": 4,
+
+        "statistics":
+        {
+                "elapsed": 0.000120303,
+                "rows_read": 4,
+                "bytes_read": 16
+        }
+}
+```
+
+When `output\_format\_json\_quote\_denormals = 1`, the query returns:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(value1, 0)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(value1, 0)": "-inf"
+                },
+                {
+                        "divide(value1, 0)": "-inf"
+,
+                {
+                        "divide(value1, 0)": "-nan"
+,
+                {
+                        "divide(value1, 0)": "inf"
+
+        ],
+
+        "rows": 4,
+
+        "statistics":
+        {
+                "elapsed": 0.000113395,
+                "rows_read": 4,
+                "bytes_read": 16
+        }
+}
+```
+
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
