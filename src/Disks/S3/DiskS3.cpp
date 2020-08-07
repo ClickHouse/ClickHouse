@@ -16,7 +16,6 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>

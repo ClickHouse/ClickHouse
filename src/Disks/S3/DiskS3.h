@@ -10,7 +10,6 @@
 
 namespace DB
 {
-class BackgroundProcessingPool;
 
 /**
  * Storage for persisting data in S3 and metadata on the local disk.
