@@ -23,8 +23,8 @@ class MemorySource : public SourceWithProgress
 {
 public:
     /// We use range [first, last] which includes right border.
-    /// It is needed because new elements may be added to list in other thread.
-    /// Appending of new element changes end() of std::list, which may cause data race otherwise.
+    /// Blocks are stored in std::list which may be appended in another thread.
+    /// We don't use synchronisation here, because elements in range [first, last] won't be modified.
     MemorySource(
         Names column_names_,
         BlocksList::iterator first_,
@@ -33,7 +33,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
-        , first(first_)
+        , current(first_)
         , last(last_) /// [first, last]
     {
     }
@@ -49,7 +49,7 @@ protected:
         }
         else
         {
-            Block src = *first;
+            const Block & src = *current;
             Columns columns;
             columns.reserve(column_names.size());
 
@@ -57,16 +57,16 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            if (first == last)
+            if (current == last)
                 is_finished = true;
             else
-                ++first;
+                ++current;
             return Chunk(std::move(columns), src.rows());
         }
     }
 private:
     Names column_names;
-    BlocksList::iterator first;
+    BlocksList::iterator current;
     BlocksList::iterator last;
     bool is_finished = false;
 };
