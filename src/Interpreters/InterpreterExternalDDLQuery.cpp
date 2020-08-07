@@ -3,6 +3,7 @@
 #endif
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTDropQuery.h>
@@ -11,7 +12,6 @@
 #include <Parsers/ASTExternalDDLQuery.h>
 
 #ifdef USE_MYSQL
-#    include <Interpreters/Context.h>
 #    include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>

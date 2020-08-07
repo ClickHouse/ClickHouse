@@ -165,7 +165,7 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                 if (options->changes.count("primary_key"))
                     primary_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.contains("auto_increment"))
+                if (options->changes.count("auto_increment"))
                     increment_columns.emplace(declare_column->name);
             }
         }
@@ -272,10 +272,10 @@ static ASTPtr getOrderByPolicy(
 
         for (const auto & [name, type] : names_and_types)
         {
-            if (order_by_columns_set.contains(name))
+            if (order_by_columns_set.count(name))
                 continue;
 
-            if (increment_columns.contains(name))
+            if (increment_columns.count(name))
             {
                 increment_keys.emplace_back(name);
                 order_by_columns_set.emplace(name);

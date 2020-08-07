@@ -16,12 +16,11 @@
 
 using namespace DB;
 
-static inline ASTPtr tryRewrittenCreateQuery(const String & query, const Context & context_)
+static inline ASTPtr tryRewrittenCreateQuery(const String & query, const Context & context)
 {
     ParserExternalDDLQuery external_ddl_parser;
     ASTPtr ast = parseQuery(external_ddl_parser, query, 0, 0);
 
-    Context context = context_;
     return MySQLInterpreter::InterpreterCreateImpl::getRewrittenQuery(
         *ast->as<ASTExternalDDLQuery>()->external_ddl->as<MySQLParser::ASTCreateQuery>(),
         context, "test_database", "test_database");
