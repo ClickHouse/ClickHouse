@@ -47,7 +47,7 @@ void ArrowBlockOutputFormat::finalize()
     {
         const Block & header = getPort(PortKind::Main).getHeader();
 
-        consume(Chunk(header.columns(), 0));
+        consume(Chunk(header.getColumns(), 0));
     }
 
     auto status = writer->Close();
