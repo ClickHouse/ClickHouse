@@ -734,7 +734,7 @@ private:
     }
 
     /**
-     * Catches arguments of type LC(T), LC(Nullable(T)) and so on.
+     * Catches arguments of type LC(T).
      */
     bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
