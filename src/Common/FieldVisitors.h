@@ -165,7 +165,7 @@ public:
             {
                 return UInt128(0, (x.getValue() / x.getScaleMultiplier()).value);
             }
-            else if constexpr(sizeof(U) == 16)
+            else if constexpr (sizeof(U) == 16)
             {
                 auto tmp = (x.getValue() / x.getScaleMultiplier()).value;
                 return UInt128(tmp >> 64, UInt64(tmp));
