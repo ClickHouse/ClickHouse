@@ -96,7 +96,6 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     if (which.idx == TypeIndex::UInt16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::bUInt256) return new AggregateFunctionTemplate<bUInt256, Data<bUInt256>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
