@@ -91,7 +91,7 @@ intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     std::vector<UInt64> parts;
     export_bits(x, std::back_inserter(parts), sizeof(UInt64), false);
-    for (const auto& part : parts)
+    for (const auto & part : parts)
         updated_value = intHashCRC32(part, updated_value);
 
     return updated_value;
