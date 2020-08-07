@@ -79,7 +79,7 @@ class ClickHouseUnparser(Grammarinator):
                 current += self.unlexer.DISTINCT()
 
         current += self.columnExprList()
-        if self.unlexer.max_depth >= 9:
+        if self.unlexer.max_depth >= 8:
             for _ in self.zero_or_one():
                 current += self.fromClause()
 
@@ -144,7 +144,7 @@ class ClickHouseUnparser(Grammarinator):
                 current += self.unlexer.FINAL()
 
         return current
-    fromClause.min_depth = 8
+    fromClause.min_depth = 7
 
     @depthcontrol
     def sampleClause(self):
@@ -248,7 +248,7 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def joinExpr(self):
         current = self.create_node(UnparserRule(name='joinExpr'))
-        choice = self.choice([0 if [7, 9, 9, 9][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_88', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        choice = self.choice([0 if [6, 8, 8, 8][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_88', i), 1) for i, w in enumerate([1, 1, 1, 1])])
         self.unlexer.weights[('alt_88', choice)] = self.unlexer.weights.get(('alt_88', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current = self.joinExpr_JoinExprTable()
@@ -259,14 +259,14 @@ class ClickHouseUnparser(Grammarinator):
         elif choice == 3:
             current = self.joinExpr_JoinExprCrossOp()
         return current
-    joinExpr.min_depth = 7
+    joinExpr.min_depth = 6
 
     @depthcontrol
     def joinExpr_JoinExprTable(self):
         current = self.create_node(UnparserRule(name='joinExpr_JoinExprTable'))
         current += self.tableExpr()
         return current
-    joinExpr_JoinExprTable.min_depth = 6
+    joinExpr_JoinExprTable.min_depth = 5
 
     @depthcontrol
     def joinExpr_JoinExprParens(self):
@@ -275,7 +275,7 @@ class ClickHouseUnparser(Grammarinator):
         current += self.joinExpr()
         current += self.unlexer.RPAREN()
         return current
-    joinExpr_JoinExprParens.min_depth = 8
+    joinExpr_JoinExprParens.min_depth = 7
 
     @depthcontrol
     def joinExpr_JoinExprOp(self):
@@ -295,7 +295,7 @@ class ClickHouseUnparser(Grammarinator):
         current += self.joinExpr()
         current += self.joinConstraintClause()
         return current
-    joinExpr_JoinExprOp.min_depth = 8
+    joinExpr_JoinExprOp.min_depth = 7
 
     @depthcontrol
     def joinExpr_JoinExprCrossOp(self):
@@ -304,7 +304,7 @@ class ClickHouseUnparser(Grammarinator):
         current += self.joinOpCross()
         current += self.joinExpr()
         return current
-    joinExpr_JoinExprCrossOp.min_depth = 8
+    joinExpr_JoinExprCrossOp.min_depth = 7
 
     @depthcontrol
     def joinOp(self):
@@ -899,7 +899,7 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def tableExpr(self):
         current = self.create_node(UnparserRule(name='tableExpr'))
-        choice = self.choice([0 if [5, 5, 6, 7][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_209', i), 1) for i, w in enumerate([1, 1, 1, 1])])
+        choice = self.choice([0 if [5, 4, 6, 6][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_209', i), 1) for i, w in enumerate([1, 1, 1, 1])])
         self.unlexer.weights[('alt_209', choice)] = self.unlexer.weights.get(('alt_209', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current = self.tableExpr_TableExprIdentifier()
@@ -910,7 +910,7 @@ class ClickHouseUnparser(Grammarinator):
         elif choice == 3:
             current = self.tableExpr_TableExprAlias()
         return current
-    tableExpr.min_depth = 5
+    tableExpr.min_depth = 4
 
     @depthcontrol
     def tableExpr_TableExprIdentifier(self):
@@ -922,9 +922,15 @@ class ClickHouseUnparser(Grammarinator):
     @depthcontrol
     def tableExpr_TableExprFunction(self):
         current = self.create_node(UnparserRule(name='tableExpr_TableExprFunction'))
-        current += self.tableFunctionExpr()
+        current += self.identifier()
+        current += self.unlexer.LPAREN()
+        if self.unlexer.max_depth >= 5:
+            for _ in self.zero_or_one():
+                current += self.tableArgList()
+
+        current += self.unlexer.RPAREN()
         return current
-    tableExpr_TableExprFunction.min_depth = 4
+    tableExpr_TableExprFunction.min_depth = 3
 
     @depthcontrol
     def tableExpr_TableExprSubquery(self):
@@ -942,7 +948,7 @@ class ClickHouseUnparser(Grammarinator):
         current += self.unlexer.AS()
         current += self.identifier()
         return current
-    tableExpr_TableExprAlias.min_depth = 6
+    tableExpr_TableExprAlias.min_depth = 5
 
     @depthcontrol
     def tableIdentifier(self):
@@ -955,19 +961,6 @@ class ClickHouseUnparser(Grammarinator):
         current += self.identifier()
         return current
     tableIdentifier.min_depth = 3
-
-    @depthcontrol
-    def tableFunctionExpr(self):
-        current = self.create_node(UnparserRule(name='tableFunctionExpr'))
-        current += self.identifier()
-        current += self.unlexer.LPAREN()
-        if self.unlexer.max_depth >= 5:
-            for _ in self.zero_or_one():
-                current += self.tableArgList()
-
-        current += self.unlexer.RPAREN()
-        return current
-    tableFunctionExpr.min_depth = 3
 
     @depthcontrol
     def tableArgList(self):

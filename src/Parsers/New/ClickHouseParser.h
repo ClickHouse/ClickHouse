@@ -45,10 +45,9 @@ public:
     RuleSettingExprList = 25, RuleSettingExpr = 26, RuleColumnExprList = 27, 
     RuleColumnExpr = 28, RuleColumnParamList = 29, RuleColumnArgList = 30, 
     RuleColumnArgExpr = 31, RuleColumnLambdaExpr = 32, RuleColumnIdentifier = 33, 
-    RuleTableExpr = 34, RuleTableIdentifier = 35, RuleTableFunctionExpr = 36, 
-    RuleTableArgList = 37, RuleTableArgExpr = 38, RuleDatabaseIdentifier = 39, 
-    RuleLiteral = 40, RuleKeyword = 41, RuleIdentifier = 42, RuleUnaryOp = 43, 
-    RuleBinaryOp = 44
+    RuleTableExpr = 34, RuleTableIdentifier = 35, RuleTableArgList = 36, 
+    RuleTableArgExpr = 37, RuleDatabaseIdentifier = 38, RuleLiteral = 39, 
+    RuleKeyword = 40, RuleIdentifier = 41, RuleUnaryOp = 42, RuleBinaryOp = 43
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -97,7 +96,6 @@ public:
   class ColumnIdentifierContext;
   class TableExprContext;
   class TableIdentifierContext;
-  class TableFunctionExprContext;
   class TableArgListContext;
   class TableArgExprContext;
   class DatabaseIdentifierContext;
@@ -998,7 +996,10 @@ public:
   public:
     TableExprFunctionContext(TableExprContext *ctx);
 
-    TableFunctionExprContext *tableFunctionExpr();
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    TableArgListContext *tableArgList();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1019,22 +1020,6 @@ public:
   };
 
   TableIdentifierContext* tableIdentifier();
-
-  class  TableFunctionExprContext : public antlr4::ParserRuleContext {
-  public:
-    TableFunctionExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *LPAREN();
-    antlr4::tree::TerminalNode *RPAREN();
-    TableArgListContext *tableArgList();
-
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  TableFunctionExprContext* tableFunctionExpr();
 
   class  TableArgListContext : public antlr4::ParserRuleContext {
   public:

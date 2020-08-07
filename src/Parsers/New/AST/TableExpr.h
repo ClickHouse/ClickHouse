@@ -9,10 +9,10 @@ namespace DB::AST
 class TableExpr : public INode
 {
     public:
-        static PtrTo<TableExpr> createIdentifier(PtrTo<TableIdentifier> identifier);
-        static PtrTo<TableExpr> createFunction(PtrTo<Identifier> name, PtrList args);
-        static PtrTo<TableExpr> createSubquery(PtrTo<SelectStmt> subquery);
         static PtrTo<TableExpr> createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias);
+        static PtrTo<TableExpr> createFunction(PtrTo<Identifier> name, PtrList args);
+        static PtrTo<TableExpr> createIdentifier(PtrTo<TableIdentifier> identifier);
+        static PtrTo<TableExpr> createSubquery(PtrTo<SelectStmt> subquery);
 
         ASTPtr convertToOld() const override;
 
@@ -24,10 +24,10 @@ class TableExpr : public INode
         };
         enum class ExprType
         {
-            IDENTIFIER,
-            FUNCTION,
-            SUBQUERY,
             ALIAS,
+            FUNCTION,
+            IDENTIFIER,
+            SUBQUERY,
         };
 
         ExprType expr_type;

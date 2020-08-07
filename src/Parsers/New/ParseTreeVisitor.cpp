@@ -1,5 +1,6 @@
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 
@@ -7,9 +8,11 @@
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitQueryList(ClickHouseParser::QueryListContext *ctx)
 {
-    auto query_list = std::make_shared<AST::QueryList>();
+    auto query_list = std::make_shared<QueryList>();
 
     for (auto * query : ctx->queryStmt())
         query_list->append(query->accept(this));
@@ -19,9 +22,9 @@ antlrcpp::Any ParseTreeVisitor::visitQueryList(ClickHouseParser::QueryListContex
 
 antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx)
 {
-    auto query = ctx->query()->accept(this).as<AST::PtrTo<AST::Query>>();
+    auto query = ctx->query()->accept(this).as<PtrTo<Query>>();
 
-    if (ctx->OUTFILE()) query->setOutFile(ctx->STRING_LITERAL()->accept(this));
+    if (ctx->OUTFILE()) query->setOutFile(Literal::createString(ctx->STRING_LITERAL()));
     if (ctx->FORMAT()) query->setFormat(ctx->identifier()->accept(this));
 
     return query;
@@ -34,17 +37,17 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 
 antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx)
 {
-    auto select_union_query = std::make_shared<AST::SelectUnionQuery>();
+    auto select_union_query = std::make_shared<SelectUnionQuery>();
 
     for (auto * stmt : ctx->selectStmt())
         select_union_query->appendSelect(stmt->accept(this));
 
-    return std::static_pointer_cast<AST::Query>(select_union_query);
+    return std::static_pointer_cast<Query>(select_union_query);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
 {
-    auto select_stmt = std::make_shared<AST::SelectStmt>(ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>());
+    auto select_stmt = std::make_shared<SelectStmt>(ctx->columnExprList()->accept(this).as<PtrTo<ColumnExprList>>());
 
     if (ctx->withClause()) select_stmt->setWithClause(ctx->withClause()->accept(this));
     if (ctx->fromClause()) select_stmt->setFromClause(ctx->fromClause()->accept(this));

@@ -142,8 +142,6 @@ public:
 
     virtual antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext *context) = 0;
 
-    virtual antlrcpp::Any visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *context) = 0;
-
     virtual antlrcpp::Any visitTableArgList(ClickHouseParser::TableArgListContext *context) = 0;
 
     virtual antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext *context) = 0;

@@ -261,10 +261,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual antlrcpp::Any visitTableArgList(ClickHouseParser::TableArgListContext *ctx) override {
     return visitChildren(ctx);
   }

@@ -114,12 +114,11 @@ columnIdentifier: (tableIdentifier DOT)? identifier; // TODO: don't forget compo
 
 tableExpr
     : tableIdentifier                                       # TableExprIdentifier
-    | tableFunctionExpr                                     # TableExprFunction
+    | identifier LPAREN tableArgList? RPAREN                # TableExprFunction
     | LPAREN selectStmt RPAREN                              # TableExprSubquery
     | tableExpr AS identifier                               # TableExprAlias
     ;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
-tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
     : literal

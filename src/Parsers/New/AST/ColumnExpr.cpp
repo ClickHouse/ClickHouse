@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 
 #include <support/Any.h>
+#include "Parsers/New/AST/fwd_decl.h"
 
 
 
@@ -168,7 +169,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprAlias(ClickHouseParser::ColumnExp
 antlrcpp::Any ParseTreeVisitor::visitColumnExprArray(ClickHouseParser::ColumnExprArrayContext *ctx)
 {
     auto name = std::make_shared<AST::Identifier>("array");
-    auto args = ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>();
+    auto args = ctx->columnExprList() ? ctx->columnExprList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>() : nullptr;
     return AST::ColumnExpr::createFunction(name, nullptr, args);
 }
 
@@ -264,7 +265,9 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnE
 antlrcpp::Any ParseTreeVisitor::visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx)
 {
     return AST::ColumnExpr::createFunction(
-        ctx->identifier()->accept(this), ctx->columnParamList()->accept(this), ctx->columnArgList()->accept(this));
+        ctx->identifier()->accept(this),
+        ctx->columnParamList() ? ctx->columnParamList()->accept(this).as<AST::PtrTo<AST::ColumnParamList>>() : nullptr,
+        ctx->columnArgList() ? ctx->columnArgList()->accept(this).as<AST::PtrTo<AST::ColumnExprList>>() : nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx)
@@ -378,8 +381,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnParamList(ClickHouseParser::ColumnPar
 
 antlrcpp::Any ParseTreeVisitor::visitUnaryOp(ClickHouseParser::UnaryOpContext *ctx)
 {
-    if (ctx->DASH()) return "negate";
-    if (ctx->NOT()) return "not";
+    if (ctx->DASH()) return String("negate");
+    if (ctx->NOT()) return String("not");
     __builtin_unreachable();
 }
 

@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/RatioExpr.h>
 
+#include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -19,11 +20,13 @@ RatioExpr::RatioExpr(PtrTo<NumberLiteral> num1_, PtrTo<NumberLiteral> num2_) : n
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitRatioExpr(ClickHouseParser::RatioExprContext *ctx)
 {
     /// TODO: not complete!
-    if (ctx->SLASH()) return std::make_shared<AST::RatioExpr>(ctx->NUMBER_LITERAL(0)->accept(this), ctx->NUMBER_LITERAL(1)->accept(this));
-    else return std::make_shared<AST::RatioExpr>(ctx->NUMBER_LITERAL(0)->accept(this));
+    if (ctx->SLASH()) return std::make_shared<RatioExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)), Literal::createNumber(ctx->NUMBER_LITERAL(1)));
+    else return std::make_shared<RatioExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)));
 }
 
 }

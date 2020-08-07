@@ -36,30 +36,33 @@ ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifi
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx)
 {
-    return std::make_shared<AST::DatabaseIdentifier>(ctx->identifier()->accept(this).as<AST::PtrTo<AST::Identifier>>());
+    return std::make_shared<DatabaseIdentifier>(ctx->identifier()->accept(this).as<PtrTo<Identifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx)
 {
     // TODO: not complete!
-    return std::make_shared<AST::TableIdentifier>(
-        ctx->databaseIdentifier() ? ctx->databaseIdentifier()->accept(this).as<AST::PtrTo<AST::DatabaseIdentifier>>() : nullptr,
+    return std::make_shared<TableIdentifier>(
+        ctx->databaseIdentifier() ? ctx->databaseIdentifier()->accept(this).as<PtrTo<DatabaseIdentifier>>() : nullptr,
         ctx->identifier()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *ctx)
 {
-    return std::make_shared<AST::ColumnIdentifier>(
-        ctx->tableIdentifier() ? ctx->tableIdentifier()->accept(this).as<AST::PtrTo<AST::TableIdentifier>>() : nullptr,
+    return std::make_shared<ColumnIdentifier>(
+        ctx->tableIdentifier() ? ctx->tableIdentifier()->accept(this).as<PtrTo<TableIdentifier>>() : nullptr,
         ctx->identifier()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
 {
-    if (ctx->IDENTIFIER()) return std::make_shared<AST::Identifier>(ctx->IDENTIFIER()->getText());
-    if (ctx->keyword()) return std::make_shared<AST::Identifier>(ctx->keyword()->getText());
+    if (ctx->IDENTIFIER()) return std::make_shared<Identifier>(ctx->IDENTIFIER()->getText());
+    if (ctx->INTERVAL_TYPE()) return std::make_shared<Identifier>(ctx->INTERVAL_TYPE()->getText());
+    if (ctx->keyword()) return std::make_shared<Identifier>(ctx->keyword()->getText());
     __builtin_unreachable();
 }
 

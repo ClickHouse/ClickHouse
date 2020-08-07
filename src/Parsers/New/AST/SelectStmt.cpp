@@ -4,6 +4,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
+#include "Parsers/New/AST/LimitExpr.h"
+#include "Parsers/New/AST/RatioExpr.h"
+#include "Parsers/New/AST/fwd_decl.h"
 
 
 namespace DB::AST
@@ -194,65 +197,67 @@ ASTPtr SelectStmt::convertToOld() const
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitWithClause(ClickHouseParser::WithClauseContext *ctx)
 {
-    return std::make_shared<AST::WithClause>(ctx->columnExprList()->accept(this));
+    return std::make_shared<WithClause>(ctx->columnExprList()->accept(this).as<PtrTo<ColumnExprList>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitFromClause(ClickHouseParser::FromClauseContext *ctx)
 {
-    return std::make_shared<AST::FromClause>(ctx->joinExpr()->accept(this), !!ctx->FINAL());
+    return std::make_shared<FromClause>(ctx->joinExpr()->accept(this), !!ctx->FINAL());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSampleClause(ClickHouseParser::SampleClauseContext *ctx)
 {
-    if (ctx->OFFSET()) return std::make_shared<AST::SampleClause>(ctx->ratioExpr(0)->accept(this), ctx->ratioExpr(1)->accept(this));
-    else return std::make_shared<AST::SampleClause>(ctx->ratioExpr(0)->accept(this));
+    if (ctx->OFFSET()) return std::make_shared<SampleClause>(ctx->ratioExpr(0)->accept(this), ctx->ratioExpr(1)->accept(this));
+    else return std::make_shared<SampleClause>(ctx->ratioExpr(0)->accept(this).as<PtrTo<RatioExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitArrayJoinClause(ClickHouseParser::ArrayJoinClauseContext *ctx)
 {
-    return std::make_shared<AST::ArrayJoinClause>(ctx->columnExprList()->accept(this), !!ctx->LEFT());
+    return std::make_shared<ArrayJoinClause>(ctx->columnExprList()->accept(this), !!ctx->LEFT());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitPrewhereClause(ClickHouseParser::PrewhereClauseContext *ctx)
 {
-    return std::make_shared<AST::PrewhereClause>(ctx->columnExpr()->accept(this));
+    return std::make_shared<PrewhereClause>(ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitWhereClause(ClickHouseParser::WhereClauseContext *ctx)
 {
-    return std::make_shared<AST::WhereClause>(ctx->columnExpr()->accept(this));
+    return std::make_shared<WhereClause>(ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitGroupByClause(ClickHouseParser::GroupByClauseContext *ctx)
 {
-    return std::make_shared<AST::GroupByClause>(ctx->columnExprList()->accept(this), !!ctx->TOTALS());
+    return std::make_shared<GroupByClause>(ctx->columnExprList()->accept(this), !!ctx->TOTALS());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitHavingClause(ClickHouseParser::HavingClauseContext *ctx)
 {
-    return std::make_shared<AST::HavingClause>(ctx->columnExpr()->accept(this));
+    return std::make_shared<HavingClause>(ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitOrderByClause(ClickHouseParser::OrderByClauseContext *ctx)
 {
-    return std::make_shared<AST::OrderByClause>(ctx->orderExprList()->accept(this));
+    return std::make_shared<OrderByClause>(ctx->orderExprList()->accept(this).as<PtrTo<OrderExprList>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitLimitByClause(ClickHouseParser::LimitByClauseContext *ctx)
 {
-    return std::make_shared<AST::LimitByClause>(ctx->limitExpr()->accept(this), ctx->columnExprList()->accept(this));
+    return std::make_shared<LimitByClause>(ctx->limitExpr()->accept(this), ctx->columnExprList()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitLimitClause(ClickHouseParser::LimitClauseContext *ctx)
 {
-    return std::make_shared<AST::LimitClause>(ctx->limitExpr()->accept(this));
+    return std::make_shared<LimitClause>(ctx->limitExpr()->accept(this).as<PtrTo<LimitExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsClauseContext *ctx)
 {
-    return std::make_shared<AST::SettingsClause>(ctx->settingExprList()->accept(this));
+    return std::make_shared<SettingsClause>(ctx->settingExprList()->accept(this).as<PtrTo<SettingExprList>>());
 }
 
 }

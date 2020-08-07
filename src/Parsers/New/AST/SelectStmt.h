@@ -148,7 +148,7 @@ class SelectStmt : public INode
         ASTPtr convertToOld() const override;
 
     private:
-        enum ChildIndex
+        enum ChildIndex : UInt8
         {
             COLUMNS = 0,
             WITH,

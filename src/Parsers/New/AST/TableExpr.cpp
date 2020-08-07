@@ -11,28 +11,28 @@ namespace DB::AST
 {
 
 // static
+PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias)
+{
+    return PtrTo<TableExpr>(new TableExpr(ExprType::ALIAS, {expr, alias}));
+}
+
+// static
+PtrTo<TableExpr> TableExpr::createFunction(PtrTo<Identifier> name, PtrList args)
+{
+    args.insert(args.begin(), name);
+    return PtrTo<TableExpr>(new TableExpr(ExprType::FUNCTION, args));
+}
+
+// static
 PtrTo<TableExpr> TableExpr::createIdentifier(PtrTo<TableIdentifier> identifier)
 {
     return PtrTo<TableExpr>(new TableExpr(ExprType::IDENTIFIER, {identifier}));
 }
 
 // static
-PtrTo<TableExpr> TableExpr::createFunction(PtrTo<Identifier> name, PtrList args)
-{
-    args.insert(args.begin(), std::static_pointer_cast<INode>(name));
-    return PtrTo<TableExpr>(new TableExpr(ExprType::FUNCTION, args));
-}
-
-// static
 PtrTo<TableExpr> TableExpr::createSubquery(PtrTo<SelectStmt> subquery)
 {
     return PtrTo<TableExpr>(new TableExpr(ExprType::SUBQUERY, {subquery}));
-}
-
-// static
-PtrTo<TableExpr> TableExpr::createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias)
-{
-    return PtrTo<TableExpr>(new TableExpr(ExprType::ALIAS, {expr, alias}));
 }
 
 TableExpr::TableExpr(TableExpr::ExprType type, PtrList exprs) : expr_type(type)
@@ -83,7 +83,12 @@ antlrcpp::Any ParseTreeVisitor::visitTableExprAlias(ClickHouseParser::TableExprA
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx)
 {
-    return ctx->tableFunctionExpr()->accept(this);
+    AST::PtrList args;
+
+    if (ctx->tableArgList())
+        for (auto * arg : ctx->tableArgList()->tableArgExpr()) args.emplace_back(arg->accept(this));
+
+    return AST::TableExpr::createFunction(ctx->identifier()->accept(this), args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx)
@@ -94,15 +99,6 @@ antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::Table
 antlrcpp::Any ParseTreeVisitor::visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx)
 {
     return AST::TableExpr::createSubquery(ctx->selectStmt()->accept(this));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *ctx)
-{
-    AST::PtrList args;
-
-    for (auto * arg : ctx->tableArgList()->tableArgExpr()) args.emplace_back(arg->accept(this));
-
-    return AST::TableExpr::createFunction(ctx->identifier()->accept(this), args);
 }
 
 }

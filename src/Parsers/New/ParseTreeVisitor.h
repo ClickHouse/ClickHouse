@@ -93,7 +93,6 @@ public:
     antlrcpp::Any visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx) override;
     antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx) override;
     antlrcpp::Any visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx) override;
-    antlrcpp::Any visitTableFunctionExpr(ClickHouseParser::TableFunctionExprContext *ctx) override;
     antlrcpp::Any visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx) override;
 
     // Database expressions

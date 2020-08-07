@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/LimitExpr.h>
 
+#include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -19,10 +20,12 @@ LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit_, PtrTo<NumberLiteral> offset_) 
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitLimitExpr(ClickHouseParser::LimitExprContext *ctx)
 {
-    if (ctx->OFFSET()) return std::make_shared<AST::LimitExpr>(ctx->NUMBER_LITERAL(0)->accept(this), ctx->NUMBER_LITERAL(1)->accept(this));
-    else return std::make_shared<AST::LimitExpr>(ctx->NUMBER_LITERAL(0)->accept(this));
+    if (ctx->OFFSET()) return std::make_shared<LimitExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)), Literal::createNumber(ctx->NUMBER_LITERAL(1)));
+    else return std::make_shared<LimitExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)));
 }
 
 }
