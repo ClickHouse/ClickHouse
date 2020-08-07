@@ -1,4 +1,3 @@
-#include <memory>
 #include <Parsers/New/AST/Literal.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>

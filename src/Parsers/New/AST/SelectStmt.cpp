@@ -4,9 +4,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/ParseTreeVisitor.h>
-#include "Parsers/New/AST/LimitExpr.h"
-#include "Parsers/New/AST/RatioExpr.h"
-#include "Parsers/New/AST/fwd_decl.h"
 
 
 namespace DB::AST

@@ -2,8 +2,6 @@
 
 #include <Parsers/New/AST/Query.h>
 
-#include <list>
-
 
 namespace DB::AST
 {

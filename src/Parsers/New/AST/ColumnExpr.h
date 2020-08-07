@@ -22,6 +22,7 @@ class ColumnExpr : public INode
         enum ChildIndex : UInt8
         {
             // ALIAS
+            EXPR = 0,
             ALIAS = 1,
 
             // IDENTIFIER
@@ -31,6 +32,10 @@ class ColumnExpr : public INode
             NAME = 0,
             PARAMS = 1,  // may be |nullptr|
             ARGS = 2,    // may be |nullptr|
+
+            // LAMBDA
+            LAMBDA_ARGS = 0,
+            LAMBDA_EXPR = 1,
 
             // LITERAL
             LITERAL = 0,

@@ -132,13 +132,13 @@ databaseIdentifier: identifier;
 // Basics
 
 literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
-keyword // do not use directly in grammar - this rule allows to use keywords as identifiers.
+keyword // do not use directly in grammar - this rule allows to use keywords as identifiers. Except NULL_SQL.
     : ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | COLLATE
     | CROSS | DAY | DESCENDING | DISTINCT | ELSE | END | EXTRACT | FINAL | FIRST | FORMAT | FROM | FULL
     | GLOBAL | GROUP | HAVING | HOUR | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | LAST | LEADING | LEFT
-    | LIKE | LIMIT | LOCAL | MINUTE | MONTH | NOT | NULL_SQL | NULLS | OFFSET | ON | OR | ORDER | OUTER
-    | OUTFILE | PREWHERE | QUARTER | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SETTINGS | THEN | TOTALS
-    | TRAILING | TRIM | UNION | USING | WEEK | WHEN | WHERE | WITH | YEAR
+    | LIKE | LIMIT | LOCAL | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OR | ORDER | OUTER | OUTFILE
+    | PREWHERE | QUARTER | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SETTINGS | THEN | TOTALS | TRAILING | TRIM
+    | UNION | USING | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

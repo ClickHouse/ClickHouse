@@ -1,5 +1,7 @@
 #include <Parsers/New/parseQuery.h>
 
+#include <Parsers/New/AST/Query.h>
+
 #include <Parsers/New/ClickHouseLexer.h>
 #include <Parsers/New/ClickHouseParser.h>
 #include <Parsers/New/LexerErrorListener.h>

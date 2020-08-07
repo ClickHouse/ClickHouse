@@ -1,10 +1,8 @@
-#include <memory>
 #include <Parsers/New/AST/Identifier.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>
 
 #include <Parsers/ASTIdentifier.h>
-#include "Parsers/New/AST/INode.h"
 
 
 namespace DB::AST

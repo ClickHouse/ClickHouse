@@ -1,4 +1,3 @@
-#include <memory>
 #include <Parsers/New/AST/ColumnExpr.h>
 
 #include <Parsers/New/AST/Identifier.h>
@@ -11,7 +10,6 @@
 #include <Parsers/ASTFunction.h>
 
 #include <support/Any.h>
-#include "Parsers/New/AST/fwd_decl.h"
 
 
 
@@ -63,6 +61,17 @@ ASTPtr ColumnExpr::convertToOld() const
 {
     switch (expr_type)
     {
+        case ExprType::ALIAS:
+        {
+            ASTPtr expr = children[EXPR]->convertToOld();
+
+            if (auto * expr_with_alias = dynamic_cast<ASTWithAlias*>(expr.get()))
+                expr_with_alias->alias = children[ALIAS]->as<Identifier>()->getName();
+            else
+                throw std::runtime_error("Trying to convert new expression with alias to old one without alias support: " + expr->getID());
+
+            return expr;
+        }
         case ExprType::ASTERISK:
             return std::make_shared<ASTAsterisk>();
         case ExprType::FUNCTION:
@@ -85,10 +94,25 @@ ASTPtr ColumnExpr::convertToOld() const
         }
         case ExprType::IDENTIFIER:
             return children[IDENTIFIER]->convertToOld();
+        case ExprType::LAMBDA:
+        {
+            auto func = std::make_shared<ASTFunction>();
+            auto tuple = std::make_shared<ASTFunction>();
+
+            func->name = "lambda";
+            func->arguments = std::make_shared<ASTExpressionList>();
+            func->arguments->children.push_back(tuple);
+            func->arguments->children.push_back(children[LAMBDA_EXPR]->convertToOld());
+            func->children.push_back(func->arguments);
+
+            tuple->name = "tuple";
+            tuple->arguments = children[LAMBDA_ARGS]->convertToOld();
+            tuple->children.push_back(tuple->arguments);
+
+            return func;
+        }
         case ExprType::LITERAL:
             return children[LITERAL]->convertToOld();
-        default:
-            throw std::logic_error("Unsupported type of column expression");
     }
 }
 

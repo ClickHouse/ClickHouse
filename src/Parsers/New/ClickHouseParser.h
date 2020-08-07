@@ -1129,7 +1129,6 @@ public:
     antlr4::tree::TerminalNode *MINUTE();
     antlr4::tree::TerminalNode *MONTH();
     antlr4::tree::TerminalNode *NOT();
-    antlr4::tree::TerminalNode *NULL_SQL();
     antlr4::tree::TerminalNode *NULLS();
     antlr4::tree::TerminalNode *OFFSET();
     antlr4::tree::TerminalNode *ON();

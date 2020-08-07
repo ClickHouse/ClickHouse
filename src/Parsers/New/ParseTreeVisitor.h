@@ -2,9 +2,6 @@
 
 #include "ClickHouseParserVisitor.h"
 
-#include <Parsers/New/AST/Query.h>
-#include <Parsers/New/ClickHouseParser.h>
-
 
 namespace DB {
 

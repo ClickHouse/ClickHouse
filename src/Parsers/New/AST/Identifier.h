@@ -2,8 +2,6 @@
 
 #include <Parsers/New/AST/INode.h>
 
-#include <string>
-
 
 namespace DB::AST
 {
@@ -11,7 +9,7 @@ namespace DB::AST
 class Identifier : public INode
 {
     public:
-        explicit Identifier(const std::string & name_);
+        explicit Identifier(const String & name_);
 
         const auto & getName() const { return name; }
 
@@ -20,7 +18,7 @@ class Identifier : public INode
         virtual String getQualifiedName() const { return name; };
 
     private:
-        const std::string name;
+        const String name;
 
         String dumpInfo() const override { return getQualifiedName(); }
 };
