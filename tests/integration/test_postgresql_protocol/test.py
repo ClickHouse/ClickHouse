@@ -14,7 +14,7 @@ import subprocess
 import time
 import uuid
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 psycopg2.extras.register_uuid()
 
