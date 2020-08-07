@@ -16,6 +16,7 @@
 #include <ext/range.h>
 
 #include <common/unaligned.h>
+#include "Columns/ColumnConst.h"
 
 
 namespace DB
@@ -120,8 +121,10 @@ public:
             ? 1
             : origin.size();
 
-        auto dispatch_target_col = [this, origin_size, &origin](auto & target_dispatched) {
-            auto dispatch_origin_col = [this, origin_size, &target_dispatched](auto & origin_dispatched) {
+        auto dispatch_target_col = [this, origin_size, &origin](auto & target_dispatched)
+        {
+            auto dispatch_origin_col = [this, origin_size, &target_dispatched](const auto & origin_dispatched)
+            {
                 for (size_t i = 0; i < origin_size; ++i)
                 {
                     const StringRef elem = origin_dispatched.getDataAt(i);
@@ -132,30 +135,40 @@ public:
                 }
             };
 
-#define dispatch(TYPE) case TypeIndex::TYPE: dispatch_origin_col(*typeid_cast<const Column##TYPE *>(&origin)); break;
+#define dispatch(TYPE) case TypeIndex::TYPE: dispatch_origin_col(*typeid_cast<const Column##TYPE *>(&col)); break;
 
-            switch (origin.getDataType())
+            auto dispatch_origin = [dispatch_origin_col = std::move(dispatch_origin_col)](const auto& col)
             {
-                dispatch(UInt8)
-                dispatch(UInt16)
-                dispatch(UInt32)
-                dispatch(UInt64)
-                dispatch(UInt128)
-                dispatch(Int8)
-                dispatch(Int16)
-                dispatch(Int32)
-                dispatch(Int64)
-                dispatch(Float32)
-                dispatch(Float64)
-                dispatch(String)
-                dispatch(FixedString)
-                // dispatch(Array) cannot be forward-declared -- typeid on incomplete type is prohibited
-                // dispatch(Tuple)
-                // dispatch(Set)
-                // dispatch(Interval)
-                dispatch(Nullable)
-                default: dispatch_origin_col(origin); break;
-            }
+                switch (col.getDataType())
+                {
+                    dispatch(UInt8)
+                    dispatch(UInt16)
+                    dispatch(UInt32)
+                    dispatch(UInt64)
+                    dispatch(UInt128)
+                    dispatch(Int8)
+                    dispatch(Int16)
+                    dispatch(Int32)
+                    dispatch(Int64)
+                    dispatch(Float32)
+                    dispatch(Float64)
+                    dispatch(String)
+                    dispatch(FixedString)
+                    // dispatch(Array) cannot be forward-declared -- typeid on incomplete type is prohibited
+                    // dispatch(Tuple)
+                    // dispatch(Set)
+                    // dispatch(Interval)
+                    dispatch(Nullable)
+                    default: dispatch_origin_col(col); break;
+                }
+            };
+
+#undef dispatch
+
+            if (isColumnConst(origin)) // special case as dispatch_origin would produce wrong results if invoked ditectly.
+                dispatch_origin(typeid_cast<const ColumnConst *>(&origin)->getDataColumn());
+            else
+                dispatch_origin(origin);
         };
 
         switch (origin_index_type_size)
