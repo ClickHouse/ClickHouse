@@ -171,10 +171,7 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
                     std::unique_lock<std::mutex> lock(sync_mutex);
 
                     if (binlog_event)
-                    {
-                        binlog_event->dump();
                         onEvent(buffers, binlog_event, *metadata);
-                    }
 
                     if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
                             settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
@@ -592,6 +589,17 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
             if (exception.code() != ErrorCodes::SYNTAX_ERROR)
                 throw;
         }
+    }
+    else if (receive_event->header.type != HEARTBEAT_EVENT)
+    {
+        const auto & dump_event_message = [&]()
+        {
+            std::stringstream ss;
+            receive_event->dump(ss);
+            return ss.str();
+        };
+
+        LOG_DEBUG(log, "Skip MySQL event: \n {}", dump_event_message());
     }
 }
 

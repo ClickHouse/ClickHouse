@@ -27,15 +27,15 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
     }
 
-    void EventHeader::dump() const
+    void EventHeader::dump(std::ostream & out) const
     {
-        std::cerr << "\n=== " << to_string(this->type) << " ===" << std::endl;
-        std::cerr << "Timestamp: " << this->timestamp << std::endl;
-        std::cerr << "Event Type: " << this->type << std::endl;
-        std::cerr << "Server ID: " << this->server_id << std::endl;
-        std::cerr << "Event Size: " << this->event_size << std::endl;
-        std::cerr << "Log Pos: " << this->log_pos << std::endl;
-        std::cerr << "Flags: " << this->flags << std::endl;
+        out << "\n=== " << to_string(this->type) << " ===" << std::endl;
+        out << "Timestamp: " << this->timestamp << std::endl;
+        out << "Event Type: " << this->type << std::endl;
+        out << "Server ID: " << this->server_id << std::endl;
+        out << "Event Size: " << this->event_size << std::endl;
+        out << "Log Pos: " << this->log_pos << std::endl;
+        out << "Flags: " << this->flags << std::endl;
     }
 
     /// https://dev.mysql.com/doc/internals/en/format-description-event.html
@@ -53,13 +53,13 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(event_type_header_length.data()), len);
     }
 
-    void FormatDescriptionEvent::dump() const
+    void FormatDescriptionEvent::dump(std::ostream & out) const
     {
-        header.dump();
-        std::cerr << "Binlog Version: " << this->binlog_version << std::endl;
-        std::cerr << "Server Version: " << this->server_version << std::endl;
-        std::cerr << "Create Timestamp: " << this->create_timestamp << std::endl;
-        std::cerr << "Event Header Len: " << this->event_header_length << std::endl;
+        header.dump(out);
+        out << "Binlog Version: " << this->binlog_version << std::endl;
+        out << "Server Version: " << this->server_version << std::endl;
+        out << "Create Timestamp: " << this->create_timestamp << std::endl;
+        out << "Event Header Len: " << this->event_header_length << std::endl;
     }
 
     /// https://dev.mysql.com/doc/internals/en/rotate-event.html
@@ -71,11 +71,11 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(next_binlog.data()), len);
     }
 
-    void RotateEvent::dump() const
+    void RotateEvent::dump(std::ostream & out) const
     {
-        header.dump();
-        std::cerr << "Position: " << this->position << std::endl;
-        std::cerr << "Next Binlog: " << this->next_binlog << std::endl;
+        header.dump(out);
+        out << "Position: " << this->position << std::endl;
+        out << "Next Binlog: " << this->next_binlog << std::endl;
     }
 
     /// https://dev.mysql.com/doc/internals/en/query-event.html
@@ -114,25 +114,25 @@ namespace MySQLReplication
         }
     }
 
-    void QueryEvent::dump() const
+    void QueryEvent::dump(std::ostream & out) const
     {
-        header.dump();
-        std::cerr << "Thread ID: " << this->thread_id << std::endl;
-        std::cerr << "Execution Time: " << this->exec_time << std::endl;
-        std::cerr << "Schema Len: " << this->schema_len << std::endl;
-        std::cerr << "Error Code: " << this->error_code << std::endl;
-        std::cerr << "Status Len: " << this->status_len << std::endl;
-        std::cerr << "Schema: " << this->schema << std::endl;
-        std::cerr << "Query: " << this->query << std::endl;
+        header.dump(out);
+        out << "Thread ID: " << this->thread_id << std::endl;
+        out << "Execution Time: " << this->exec_time << std::endl;
+        out << "Schema Len: " << this->schema_len << std::endl;
+        out << "Error Code: " << this->error_code << std::endl;
+        out << "Status Len: " << this->status_len << std::endl;
+        out << "Schema: " << this->schema << std::endl;
+        out << "Query: " << this->query << std::endl;
     }
 
     void XIDEvent::parseImpl(ReadBuffer & payload) { payload.readStrict(reinterpret_cast<char *>(&xid), 8); }
 
 
-    void XIDEvent::dump() const
+    void XIDEvent::dump(std::ostream & out) const
     {
-        header.dump();
-        std::cerr << "XID: " << this->xid << std::endl;
+        header.dump(out);
+        out << "XID: " << this->xid << std::endl;
     }
 
     void TableMapEvent::parseImpl(ReadBuffer & payload)
@@ -234,21 +234,21 @@ namespace MySQLReplication
         }
     }
 
-    void TableMapEvent::dump() const
+    void TableMapEvent::dump(std::ostream & out) const
     {
-        header.dump();
-        std::cerr << "Table ID: " << this->table_id << std::endl;
-        std::cerr << "Flags: " << this->flags << std::endl;
-        std::cerr << "Schema Len: " << this->schema_len << std::endl;
-        std::cerr << "Schema: " << this->schema << std::endl;
-        std::cerr << "Table Len: " << this->table_len << std::endl;
-        std::cerr << "Table: " << this->table << std::endl;
-        std::cerr << "Column Count: " << this->column_count << std::endl;
+        header.dump(out);
+        out << "Table ID: " << this->table_id << std::endl;
+        out << "Flags: " << this->flags << std::endl;
+        out << "Schema Len: " << this->schema_len << std::endl;
+        out << "Schema: " << this->schema << std::endl;
+        out << "Table Len: " << this->table_len << std::endl;
+        out << "Table: " << this->table << std::endl;
+        out << "Column Count: " << this->column_count << std::endl;
         for (auto i = 0U; i < column_count; i++)
         {
-            std::cerr << "Column Type [" << i << "]: " << column_type[i] << ", Meta: " << column_meta[i] << std::endl;
+            out << "Column Type [" << i << "]: " << column_type[i] << ", Meta: " << column_meta[i] << std::endl;
         }
-        std::cerr << "Null Bitmap: " << this->null_bitmap << std::endl;
+        out << "Null Bitmap: " << this->null_bitmap << std::endl;
     }
 
     void RowsEvent::parseImpl(ReadBuffer & payload)
@@ -688,25 +688,25 @@ namespace MySQLReplication
         rows.push_back(row);
     }
 
-    void RowsEvent::dump() const
+    void RowsEvent::dump(std::ostream & out) const
     {
         FieldVisitorToString to_string;
 
-        header.dump();
-        std::cerr << "Schema: " << this->schema << std::endl;
-        std::cerr << "Table: " << this->table << std::endl;
+        header.dump(out);
+        out << "Schema: " << this->schema << std::endl;
+        out << "Table: " << this->table << std::endl;
         for (auto i = 0U; i < rows.size(); i++)
         {
-            std::cerr << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << std::endl;
+            out << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << std::endl;
         }
     }
 
     void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }
 
-    void DryRunEvent::dump() const
+    void DryRunEvent::dump(std::ostream & out) const
     {
-        header.dump();
-        std::cerr << "[DryRun Event]" << std::endl;
+        header.dump(out);
+        out << "[DryRun Event]" << std::endl;
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)

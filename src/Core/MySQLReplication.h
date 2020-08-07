@@ -289,7 +289,7 @@ namespace MySQLReplication
         UInt32 log_pos;
         UInt16 flags;
 
-        void dump() const;
+        void dump(std::ostream & out) const;
         void parse(ReadBuffer & payload);
     };
 
@@ -299,7 +299,7 @@ namespace MySQLReplication
         EventHeader header;
 
         virtual ~EventBase() = default;
-        virtual void dump() const = 0;
+        virtual void dump(std::ostream & out) const = 0;
         virtual void parseHeader(ReadBuffer & payload) { header.parse(payload); }
         virtual void parseEvent(ReadBuffer & payload) { parseImpl(payload); }
         virtual MySQLEventType type() const { return MYSQL_UNHANDLED_EVENT; }
@@ -317,7 +317,7 @@ namespace MySQLReplication
         UInt8 event_header_length;
         String event_type_header_length;
 
-        void dump() const override;
+        void dump(std::ostream & out) const override;
         void parseImpl(ReadBuffer & payload) override;
 
     private:
@@ -330,7 +330,7 @@ namespace MySQLReplication
         UInt64 position;
         String next_binlog;
 
-        void dump() const override;
+        void dump(std::ostream & out) const override;
 
     protected:
         void parseImpl(ReadBuffer & payload) override;
@@ -356,7 +356,7 @@ namespace MySQLReplication
         String query;
         QueryType typ = DDL;
 
-        void dump() const override;
+        void dump(std::ostream & out) const override;
         MySQLEventType type() const override { return MYSQL_QUERY_EVENT; }
 
     protected:
@@ -368,7 +368,7 @@ namespace MySQLReplication
     protected:
         UInt64 xid;
 
-        void dump() const override;
+        void dump(std::ostream & out) const override;
         void parseImpl(ReadBuffer & payload) override;
     };
 
@@ -386,7 +386,7 @@ namespace MySQLReplication
         std::vector<UInt16> column_meta;
         Bitmap null_bitmap;
 
-        void dump() const override;
+        void dump(std::ostream & out) const override;
 
     protected:
         void parseImpl(ReadBuffer & payload) override;
@@ -408,7 +408,7 @@ namespace MySQLReplication
             table = table_map->table;
         }
 
-        void dump() const override;
+        void dump(std::ostream & out) const override;
 
     protected:
         UInt64 table_id;
@@ -447,7 +447,7 @@ namespace MySQLReplication
 
     class DryRunEvent : public EventBase
     {
-        void dump() const override;
+        void dump(std::ostream & out) const override;
 
     protected:
         void parseImpl(ReadBuffer & payload) override;
