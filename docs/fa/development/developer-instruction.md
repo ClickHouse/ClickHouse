@@ -214,7 +214,7 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 در این مورد, تاتر خواهد فایل های پیکربندی واقع در دایرکتوری جاری استفاده. شما می توانید اجرا کنید `clickhouse server` از هر دایرکتوری مشخص کردن مسیر به یک فایل پیکربندی به عنوان یک پارامتر خط فرمان `--config-file`.
 
-برای اتصال به ClickHouse با clickhouse-مشتری در یکی دیگر از ترمینال حرکت به `ClickHouse/build/programs/` و فرار کن `clickhouse client`.
+برای اتصال به ClickHouse با clickhouse-مشتری در یکی دیگر از ترمینال حرکت به `ClickHouse/build/programs/` و فرار کن `./clickhouse client`.
 
 اگر شما `Connection refused` سعی کنید مشخص نشانی میزبان 127.0.0.1:
 

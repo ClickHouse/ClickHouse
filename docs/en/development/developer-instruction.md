@@ -208,7 +208,7 @@ To run the server under the current user you need to navigate to `ClickHouse/pro
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
+To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `./clickhouse client`.
 
 If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
 

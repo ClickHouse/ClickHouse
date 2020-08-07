@@ -212,7 +212,7 @@ Pour exécuter le serveur sous l'utilisateur actuel vous devez naviguer vers `Cl
 
 Dans ce cas, ClickHouse utilisera les fichiers de configuration situés dans le répertoire courant. Vous pouvez l'exécuter `clickhouse server` depuis n'importe quel répertoire spécifiant le chemin d'accès à un fichier de configuration en tant que paramètre de ligne de commande `--config-file`.
 
-Pour vous connecter à ClickHouse avec clickhouse-client dans un autre terminal, accédez à `ClickHouse/build/programs/` et exécuter `clickhouse client`.
+Pour vous connecter à ClickHouse avec clickhouse-client dans un autre terminal, accédez à `ClickHouse/build/programs/` et exécuter `./clickhouse client`.
 
 Si vous obtenez `Connection refused` message sur Mac OS X ou FreeBSD, essayez de spécifier l'adresse hôte 127.0.0.1:
 

@@ -212,7 +212,7 @@ Sunucuyu geçerli kullanıcı altında çalıştırmak için aşağıdakilere gi
 
 Bu durumda, ClickHouse geçerli dizinde bulunan yapılandırma dosyalarını kullanır. Koş youabilirsiniz `clickhouse server` komut satırı parametresi olarak bir yapılandırma dosyasının yolunu belirten herhangi bir dizinden `--config-file`.
 
-Başka bir terminalde clickhouse-client ile Clickhouse'a bağlanmak için `ClickHouse/build/programs/` ve koş `clickhouse client`.
+Başka bir terminalde clickhouse-client ile Clickhouse'a bağlanmak için `ClickHouse/build/programs/` ve koş `./clickhouse client`.
 
 Eğer alırsanız `Connection refused` Mac OS X veya Freebsd'de mesaj, ana bilgisayar adresi 127.0.0.1 belirtmeyi deneyin:
 
