@@ -20,7 +20,8 @@ struct ExtractNetloc
         Pos pos = data;
         Pos end = data + size;
 
-        if (*pos == '/' && *(pos + 1) == '/')
+        /// Skip scheme.
+        if (pos + 2 < end && pos[0] == '/' && pos[1] == '/')
         {
             pos += 2;
         }
@@ -55,15 +56,17 @@ struct ExtractNetloc
                         case '&':
                             return StringRef{};
                         default:
-                            goto exloop;
+                            pos = scheme_end; /// exit from the loop
                     }
                 }
             }
-exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
-            pos += 3;
-        else
-            pos = data;
+            if (pos + 2 < scheme_end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/')
+                pos += 3;
+            else
+                pos = data;
         }
+
+        /// Now pos points to the first byte after scheme (if there is).
 
         bool has_identification = false;
         Pos question_mark_pos = end;
@@ -106,7 +109,9 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
                 case ';':
                 case '=':
                 case '&':
-                    return StringRef(start_of_host, std::min(std::min(pos - 1, question_mark_pos), slash_pos) - start_of_host);
+                    return pos > start_of_host
+                        ? StringRef(start_of_host, std::min(std::min(pos - 1, question_mark_pos), slash_pos) - start_of_host)
+                        : StringRef{};
             }
         }
 
