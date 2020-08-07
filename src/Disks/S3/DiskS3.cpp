@@ -421,7 +421,7 @@ class AsyncExecutor : public Executor
 public:
     explicit AsyncExecutor() = default;
 
-    std::future<void> execute(std::function<void()> task)
+    std::future<void> execute(std::function<void()> task) override
     {
         auto promise = std::make_shared<std::promise<void>>();
 
