@@ -15,6 +15,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Core/BigInt.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -105,29 +106,16 @@ inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-/// FIXME
-#if 1
 template <typename T>
 void writeBigIntBinary(const T & x, WriteBuffer & buf)
 {
-    // probably should export directly to buffer
-    size_t bytesize = 32;
+    static const constexpr size_t bytesize = BigInt<T>::size;
+    char bytes[bytesize];
 
-    std::vector<char> bytes(bytesize, 0);
-    export_bits(x, std::back_inserter(bytes), 8, false);
+    BigInt<T>::serialize(x, bytes);
 
-    if constexpr (is_signed_v<T>)
-    {
-        // signed 256-bit boost integer is actually 257-bit :/
-        if (x < 0)
-            buf.write(1);
-        else
-            buf.write(0);
-    }
-
-    buf.write(bytes.data(), bytesize);
+    buf.write(bytes, bytesize);
 }
-#endif
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)

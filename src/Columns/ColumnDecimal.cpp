@@ -4,6 +4,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <Core/BigInt.h>
 
 #include <common/unaligned.h>
 
@@ -11,7 +12,6 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnVector.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 

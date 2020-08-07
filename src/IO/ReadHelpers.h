@@ -17,6 +17,7 @@
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
+#include <Core/BigInt.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -119,29 +120,16 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
-/// FIXME
-#if 1
 template <typename T>
 void readBigIntBinary(T & x, ReadBuffer & buf)
 {
-    size_t bytesize = 32;
+    static const constexpr size_t bytesize = BigInt<T>::size;
+    char bytes[bytesize];
 
-    [[maybe_unused]] char is_negative;
-    if constexpr (is_signed_v<T>)
-        readChar(is_negative, buf);
+    buf.readStrict(bytes, bytesize);
 
-    std::vector<char> bytes(bytesize, 0);
-    buf.readStrict(bytes.data(), bytesize);
-
-    import_bits(x, bytes.begin(), bytes.end(), false);
-
-    if constexpr (is_signed_v<T>)
-    {
-        if (is_negative)
-            x = -x;
-    }
+    x = BigInt<T>::deserialize(bytes);
 }
-#endif
 
 inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
