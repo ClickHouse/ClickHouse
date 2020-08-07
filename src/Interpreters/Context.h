@@ -499,7 +499,7 @@ public:
 
     BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundProcessingPool & getBackgroundPool();
-    BackgroundProcessingPool & getBackgroundMovePool() const;
+    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
     BackgroundSchedulePool & getDistributedSchedulePool();
 

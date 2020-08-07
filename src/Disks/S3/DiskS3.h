@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Disks/DiskFactory.h"
-#include "Disks/DiskAsyncSupport.h"
+#include "Disks/Executor.h"
 #include "ProxyConfiguration.h"
 
 #include <aws/s3/S3Client.h>
@@ -17,7 +17,7 @@ class BackgroundProcessingPool;
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
  * that contains S3 object key with actual data.
  */
-class DiskS3 : public IDisk, public DiskAsyncSupport
+class DiskS3 : public IDisk
 {
 public:
     friend class DiskS3Reservation;
@@ -26,7 +26,6 @@ public:
         String name_,
         std::shared_ptr<Aws::S3::S3Client> client_,
         std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
-        BackgroundProcessingPool & pool,
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
@@ -104,16 +103,15 @@ public:
 
     const String getType() const override { return "s3"; }
 
-    std::future<void> runAsync(std::function<void()> task) override;
-
 private:
     bool tryReserve(UInt64 bytes);
+
+    std::unique_ptr<Executor> getExecutor() override;
 
 private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
-    BackgroundProcessingPool & pool;
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
