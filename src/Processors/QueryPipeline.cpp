@@ -415,6 +415,7 @@ void QueryPipeline::setCollectedProcessors(Processors * processors)
     pipe.collected_processors = processors;
 }
 
+
 QueryPipelineProcessorsCollector::QueryPipelineProcessorsCollector(QueryPipeline & pipeline_, IQueryPlanStep * step_)
     : pipeline(pipeline_), step(step_)
 {
