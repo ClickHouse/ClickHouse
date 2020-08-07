@@ -1,7 +1,10 @@
+#include <Databases/MySQL/MaterializeMetadata.h>
+
+#if USE_MYSQL
+
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Databases/MySQL/MaterializeMetadata.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -206,3 +209,5 @@ MaterializeMetadata::MaterializeMetadata(
 }
 
 }
+
+#endif
