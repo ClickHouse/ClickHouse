@@ -21,6 +21,7 @@ public:
     DataTypePtr operator() (const UInt64 & x) const;
     DataTypePtr operator() (const UInt128 & x) const;
     DataTypePtr operator() (const Int64 & x) const;
+    DataTypePtr operator() (const Int128 & x) const;
     DataTypePtr operator() (const Float64 & x) const;
     DataTypePtr operator() (const String & x) const;
     DataTypePtr operator() (const Array & x) const;

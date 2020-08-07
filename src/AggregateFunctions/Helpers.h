@@ -13,6 +13,7 @@
     M(Int16) \
     M(Int32) \
     M(Int64) \
+    M(Int128) \
     M(bInt256) \
     M(Float32) \
     M(Float64)

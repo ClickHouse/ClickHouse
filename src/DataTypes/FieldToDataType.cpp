@@ -49,6 +49,15 @@ DataTypePtr FieldToDataType::operator() (const Int64 & x) const
     return std::make_shared<DataTypeInt64>();
 }
 
+DataTypePtr FieldToDataType::operator() (const Int128 & x) const
+{
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
+    if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
+    if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
+    if (x <= std::numeric_limits<Int64>::max() && x >= std::numeric_limits<Int64>::min()) return std::make_shared<DataTypeInt64>();
+    return std::make_shared<DataTypeInt128>();
+}
+
 DataTypePtr FieldToDataType::operator() (const Float64 &) const
 {
     return std::make_shared<DataTypeFloat64>();

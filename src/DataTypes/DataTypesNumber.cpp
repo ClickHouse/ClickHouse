@@ -48,6 +48,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Float64", createNumericDataType<Float64>);
 
     factory.registerSimpleDataType("UInt256", [] { return DataTypePtr(std::make_shared<DataTypeUInt256>()); });
+    factory.registerSimpleDataType("Int128", [] { return DataTypePtr(std::make_shared<DataTypeInt128>()); });
     factory.registerSimpleDataType("Int256", [] { return DataTypePtr(std::make_shared<DataTypeInt256>()); });
 
     /// These synonyms are added for compatibility.
@@ -81,7 +82,6 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
-
 }
 
 }

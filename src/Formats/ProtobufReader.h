@@ -60,6 +60,7 @@ public:
     bool readNumber(UInt32 & value) { return current_converter->readUInt32(value); }
     bool readNumber(Int64 & value) { return current_converter->readInt64(value); }
     bool readNumber(UInt64 & value) { return current_converter->readUInt64(value); }
+    bool readNumber(Int128 & value) { return current_converter->readInt128(value); }
     bool readNumber(UInt128 & value) { return current_converter->readUInt128(value); }
     bool readNumber(bInt256 & value) { return current_converter->readbInt256(value); }
     bool readNumber(bUInt256 & value) { return current_converter->readbUInt256(value); }
@@ -148,6 +149,7 @@ private:
        virtual bool readUInt32(UInt32 &) = 0;
        virtual bool readInt64(Int64 &) = 0;
        virtual bool readUInt64(UInt64 &) = 0;
+       virtual bool readInt128(Int128 &) = 0;
        virtual bool readUInt128(UInt128 &) = 0;
 
        virtual bool readbInt256(bInt256 &) = 0;
@@ -228,6 +230,7 @@ public:
     bool readNumber(UInt32 &) { return false; }
     bool readNumber(Int64 &) { return false; }
     bool readNumber(UInt64 &) { return false; }
+    bool readNumber(Int128 &) { return false; }
     bool readNumber(UInt128 &) { return false; }
     bool readNumber(bInt256 &) { return false; }
     bool readNumber(bUInt256 &) { return false; }

@@ -77,6 +77,8 @@ struct is_arithmetic
     static constexpr bool value = std::is_arithmetic_v<T>;
 };
 
+template <> struct is_arithmetic<__int128> { static constexpr bool value = true; };
+
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
 

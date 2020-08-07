@@ -97,6 +97,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeInt16,
             DataTypeInt32,
             DataTypeInt64,
+            DataTypeInt128,
             DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,

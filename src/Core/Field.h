@@ -247,9 +247,9 @@ public:
             Decimal64  = 20,
             Decimal128 = 21,
             AggregateFunctionState = 22,
-            bUInt256 = 25,
-            bInt256  = 26,
-            Decimal256 = 27,
+            Decimal256 = 23,
+            bUInt256 = 24,
+            bInt256  = 25,
         };
 
         static const int MIN_NON_POD = 16;
@@ -574,13 +574,7 @@ public:
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
-            case Types::Int128:
-                // TODO: investigate where we need Int128 Fields. There are no
-                // field visitors that support them, and they only arise indirectly
-                // in some functions that use Decimal columns: they get the
-                // underlying Field value with get<Int128>(). Probably should be
-                // switched to DecimalField, but this is a whole endeavor in itself.
-                throw Exception("Unexpected Int128 in Field::dispatch()", ErrorCodes::LOGICAL_ERROR);
+            case Types::Int128: return f(field.template get<Int128>());
             case Types::bUInt256: return f(field.template get<bUInt256>());
             case Types::bInt256: return f(field.template get<bInt256>());
         }

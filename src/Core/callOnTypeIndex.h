@@ -26,17 +26,17 @@ bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::UInt16:       return f(TypePair<T, UInt16>());
             case TypeIndex::UInt32:       return f(TypePair<T, UInt32>());
             case TypeIndex::UInt64:       return f(TypePair<T, UInt64>());
-            case TypeIndex::bUInt256:       return f(TypePair<T, bUInt256>());
+            case TypeIndex::bUInt256:     return f(TypePair<T, bUInt256>());
 
             case TypeIndex::Int8:         return f(TypePair<T, Int8>());
             case TypeIndex::Int16:        return f(TypePair<T, Int16>());
             case TypeIndex::Int32:        return f(TypePair<T, Int32>());
             case TypeIndex::Int64:        return f(TypePair<T, Int64>());
             case TypeIndex::Int128:       return f(TypePair<T, Int128>());
-            case TypeIndex::bInt256:       return f(TypePair<T, bInt256>());
+            case TypeIndex::bInt256:      return f(TypePair<T, bInt256>());
 
             case TypeIndex::Enum8:        return f(TypePair<T, Int8>());
-            case TypeIndex::Enum16:        return f(TypePair<T, Int16>());
+            case TypeIndex::Enum16:       return f(TypePair<T, Int16>());
 
             default:
                 break;
@@ -171,13 +171,14 @@ bool callOnIndexAndDataType(TypeIndex number, F && f)
         case TypeIndex::UInt16:         return f(TypePair<DataTypeNumber<UInt16>, T>());
         case TypeIndex::UInt32:         return f(TypePair<DataTypeNumber<UInt32>, T>());
         case TypeIndex::UInt64:         return f(TypePair<DataTypeNumber<UInt64>, T>());
-        case TypeIndex::bUInt256:         return f(TypePair<DataTypeNumber<bUInt256>, T>());
+        case TypeIndex::bUInt256:       return f(TypePair<DataTypeNumber<bUInt256>, T>());
 
         case TypeIndex::Int8:           return f(TypePair<DataTypeNumber<Int8>, T>());
         case TypeIndex::Int16:          return f(TypePair<DataTypeNumber<Int16>, T>());
         case TypeIndex::Int32:          return f(TypePair<DataTypeNumber<Int32>, T>());
         case TypeIndex::Int64:          return f(TypePair<DataTypeNumber<Int64>, T>());
-        case TypeIndex::bInt256:          return f(TypePair<DataTypeNumber<bInt256>, T>());
+        case TypeIndex::Int128:         return f(TypePair<DataTypeNumber<Int128>, T>());
+        case TypeIndex::bInt256:        return f(TypePair<DataTypeNumber<bInt256>, T>());
 
         case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>());
         case TypeIndex::Float64:        return f(TypePair<DataTypeNumber<Float64>, T>());

@@ -71,6 +71,7 @@ public:
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const Int64 & x) const;
+    String operator() (const Int128 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -94,6 +95,7 @@ public:
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const Int64 & x) const;
+    String operator() (const Int128 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -136,6 +138,7 @@ public:
 
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
+    T operator() (const Int128 & x) const { return T(x); }
 
     T operator() (const Float64 & x) const
     {
@@ -206,6 +209,7 @@ public:
     void operator() (const UInt64 & x) const;
     void operator() (const UInt128 & x) const;
     void operator() (const Int64 & x) const;
+    void operator() (const Int128 & x) const;
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
@@ -254,6 +258,12 @@ public:
     bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+
+    bool operator() (Int128 & x) const
+    {
+        x += get<Int128>(rhs);
+        return x != Int128(0);
+    }
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const

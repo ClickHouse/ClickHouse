@@ -197,6 +197,13 @@ void readBinary(Tuple & x, ReadBuffer & buf)
                 x.push_back(value);
                 break;
             }
+            case Field::Types::Int128:
+            {
+                Int64 value;
+                DB::readVarInt(value, buf);
+                x.push_back(value);
+                break;
+            }
             case Field::Types::Float64:
             {
                 Float64 value;
@@ -275,6 +282,11 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
                 break;
             }
             case Field::Types::Int64:
+            {
+                DB::writeVarInt(get<Int64>(elem), buf);
+                break;
+            }
+            case Field::Types::Int128:
             {
                 DB::writeVarInt(get<Int64>(elem), buf);
                 break;

@@ -317,6 +317,7 @@ public:
     virtual void writeUInt32(UInt32) override { cannotConvertType("UInt32"); }
     virtual void writeInt64(Int64) override { cannotConvertType("Int64"); }
     virtual void writeUInt64(UInt64) override { cannotConvertType("UInt64"); }
+    virtual void writeInt128(Int128) override { cannotConvertType("Int128"); }
     virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
     virtual void writebInt256(const bInt256 &) override { cannotConvertType("Int256"); }
     virtual void writebUInt256(const bUInt256 &) override { cannotConvertType("UInt256"); }

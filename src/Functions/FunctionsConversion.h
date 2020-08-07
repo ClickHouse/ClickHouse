@@ -1487,6 +1487,7 @@ struct NameToInt8 { static constexpr auto name = "toInt8"; };
 struct NameToInt16 { static constexpr auto name = "toInt16"; };
 struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
+struct NameToInt128 { static constexpr auto name = "toInt128"; };
 struct NameToInt256 { static constexpr auto name = "toInt256"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
@@ -1501,6 +1502,7 @@ using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonoton
 using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
 using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
+using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
 using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<bInt256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
@@ -1527,6 +1529,7 @@ template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
 template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
 template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
 template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; };
 template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
@@ -1555,6 +1558,7 @@ struct NameToInt8OrZero { static constexpr auto name = "toInt8OrZero"; };
 struct NameToInt16OrZero { static constexpr auto name = "toInt16OrZero"; };
 struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
 struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
+struct NameToInt128OrZero { static constexpr auto name = "toInt128OrZero"; };
 struct NameToInt256OrZero { static constexpr auto name = "toInt256OrZero"; };
 struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
@@ -1575,6 +1579,7 @@ using FunctionToInt8OrZero = FunctionConvertFromString<DataTypeInt8, NameToInt8O
 using FunctionToInt16OrZero = FunctionConvertFromString<DataTypeInt16, NameToInt16OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToInt128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -1595,6 +1600,7 @@ struct NameToInt8OrNull { static constexpr auto name = "toInt8OrNull"; };
 struct NameToInt16OrNull { static constexpr auto name = "toInt16OrNull"; };
 struct NameToInt32OrNull { static constexpr auto name = "toInt32OrNull"; };
 struct NameToInt64OrNull { static constexpr auto name = "toInt64OrNull"; };
+struct NameToInt128OrNull { static constexpr auto name = "toInt128OrNull"; };
 struct NameToInt256OrNull { static constexpr auto name = "toInt256OrNull"; };
 struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
@@ -1615,6 +1621,7 @@ using FunctionToInt8OrNull = FunctionConvertFromString<DataTypeInt8, NameToInt8O
 using FunctionToInt16OrNull = FunctionConvertFromString<DataTypeInt16, NameToInt16OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToInt128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
@@ -2307,6 +2314,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeInt16> ||
                 std::is_same_v<ToDataType, DataTypeInt32> ||
                 std::is_same_v<ToDataType, DataTypeInt64> ||
+                std::is_same_v<ToDataType, DataTypeInt128> ||
                 std::is_same_v<ToDataType, DataTypeInt256> ||
                 std::is_same_v<ToDataType, DataTypeFloat32> ||
                 std::is_same_v<ToDataType, DataTypeFloat64> ||
@@ -2455,6 +2463,8 @@ private:
         if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
+            return monotonicityForType(type);
+        if (const auto type = checkAndGetDataType<DataTypeInt128>(to_type))
             return monotonicityForType(type);
         if (const auto type = checkAndGetDataType<DataTypeInt256>(to_type))
             return monotonicityForType(type);
