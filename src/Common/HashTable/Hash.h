@@ -176,22 +176,35 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 }
 
 template <typename T>
-inline size_t DefaultHash64(T key)
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 {
-    if constexpr (is_big_int_v<T>)
+    union
     {
-        return intHash64(static_cast<UInt64>(key));
+        T in;
+        DB::UInt64 out;
+    } u;
+    u.out = 0;
+    u.in = key;
+    return intHash64(u.out);
+}
+
+template <typename T>
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+{
+    if constexpr (std::is_same_v<T, DB::Int128>)
+    {
+        return intHash64(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
     }
-    else
+    if constexpr (std::is_same_v<T, DB::UInt128>)
     {
-        union
-        {
-            T in;
-            DB::UInt64 out;
-        } u;
-        u.out = 0;
-        u.in = key;
-        return intHash64(u.out);
+        return intHash64(key.low ^ key.high);
+    }
+    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+    {
+        return intHash64(static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 256));
     }
 }
 
@@ -199,7 +212,7 @@ template <typename T, typename Enable = void>
 struct DefaultHash;
 
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
+struct DefaultHash<T, std::enable_if_t<!DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -208,17 +221,7 @@ struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
 };
 
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<is_big_int_v<T>>>
-{
-    size_t operator() (T key) const
-    {
-        // taking only lower bits, probably should change it
-        return DefaultHash64<DB::UInt64>(static_cast<DB::UInt64>(key));
-    }
-};
-
-template <typename T>
-struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && !std::is_same_v<T, DB::Decimal128>>>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -226,28 +229,39 @@ struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && !std::is_same_v
     }
 };
 
-template <typename T>
-struct DefaultHash<T, std::enable_if_t<std::is_same_v<T, DB::Decimal128>>>
-{
-    size_t operator() (T key) const
-    {
-        return DefaultHash64<Int64>(key >> 64) ^ DefaultHash64<Int64>(key);
-    }
-};
-
 template <typename T> struct HashCRC32;
 
 template <typename T>
-inline size_t hashCRC32(T key)
+inline size_t hashCRC32(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 {
     union
     {
-        T in{}; // is it OK?
+        T in;
         DB::UInt64 out;
     } u;
     u.out = 0;
     u.in = key;
     return intHashCRC32(u.out);
+}
+
+template <typename T>
+inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+{
+    if constexpr (std::is_same_v<T, DB::Int128>)
+    {
+        return intHashCRC32(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
+    }
+    else if constexpr (std::is_same_v<T, DB::UInt128>)
+    {
+        return intHashCRC32(key.low ^ key.high);
+    }
+    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+    {
+        return intHashCRC32(static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 256));
+    }
 }
 
 #define DEFINE_HASH(T) \
@@ -334,9 +348,22 @@ struct IntHash32
 {
     size_t operator() (const T & key) const
     {
-        if constexpr (is_big_int_v<T>)
-            return intHash32<salt>(static_cast<DB::UInt64>(key));
-        else
+        if constexpr (std::is_same_v<T, DB::Int128>)
+        {
+            return intHash32<salt>(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
+        }
+        else if constexpr (std::is_same_v<T, DB::UInt128>)
+        {
+            return intHash32<salt>(key.low ^ key.high);
+        }
+        else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+        {
+            return intHash32<salt>(static_cast<UInt64>(key) ^
+                static_cast<UInt64>(key >> 64) ^
+                static_cast<UInt64>(key >> 128) ^
+                static_cast<UInt64>(key >> 256));
+        }
+        else if constexpr (sizeof(T) <= sizeof(UInt64))
             return intHash32<salt>(key);
     }
 };
