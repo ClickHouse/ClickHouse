@@ -23,7 +23,8 @@ namespace ErrorCodes
 
 
 ColumnString::ColumnString(const ColumnString & src)
-    : offsets(src.offsets.begin(), src.offsets.end()),
+    : COWHelper<IColumn, ColumnString>(src),
+    offsets(src.offsets.begin(), src.offsets.end()),
     chars(src.chars.begin(), src.chars.end())
 {
     if (!offsets.empty())
