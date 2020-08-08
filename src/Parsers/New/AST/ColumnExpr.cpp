@@ -66,7 +66,7 @@ ASTPtr ColumnExpr::convertToOld() const
             ASTPtr expr = children[EXPR]->convertToOld();
 
             if (auto * expr_with_alias = dynamic_cast<ASTWithAlias*>(expr.get()))
-                expr_with_alias->alias = children[ALIAS]->as<Identifier>()->getName();
+                expr_with_alias->setAlias(children[ALIAS]->as<Identifier>()->getName());
             else
                 throw std::runtime_error("Trying to convert new expression with alias to old one without alias support: " + expr->getID());
 

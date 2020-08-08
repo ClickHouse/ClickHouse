@@ -6,11 +6,20 @@
 namespace DB::AST
 {
 
+class TableArgExpr : public INode
+{
+    public:
+        explicit TableArgExpr(PtrTo<Literal> literal);
+        explicit TableArgExpr(PtrTo<TableIdentifier> identifier);
+
+        ASTPtr convertToOld() const override { return children[0]->convertToOld(); }
+};
+
 class TableExpr : public INode
 {
     public:
         static PtrTo<TableExpr> createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias);
-        static PtrTo<TableExpr> createFunction(PtrTo<Identifier> name, PtrList args);
+        static PtrTo<TableExpr> createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args);
         static PtrTo<TableExpr> createIdentifier(PtrTo<TableIdentifier> identifier);
         static PtrTo<TableExpr> createSubquery(PtrTo<SelectStmt> subquery);
 
@@ -19,7 +28,18 @@ class TableExpr : public INode
     private:
         enum ChildIndex : UInt8
         {
+            // ALIAS
+            EXPR = 0,
+            ALIAS = 1,
+
+            // FUNCTION
+            NAME = 0,
+            ARGS = 1,
+
+            // IDENTIFIER
             IDENTIFIER = 0,
+
+            // SUBQUERY
             SUBQUERY = 0,
         };
         enum class ExprType

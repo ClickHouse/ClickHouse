@@ -115,7 +115,7 @@ columnIdentifier: (tableIdentifier DOT)? identifier; // TODO: don't forget compo
 tableExpr
     : tableIdentifier                                       # TableExprIdentifier
     | identifier LPAREN tableArgList? RPAREN                # TableExprFunction
-    | LPAREN selectStmt RPAREN                              # TableExprSubquery
+    | LPAREN selectUnionStmt RPAREN                         # TableExprSubquery
     | tableExpr AS identifier                               # TableExprAlias
     ;
 tableIdentifier: (databaseIdentifier DOT)? identifier;

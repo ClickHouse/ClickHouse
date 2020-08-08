@@ -31,6 +31,7 @@ class RatioExpr;
 class SelectStmt;
 class SettingExpr;
 class StringLiteral;
+class TableArgExpr;
 class TableExpr;
 class TableIdentifier;
 
@@ -39,5 +40,6 @@ using ColumnParamList = List<Literal, ','>;
 using OrderExprList = List<OrderExpr, ','>;
 using QueryList = List<Query, ';'>;
 using SettingExprList = List<SettingExpr, ','>;
+using TableArgList = List<TableArgExpr, ','>;
 
 }
