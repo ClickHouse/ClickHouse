@@ -106,7 +106,7 @@ Float NO_INLINE baseline_baseline(const PODArray<UInt8> & keys, const PODArray<F
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 
@@ -125,7 +125,7 @@ Float NO_INLINE baseline(const PODArray<UInt8> & keys, const PODArray<Float> & v
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 
@@ -144,7 +144,7 @@ Float NO_INLINE implicit_zero(const PODArray<UInt8> & keys, const PODArray<Float
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 
@@ -170,7 +170,7 @@ Float NO_INLINE calculated_size(const PODArray<UInt8> & keys, const PODArray<Flo
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 
@@ -189,7 +189,7 @@ Float NO_INLINE implicit_zero_and_calculated_size(const PODArray<UInt8> & keys, 
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArray<Float> & values)
@@ -207,7 +207,7 @@ Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArra
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 Float NO_INLINE embedded_states(const PODArray<UInt8> & keys, const PODArray<Float> & values)
@@ -239,7 +239,7 @@ Float NO_INLINE simple_lookup_table(const PODArray<UInt8> & keys, const PODArray
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 Float NO_INLINE simple_lookup_table_embedded_states(const PODArray<UInt8> & keys, const PODArray<Float> & values)
@@ -288,7 +288,7 @@ Float NO_INLINE unrolled(const PODArray<UInt8> & keys, const PODArray<Float> & v
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 template <size_t UNROLL_COUNT>
@@ -326,7 +326,7 @@ Float NO_INLINE simple_lookup_table_unrolled(const PODArray<UInt8> & keys, const
         place->add(values[i]);
     }
 
-    return map[0]->result();
+    return map[0] ? map[0]->result() : 0;
 }
 
 template <size_t UNROLL_COUNT>
