@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# Check for typos in code.
+
+ROOT_PATH=$(git rev-parse --show-toplevel)
+CURDIR=$(dirname "${BASH_SOURCE[0]}")
+
+codespell \
+    --skip '*generated*,*gperf*,*.bin,*.mrk*,*.idx,checksums.txt,*.dat,*.pyc,*.kate-swp' \
+    --ignore-words "${CURDIR}/codespell-ignore-words.list" \
+    --quiet-level 2 \
+    "$ROOT_PATH"/{src,base,programs,utils} \
+    $@ | grep -v -F --file="${CURDIR}/codespell-ignore-files.list"
