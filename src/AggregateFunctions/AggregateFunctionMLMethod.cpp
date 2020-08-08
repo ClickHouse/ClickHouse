@@ -200,7 +200,7 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     updateState();
     /// can't update rhs state because it's constant
 
-    /// squared mean is more stable (in sence of quality of prediction) when two states with quietly different number of learning steps are merged
+    /// squared mean is more stable (in sense of quality of prediction) when two states with quietly different number of learning steps are merged
     Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
 
     for (size_t i = 0; i < weights.size(); ++i)

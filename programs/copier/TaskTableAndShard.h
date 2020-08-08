@@ -50,7 +50,7 @@ struct TaskTable
 
     bool isReplicatedTable() const { return engine_push_zk_path != ""; }
 
-    /// Partitions will be splitted into number-of-splits pieces.
+    /// Partitions will be split into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
     size_t number_of_splits;
 
@@ -91,8 +91,8 @@ struct TaskTable
     ASTPtr main_engine_split_ast;
 
     /*
-     * To copy partiton piece form one cluster to another we have to use Distributed table.
-     * In case of usage separate table (engine_push) for each partiton piece,
+     * To copy partition piece form one cluster to another we have to use Distributed table.
+     * In case of usage separate table (engine_push) for each partition piece,
      * we have to use many Distributed tables.
      * */
     ASTs auxiliary_engine_split_asts;
@@ -113,7 +113,7 @@ struct TaskTable
     /**
      * Prioritized list of shards
      * all_shards contains information about all shards in the table.
-     * So we have to check whether particular shard have current partiton or not while processing.
+     * So we have to check whether particular shard have current partition or not while processing.
      */
     TasksShard all_shards;
     TasksShard local_shards;
@@ -122,7 +122,7 @@ struct TaskTable
     ClusterPartitions cluster_partitions;
     NameSet finished_cluster_partitions;
 
-    /// Parition names to process in user-specified order
+    /// Partition names to process in user-specified order
     Strings ordered_partition_names;
 
     ClusterPartition & getClusterPartition(const String & partition_name)

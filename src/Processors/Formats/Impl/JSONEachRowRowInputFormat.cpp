@@ -42,10 +42,10 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
         name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
         if (format_settings_.import_nested_json)
         {
-            const auto splitted = Nested::splitName(column_name);
-            if (!splitted.second.empty())
+            const auto split = Nested::splitName(column_name);
+            if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data(), splitted.first.size());
+                const StringRef table_name(column_name.data(), split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }

@@ -1100,9 +1100,14 @@ bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
         return true;
 
     saveUpToPosition(in, memory, current);
+
     bool loaded_more = !in.eof();
-    assert(in.position() == in.buffer().begin());
+    // A sanity check. Buffer position may be in the beginning of the buffer
+    // (normal case), or have some offset from it (AIO).
+    assert(in.position() >= in.buffer().begin());
+    assert(in.position() <= in.buffer().end());
     current = in.position();
+
     return loaded_more;
 }
 
