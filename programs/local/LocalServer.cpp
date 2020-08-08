@@ -114,7 +114,7 @@ void LocalServer::tryInitPath()
         if (path.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot work with emtpy storage path that is explicitly specified"
+                "Cannot work with empty storage path that is explicitly specified"
                 " by the --path option. Please check the program options and"
                 " correct the --path.");
         }
