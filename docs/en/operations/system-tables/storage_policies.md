@@ -1,4 +1,4 @@
-# system.storage\_policies {#system_tables-storage_policies}
+# system.storage_policies {#system_tables-storage_policies}
 
 Contains information about storage policies and volumes defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
@@ -12,3 +12,5 @@ Columns:
 -   `move_factor` ([Float64](../../sql-reference/data-types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/storage_policies) <!--hide-->

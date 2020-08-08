@@ -64,7 +64,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 -   `name` — имя столбца таблицы;
 -   `type`— тип столбца;
--   `default_type` — в каком виде задано [выражение для значения по умолчанию](create.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
+-   `default_type` — в каком виде задано [выражение для значения по умолчанию](create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
 -   `default_expression` — значение, заданное в секции `DEFAULT`;
 -   `comment_expression` — комментарий к столбцу.
 
@@ -212,7 +212,7 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-Пытается остановить выполняющиеся в данные момент [мутации](alter.md#mutations). Мутации для остановки выбираются из таблицы [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) с помощью условия, указанного в секции `WHERE` запроса `KILL`.
+Пытается остановить выполняющиеся в данные момент [мутации](alter.md#mutations). Мутации для остановки выбираются из таблицы [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) с помощью условия, указанного в секции `WHERE` запроса `KILL`.
 
 Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
 

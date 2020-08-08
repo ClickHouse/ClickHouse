@@ -22,6 +22,22 @@ namespace ErrorCodes
 }
 
 
+ColumnString::ColumnString(const ColumnString & src)
+    : COWHelper<IColumn, ColumnString>(src),
+    offsets(src.offsets.begin(), src.offsets.end()),
+    chars(src.chars.begin(), src.chars.end())
+{
+    if (!offsets.empty())
+    {
+        Offset last_offset = offsets.back();
+
+        /// This will also prevent possible overflow in offset.
+        if (chars.size() != last_offset)
+            throw Exception("String offsets has data inconsistent with chars array", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+
 MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
 {
     auto res = ColumnString::create();
