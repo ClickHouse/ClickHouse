@@ -49,9 +49,10 @@ struct LCMImpl
           */
 
         using Int = typename NumberTraits::ToInteger<Result>::Type;
+        using Unsigned = std::make_unsigned_t<Int>;
 
-        Int val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
-        Int val2 = abs<Int>(b);
+        Unsigned val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
+        Unsigned val2 = abs<Int>(b);
 
         /// Overflow in implementation specific way.
         return Result(val1 * val2);
