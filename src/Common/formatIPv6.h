@@ -177,7 +177,7 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
 }
 
 /** Format 4-byte binary sequesnce as IPv4 text: 'aaa.bbb.ccc.ddd',
-  * expects inout to be in BE-format, that is 0x7f000001 => "127.0.0.1".
+  * expects in out to be in BE-format, that is 0x7f000001 => "127.0.0.1".
   *
   * Any number of the tail bytes can be masked with given mask string.
   *
