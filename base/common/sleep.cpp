@@ -26,7 +26,7 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     if (timebase_info.denom == 0)
         mach_timebase_info(&timebase_info);
 
-    uint64_t time_to_wait = nanoseconds * timebase_info.denom / timebase_info.number;
+    uint64_t time_to_wait = nanoseconds * timebase_info.denom / timebase_info.numer;
     uint64_t now = mach_absolute_time();
 
     while (mach_wait_until(now + time_to_wait) != KERN_SUCCESS);
