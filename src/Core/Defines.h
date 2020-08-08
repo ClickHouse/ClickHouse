@@ -64,7 +64,7 @@
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
-/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
+/// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
