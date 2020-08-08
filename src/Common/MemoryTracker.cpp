@@ -18,6 +18,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -62,6 +63,9 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
 
 void MemoryTracker::alloc(Int64 size)
 {
+    if (size < 0)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
+
     if (blocker.isCancelled())
         return;
 
