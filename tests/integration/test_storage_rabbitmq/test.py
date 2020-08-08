@@ -86,6 +86,18 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
             return TSV(result) == TSV(reference)
 
 
+def kill_rabbitmq():
+    p = subprocess.Popen(('docker', 'stop', rabbitmq_id), stdout=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
+
+def revive_rabbitmq():
+    p = subprocess.Popen(('docker', 'start', rabbitmq_id), stdout=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
+
 # Fixtures
 
 @pytest.fixture(scope="module")
@@ -1684,7 +1696,7 @@ def test_rabbitmq_queue_resume_2(rabbitmq_cluster):
     while True:
         result1 = instance.query('SELECT count() FROM test.view')
         time.sleep(1)
-        if int(result1) > collected:
+        if int(result1) == messages_num * threads_num:
             break
 
     instance.query('''
@@ -1693,7 +1705,7 @@ def test_rabbitmq_queue_resume_2(rabbitmq_cluster):
         DROP TABLE IF EXISTS test.view;
     ''')
 
-    assert int(result1) > collected, 'ClickHouse lost some messages: {}'.format(result)
+    assert int(result1) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
 @pytest.mark.timeout(420)
@@ -1866,6 +1878,158 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
     assert int(result1) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
     # 4 tables, 2 consumers for each table => 8 consumer tags
     assert int(result2) == 8
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_consumer_restore_connection(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'consumer_reconnect',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+    ''')
+
+    i = [0]
+    messages_num = 5000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        for message in messages:
+            channel.basic_publish(exchange='consumer_reconnect', routing_key='', body=message, properties=pika.BasicProperties(delivery_mode = 2))
+        connection.close()
+
+    threads = []
+    threads_num = 20
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consumer_reconnect;
+    ''')
+
+    while int(instance.query('SELECT count() FROM test.view')) == 0:
+        time.sleep(1)
+
+    kill_rabbitmq();
+    time.sleep(4);
+    revive_rabbitmq();
+
+    collected = int(instance.query('SELECT count() FROM test.view'))
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        print("receiived", result, "collected", collected)
+        if int(result) >= messages_num * threads_num:
+            break
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.consumer;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer_reconnect;
+    ''')
+
+    # >= because at-least-once
+    assert int(result) >= messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(420)
+def test_rabbitmq_producer_restore_connection(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination(key UInt64, value UInt64)
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.consume;
+        DROP TABLE IF EXISTS test.consume_mv;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'producer_reconnect',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.consume_mv TO test.destination AS
+        SELECT key, value FROM test.consume;
+    ''')
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.producer_reconnect;
+        CREATE TABLE test.producer_reconnect (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'producer_reconnect',
+                     rabbitmq_persistent_mode = '1',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages_num = 100000
+    values = []
+    for i in range(messages_num):
+        values.append("({i}, {i})".format(i=i))
+    values = ','.join(values)
+
+    while True:
+        try:
+            instance.query("INSERT INTO test.producer_reconnect VALUES {}".format(values))
+            break
+        except QueryRuntimeException as e:
+            if 'Local: Timed out.' in str(e):
+                continue
+            else:
+                raise
+
+    while int(instance.query('SELECT count() FROM test.destination')) == 0:
+        time.sleep(0.1)
+
+    kill_rabbitmq();
+    time.sleep(4);
+    revive_rabbitmq();
+
+    while True:
+        result = instance.query('SELECT count() FROM test.destination')
+        time.sleep(1)
+        print(result, messages_num)
+        if int(result) >= messages_num:
+            break
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.consume_mv;
+        DROP TABLE IF EXISTS test.consume;
+        DROP TABLE IF EXISTS test.producer_reconnect;
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
+    assert int(result) >= messages_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
 if __name__ == '__main__':

@@ -11,7 +11,9 @@ namespace DB
 RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     AMQP::LibUvHandler(loop_),
     loop(loop_),
-    log(log_)
+    log(log_),
+    connection_running(false),
+    loop_state(Loop::STOP)
 {
 }
 
@@ -27,15 +29,16 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * mes
 
 void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 {
-    LOG_TRACE(log, "Connection is ready");
     connection_running.store(true);
+    LOG_TRACE(log, "Connection is ready");
+
+    loop_state.store(Loop::RUN);
 }
 
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
-    /// stop_loop variable is updated in a separate thread
-    while (!stop_loop.load() && connection_running.load())
+    while (loop_state.load() == Loop::RUN)
         uv_run(loop, UV_RUN_NOWAIT);
 }
 
