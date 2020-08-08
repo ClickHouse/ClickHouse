@@ -378,7 +378,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
                 data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + vec_from.getScale() + 1));
             else
-                data_to.resize(size * 3);   /// Arbitary
+                data_to.resize(size * 3);   /// Arbitrary
 
             offsets_to.resize(size);
 
@@ -579,7 +579,7 @@ struct ConvertThroughParsing
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
         {
             const auto result_type = removeNullable(block.getByPosition(result).type);
-            // Time zone is already figured out during result type resultion, no need to do it here.
+            // Time zone is already figured out during result type resolution, no need to do it here.
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
             else
@@ -967,7 +967,7 @@ public:
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
                 return createDecimal<DataTypeDecimal>(38, scale);
 
-            throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
         else
         {
@@ -1211,7 +1211,7 @@ public:
                     res = createDecimal<DataTypeDecimal>(38, scale);
 
                 if (!res)
-                    throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
             }
             else
                 res = std::make_shared<ToDataType>();
@@ -1380,7 +1380,7 @@ struct ToNumberMonotonicity
             return {};
         }
 
-        /// Size of type is shrinked.
+        /// Size of type is shrunk.
         if (size_of_from > size_of_to)
         {
             /// Function cannot be monotonic on unbounded ranges.

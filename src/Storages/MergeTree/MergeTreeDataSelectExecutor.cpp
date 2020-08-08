@@ -979,17 +979,17 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (direction == 1)
         {
             /// Split first few ranges to avoid reading much data.
-            bool splitted = false;
+            bool split = false;
             for (auto range : ranges)
             {
-                while (!splitted && range.begin + marks_in_range < range.end)
+                while (!split && range.begin + marks_in_range < range.end)
                 {
                     new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
                     range.begin += marks_in_range;
                     marks_in_range *= 2;
 
                     if (marks_in_range > max_marks_in_range)
-                        splitted = true;
+                        split = true;
                 }
                 new_ranges.emplace_back(range.begin, range.end);
             }
