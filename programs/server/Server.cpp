@@ -93,6 +93,8 @@ namespace CurrentMetrics
 namespace
 {
 
+char * process_name; /// argv[0]
+
 void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
@@ -261,9 +263,61 @@ void checkForUsersNotInMainConfig(
 }
 
 
+void forkAndWatch(Poco::Logger * log)
+{
+    std::string original_process_name = process_name;
+
+    memset(process_name, 0, original_process_name.size());
+    strncpy(process_name, "clickhouse-watchdog", original_process_name.size());
+
+    setThreadName("clckhouse-watch");   /// 15 characters
+
+    while (true)
+    {
+        pid_t pid = fork();
+
+        if (-1 == pid)
+        {
+            LOG_FATAL(log, "Cannot fork");
+            exit(1);
+        }
+
+        if (0 == pid)
+        {
+            strncpy(process_name, original_process_name.data(), original_process_name.size());
+            setThreadName("clickhouse-serv");
+            return;
+        }
+
+        int status = 0;
+        if (-1 == waitpid(pid, &status, 0))
+        {
+            LOG_FATAL(log, "Cannot waitpid");
+            exit(2);
+        }
+
+        if (WIFEXITED(status))
+        {
+            LOG_INFO(log, "Child process exited normally with code {}.", WEXITSTATUS(status));
+            exit(status);
+        }
+
+        if (WIFSIGNALED(status))
+            LOG_FATAL(log, "Child process was terminated by signal {}.\n", WTERMSIG(status));
+        else if (WIFSTOPPED(status))
+            LOG_FATAL(log, "Child process was stopped by signal {}.\n", WSTOPSIG(status));
+        else
+            LOG_FATAL(log, "Child process was not exited normally by unknown reason.");
+
+        LOG_INFO(log, "Will restart.");
+    }
+}
+
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
+    forkAndWatch(log);
 
     UseSSL use_ssl;
 
@@ -1181,61 +1235,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 
-void forkAndWatch(char * process_name)
-{
-    std::string original_process_name = process_name;
-
-    memset(process_name, 0, original_process_name.size());
-    strncpy(process_name, "clickhouse-watchdog", original_process_name.size());
-
-    setThreadName("clckhouse-watch");   /// 15 characters
-
-    while (true)
-    {
-        pid_t pid = fork();
-
-        if (-1 == pid)
-        {
-            std::cerr << "Cannot fork\n";
-            exit(1);
-        }
-
-        if (0 == pid)
-        {
-            strncpy(process_name, original_process_name.data(), original_process_name.size());
-            setThreadName("clickhouse-serv");
-            return;
-        }
-
-        int status = 0;
-        if (-1 == waitpid(pid, &status, 0))
-        {
-            std::cerr << "Cannot waitpid\n";
-            exit(2);
-        }
-
-        if (WIFEXITED(status))
-        {
-            std::cerr << fmt::format("Child process exited normally with code {}.\n", WEXITSTATUS(status));
-            exit(status);
-        }
-
-        if (WIFSIGNALED(status))
-            std::cerr << fmt::format("Child process was terminated by signal {}.\n", WTERMSIG(status));
-        else if (WIFSTOPPED(status))
-            std::cerr << fmt::format("Child process was stopped by signal {}.\n", WSTOPSIG(status));
-        else
-            std::cerr << "Child process was not exited normally by unknown reason.\n";
-
-        std::cerr << "Will restart.\n";
-    }
-}
-
-
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
-    forkAndWatch(argv[0]);
-
+    process_name = argv[0];
     DB::Server app;
     try
     {
