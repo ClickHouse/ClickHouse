@@ -508,7 +508,7 @@ public:
   * - time elapsed for current merge.
   */
 
-/// Auxilliary struct that for each merge stage stores its current progress.
+/// Auxiliary struct that for each merge stage stores its current progress.
 /// A stage is: the horizontal stage + a stage for each gathered column (if we are doing a
 /// Vertical merge) or a mutation of a single part. During a single stage all rows are read.
 struct MergeStageProgress

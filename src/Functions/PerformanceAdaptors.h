@@ -232,7 +232,7 @@ public:
 
     /* Register new implementation for function.
      *
-     * Arch - required instruction set for running the implementation. It's guarantied that no method would
+     * Arch - required instruction set for running the implementation. It's guaranteed that no method would
      * be called (even the constructor and static methods) if the processor doesn't support this instruction set.
      *
      * FunctionImpl - implementation, should be inherited from template argument FunctionInterface.
