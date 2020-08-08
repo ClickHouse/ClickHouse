@@ -718,6 +718,7 @@ void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
     factory.registerFunction<FunctionFROM_UNIXTIME>();
+    factory.registerAlias("fromUnixTimestamp", "FROM_UNIXTIME");
 }
 
 }
