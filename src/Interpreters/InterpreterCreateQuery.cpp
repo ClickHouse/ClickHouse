@@ -694,7 +694,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         assertOrSetUUID(create, database);
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
-          * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
+          * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
           */
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
