@@ -51,7 +51,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
     {
         consumer_channel->onError([&](const char * message)
         {
-            LOG_ERROR(log, "Consumer {} error: {}", consumer_tag, message);
+            LOG_ERROR(log, "Consumer {} error: {}", channel_id, message);
             channel_error.store(true);
         });
 
@@ -129,7 +129,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         {
             if (consumer_tag.empty())
                 consumer_tag = consumer;
-            LOG_TRACE(log, "Consumer {} is subscribed to queue {}, consumer tag {}", channel_id, queue_name, consumer);
+            LOG_TRACE(log, "Consumer {} is subscribed to queue {}", channel_id, queue_name);
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
@@ -157,7 +157,7 @@ void ReadBufferFromRabbitMQConsumer::ackMessages()
     {
         prev_tag = delivery_tag;
         consumer_channel->ack(prev_tag, AMQP::multiple); /// Will ack all up to last tag staring from last acked.
-        LOG_TRACE(log, "Consumer {} acknowledged messages with deliveryTags up to {}", consumer_tag, prev_tag);
+        LOG_TRACE(log, "Consumer {} acknowledged messages with deliveryTags up to {}", channel_id, prev_tag);
     }
 }
 

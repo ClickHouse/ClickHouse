@@ -111,7 +111,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     if (!connection->ready())
     {
         uv_loop_close(loop.get());
-        throw Exception("Cannot set up connection for consumers", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+        throw Exception("Cannot connect to RabbitMQ", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
 
     rabbitmq_context.makeQueryContext();
@@ -161,7 +161,7 @@ StorageRabbitMQ::StorageRabbitMQ(
          * at the same time sharding exchange is needed (if there are multiple shared queues), then those tables also need
          * to share sharding exchange.
          */
-        sharding_exchange = exchange_name + queue_base;
+        sharding_exchange = exchange_name + "_" + queue_base;
     }
 
     bridge_exchange = sharding_exchange + "_bridge";
@@ -319,7 +319,7 @@ void StorageRabbitMQ::unbindExchange()
             event_handler->iterateLoop();
         }
 
-        event_handler->stop();
+        event_handler->updateLoopState(Loop::STOP);
         looping_task->deactivate();
         heartbeat_task->deactivate();
     });
@@ -335,31 +335,40 @@ bool StorageRabbitMQ::restoreConnection()
 
         if (!connection->usable() || !connection->ready())
         {
-            LOG_TRACE(log, "Trying to restore consumer connection");
+            if (event_handler->getLoopState() == Loop::RUN)
+            {
+                event_handler->updateLoopState(Loop::STOP);
+                looping_task->deactivate();
+                heartbeat_task->deactivate();
+            }
 
+            /* connection->close() is called in onError() method (called by the AMQP library when a fatal error occurs on the connection)
+             * inside event_handler, but it is not closed immediately (firstly, all pending operations are completed, and then an AMQP
+             * closing-handshake is  performed). But cannot open a new connection untill previous one is properly closed).
+             */
+            size_t cnt_retries = 0;
+            while (!connection->closed() && ++cnt_retries != (RETRIES_MAX >> 1))
+                event_handler->iterateLoop();
+
+            /// This will force immediate closure if not yet closed.
             if (!connection->closed())
-                connection->close();
+                connection->close(true);
 
+            LOG_TRACE(log, "Trying to restore consumer connection");
             connection = std::make_shared<AMQP::TcpConnection>(event_handler.get(), AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
-            size_t cnt_retries = 0;
+            cnt_retries = 0;
             while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
             {
                 event_handler->iterateLoop();
                 std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
             }
-        }
 
-        if (event_handler->connectionRunning())
-        {
-            LOG_TRACE(log, "Connection restored");
-
-            heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
-            looping_task->activateAndSchedule();
-        }
-        else
-        {
-            LOG_TRACE(log, "Connection refused");
+            if (event_handler->connectionRunning())
+            {
+                looping_task->activateAndSchedule();
+                heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
+            }
         }
 
         restore_connection.unlock();
@@ -451,8 +460,7 @@ void StorageRabbitMQ::startup()
 void StorageRabbitMQ::shutdown()
 {
     stream_cancelled = true;
-
-    event_handler->stop();
+    event_handler->updateLoopState(Loop::STOP);
 
     looping_task->deactivate();
     streaming_task->deactivate();

@@ -44,10 +44,11 @@ private:
     void nextImpl() override;
     void iterateEventLoop();
     void writingFunc();
-    bool setupConnection();
+    bool setupConnection(bool reconnecting);
     void setupChannel();
     void removeConfirmed(UInt64 received_delivery_tag, bool multiple, bool republish);
     void publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & message, bool republishing);
+    void publish(const String & payload);
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
