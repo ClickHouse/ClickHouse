@@ -28,13 +28,6 @@ if (USE_INTERNAL_CCTZ)
 
     if (OS_LINUX AND ARCH_AMD64)
 
-        find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-        if (OBJCOPY_PATH)
-            message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
-        else ()
-            message(FATAL_ERROR "Cannot find objcopy.")
-        endif ()
-
         set (TIMEZONES
             Africa/Abidjan
             Africa/Accra
