@@ -68,7 +68,7 @@ K_LAST : L A S T;
 K_LEFT : L E F T;
 K_LIKE : L I K E;
 K_LIMIT : L I M I T;
-K_MAIN : M A I N;  // not a clickhouse reverved word
+K_MAIN : M A I N;  // not a clickhouse reserved word
 K_MATERIALIZED : M A T E R I A L I Z E D;
 K_MINUTE : M I N U T E;
 K_MODIFY : M O D I F Y;
@@ -88,7 +88,7 @@ K_PREWHERE : P R E W H E R E;
 K_PROCESSLIST : P R O C E S S L I S T;
 K_QUERY : Q U E R Y;
 K_RENAME : R E N A M E;
-K_RETURN : R E T U R N;  // not a clickhouse reverved word
+K_RETURN : R E T U R N;  // not a clickhouse reserved word
 K_RIGHT : R I G H T;
 K_SAMPLE : S A M P L E;
 K_SECOND : S E C O N D;

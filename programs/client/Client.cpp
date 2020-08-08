@@ -789,7 +789,7 @@ private:
         // in particular, it can't distinguish the end of partial input buffer
         // and the final end of input file. This means we have to try to split
         // the input into separate queries here. Two patterns of input are
-        // especially interesing:
+        // especially interesting:
         // 1) multiline query:
         //      select 1
         //      from system.numbers;
