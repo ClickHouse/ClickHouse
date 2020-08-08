@@ -3279,7 +3279,7 @@ void StorageReplicatedMergeTree::startup()
         /// In this thread replica will be activated.
         restarting_thread.start();
 
-        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
+        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
         startup_event.wait();
 
         /// If we don't separate create/start steps, race condition will happen
