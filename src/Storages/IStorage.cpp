@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
-    /// Virtual column maybe overriden by real column
+    /// Virtual column maybe overridden by real column
     return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 

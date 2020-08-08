@@ -42,11 +42,12 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    size_t size = offsets_concrete->size();
-    if (size != 0 && nested_column)
+    if (!offsets_concrete->empty() && nested_column)
     {
+        Offset last_offset = offsets_concrete->getData().back();
+
         /// This will also prevent possible overflow in offset.
-        if (nested_column->size() != offsets_concrete->getData()[size - 1])
+        if (nested_column->size() != last_offset)
             throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
     }
 
