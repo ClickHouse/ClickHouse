@@ -176,10 +176,7 @@ if(NOT DISABLE_CPU_OPTIMIZE)
     include(cmake/cpu_features.cmake)
 endif()
 
-if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
-    option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
-endif()
-
+option(ARCH_NATIVE "Enable -march=native compiler flag" 0)
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()

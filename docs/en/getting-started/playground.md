@@ -48,13 +48,13 @@ The following settings are also enforced:
 HTTPS endpoint example with `curl`:
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
 ```
 
 TCP endpoint example with [CLI](../interfaces/cli.md):
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse!'"
+clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
 
 ## Implementation Details {#implementation-details}
