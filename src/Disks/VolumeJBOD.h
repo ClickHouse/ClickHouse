@@ -16,8 +16,7 @@ class VolumeJBOD : public IVolume
 {
 public:
     VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_allowed_in_config_)
-        : IVolume(name_, disks_)
-        , max_data_part_size(max_data_part_size_)
+        : IVolume(name_, disks_, max_data_part_size_)
         , are_merges_allowed_in_config(are_merges_allowed_in_config_)
     {
     }
@@ -43,9 +42,6 @@ public:
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
-
-    /// Max size of reservation
-    UInt64 max_data_part_size = 0;
 
     bool areMergesAllowed() const override;
 
