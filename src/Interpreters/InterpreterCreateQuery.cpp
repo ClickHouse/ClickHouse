@@ -339,7 +339,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.null_modifier)
             {
                 if (column_type->isNullable())
-                    throw Exception("Cant use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+                    throw Exception("Can't use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
                 if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
