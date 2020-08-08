@@ -9,7 +9,7 @@
 #include <Common/Exception.h>
 #include <common/setTerminalEcho.h>
 #include <ext/scope_guard.h>
-#include "readpassphrase/readpassphrase.h"
+#include <readpassphrase.h>
 
 namespace DB
 {
