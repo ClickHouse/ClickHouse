@@ -688,7 +688,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
             task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
 
-        /// We need to distinguish ZK errors occured before and after query executing
+        /// We need to distinguish ZK errors occurred before and after query executing
         task.was_executed = true;
     }
 
@@ -902,8 +902,8 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
 
             /// Deleting
             {
-                Strings childs = zookeeper->getChildren(node_path);
-                for (const String & child : childs)
+                Strings children = zookeeper->getChildren(node_path);
+                for (const String & child : children)
                 {
                     if (child != "lock")
                         zookeeper->tryRemoveRecursive(node_path + "/" + child);
@@ -920,7 +920,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
         }
         catch (...)
         {
-            LOG_INFO(log, "An error occured while checking and cleaning task {} from queue: {}", node_name, getCurrentExceptionMessage(false));
+            LOG_INFO(log, "An error occurred while checking and cleaning task {} from queue: {}", node_name, getCurrentExceptionMessage(false));
         }
     }
 }
