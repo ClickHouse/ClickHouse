@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -441,7 +440,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             replica_name = "{replica}";     /// TODO maybe use hostname if {replica} is not defined?
         }
         else
-            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
