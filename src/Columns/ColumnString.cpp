@@ -38,7 +38,6 @@ ColumnString::ColumnString(const ColumnString & src)
 }
 
 
-
 MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
 {
     auto res = ColumnString::create();
