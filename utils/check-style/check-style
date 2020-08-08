@@ -65,3 +65,6 @@ find $ROOT_PATH/tests/queries -iname '*fail*' | grep . && echo 'Tests should not
 
 # All the submodules should be from https://github.com/
 find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
+
+# There shouldn't be any code snippets under GPL or LGPL
+find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
