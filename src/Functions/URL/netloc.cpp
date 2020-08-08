@@ -69,7 +69,7 @@ struct ExtractNetloc
         bool has_identification = false;
         Pos question_mark_pos = end;
         Pos slash_pos = end;
-        auto start_of_host = pos;
+        Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
             switch (*pos)
