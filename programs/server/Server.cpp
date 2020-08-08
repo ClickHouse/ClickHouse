@@ -4,6 +4,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -263,6 +264,7 @@ void checkForUsersNotInMainConfig(
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
+
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
@@ -1178,8 +1180,62 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
+
+void forkAndWatch(char * process_name)
+{
+    std::string original_process_name = process_name;
+
+    memset(process_name, 0, original_process_name.size());
+    strncpy(process_name, "clickhouse-watchdog", original_process_name.size());
+
+    setThreadName("clckhouse-watch");   /// 15 characters
+
+    while (true)
+    {
+        pid_t pid = fork();
+
+        if (-1 == pid)
+        {
+            std::cerr << "Cannot fork\n";
+            exit(1);
+        }
+
+        if (0 == pid)
+        {
+            strncpy(process_name, original_process_name.data(), original_process_name.size());
+            setThreadName("clickhouse-serv");
+            return;
+        }
+
+        int status = 0;
+        if (-1 == waitpid(pid, &status, 0))
+        {
+            std::cerr << "Cannot waitpid\n";
+            exit(2);
+        }
+
+        if (WIFEXITED(status))
+        {
+            std::cerr << fmt::format("Child process exited normally with code {}.\n", WEXITSTATUS(status));
+            exit(status);
+        }
+
+        if (WIFSIGNALED(status))
+            std::cerr << fmt::format("Child process was terminated by signal {}.\n", WTERMSIG(status));
+        else if (WIFSTOPPED(status))
+            std::cerr << fmt::format("Child process was stopped by signal {}.\n", WSTOPSIG(status));
+        else
+            std::cerr << "Child process was not exited normally by unknown reason.\n";
+
+        std::cerr << "Will restart.\n";
+    }
+}
+
+
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
+    forkAndWatch(argv[0]);
+
     DB::Server app;
     try
     {
