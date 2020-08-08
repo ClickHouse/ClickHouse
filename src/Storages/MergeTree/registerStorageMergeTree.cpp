@@ -551,7 +551,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
-        /// If primary key explicitely defined, than get it from AST
+        /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
@@ -626,7 +626,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
-        /// But it's not explicitely defined, so we evaluate definition to
+        /// But it's not explicitly defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
 

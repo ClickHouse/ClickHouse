@@ -44,7 +44,7 @@ namespace ErrorCodes
   * To be more precise - for use in ColumnVector.
   * It differs from std::vector in that it does not initialize the elements.
   *
-  * Made noncopyable so that there are no accidential copies. You can copy the data using `assign` method.
+  * Made noncopyable so that there are no accidental copies. You can copy the data using `assign` method.
   *
   * Only part of the std::vector interface is supported.
   *
