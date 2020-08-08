@@ -68,3 +68,7 @@ find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | gre
 
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
+
+# Check for typos in code
+CURDIR=$(dirname "${BASH_SOURCE[0]}")
+"${CURDIR}"/check-typos

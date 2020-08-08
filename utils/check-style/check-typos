@@ -10,4 +10,5 @@ codespell \
     --ignore-words "${CURDIR}/codespell-ignore-words.list" \
     --quiet-level 2 \
     "$ROOT_PATH"/{src,base,programs,utils} \
-    $@ | grep -v -F --file="${CURDIR}/codespell-ignore-files.list"
+    $@ | grep -v -F --file="${CURDIR}/codespell-ignore-files.list" \
+    && echo "\nFound some typos in code.\nSee the files utils/check-style/codespell* if you want to add an exception."
