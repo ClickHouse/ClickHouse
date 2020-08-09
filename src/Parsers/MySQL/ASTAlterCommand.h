@@ -31,7 +31,7 @@ public:
 
         RENAME_INDEX,
         RENAME_COLUMN,
-        RENAME_FOREIGN,
+        RENAME_TABLE,
 
         MODIFY_CHECK,
         MODIFY_COLUMN,
@@ -66,6 +66,8 @@ public:
     String index_name;
     String column_name;
     String constraint_name;
+    String new_database_name;
+    String new_table_name;
 
     IAST * properties = nullptr;
 

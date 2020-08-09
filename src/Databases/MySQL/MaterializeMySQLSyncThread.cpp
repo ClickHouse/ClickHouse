@@ -168,8 +168,6 @@ void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
                 BinlogEventPtr binlog_event = client.readOneBinlogEvent(std::max(UInt64(1), max_flush_time - watch.elapsedMilliseconds()));
 
                 {
-                    std::unique_lock<std::mutex> lock(sync_mutex);
-
                     if (binlog_event)
                         onEvent(buffers, binlog_event, *metadata);
 
@@ -198,12 +196,7 @@ void MaterializeMySQLSyncThread::stopSynchronization()
 {
     if (!sync_quit && background_thread_pool)
     {
-        {
-            sync_quit = true;
-            std::lock_guard<std::mutex> lock(sync_mutex);
-        }
-
-        sync_cond.notify_one();
+        sync_quit = true;
         background_thread_pool->join();
     }
 }
@@ -277,8 +270,6 @@ static inline UInt32 randomNumber()
 
 std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchronized(const String & mysql_version)
 {
-    std::unique_lock<std::mutex> lock(sync_mutex);
-
     bool opened_transaction = false;
     mysqlxx::PoolWithFailover::Entry connection;
 
@@ -286,11 +277,6 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
     {
         try
         {
-            LOG_DEBUG(log, "Checking database status.");
-            while (!isCancelled() && !DatabaseCatalog::instance().isDatabaseExist(database_name))
-                sync_cond.wait_for(lock, std::chrono::seconds(1));
-            LOG_DEBUG(log, "Database status is OK.");
-
             connection = pool.get();
             opened_transaction = false;
 
@@ -325,7 +311,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             {
                 throw;
             }
-            catch (mysqlxx::Exception &)
+            catch (const mysqlxx::ConnectionFailed &)
             {
                 /// Avoid busy loop when MySQL is not available.
                 sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
@@ -586,6 +572,8 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         {
             tryLogCurrentException(log);
 
+            /// If some DDL query was not successfully parsed and executed
+            /// Then replication may fail on next binlog events anyway
             if (exception.code() != ErrorCodes::SYNTAX_ERROR)
                 throw;
         }

@@ -292,6 +292,33 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
 
+
 # TODO: need ClickHouse support ALTER TABLE table_name ADD COLUMN column_name, RENAME COLUMN column_name TO new_column_name;
 # def test_mysql_alter_change_column_for_materialize_mysql_database(started_cluster):
 #     pass
+
+def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT) ENGINE = InnoDB;")
+
+    mysql_node.query("ALTER TABLE test_database.test_table_1 DROP COLUMN drop_column, RENAME TO test_database.test_table_2, RENAME TO test_table_3")
+
+    # create mapping
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+
+    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_3\n")
+    check_query(clickhouse_node, "DESC test_database.test_table_3 FORMAT TSV", "id\tInt32\t\t\t\t\t\n")
+    mysql_node.query("CREATE TABLE test_database.test_table_1 (id INT NOT NULL PRIMARY KEY, drop_column INT NOT NULL) ENGINE = InnoDB;")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_3\n")
+    check_query(clickhouse_node, "DESC test_database.test_table_1 FORMAT TSV", "id\tInt32\t\t\t\t\t\ndrop_column\tInt32\t\t\t\t\t\n")
+    mysql_node.query("ALTER TABLE test_database.test_table_1 DROP COLUMN drop_column, RENAME TO test_table_2, RENAME TO test_database.test_table_4")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_3\ntest_table_4\n")
+    check_query(clickhouse_node, "DESC test_database.test_table_4 FORMAT TSV", "id\tInt32\t\t\t\t\t\n")
+
+    mysql_node.query("INSERT INTO test_database.test_table_4 VALUES(1), (2), (3), (4), (5)")
+    check_query(clickhouse_node, "SELECT * FROM test_database.test_table_4 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
+
+    mysql_node.query("DROP DATABASE test_database")
+    clickhouse_node.query("DROP DATABASE test_database")

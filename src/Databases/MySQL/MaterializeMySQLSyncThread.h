@@ -98,9 +98,7 @@ private:
 
     void onEvent(Buffers & buffers, const MySQLReplication::BinlogEventPtr & event, MaterializeMetadata & metadata);
 
-    std::mutex sync_mutex;
     std::atomic<bool> sync_quit{false};
-    std::condition_variable sync_cond;
     std::unique_ptr<ThreadFromGlobalPool> background_thread_pool;
 };
 

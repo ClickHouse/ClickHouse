@@ -160,7 +160,7 @@ TEST(ParserAlterCommand, RenameAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->index_name, "new_index_name");
 
     ast = tryParserQuery(alter_p, "RENAME TO new_table_name");
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::RENAME_FOREIGN);
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::RENAME_TABLE);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->index_name, "new_table_name");
 }
 
