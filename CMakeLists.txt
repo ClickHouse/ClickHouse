@@ -142,6 +142,13 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
+endif ()
+
 option (ADD_GDB_INDEX_FOR_GOLD "Set to add .gdb-index to resulting binaries for gold linker. NOOP if lld is used." 0)
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     if (LINKER_NAME STREQUAL "lld")
