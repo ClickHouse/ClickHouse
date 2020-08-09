@@ -8,5 +8,4 @@ set (CLICKHOUSE_INSTALL_LINK
         readpassphrase
 )
 
-clickhouse_program_add(install)
-
+clickhouse_program_add_library(install)
