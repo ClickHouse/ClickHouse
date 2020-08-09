@@ -23,3 +23,12 @@ SET custom_e = 0;
 SELECT getSetting('custom_e') as v, toTypeName(v);
 
 SET invalid_custom = 8; -- { serverError 115 } -- Setting is neither a builtin nor started with one of the registered prefixes for user-defined settings.
+
+SELECT '';
+SET custom_compound.identifier.v1 = 'test';
+SELECT getSetting('custom_compound.identifier.v1') as v, toTypeName(v);
+SELECT name, value FROM system.settings WHERE name = 'custom_compound.identifier.v1';
+
+CREATE SETTINGS PROFILE s1_01418 SETTINGS custom_compound.identifier.v2 = 100;
+SHOW CREATE SETTINGS PROFILE s1_01418;
+DROP SETTINGS PROFILE s1_01418;
