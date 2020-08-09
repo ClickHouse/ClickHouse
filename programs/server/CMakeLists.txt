@@ -4,7 +4,7 @@ set(CLICKHOUSE_SERVER_SOURCES
 )
 
 if (OS_LINUX AND ARCH_AMD64)
-    set (LINK_CONFIG_LIB INTERFACE "-Wl,--whole-archive $<TARGET_FILE:clickhouse_server_configs> -Wl,--no-whole-archive")
+    set (LINK_CONFIG_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_server_configs> -Wl,${NO_WHOLE_ARCHIVE}")
 endif ()
 
 set (CLICKHOUSE_SERVER_LINK
