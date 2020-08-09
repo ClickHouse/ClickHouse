@@ -17,7 +17,12 @@ option (ENABLE_CLICKHOUSE_COPIER "Enable clickhouse-copier" ${ENABLE_CLICKHOUSE_
 option (ENABLE_CLICKHOUSE_FORMAT "Enable clickhouse-format" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Enable clickhouse-obfuscator" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "Enable clickhouse-odbc-bridge" ${ENABLE_CLICKHOUSE_ALL})
-option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" ${ENABLE_CLICKHOUSE_ALL})
+
+if (CLICKHOUSE_SPLIT_BINARY)
+    option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" OFF)
+else ()
+    option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" ${ENABLE_CLICKHOUSE_ALL})
+endif ()
 
 if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED 1)
