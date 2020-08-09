@@ -3,6 +3,10 @@ set(CLICKHOUSE_SERVER_SOURCES
     Server.cpp
 )
 
+if (OS_LINUX AND ARCH_AMD64)
+    set (LINK_CONFIG_LIB INTERFACE "-Wl,--whole-archive $<TARGET_FILE:clickhouse_server_configs> -Wl,--no-whole-archive")
+endif ()
+
 set (CLICKHOUSE_SERVER_LINK
     PRIVATE
         clickhouse_aggregate_functions
@@ -16,7 +20,7 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_table_functions
         string_utils
 
-    INTERFACE "-Wl,--whole-archive $<TARGET_FILE:clickhouse_server_configs> -Wl,--no-whole-archive"
+    ${LINK_CONFIG_LIB}
 
     PUBLIC
         daemon
