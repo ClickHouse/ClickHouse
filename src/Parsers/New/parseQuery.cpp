@@ -38,7 +38,7 @@ ASTPtr parseQuery(const std::string & query)
 
     new_ast->dump();
 
-    return (*new_ast->begin())->convertToOld();
+    return new_ast->convertToOld();
 }
 
 }
