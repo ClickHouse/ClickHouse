@@ -72,10 +72,10 @@ namespace fs = std::filesystem;
 auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
-    WriteBufferFromFileDescriptor stdout(STDOUT_FILENO);
-    WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
-    copyData(sh->out, stdout);
-    copyData(sh->err, stderr);
+    WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
+    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
+    copyData(sh->out, wb_stdout);
+    copyData(sh->err, wb_stderr);
 
     if (throw_on_error)
     {
