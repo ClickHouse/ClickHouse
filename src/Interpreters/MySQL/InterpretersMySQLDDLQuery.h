@@ -21,7 +21,7 @@ struct InterpreterDropImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & drop_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
+    static ASTs getRewrittenQueries(const TQuery & drop_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 struct InterpreterAlterImpl
@@ -30,7 +30,7 @@ struct InterpreterAlterImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & alter_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
+    static ASTs getRewrittenQueries(const TQuery & alter_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 struct InterpreterRenameImpl
@@ -39,7 +39,7 @@ struct InterpreterRenameImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & rename_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
+    static ASTs getRewrittenQueries(const TQuery & rename_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 struct InterpreterCreateImpl
@@ -48,7 +48,7 @@ struct InterpreterCreateImpl
 
     static void validate(const TQuery & query, const Context & context);
 
-    static ASTPtr getRewrittenQuery(const TQuery & create_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
+    static ASTs getRewrittenQueries(const TQuery & create_query, const Context & context, const String & mapped_to_database, const String & mysql_database);
 };
 
 template <typename InterpreterImpl>
@@ -65,10 +65,10 @@ public:
         const typename InterpreterImpl::TQuery & query = query_ptr->as<typename InterpreterImpl::TQuery &>();
 
         InterpreterImpl::validate(query, context);
-        ASTPtr rewritten_query = InterpreterImpl::getRewrittenQuery(query, context, mapped_to_database, mysql_database);
+        ASTs rewritten_queries = InterpreterImpl::getRewrittenQueries(query, context, mapped_to_database, mysql_database);
 
-        if (rewritten_query)
-            return executeQuery("/* Rewritten MySQL DDL Query */ " + queryToString(rewritten_query), context, true);
+        for (const auto & rewritten_query : rewritten_queries)
+            executeQuery("/* Rewritten MySQL DDL Query */ " + queryToString(rewritten_query), context, true);
 
         return BlockIO{};
     }

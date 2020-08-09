@@ -321,7 +321,7 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 }
 
-ASTPtr InterpreterCreateImpl::getRewrittenQuery(
+ASTs InterpreterCreateImpl::getRewrittenQueries(
     const TQuery & create_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
     auto rewritten_query = std::make_shared<ASTCreateQuery>();
@@ -364,14 +364,14 @@ ASTPtr InterpreterCreateImpl::getRewrittenQuery(
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
 
-    return rewritten_query;
+    return ASTs{rewritten_query};
 }
 
 void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/, const Context & /*context*/)
 {
 }
 
-ASTPtr InterpreterDropImpl::getRewrittenQuery(
+ASTs InterpreterDropImpl::getRewrittenQueries(
     const InterpreterDropImpl::TQuery & drop_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
     const auto & database_name = resolveDatabase(drop_query.database, mysql_database, mapped_to_database, context);
@@ -382,7 +382,7 @@ ASTPtr InterpreterDropImpl::getRewrittenQuery(
 
     ASTPtr rewritten_query = drop_query.clone();
     rewritten_query->as<ASTDropQuery>()->database = mapped_to_database;
-    return rewritten_query;
+    return ASTs{rewritten_query};
 }
 
 void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, const Context & /*context*/)
@@ -391,7 +391,7 @@ void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & renam
         throw Exception("Cannot execute exchange for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-ASTPtr InterpreterRenameImpl::getRewrittenQuery(
+ASTs InterpreterRenameImpl::getRewrittenQueries(
     const InterpreterRenameImpl::TQuery & rename_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
     ASTRenameQuery::Elements elements;
@@ -414,27 +414,28 @@ ASTPtr InterpreterRenameImpl::getRewrittenQuery(
     }
 
     if (elements.empty())
-        return ASTPtr{};
+        return ASTs{};
 
     auto rewritten_query = std::make_shared<ASTRenameQuery>();
     rewritten_query->elements = elements;
-    return rewritten_query;
+    return ASTs{rewritten_query};
 }
 
 void InterpreterAlterImpl::validate(const InterpreterAlterImpl::TQuery & /*query*/, const Context & /*context*/)
 {
 }
 
-ASTPtr InterpreterAlterImpl::getRewrittenQuery(
+ASTs InterpreterAlterImpl::getRewrittenQueries(
     const InterpreterAlterImpl::TQuery & alter_query, const Context & context, const String & mapped_to_database, const String & mysql_database)
 {
     if (resolveDatabase(alter_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
         return {};
 
-    auto rewritten_query = std::make_shared<ASTAlterQuery>();
-    rewritten_query->database = mapped_to_database;
-    rewritten_query->table = alter_query.table;
-    rewritten_query->set(rewritten_query->command_list, std::make_shared<ASTAlterCommandList>());
+    auto rewritten_alter_query = std::make_shared<ASTAlterQuery>();
+    auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
+    rewritten_alter_query->database = mapped_to_database;
+    rewritten_alter_query->table = alter_query.table;
+    rewritten_alter_query->set(rewritten_alter_query->command_list, std::make_shared<ASTAlterCommandList>());
 
     String default_after_column;
     for (const auto & command_query : alter_query.command_list->children)
@@ -498,7 +499,7 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                 }
 
                 rewritten_command->children.push_back(rewritten_command->col_decl);
-                rewritten_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->add(rewritten_command);
             }
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::DROP_COLUMN)
@@ -506,7 +507,7 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
             auto rewritten_command = std::make_shared<ASTAlterCommand>();
             rewritten_command->type = ASTAlterCommand::DROP_COLUMN;
             rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->column_name);
-            rewritten_query->command_list->add(rewritten_command);
+            rewritten_alter_query->command_list->add(rewritten_command);
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_COLUMN)
         {
@@ -517,7 +518,7 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
                 rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
                 rewritten_command->rename_to = std::make_shared<ASTIdentifier>(alter_command->column_name);
-                rewritten_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->add(rewritten_command);
             }
         }
         else if (alter_command->type == MySQLParser::ASTAlterCommand::MODIFY_COLUMN)
@@ -546,7 +547,7 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                     rewritten_command->children.push_back(rewritten_command->column);
                 }
 
-                rewritten_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->add(rewritten_command);
             }
 
             if (!alter_command->old_name.empty() && alter_command->old_name != new_column_name)
@@ -555,15 +556,38 @@ ASTPtr InterpreterAlterImpl::getRewrittenQuery(
                 rewritten_command->type = ASTAlterCommand::RENAME_COLUMN;
                 rewritten_command->column = std::make_shared<ASTIdentifier>(alter_command->old_name);
                 rewritten_command->rename_to = std::make_shared<ASTIdentifier>(new_column_name);
-                rewritten_query->command_list->add(rewritten_command);
+                rewritten_alter_query->command_list->add(rewritten_command);
             }
+        }
+        else if (alter_command->type == MySQLParser::ASTAlterCommand::RENAME_TABLE)
+        {
+            const auto & to_database =  resolveDatabase(alter_command->new_database_name, mysql_database, mapped_to_database, context);
+
+            if (to_database != mapped_to_database)
+                throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
+
+            /// For ALTER TABLE table_name RENAME TO new_table_name_1, RENAME TO new_table_name_2;
+            /// We just need to generate RENAME TABLE table_name TO new_table_name_2;
+            if (rewritten_rename_query->elements.empty())
+                rewritten_rename_query->elements.push_back(ASTRenameQuery::Element());
+
+            rewritten_rename_query->elements.back().from.database = mapped_to_database;
+            rewritten_rename_query->elements.back().from.table = alter_query.table;
+            rewritten_rename_query->elements.back().to.database = mapped_to_database;
+            rewritten_rename_query->elements.back().to.table = alter_command->new_table_name;
         }
     }
 
-    if (rewritten_query->command_list->commands.empty())
-        return {};
+    ASTs rewritten_queries;
 
-    return rewritten_query;
+    /// Order is very important. We always execute alter first and then execute rename
+    if (!rewritten_alter_query->command_list->commands.empty())
+        rewritten_queries.push_back(rewritten_alter_query);
+
+    if (!rewritten_rename_query->elements.empty())
+        rewritten_queries.push_back(rewritten_rename_query);
+
+    return rewritten_queries;
 }
 
 }

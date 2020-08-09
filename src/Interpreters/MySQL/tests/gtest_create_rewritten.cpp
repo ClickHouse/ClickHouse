@@ -21,9 +21,9 @@ static inline ASTPtr tryRewrittenCreateQuery(const String & query, const Context
     ParserExternalDDLQuery external_ddl_parser;
     ASTPtr ast = parseQuery(external_ddl_parser, query, 0, 0);
 
-    return MySQLInterpreter::InterpreterCreateImpl::getRewrittenQuery(
+    return MySQLInterpreter::InterpreterCreateImpl::getRewrittenQueries(
         *ast->as<ASTExternalDDLQuery>()->external_ddl->as<MySQLParser::ASTCreateQuery>(),
-        context, "test_database", "test_database");
+        context, "test_database", "test_database")[0];
 }
 
 TEST(MySQLCreateRewritten, RewrittenQueryWithPrimaryKey)
