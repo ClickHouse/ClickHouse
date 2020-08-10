@@ -28,61 +28,41 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/**
- * ConcreteActions -- what to do when the index was found.
- */
+using NullMap = PaddedPODArray<UInt8>;
 
-/// For has.
-struct IndexToOne
+/// ConcreteActions -- what to do when the index was found.
+
+struct HasAction
 {
     using ResultType = UInt8;
-    static bool apply(size_t, ResultType & current) { current = 1; return false; }
+    static constexpr bool apply(size_t, ResultType & current) noexcept { current = 1; return false; }
 };
 
-/// For indexOf.
-struct IndexIdentity
+struct IndexOfAction
 {
     using ResultType = UInt64;
     /// The index is returned starting from 1.
-    static bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
+    static constexpr bool apply(size_t j, ResultType & current) noexcept { current = j + 1; return false; }
 };
 
-/// For countEqual.
-struct IndexCount
+struct CountEqualAction
 {
     using ResultType = UInt64;
-    static bool apply(size_t, ResultType & current) { ++current; return true; }
+    static constexpr bool apply(size_t, ResultType & current) noexcept { ++current; return true; }
 };
 
-/**
- * Impls -- how to perform the search depending on the arguments data types.
- * They usually provide methods @e vector (for processing ordinary columns), @e vector_const (for processing
- * ConstColumn s), and @e vectorVector for processing vectors of vectors.
- */
+/// Impls -- how to perform the search depending on the arguments data types.
 
-/**
- * @tparam Initial Initial integral data type (array's).
- * @tparam Result Resulting integral data type (col_res's).
- */
 template <
-    class Initial,
-    class Result,
     class ConcreteAction,
-    bool InvokedNotFromLCSpec = true>
-struct ArrayIndexNumImpl
+    bool RightArgIsConstant = false,
+    class IntegralInitial = UInt64,
+    class IntegralResult = UInt64>
+struct ArrayIndexMainImpl
 {
 private:
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-    /// compares `lhs` against `i`-th element of `rhs`
-    static bool compare(const Initial & lhs, const PaddedPODArray<Result> & rhs, const size_t i) { return lhs == rhs[i]; }
-
-    /// compares `lhs against `rhs`, third argument unused
-    static bool compare(const Initial & lhs, const Result & rhs, size_t) { return lhs == rhs; }
-
-#pragma GCC diagnostic pop
+    using Initial = IntegralInitial;
+    using Result = IntegralResult;
 
     using ResultType = typename ConcreteAction::ResultType;
     using ResultArr = PaddedPODArray<ResultType>;
@@ -90,7 +70,37 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-    using NullMap = PaddedPODArray<UInt8>;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+    static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    {
+        return left == right[i];
+    }
+
+    static bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    {
+        return left[i] == right;
+    }
+
+    static bool compare(const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
+    {
+        return left[i] == right[j];
+    }
+
+    /// LowCardinality
+    static bool compare(const IColumn & left, const Result& right, size_t i, size_t)
+    {
+        return left.getUInt(i) == right;
+    }
+
+    /// Generic
+    static bool compare(const IColumn& left, const IColumn& right, size_t i, size_t j)
+    {
+        return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
+    }
+
+#pragma GCC diagnostic pop
 
     static inline bool hasNull(const NullMap * const null_map, size_t i) { return (*null_map)[i]; }
 
@@ -129,27 +139,11 @@ private:
                     if (right_is_null != left_is_null)
                         continue;
 
-                    if (!right_is_null)
-                    {
-                        if constexpr (InvokedNotFromLCSpec)
-                        {
-                            if (!compare(data[current_offset + j], target, i))
-                                continue;
-                        }
-                        else if (data.compareAt(current_offset + j, /* index */ 0, target, 1))
-                            continue;
-                    }
-                }
-                else
-                {
-                    if constexpr (InvokedNotFromLCSpec)
-                    {
-                        if (!compare(data[current_offset + j], target, i))
-                            continue;
-                    }
-                    else if (data.compareAt(current_offset + j, 0, target, 1))
+                    if (!right_is_null && !compare(data, target, current_offset + j, i))
                         continue;
                 }
+                else if (!compare(data, target, current_offset + j, i))
+                        continue;
 
                 if (!ConcreteAction::apply(j, current))
                     break;
@@ -162,8 +156,13 @@ private:
 
 public:
     template <class Data, class Target>
-    static void vector(const Data & data, const ArrOffsets & offsets, const Target & value,
-        ResultArr & result, const NullMap * const null_map_data, const NullMap * const null_map_item)
+    static void vector(
+        const Data & data,
+        const ArrOffsets & offsets,
+        const Target & value,
+        ResultArr & result,
+        const NullMap * const null_map_data,
+        const NullMap * const null_map_item)
     {
         if (!null_map_data && !null_map_item)
             process<1>(data, offsets, value, result, null_map_data, null_map_item);
@@ -176,75 +175,32 @@ public:
     }
 };
 
-
-/// Implementation for arrays of numbers when the 2nd function argument
-/// is a NULL value.
-template <
-    class ConcreteAction,
-    bool InvokedNotFromLCSpec = true>
-struct ArrayIndexNumNullImpl
-{
-    static void vector(
-        const ColumnArray::Offsets & offsets,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data)
-    {
-        size_t size = offsets.size();
-
-        if constexpr (InvokedNotFromLCSpec)
-            result.resize(size);
-
-        ColumnArray::Offset current_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-                if (null_map_data && (*null_map_data)[current_offset + j])
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-
-            if constexpr (InvokedNotFromLCSpec)
-                result[i] = current;
-            else
-                if (current != 0)        /// do not override the value if it was not found as we invoke this impl
-                    result[i] = current; /// multiple times.
-
-            current_offset = offsets[i];
-        }
-    }
-};
-
-/// Implementation for arrays of strings when the 2nd function argument is a NULL value.
+/// When the 2nd function argument is a NULL value.
 template <class ConcreteAction>
-struct ArrayIndexStringNullImpl
+struct ArrayIndexNullImpl
 {
-    static void vector_const(
-        const ColumnString::Chars & /*data*/,
+    using ResultType = typename ConcreteAction::ResultType;
+
+    static void process(
         const ColumnArray::Offsets & offsets,
-        const ColumnString::Offsets & /*string_offsets*/,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data)
+        PaddedPODArray<ResultType> & result,
+        const NullMap * null_map_data)
     {
-        const auto size = offsets.size();
+        const size_t size = offsets.size();
+
         result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
-            const auto array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
+            const size_t array_size = offsets[i] - current_offset;
+            ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
-            {
                 if (null_map_data && (*null_map_data)[current_offset + j])
-                {
                     if (!ConcreteAction::apply(j, current))
                         break;
-                }
-            }
 
             result[i] = current;
             current_offset = offsets[i];
@@ -262,7 +218,7 @@ struct ArrayIndexStringImpl
         const ColumnString::Chars & value,
         ColumnString::Offset value_size,
         PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data)
+        const NullMap * null_map_data)
     {
         const auto size = offsets.size();
         result.resize(size);
@@ -303,8 +259,8 @@ struct ArrayIndexStringImpl
         const ColumnString::Chars & item_values,
         const ColumnString::Offsets & item_offsets,
         PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data,
-        const PaddedPODArray<UInt8> * null_map_item)
+        const NullMap * null_map_data,
+        const NullMap * null_map_item)
     {
         const auto size = offsets.size();
         result.resize(size);
@@ -338,203 +294,6 @@ struct ArrayIndexStringImpl
                 if (hit)
                 {
                     if (!ConcreteAction::apply(j, current))
-                        break;
-                }
-            }
-
-            result[i] = current;
-            current_offset = offsets[i];
-        }
-    }
-};
-
-/// Catch-all implementation for arrays of arbitrary type.
-/// To compare with a constant value, create a non-constant column with a single element and pass
-/// #is_value_has_single_element_to_compare = true.
-template <class ConcreteAction, bool is_value_has_single_element_to_compare>
-struct ArrayIndexGenericImpl
-{
-private:
-    /// Both function arguments are ordinary.
-    static void vectorCase1(
-        const IColumn & data,
-        const ColumnArray::Offsets & offsets,
-        const IColumn & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result)
-    {
-        size_t size = offsets.size();
-        result.resize(size);
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
-            }
-
-            result[i] = current;
-            current_offset = offsets[i];
-        }
-    }
-
-    /// The 2nd function argument is nullable.
-    static void vectorCase2(
-        const IColumn & data,
-        const ColumnArray::Offsets & offsets,
-        const IColumn & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> & null_map_item)
-    {
-        size_t size = offsets.size();
-        result.resize(size);
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if ((null_map_item[i] == 0) &&
-                    (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1)))
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
-            }
-
-            result[i] = current;
-            current_offset = offsets[i];
-        }
-    }
-
-    /// The 1st function argument is a non-constant array of nullable values.
-    static void vectorCase3(
-        const IColumn & data,
-        const ColumnArray::Offsets & offsets,
-        const IColumn & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> & null_map_data)
-    {
-        size_t size = offsets.size();
-        result.resize(size);
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if (null_map_data[current_offset + j])
-                {
-                }
-                else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
-            }
-
-            result[i] = current;
-            current_offset = offsets[i];
-        }
-    }
-
-    /// The 1st function argument is a non-constant array of nullable values.
-    /// The 2nd function argument is nullable.
-    static void vectorCase4(
-        const IColumn & data,
-        const ColumnArray::Offsets & offsets,
-        const IColumn & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> & null_map_data,
-        const PaddedPODArray<UInt8> & null_map_item)
-    {
-        size_t size = offsets.size();
-        result.resize(size);
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                bool hit = false;
-                if (null_map_data[current_offset + j])
-                {
-                    if (null_map_item[i])
-                        hit = true;
-                }
-                else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
-                        hit = true;
-
-                if (hit)
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
-            }
-        }
-    }
-
-public:
-    static void vector(
-        const IColumn & data,
-        const ColumnArray::Offsets & offsets,
-        const IColumn & value,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data,
-        const PaddedPODArray<UInt8> * null_map_item)
-    {
-        /// Processing is split into 4 cases.
-        if (!null_map_data && !null_map_item)
-            vectorCase1(data, offsets, value, result);
-        else if (!null_map_data && null_map_item)
-            vectorCase2(data, offsets, value, result, *null_map_item);
-        else if (null_map_data && !null_map_item)
-            vectorCase3(data, offsets, value, result, *null_map_data);
-        else
-            vectorCase4(data, offsets, value, result, *null_map_data, *null_map_item);
-    }
-};
-
-/// Catch-all implementation for arrays of arbitrary type
-/// when the 2nd function argument is a NULL value.
-template <typename IndexConv>
-struct ArrayIndexGenericNullImpl
-{
-    static void vector(
-        const IColumn & /*data*/, const ColumnArray::Offsets & offsets,
-        PaddedPODArray<typename IndexConv::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data)
-    {
-        size_t size = offsets.size();
-        result.resize(size);
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t array_size = offsets[i] - current_offset;
-            typename IndexConv::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if (null_map_data && (*null_map_data)[current_offset + j])
-                {
-                    if (!IndexConv::apply(j, current))
                         break;
                 }
             }
@@ -644,14 +403,14 @@ private:
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    std::pair<const PaddedPODArray<UInt8> *, const PaddedPODArray<UInt8> *>
+    std::pair<const NullMap *, const NullMap *>
     getNullMaps(const Block & block, const ColumnNumbers & arguments) const noexcept
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
 
-        const PaddedPODArray<UInt8> * null_map_data = nullptr;
-        const PaddedPODArray<UInt8> * null_map_item = nullptr;
+        const NullMap * null_map_data = nullptr;
+        const NullMap * null_map_item = nullptr;
 
         if (const auto & data_map = block.getByPosition(arguments[2]).column; data_map)
             null_map_data = &assert_cast<const ColumnUInt8 &>(*data_map).getData();
@@ -685,7 +444,7 @@ private:
      * second argument, namely, the @e value, so it's possible to invoke the <tt>has(Array(Int8), UInt64)</tt> e.g.
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
-    template <typename Initial, typename Resulting>
+    template <class Initial, class Resulting>
     bool executeIntegralImpl(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
@@ -705,12 +464,12 @@ private:
         const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-            ArrayIndexNumNullImpl<ConcreteAction>::vector(
+            ArrayIndexNullImpl<ConcreteAction>::process(
                 col_array->getOffsets(),
                 col_res->getData(),
                 null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(item_arg))
-            ArrayIndexNumImpl<Initial, Resulting, ConcreteAction>::vector(
+            ArrayIndexMainImpl<ConcreteAction, true, Initial, Resulting>::vector(
                 col_nested->getData(),
                 col_array->getOffsets(),
                 item_arg_const->template getValue<Resulting>(),
@@ -718,7 +477,7 @@ private:
                 null_map_data,
                 nullptr);
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(item_arg))
-            ArrayIndexNumImpl<Initial, Resulting, ConcreteAction>::vector(
+            ArrayIndexMainImpl<ConcreteAction, false, Initial, Resulting>::vector(
                 col_nested->getData(),
                 col_array->getOffsets(),
                 item_arg_vector->getData(),
@@ -745,7 +504,7 @@ private:
      *
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
-    bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeLowCardinalityAndConst(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
@@ -760,7 +519,7 @@ private:
 
         auto col_result = ResultColumnType::create();
 
-        const ColumnConst * const col_arg = checkAndGetColumnConst<ColumnConst>(
+        const ColumnConst * const col_arg = checkAndGetColumn<ColumnConst>(
                 block.getByPosition(arguments[1]).column.get());
 
         if (!col_arg)
@@ -791,7 +550,7 @@ private:
 
         const StringRef elem = col_arg_cloned->getDataAt(0);
 
-        UInt64 index {0};
+        UInt64 index = 0;
 
         if (elem != EMPTY_STRING_REF)
         {
@@ -799,14 +558,17 @@ private:
                 index = *maybe_index;
             else
             {
-                col_result->getData()[0] = 0;
+                col_result->getData().resize(col_array->getOffsets().size());
+
+                if (!col_array->getOffsets().empty())
+                    col_result->getData()[0] = 0;
+
                 block.getByPosition(result).column = std::move(col_result);
                 return true;
             }
         }
 
-        ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction,
-            false /* Invoking from LC spec */>::vector(
+        ArrayIndexMainImpl<ConcreteAction, true>::vector(
             col_lc->getIndexes(), /* where the value will be searched */
             col_array->getOffsets(),
             index, /* target value to search */
@@ -837,14 +599,10 @@ private:
         const IColumn * item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-        {
-            ArrayIndexStringNullImpl<ConcreteAction>::vector_const(
-                col_nested->getChars(),
+            ArrayIndexNullImpl<ConcreteAction>::process(
                 col_array->getOffsets(),
-                col_nested->getOffsets(),
                 col_res->getData(),
                 null_map_data);
-        }
         else if (const auto *const item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {
             const ColumnString * item_const_string =
@@ -927,7 +685,7 @@ private:
         else
         {
             /// Null map of the 2nd function argument, if it applies.
-            const PaddedPODArray<UInt8> * null_map = nullptr;
+            const NullMap * null_map = nullptr;
 
             if (arguments.size() > 2)
             {
@@ -987,13 +745,12 @@ private:
         auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         if (item_arg.onlyNull())
-            ArrayIndexGenericNullImpl<ConcreteAction>::vector(
-                col_nested,
+            ArrayIndexNullImpl<ConcreteAction>::process(
                 col->getOffsets(),
                 col_res->getData(),
                 null_map_data);
         else if (isColumnConst(item_arg))
-            ArrayIndexGenericImpl<ConcreteAction, true>::vector(
+            ArrayIndexMainImpl<ConcreteAction, true>::vector(
                 col_nested,
                 col->getOffsets(),
                 assert_cast<const ColumnConst &>(item_arg).getDataColumn(),
@@ -1001,7 +758,7 @@ private:
                 null_map_data,
                 nullptr);
         else
-            ArrayIndexGenericImpl<ConcreteAction, false>::vector(
+            ArrayIndexMainImpl<ConcreteAction>::vector(
                 col_nested,
                 col->getOffsets(),
                 *item_arg.convertToFullColumnIfConst(),
@@ -1015,10 +772,7 @@ private:
 
 public:
     /// Get function name.
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
@@ -1028,6 +782,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+
         if (!array_type)
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1039,7 +794,7 @@ public:
                 + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return std::make_shared<DataTypeNumber<typename ConcreteAction::ResultType>>();
+        return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
     /**
@@ -1143,15 +898,11 @@ public:
 private:
     void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (!(
-            executeIntegral<
-                UInt8, UInt16, UInt32, UInt64,
-                Int8, Int16, Int32, Int64,
-                Float32, Float64>(block, arguments, result)
-            || executeConst(block, arguments, result)
-            || executeString(block, arguments, result)
-            || executeLowCardinality(block, arguments, result)
-            || executeGeneric(block, arguments, result)))
+        if (!(executeIntegral<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(block, arguments, result)
+              || executeConst(block, arguments, result)
+              || executeString(block, arguments, result)
+              || executeLowCardinalityAndConst(block, arguments, result)
+              || executeGeneric(block, arguments, result)))
             throw Exception(
                 "Illegal internal type of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
