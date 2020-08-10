@@ -561,10 +561,7 @@ private:
                 const size_t offsets_size = col_array->getOffsets().size();
                 auto& data = col_result->getData();
 
-                data.resize(offsets_size);
-
-                for (size_t i = 0; i < offsets_size; ++i)
-                    data[i] = 0;
+                data.resize_fill(offsets_size);
 
                 block.getByPosition(result).column = std::move(col_result);
                 return true;
