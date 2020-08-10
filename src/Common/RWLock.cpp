@@ -238,7 +238,7 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
 {
     std::lock_guard state_lock(internal_state_mtx);
 
-    /// All of theses are Undefined behavior and nothing we can do!
+    /// All of these are Undefined behavior and nothing we can do!
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
         return;
     if (rdlock_owner != readers_queue.end() && group_it != rdlock_owner)

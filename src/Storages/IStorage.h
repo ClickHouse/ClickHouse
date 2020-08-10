@@ -134,12 +134,12 @@ public:
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
-    /// multiversion, so it can be concurrently chaged, but returned copy can be
+    /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
 
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
-    /// multiversion, so it can be concurrently chaged, but returned copy can be
+    /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
@@ -159,7 +159,7 @@ public:
     /// virtual columns must contain virtual columns from underlying table.
     ///
     /// User can create columns with the same name as virtual column. After that
-    /// virtual column will be overriden and inaccessible.
+    /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
@@ -193,7 +193,7 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
-    /// Lock table exclusively. This lock must be acuired if you want to be
+    /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
     /// with table. For example it allows to wait all threads before DROP or
     /// truncate query.
@@ -475,7 +475,7 @@ private:
     mutable RWLock alter_lock = RWLockImpl::create();
 
     /// Lock required for drop queries. Every thread that want to ensure, that
-    /// table is not dropped have to tabke this lock for read (lockForShare).
+    /// table is not dropped have to table this lock for read (lockForShare).
     /// DROP-like queries take this lock for write (lockExclusively), to be sure
     /// that all table threads finished.
     mutable RWLock drop_lock = RWLockImpl::create();

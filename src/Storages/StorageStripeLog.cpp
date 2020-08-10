@@ -206,8 +206,10 @@ public:
         block_out.writeSuffix();
         data_out->next();
         data_out_compressed->next();
+        data_out_compressed->finalize();
         index_out->next();
         index_out_compressed->next();
+        index_out_compressed->finalize();
 
         storage.file_checker.update(data_out_file);
         storage.file_checker.update(index_out_file);

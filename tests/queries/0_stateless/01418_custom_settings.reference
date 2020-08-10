@@ -15,3 +15,7 @@ custom_b	NULL
 custom_c	UInt64_50000
 custom_d	Float64_1.11
 0	UInt8
+
+test	String
+custom_compound.identifier.v1	\'test\'
+CREATE SETTINGS PROFILE s1_01418 SETTINGS custom_compound.identifier.v2 = 100
