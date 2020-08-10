@@ -651,7 +651,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
 
     const auto & partition_key = metadata_snapshot->getPartitionKeyAST();
-    LOG_DEBUG(log, "Selected {} parts by {}, {} parts by key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), queryToString(partition_key), parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
+    const auto partition_expression_str = partition_key == nullptr ? "" : queryToString(partition_key);
+    LOG_DEBUG(log, "Selected {} parts by {}, {} parts by key, {} marks by primary key, {} marks to read from {} ranges", parts.size(), partition_expression_str, parts_with_ranges.size(), sum_marks_pk.load(std::memory_order_relaxed), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
