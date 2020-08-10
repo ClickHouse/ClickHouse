@@ -4,14 +4,14 @@
 
 #### New Feature
 
+* Added an initial implementation of `EXPLAIN` query. Syntax: `EXPLAIN SELECT ...`. This fixes [#1118](https://github.com/ClickHouse/ClickHouse/issues/1118). [#11873](https://github.com/ClickHouse/ClickHouse/pull/11873) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Added storage `RabbitMQ`. [#11069](https://github.com/ClickHouse/ClickHouse/pull/11069) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Implemented PostgreSQL-like `ILIKE` operator for [#11710](https://github.com/ClickHouse/ClickHouse/issues/11710). [#12125](https://github.com/ClickHouse/ClickHouse/pull/12125) ([Mike](https://github.com/myrrc)).
 * Supported RIGHT and FULL JOIN with `set join_algorithm=partial_merge`. Only ALL strictness is allowed (ANY, SEMI, ANTI, ASOF are not). [#12118](https://github.com/ClickHouse/ClickHouse/pull/12118) ([Artem Zuikov](https://github.com/4ertus2)).
 * Added a function `initializedAggregation` to initialize an aggregation based on a single value. [#12109](https://github.com/ClickHouse/ClickHouse/pull/12109) ([Guillaume Tassery](https://github.com/YiuRULE)).
 * Supported `ALTER TABLE ... [ADD|MODIFY] COLUMN ... FIRST` [#4006](https://github.com/ClickHouse/ClickHouse/issues/4006). [#12073](https://github.com/ClickHouse/ClickHouse/pull/12073) ([Winter Zhang](https://github.com/zhang2014)).
 * Added function `parseDateTimeBestEffortUS`. [#12028](https://github.com/ClickHouse/ClickHouse/pull/12028) ([flynn](https://github.com/ucasFL)).
-* Added an initial implementation of `EXPLAIN` query. Syntax: `EXPLAIN SELECT ...`. This fixes [#1118](https://github.com/ClickHouse/ClickHouse/issues/1118). [#11873](https://github.com/ClickHouse/ClickHouse/pull/11873) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Added `ORCBlockOutputFormat`. [#11662](https://github.com/ClickHouse/ClickHouse/pull/11662) ([Kruglov Pavel](https://github.com/Avogar)).
-* Added storage `RabbitMQ`. [#11069](https://github.com/ClickHouse/ClickHouse/pull/11069) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 #### Bug Fix
 
@@ -109,9 +109,9 @@
 
 #### Performance Improvement
 
+* Improved performace of 'ORDER BY' and 'GROUP BY' by prefix of sorting key (enabled with `optimize_aggregation_in_order` setting, disabled by default). [#11696](https://github.com/ClickHouse/ClickHouse/pull/11696) ([Anton Popov](https://github.com/CurtizJ)).
 * Removed injective functions inside `uniq*()` if `set optimize_injective_functions_inside_uniq=1`. [#12337](https://github.com/ClickHouse/ClickHouse/pull/12337) ([Ruslan Kamalov](https://github.com/kamalov-ruslan)).
 * Index not used for IN operator with literals", performance regression introduced around v19.3. This fixes "[#10574](https://github.com/ClickHouse/ClickHouse/issues/10574). [#12062](https://github.com/ClickHouse/ClickHouse/pull/12062) ([nvartolomei](https://github.com/nvartolomei)).
-* Improved performace of 'ORDER BY' and 'GROUP BY' by prefix of sorting key. [#11696](https://github.com/ClickHouse/ClickHouse/pull/11696) ([Anton Popov](https://github.com/CurtizJ)).
 
 #### Experimental Feature
 * Added new in-memory format of parts in `MergeTree`-family tables, which stores data in memory. Parts are written on disk at first merge. Part will be created in in-memory format if its size in rows or bytes is below thresholds `min_rows_for_compact_part` and `min_bytes_for_compact_part`. Also optional support of Write-Ahead-Log is available, which is enabled by default and is controlled by setting `in_memory_parts_enable_wal`. [#10697](https://github.com/ClickHouse/ClickHouse/pull/10697) ([Anton Popov](https://github.com/CurtizJ)).
