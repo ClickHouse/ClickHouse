@@ -86,7 +86,7 @@ public:
         if (data.isRejected())
             return;
 
-        /// TODO: monotonicity for fucntions of several arguments
+        /// TODO: monotonicity for functions of several arguments
         auto arguments = ast_function.arguments;
         if (arguments->children.size() != 1)
         {
