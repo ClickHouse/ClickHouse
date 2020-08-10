@@ -287,33 +287,39 @@ namespace
                 const String databases_config = "users." + user_name + ".databases";
                 if (config.has(databases_config))
                 {
-                    Poco::Util::AbstractConfiguration::Keys databases;
-                    config.keys(databases_config, databases);
+                    Poco::Util::AbstractConfiguration::Keys database_keys;
+                    config.keys(databases_config, database_keys);
 
                     /// Read tables within databases
-                    for (const String & database : databases)
+                    for (const String & database_key : database_keys)
                     {
-                        const String database_config = databases_config + "." + database;
-                        Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
-                        config.keys(database_config, keys_in_database_config);
+                        const String database_config = databases_config + "." + database_key;
+
+                        String database_name;
+                        if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
+                            database_name = config.getString(database_config + "[@name]");
+                        else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
+                            database_name = database_key.substr(0, bracket_pos);
+                        else
+                            database_name = database_key;
+
+                        Poco::Util::AbstractConfiguration::Keys table_keys;
+                        config.keys(database_config, table_keys);
 
                         /// Read table properties
-                        for (const String & key_in_database_config : keys_in_database_config)
+                        for (const String & table_key : table_keys)
                         {
-                            String table_name = key_in_database_config;
-                            String filter_config = database_config + "." + table_name + ".filter";
+                            String table_config = database_config + "." + table_key;
+                            String table_name;
+                            if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
+                                table_name = config.getString(table_config + "[@name]");
+                            else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
+                                table_name = table_key.substr(0, bracket_pos);
+                            else
+                                table_name = table_key;
 
-                            if (key_in_database_config.starts_with("table["))
-                            {
-                                const auto table_name_config = database_config + "." + table_name + "[@name]";
-                                if (config.has(table_name_config))
-                                {
-                                    table_name = config.getString(table_name_config);
-                                    filter_config = database_config + ".table[@name='" + table_name + "']";
-                                }
-                            }
-
-                            all_filters_map[{database, table_name}][user_name] = config.getString(filter_config);
+                            String filter_config = table_config + ".filter";
+                            all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
                         }
                     }
                 }
