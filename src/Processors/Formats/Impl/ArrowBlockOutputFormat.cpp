@@ -40,12 +40,17 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
 
 void ArrowBlockOutputFormat::finalize()
 {
-    if (writer)
+    if (!writer)
     {
-        auto status = writer->Close();
-        if (!status.ok())
-            throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        const Block & header = getPort(PortKind::Main).getHeader();
+
+        consume(Chunk(header.getColumns(), 0));
     }
+
+    auto status = writer->Close();
+    if (!status.ok())
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while closing a table: {}", status.ToString());
 }
 
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
