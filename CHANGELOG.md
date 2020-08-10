@@ -11,7 +11,7 @@
 * Added a function `initializedAggregation` to initialize an aggregation based on a single value. [#12109](https://github.com/ClickHouse/ClickHouse/pull/12109) ([Guillaume Tassery](https://github.com/YiuRULE)).
 * Supported `ALTER TABLE ... [ADD|MODIFY] COLUMN ... FIRST` [#4006](https://github.com/ClickHouse/ClickHouse/issues/4006). [#12073](https://github.com/ClickHouse/ClickHouse/pull/12073) ([Winter Zhang](https://github.com/zhang2014)).
 * Added function `parseDateTimeBestEffortUS`. [#12028](https://github.com/ClickHouse/ClickHouse/pull/12028) ([flynn](https://github.com/ucasFL)).
-* Added `ORCBlockOutputFormat`. [#11662](https://github.com/ClickHouse/ClickHouse/pull/11662) ([Kruglov Pavel](https://github.com/Avogar)).
+* Support format `ORC` for output (was supported only for input). [#11662](https://github.com/ClickHouse/ClickHouse/pull/11662) ([Kruglov Pavel](https://github.com/Avogar)).
 
 #### Bug Fix
 
