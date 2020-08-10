@@ -212,6 +212,19 @@ class ClickHouseUnlexer(Grammarinator):
     CAST.min_depth = 1
 
     @depthcontrol
+    def CLUSTER(self):
+        current = self.create_node(UnlexerRule(name='CLUSTER'))
+        current += self.unlexer.C()
+        current += self.unlexer.L()
+        current += self.unlexer.U()
+        current += self.unlexer.S()
+        current += self.unlexer.T()
+        current += self.unlexer.E()
+        current += self.unlexer.R()
+        return current
+    CLUSTER.min_depth = 1
+
+    @depthcontrol
     def COLLATE(self):
         current = self.create_node(UnlexerRule(name='COLLATE'))
         current += self.unlexer.C()
@@ -234,6 +247,20 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.S()
         return current
     CROSS.min_depth = 1
+
+    @depthcontrol
+    def DATABASE(self):
+        current = self.create_node(UnlexerRule(name='DATABASE'))
+        current += self.unlexer.D()
+        current += self.unlexer.A()
+        current += self.unlexer.T()
+        current += self.unlexer.A()
+        current += self.unlexer.B()
+        current += self.unlexer.A()
+        current += self.unlexer.S()
+        current += self.unlexer.E()
+        return current
+    DATABASE.min_depth = 1
 
     @depthcontrol
     def DAY(self):
@@ -283,6 +310,16 @@ class ClickHouseUnlexer(Grammarinator):
     DISTINCT.min_depth = 1
 
     @depthcontrol
+    def DROP(self):
+        current = self.create_node(UnlexerRule(name='DROP'))
+        current += self.unlexer.D()
+        current += self.unlexer.R()
+        current += self.unlexer.O()
+        current += self.unlexer.P()
+        return current
+    DROP.min_depth = 1
+
+    @depthcontrol
     def ELSE(self):
         current = self.create_node(UnlexerRule(name='ELSE'))
         current += self.unlexer.E()
@@ -300,6 +337,18 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.D()
         return current
     END.min_depth = 1
+
+    @depthcontrol
+    def EXISTS(self):
+        current = self.create_node(UnlexerRule(name='EXISTS'))
+        current += self.unlexer.E()
+        current += self.unlexer.X()
+        current += self.unlexer.I()
+        current += self.unlexer.S()
+        current += self.unlexer.T()
+        current += self.unlexer.S()
+        return current
+    EXISTS.min_depth = 1
 
     @depthcontrol
     def EXTRACT(self):
@@ -412,6 +461,14 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.R()
         return current
     HOUR.min_depth = 1
+
+    @depthcontrol
+    def IF(self):
+        current = self.create_node(UnlexerRule(name='IF'))
+        current += self.unlexer.I()
+        current += self.unlexer.F()
+        return current
+    IF.min_depth = 1
 
     @depthcontrol
     def IN(self):
@@ -752,6 +809,15 @@ class ClickHouseUnlexer(Grammarinator):
     SEMI.min_depth = 1
 
     @depthcontrol
+    def SET(self):
+        current = self.create_node(UnlexerRule(name='SET'))
+        current += self.unlexer.S()
+        current += self.unlexer.E()
+        current += self.unlexer.T()
+        return current
+    SET.min_depth = 1
+
+    @depthcontrol
     def SETTINGS(self):
         current = self.create_node(UnlexerRule(name='SETTINGS'))
         current += self.unlexer.S()
@@ -764,6 +830,32 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.S()
         return current
     SETTINGS.min_depth = 1
+
+    @depthcontrol
+    def TABLE(self):
+        current = self.create_node(UnlexerRule(name='TABLE'))
+        current += self.unlexer.T()
+        current += self.unlexer.A()
+        current += self.unlexer.B()
+        current += self.unlexer.L()
+        current += self.unlexer.E()
+        return current
+    TABLE.min_depth = 1
+
+    @depthcontrol
+    def TEMPORARY(self):
+        current = self.create_node(UnlexerRule(name='TEMPORARY'))
+        current += self.unlexer.T()
+        current += self.unlexer.E()
+        current += self.unlexer.M()
+        current += self.unlexer.P()
+        current += self.unlexer.O()
+        current += self.unlexer.R()
+        current += self.unlexer.A()
+        current += self.unlexer.R()
+        current += self.unlexer.Y()
+        return current
+    TEMPORARY.min_depth = 1
 
     @depthcontrol
     def THEN(self):

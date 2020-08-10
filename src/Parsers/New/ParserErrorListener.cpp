@@ -32,8 +32,8 @@ void ParserErrorListener::syntaxError(
     {
     }
 
-    std::cout << "Parser error: " << message << std::endl;
-    std::cout << tokens[0]
+    std::cerr << "Parser error: " << message << std::endl;
+    std::cerr << tokens[0]
        << " " << tokens[1]
        << " " << tokens[2]
        << " " << tokens[3]

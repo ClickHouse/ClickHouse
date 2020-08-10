@@ -6,10 +6,10 @@
 namespace DB::AST
 {
 
-class SelectUnionQuery : public Query
+class SetQuery : public Query
 {
     public:
-        void appendSelect(PtrTo<SelectStmt> stmt);
+        explicit SetQuery(PtrTo<SettingExpr> expr);
 
         ASTPtr convertToOld() const override;
 };

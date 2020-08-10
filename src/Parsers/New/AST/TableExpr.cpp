@@ -2,7 +2,7 @@
 
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
-#include <Parsers/New/AST/SelectStmt.h>
+#include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/ParseTreeVisitor.h>
 
 #include <Parsers/ASTFunction.h>
@@ -42,7 +42,7 @@ PtrTo<TableExpr> TableExpr::createIdentifier(PtrTo<TableIdentifier> identifier)
 }
 
 // static
-PtrTo<TableExpr> TableExpr::createSubquery(PtrTo<SelectStmt> subquery)
+PtrTo<TableExpr> TableExpr::createSubquery(PtrTo<SelectUnionQuery> subquery)
 {
     return PtrTo<TableExpr>(new TableExpr(ExprType::SUBQUERY, {subquery}));
 }
@@ -147,7 +147,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::Table
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx)
 {
-    return TableExpr::createSubquery(ctx->selectStmt()->accept(this));
+    return TableExpr::createSubquery(ctx->selectUnionStmt()->accept(this));
 }
 
 }

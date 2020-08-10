@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ClickHouseParserVisitor.h"
+#include "Parsers/New/ClickHouseParser.h"
 
 
 namespace DB {
@@ -15,8 +16,15 @@ public:
     antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext *ctx) override;
     antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx) override;
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *ctx) override;
+    antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx) override;
     antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override;
     antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx) override;
+    antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override;
+
+    // DROP statements
+
+    antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override;
+    antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx) override;
 
     // SELECT clauses
 

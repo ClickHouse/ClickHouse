@@ -34,6 +34,8 @@ class TableIdentifier : public Identifier
     public:
         TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Identifier> name);
 
+        auto getDatabase() const { return db; }
+
         String getQualifiedName() const override { return (db ? db->getQualifiedName() + "." : String()) + getName(); }
 
     private:
@@ -44,6 +46,8 @@ class ColumnIdentifier : public Identifier
 {
     public:
         ColumnIdentifier(PtrTo<TableIdentifier> table, PtrTo<Identifier> name);
+
+        auto getTable() const { return table; }
 
         String getQualifiedName() const override { return (table ? table->getQualifiedName() + "." : String()) + getName(); }
 

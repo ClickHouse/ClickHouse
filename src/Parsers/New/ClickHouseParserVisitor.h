@@ -26,6 +26,12 @@ public:
 
     virtual antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *context) = 0;
 
+    virtual antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *context) = 0;
@@ -53,6 +59,8 @@ public:
     virtual antlrcpp::Any visitLimitClause(ClickHouseParser::LimitClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitSettingsClause(ClickHouseParser::SettingsClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitJoinExprOp(ClickHouseParser::JoinExprOpContext *context) = 0;
 

@@ -1,8 +1,11 @@
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/New/AST/DDLQuery.h>
+#include <Parsers/New/AST/DropQuery.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
+#include <Parsers/New/AST/SetQuery.h>
 
 
 namespace DB
@@ -32,7 +35,13 @@ antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContex
 
 antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 {
-    return ctx->children[0]->accept(this);
+    if (ctx->distributedStmt())
+        return std::static_pointer_cast<Query>(ctx->distributedStmt()->accept(this).as<PtrTo<DDLQuery>>());
+    if (ctx->selectUnionStmt())
+        return std::static_pointer_cast<Query>(ctx->selectUnionStmt()->accept(this).as<PtrTo<SelectUnionQuery>>());
+    if (ctx->setStmt())
+        return std::static_pointer_cast<Query>(ctx->setStmt()->accept(this).as<PtrTo<SetQuery>>());
+    __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx)
@@ -42,7 +51,30 @@ antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUni
     for (auto * stmt : ctx->selectStmt())
         select_union_query->appendSelect(stmt->accept(this));
 
-    return std::static_pointer_cast<Query>(select_union_query);
+    return select_union_query;
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx)
+{
+    PtrTo<DDLQuery> query;
+
+    if (ctx->dropStmt())
+        query = ctx->dropStmt()->accept(this).as<PtrTo<DropQuery>>();
+
+    if (ctx->CLUSTER())
+        query->setOnCluster(ctx->identifier()->accept(this));
+
+    return query;
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
+{
+    return DropQuery::createDropDatabase(!!ctx->EXISTS(), ctx->databaseIdentifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
+{
+    return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), ctx->tableIdentifier()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
@@ -63,6 +95,11 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
     if (ctx->settingsClause()) select_stmt->setSettingsClause(ctx->settingsClause()->accept(this));
 
     return select_stmt;
+}
+
+antlrcpp::Any ParseTreeVisitor::visitSetStmt(ClickHouseParser::SetStmtContext *ctx)
+{
+    return std::make_shared<SetQuery>(ctx->settingExpr()->accept(this).as<PtrTo<SettingExpr>>());
 }
 
 }

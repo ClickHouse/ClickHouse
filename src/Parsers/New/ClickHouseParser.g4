@@ -11,7 +11,24 @@ queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
 
 query
-    : selectUnionStmt
+    : distributedStmt
+    | selectUnionStmt
+    | setStmt
+    ;
+
+// DDL statement
+
+distributedStmt:
+    ( dropStmt
+    )
+    (ON CLUSTER identifier)?
+    ;
+
+// DROP statement
+
+dropStmt
+    : DROP DATABASE (IF EXISTS)? databaseIdentifier       # DropDatabaseStmt
+    | DROP TEMPORARY? TABLE (IF EXISTS)? tableIdentifier  # DropTableStmt
     ;
 
 // SELECT statement
@@ -45,6 +62,10 @@ orderByClause: ORDER BY orderExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
 limitClause: LIMIT limitExpr;
 settingsClause: SETTINGS settingExprList;
+
+// SET statement
+
+setStmt: SET settingExpr;
 
 joinExpr
     : tableExpr                                                           # JoinExprTable
@@ -133,12 +154,13 @@ databaseIdentifier: identifier;
 
 literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
 keyword // do not use directly in grammar - this rule allows to use keywords as identifiers. Except NULL_SQL.
-    : ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | COLLATE
-    | CROSS | DAY | DESCENDING | DISTINCT | ELSE | END | EXTRACT | FINAL | FIRST | FORMAT | FROM | FULL
-    | GLOBAL | GROUP | HAVING | HOUR | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | LAST | LEADING | LEFT
-    | LIKE | LIMIT | LOCAL | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OR | ORDER | OUTER | OUTFILE
-    | PREWHERE | QUARTER | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SETTINGS | THEN | TOTALS | TRAILING | TRIM
-    | UNION | USING | WEEK | WHEN | WHERE | WITH | YEAR
+    : ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER
+    | COLLATE | CROSS | DAY | DATABASE | DESCENDING | DISTINCT | DROP | ELSE | END | EXISTS | EXTRACT | FINAL
+    | FIRST | FORMAT | FROM | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL
+    | INTO | IS | JOIN | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MINUTE | MONTH | NOT | NULLS | OFFSET
+    | ON | OR | ORDER | OUTER | OUTFILE | PREWHERE | QUARTER | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SET
+    | SETTINGS | TABLE | TEMPORARY | THEN | TOTALS | TRAILING | TRIM | UNION | USING | WEEK | WHEN | WHERE
+    | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

@@ -29,6 +29,18 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -82,6 +94,10 @@ public:
   }
 
   virtual antlrcpp::Any visitSettingsClause(ClickHouseParser::SettingsClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 

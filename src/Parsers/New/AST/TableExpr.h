@@ -21,7 +21,7 @@ class TableExpr : public INode
         static PtrTo<TableExpr> createAlias(PtrTo<TableExpr> expr, PtrTo<Identifier> alias);
         static PtrTo<TableExpr> createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args);
         static PtrTo<TableExpr> createIdentifier(PtrTo<TableIdentifier> identifier);
-        static PtrTo<TableExpr> createSubquery(PtrTo<SelectStmt> subquery);
+        static PtrTo<TableExpr> createSubquery(PtrTo<SelectUnionQuery> subquery);
 
         ASTPtr convertToOld() const override;
 
