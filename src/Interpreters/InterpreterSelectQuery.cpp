@@ -300,6 +300,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
 
+    /// Does the orignal query has PREWHERE (for optimize_move_to_prewhere check)
+    bool has_prewhere_in_query = !!query.prewhere();
     /// If allow_insecure_prewhere enabled, move row-policy filters into PREWHERE
     /// (WHERE cannot be used here, since it will introduce more security breaches)
     if (row_policy_filter && storage->supportsPrewhere() && context->getAllowInsecurePrewhere())
@@ -340,7 +342,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !has_prewhere_in_query && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
