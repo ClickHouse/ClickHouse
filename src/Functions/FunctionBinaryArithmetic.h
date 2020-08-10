@@ -355,7 +355,7 @@ private:
     template <typename T, typename U>
     static NativeResultType apply(const T & a, const U & b)
     {
-        if constexpr (std::is_same_v<NativeResultType, bInt256>)
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
             if constexpr (IsDecimalNumber<T>)
                 return apply(a.value, b);
@@ -366,7 +366,7 @@ private:
             else if constexpr (std::is_same_v<U, UInt8>)
                 return apply(a, UInt16(b));
             else
-                return applyNative(static_cast<bInt256>(a), static_cast<bInt256>(b));
+                return applyNative(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b));
         }
         else
             return applyNative(a, b);
@@ -375,7 +375,7 @@ private:
     template <bool scale_left, typename T, typename U>
     static NativeResultType applyScaled(const T & a, const U & b, NativeResultType scale)
     {
-        if constexpr (std::is_same_v<NativeResultType, bInt256>)
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
             if constexpr (IsDecimalNumber<T>)
                 return applyScaled<scale_left>(a.value, b, scale);
@@ -386,7 +386,7 @@ private:
             else if constexpr (std::is_same_v<U, UInt8>)
                 return applyScaled<scale_left>(a, UInt16(b), scale);
             else
-                return applyNativeScaled<scale_left>(static_cast<bInt256>(a), static_cast<bInt256>(b), scale);
+                return applyNativeScaled<scale_left>(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaled<scale_left>(a, b, scale);
@@ -395,7 +395,7 @@ private:
     template <typename T, typename U>
     static NativeResultType applyScaledDiv(const T & a, const U & b, NativeResultType scale)
     {
-        if constexpr (std::is_same_v<NativeResultType, bInt256>)
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
             if constexpr (IsDecimalNumber<T>)
                 return applyScaledDiv(a.value, b, scale);
@@ -406,7 +406,7 @@ private:
             else if constexpr (std::is_same_v<U, UInt8>)
                 return applyScaledDiv(a, UInt16(b), scale);
             else
-                return applyNativeScaledDiv(static_cast<bInt256>(a), static_cast<bInt256>(b), scale);
+                return applyNativeScaledDiv(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaledDiv(a, b, scale);
@@ -506,6 +506,14 @@ template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
 template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
 template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
+template <typename DataType> constexpr bool IsExtended = false;
+template <> inline constexpr bool IsExtended<DataTypeUInt256> = true;
+template <> inline constexpr bool IsExtended<DataTypeInt128> = true;
+template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
+
+template <typename DataType> constexpr bool IsIntegralOrExtended = IsIntegral<DataType> || IsExtended<DataType>;
+template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal = IsIntegralOrExtended<DataType> || IsDataTypeDecimal<DataType>;
+
 template <typename DataType> constexpr bool IsFloatingPoint = false;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
@@ -550,11 +558,11 @@ public:
         Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && IsIntegral<RightDataType>, LeftDataType>,
-        Case<!IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && IsIntegral<LeftDataType>, RightDataType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
+        Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && !IsIntegral<RightDataType>, InvalidType>,
-        Case<!IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && !IsIntegral<LeftDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
         /// number <op> number -> see corresponding impl
         Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
             DataTypeFromFieldType<typename Op::ResultType>>,

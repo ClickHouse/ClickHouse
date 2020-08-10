@@ -219,6 +219,11 @@ template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
 template <> struct NativeType<Decimal256> { using Type = bInt256; };
 
+template <typename T> constexpr bool OverBigInt = false;
+template <> inline constexpr bool OverBigInt<bInt256> = true;
+template <> inline constexpr bool OverBigInt<bUInt256> = true;
+template <> inline constexpr bool OverBigInt<Decimal256> = true;
+
 inline constexpr const char * getTypeName(TypeIndex idx)
 {
     switch (idx)
