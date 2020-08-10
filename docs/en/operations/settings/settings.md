@@ -1013,13 +1013,19 @@ Default value: 0.
 
 Consider the following table:
 
-Place here the contents of the test_table.
-Maybe we can find a more interesing name for the table?
+```
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
 
 When `output_format_json_quote_denormals = 0`, the query returns `null` values in output:
 
 ```sql
-SELECT days/0 FROM test_table FORMAT JSON;
+SELECT area/period FROM account_orders FORMAT JSON;
 ```
 
 ```json
@@ -1027,7 +1033,7 @@ SELECT days/0 FROM test_table FORMAT JSON;
         "meta":
         [
                 {
-                        "name": "divide(value1, 0)",
+                        "name": "divide(area, period)",
                         "type": "Float64"
                 }
         ],
@@ -1035,26 +1041,23 @@ SELECT days/0 FROM test_table FORMAT JSON;
         "data":
         [
                 {
-                        "divide(value1, 0)": null
+                        "divide(area, period)": null
                 },
                 {
-                        "divide(value1, 0)": null
-,
+                        "divide(area, period)": null
+                },
                 {
-                        "divide(value1, 0)": null
-,
-                {
-                        "divide(value1, 0)": null
+                        "divide(area, period)": null
 
         ],
 
-        "rows": 4,
+        "rows": 3,
 
         "statistics":
         {
-                "elapsed": 0.000120303,
-                "rows_read": 4,
-                "bytes_read": 16
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
         }
 }
 ```
@@ -1066,7 +1069,7 @@ When `output_format_json_quote_denormals = 1`, the query returns:
         "meta":
         [
                 {
-                        "name": "divide(value1, 0)",
+                        "name": "divide(area, period)",
                         "type": "Float64"
                 }
         ],
@@ -1074,26 +1077,23 @@ When `output_format_json_quote_denormals = 1`, the query returns:
         "data":
         [
                 {
-                        "divide(value1, 0)": "-inf"
+                        "divide(area, period)": "inf"
                 },
                 {
-                        "divide(value1, 0)": "-inf"
-,
+                        "divide(area, period)": "-nan"
+                },
                 {
-                        "divide(value1, 0)": "-nan"
-,
-                {
-                        "divide(value1, 0)": "inf"
+                        "divide(area, period)": "-inf"
 
         ],
 
-        "rows": 4,
+        "rows": 3,
 
         "statistics":
         {
-                "elapsed": 0.000113395,
-                "rows_read": 4,
-                "bytes_read": 16
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
         }
 }
 ```
