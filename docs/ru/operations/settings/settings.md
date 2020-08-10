@@ -910,7 +910,7 @@ load_balancing = first_or_random
 
 ## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
 
-При включении, позволяет выводить значения `+nan`, `-nan`, `+inf`, `-inf` в формате выходных данных [JSON](../../interfaces/formats.md#json).
+При выводе данных в формате [JSON](../../interfaces/formats.md#json) включает отображение значений `+nan`, `-nan`, `+inf`, `-inf`.
 
 Возможные значения:
 
