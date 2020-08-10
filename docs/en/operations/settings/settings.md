@@ -1013,7 +1013,6 @@ Default value: 0.
 
 Consider the following table:
 
-```
 ```text
 ┌─id─┬─name───┬─duration─┬─period─┬─area─┐
 │  1 │ Andrew │       20 │      0 │  400 │
