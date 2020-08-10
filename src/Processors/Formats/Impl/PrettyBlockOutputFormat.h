@@ -42,7 +42,7 @@ protected:
     virtual void writeSuffix();
 
 
-    virtual void writeSuffixIfNot()
+    void writeSuffixIfNot()
     {
         if (!suffix_written)
             writeSuffix();

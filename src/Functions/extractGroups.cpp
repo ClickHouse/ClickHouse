@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 
 namespace DB
@@ -50,7 +51,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
@@ -60,7 +61,7 @@ public:
         if (needle.empty())
             throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
-        auto regexp = Regexps::get<false, false>(needle);
+        const auto regexp = Regexps::get<false, false>(needle);
         const auto & re2 = regexp->getRE2();
 
         if (!re2)

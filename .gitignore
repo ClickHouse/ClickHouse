@@ -12,7 +12,6 @@
 /build
 /build_*
 /build-*
-/tests/venv
 
 /docs/build
 /docs/publish
@@ -79,7 +78,6 @@ configure-stamp
 *.bin
 *.mrk
 *.mrk2
-*.mrk3
 
 .dupload.conf
 

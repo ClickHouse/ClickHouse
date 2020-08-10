@@ -7,8 +7,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 using namespace DB;
 
@@ -86,10 +85,7 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
     auto transform = std::make_shared<MergingSortedTransform>(pipes.front().getHeader(), pipes.size(), sort_description,
             DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(pipes), std::move(transform)));
-    pipeline.setMaxThreads(1);
-    auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    auto stream = std::make_shared<TreeExecutorBlockInputStream>(Pipe(std::move(pipes), std::move(transform)));
 
     size_t total_rows = 0;
     auto block1 = stream->read();
@@ -129,10 +125,7 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
     auto transform = std::make_shared<MergingSortedTransform>(pipes.front().getHeader(), pipes.size(), sort_description,
             DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(pipes), std::move(transform)));
-    pipeline.setMaxThreads(1);
-    auto stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    auto stream = std::make_shared<TreeExecutorBlockInputStream>(Pipe(std::move(pipes), std::move(transform)));
 
     auto block1 = stream->read();
     auto block2 = stream->read();

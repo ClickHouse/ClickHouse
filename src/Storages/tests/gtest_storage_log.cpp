@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -14,8 +15,7 @@
 #include <Common/tests/gtest_global_context.h>
 
 #include <memory>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
@@ -31,7 +31,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, false, 1048576);
+        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576);
 
     table->startup();
 
@@ -71,14 +71,13 @@ TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     std::string data;
 
     Block block;
 
     {
-        const auto & storage_columns = metadata_snapshot->getColumns();
+        const auto & storage_columns = table->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
         column.type = storage_columns.getPhysical("a").type;
@@ -98,9 +97,8 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
+    BlockOutputStreamPtr out = table->write({}, context);
     out->write(block);
-    out->writeSuffix();
 
     return data;
 }
@@ -109,16 +107,13 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
 std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     Names column_names;
     column_names.push_back("a");
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, {}, context, stage, 8192, 1));
-    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
 
     Block sample;
     {

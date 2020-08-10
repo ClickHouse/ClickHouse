@@ -47,12 +47,15 @@ static void validateKeyTypes(const DataTypes & key_types)
 
 
 TrieDictionary::TrieDictionary(
-    const StorageID & dict_id_,
+    const std::string & database_,
+    const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -61,8 +64,18 @@ TrieDictionary::TrieDictionary(
 {
     createAttributes();
     trie = btrie_create();
-    loadData();
-    calculateBytesAllocated();
+
+    try
+    {
+        loadData();
+        calculateBytesAllocated();
+    }
+    catch (...)
+    {
+        creation_exception = std::current_exception();
+    }
+
+    creation_time = std::chrono::system_clock::now();
 }
 
 TrieDictionary::~TrieDictionary()
@@ -77,7 +90,7 @@ TrieDictionary::~TrieDictionary()
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -109,7 +122,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -131,7 +144,7 @@ void TrieDictionary::getString(
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, \
@@ -165,7 +178,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -185,7 +198,7 @@ void TrieDictionary::getString(
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -216,7 +229,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -767,11 +780,12 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         if (!dict_struct.key)
             throw Exception{"'key' is required for dictionary of layout 'ip_trie'", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         // This is specialised trie for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<TrieDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<TrieDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

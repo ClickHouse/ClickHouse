@@ -5,7 +5,6 @@
 namespace DB
 {
 
-/// Create source from prepared pipe.
 class ReadFromPreparedSource : public ISourceStep
 {
 public:

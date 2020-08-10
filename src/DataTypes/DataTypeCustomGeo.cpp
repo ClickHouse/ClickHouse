@@ -1,3 +1,4 @@
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>

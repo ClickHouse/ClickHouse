@@ -6,6 +6,7 @@
 #include <cstring>
 #include <algorithm>
 #include <sstream>
+#include <iostream>
 #include <functional>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>

@@ -56,7 +56,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 }
 
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(String(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
@@ -149,7 +149,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #if defined(__linux__)
     try
     {
-        static constexpr size_t buf_size = 1024;
+        static constexpr size_t buf_size = 4096;
         char buf[buf_size];
 
         UInt64 max_map_count = 0;

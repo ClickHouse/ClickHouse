@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Common/Arena.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>

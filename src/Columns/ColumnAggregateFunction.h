@@ -159,8 +159,6 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
-    void updateHashFast(SipHash & hash) const override;
-
     size_t byteSize() const override;
 
     size_t allocatedBytes() const override;
