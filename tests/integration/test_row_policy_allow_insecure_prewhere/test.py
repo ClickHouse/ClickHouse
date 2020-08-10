@@ -15,10 +15,10 @@ def started_cluster():
             CREATE DATABASE mydb ENGINE=Ordinary;
 
             CREATE TABLE mydb.prewhere_filter (a UInt8, b UInt8, c UInt8, s String) ENGINE MergeTree ORDER BY a PARTITION BY a SETTINGS index_granularity=1;
-            INSERT INTO mydb.prewhere_filter SELECT number, number, number, randomString(1000) FROM numbers(10);
+            INSERT INTO mydb.prewhere_filter SELECT number, number, number, randomPrintableASCII(1000) FROM numbers(10);
 
             CREATE TABLE mydb.prewhere_no_filter (a UInt8, b UInt8, c UInt8, s String) ENGINE MergeTree ORDER BY a PARTITION BY a SETTINGS index_granularity=1;
-            INSERT INTO mydb.prewhere_no_filter SELECT number, number, number, randomString(1000) FROM numbers(10);
+            INSERT INTO mydb.prewhere_no_filter SELECT number, number, number, randomPrintableASCII(1000) FROM numbers(10);
         ''')
 
         yield cluster
