@@ -9,6 +9,9 @@
 #include <Common/Arena.h>
 #include <Common/Stopwatch.h>
 
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wframe-larger-than="
+#endif
 
 /** This test program evaluates different solutions for a simple degenerate task:
   * Aggregate data by UInt8 key, calculate "avg" function on Float values.
