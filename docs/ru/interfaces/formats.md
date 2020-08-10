@@ -7,7 +7,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | Формат                                                          | INSERT | SELECT |
 |-----------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✗      | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✔      | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
 | [Template](#format-template)                                    | ✔      | ✔      |
@@ -132,7 +132,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Отличается от формата `TabSeparated` тем, что строки выводятся без экранирования.
-Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
+Используя этот формат, следите, чтобы в полях не было символов табуляции или разрыва строки.
 
 Этот формат также доступен под именем `TSVRaw`.
 
@@ -940,7 +940,7 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create.md#create-default-values).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
