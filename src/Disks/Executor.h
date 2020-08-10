@@ -1,7 +1,7 @@
 #pragma once
 
-#include "future"
-#include "functional"
+#include <future>
+#include <functional>
 
 namespace DB
 {
