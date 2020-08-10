@@ -142,7 +142,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         }
     };
 
-
     iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
