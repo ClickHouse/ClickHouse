@@ -921,7 +921,7 @@ load_balancing = first_or_random
 
 **Пример**
 
-Рассмотрим следующую таблицу:
+Рассмотрим следующую таблицу `account_orders`:
 
 ```text
 ┌─id─┬─name───┬─duration─┬─period─┬─area─┐

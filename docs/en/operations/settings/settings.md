@@ -1011,7 +1011,7 @@ Default value: 0.
 
 **Example**
 
-Consider the following table:
+Consider the following table `account_orders`:
 
 ```text
 ┌─id─┬─name───┬─duration─┬─period─┬─area─┐
