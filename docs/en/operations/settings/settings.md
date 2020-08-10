@@ -1009,7 +1009,14 @@ Possible values:
 
 Default value: 0.
 
-For example, when this setting disabled, the query returns null values in output:
+**Example**
+
+Consider the following table:
+
+Place here the contents of the test_table.
+Maybe we can find a more interesing name for the table?
+
+When `output_format_json_quote_denormals = 0`, the query returns `null` values in output:
 
 ```sql
 SELECT days/0 FROM test_table FORMAT JSON;
