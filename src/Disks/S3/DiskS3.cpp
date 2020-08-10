@@ -407,7 +407,31 @@ public:
         disk->reserved_bytes += size;
     }
 
-    ~DiskS3Reservation() override;
+    ~DiskS3Reservation() override
+    {
+        try
+        {
+            std::lock_guard lock(disk->reservation_mutex);
+            if (disk->reserved_bytes < size)
+            {
+                disk->reserved_bytes = 0;
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            }
+            else
+            {
+                disk->reserved_bytes -= size;
+            }
+
+            if (disk->reservation_count == 0)
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            else
+                --disk->reservation_count;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
 private:
     DiskS3Ptr disk;
@@ -724,32 +748,6 @@ void DiskS3::setReadOnly(const String & path)
 std::unique_ptr<Executor> DiskS3::getExecutor()
 {
     return std::make_unique<AsyncExecutor>();
-}
-
-DiskS3Reservation::~DiskS3Reservation()
-{
-    try
-    {
-        std::lock_guard lock(disk->reservation_mutex);
-        if (disk->reserved_bytes < size)
-        {
-            disk->reserved_bytes = 0;
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
-        }
-        else
-        {
-            disk->reserved_bytes -= size;
-        }
-
-        if (disk->reservation_count == 0)
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
-        else
-            --disk->reservation_count;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 }
