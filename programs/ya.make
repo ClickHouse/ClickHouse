@@ -6,14 +6,9 @@ CFLAGS(
     -DENABLE_CLICKHOUSE_SERVER
 )
 
-ADDINCL (
-    GLOBAL clickhouse/base/readpassphrase
-)
-
 PEERDIR(
     clickhouse/base/daemon
     clickhouse/base/loggers
-    clickhouse/base/readpassphrase
     clickhouse/src
 )
 
