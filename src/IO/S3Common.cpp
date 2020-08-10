@@ -167,14 +167,14 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const Context & context)
+        const RemoteHostFilter & remote_host_filter)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, context);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -182,11 +182,11 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const Context & context)
+        const RemoteHostFilter & remote_host_filter)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        PocoHTTPClientConfiguration client_configuration(cfg, context.getRemoteHostFilter());
+        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter);
 
         if (!client_configuration.endpointOverride.empty())
         {
@@ -217,9 +217,9 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        const Context & context)
+        const RemoteHostFilter & remote_host_filter)
     {
-        PocoHTTPClientConfiguration cfg({}, context.getRemoteHostFilter());
+        PocoHTTPClientConfiguration cfg({}, remote_host_filter);
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;

@@ -129,7 +129,7 @@ void registerDiskS3(DiskFactory & factory)
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""),
-            context);
+            context.getRemoteHostFilter());
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
 

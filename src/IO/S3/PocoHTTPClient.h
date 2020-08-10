@@ -2,8 +2,9 @@
 
 #include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/S3Common.h>
+#include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
+#include <aws/core/http/HttpRequest.h>
 
 namespace Aws::Http::Standard
 {
