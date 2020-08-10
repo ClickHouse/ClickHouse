@@ -70,8 +70,16 @@ static void loadDatabase(
         database_attach_query = "CREATE DATABASE " + backQuoteIfNeed(database);
     }
 
-    executeCreateQuery(database_attach_query, context, database,
-                       database_metadata_file, force_restore_data);
+    try
+    {
+        executeCreateQuery(database_attach_query, context, database,
+            database_metadata_file, force_restore_data);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("while loading database {} from file {}", backQuote(database), database_path));
+        throw;
+    }
 }
 
 
