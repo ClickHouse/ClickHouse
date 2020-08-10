@@ -280,8 +280,4 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 重置所有 `ReplicatedMergeTree`表的ZooKeeper会话状态。该操作会以Zookeeper为参照，对比当前状态，有需要的情况下将任务添加到ZooKeeper队列。
 
-``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
-```
-
 [原始文档](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->
