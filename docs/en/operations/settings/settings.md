@@ -1047,7 +1047,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
                 },
                 {
                         "divide(area, period)": null
-
+                }
         ],
 
         "rows": 3,
@@ -1083,7 +1083,7 @@ When `output_format_json_quote_denormals = 1`, the query returns:
                 },
                 {
                         "divide(area, period)": "-inf"
-
+                }
         ],
 
         "rows": 3,
