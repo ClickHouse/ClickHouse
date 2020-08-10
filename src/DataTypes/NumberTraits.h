@@ -209,7 +209,7 @@ template <typename A> struct ToInteger
 // NOTE: This case is applied for 64-bit integers only (for backward compatibility), but could be used for any-bit integers
 template <typename A, typename B>
 constexpr bool LeastGreatestSpecialCase =
-    is_integral_or_big_v<A> && is_integral_or_big_v<B>
+    std::is_integral_v<A> && std::is_integral_v<B>
     && (8 == sizeof(A) && sizeof(A) == sizeof(B))
     && (is_signed_v<A> ^ is_signed_v<B>);
 
