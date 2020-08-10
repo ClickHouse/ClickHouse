@@ -558,10 +558,13 @@ private:
                 index = *maybe_index;
             else
             {
-                col_result->getData().resize(col_array->getOffsets().size());
+                const size_t offsets_size = col_array->getOffsets().size();
+                auto& data = col_result->getData();
 
-                if (!col_array->getOffsets().empty())
-                    col_result->getData()[0] = 0;
+                data.resize(offsets_size);
+
+                for (size_t i = 0; i < offsets_size; ++i)
+                    data[i] = 0;
 
                 block.getByPosition(result).column = std::move(col_result);
                 return true;
@@ -569,9 +572,9 @@ private:
         }
 
         ArrayIndexMainImpl<ConcreteAction, true>::vector(
-            col_lc->getIndexes(), /* where the value will be searched */
+            col_lc->getIndexes(),
             col_array->getOffsets(),
-            index, /* target value to search */
+            index,
             col_result->getData(),
             null_map_data,
             null_map_item);
