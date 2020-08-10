@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -70,7 +71,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
@@ -85,7 +86,7 @@ public:
 private:
     const Context & context;
 
-    void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
         const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
@@ -113,19 +114,16 @@ private:
         block.getByPosition(result).column = std::move(c_res);
     }
 
-    void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count) const
+    void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
-        const size_t num_arguments = arguments.size();
-        assert(num_arguments >= 2);
-
         auto c_res = ColumnString::create();
-        std::vector<const ColumnString::Chars *> data(num_arguments);
-        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
-        std::vector<size_t> fixed_string_sizes(num_arguments);
-        std::vector<String> constant_strings(num_arguments);
+        std::vector<const ColumnString::Chars *> data(arguments.size());
+        std::vector<const ColumnString::Offsets *> offsets(arguments.size());
+        std::vector<size_t> fixed_string_sizes(arguments.size());
+        std::vector<String> constant_strings(arguments.size());
         bool has_column_string = false;
         bool has_column_fixed_string = false;
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
             const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -150,9 +148,9 @@ private:
         }
 
         String pattern;
-        pattern.reserve(2 * num_arguments);
+        pattern.reserve(2 * arguments.size());
 
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < arguments.size(); ++i)
             pattern += "{}";
 
         FormatImpl::formatExecute(

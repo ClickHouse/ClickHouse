@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -9,8 +8,8 @@ PEERDIR(
 )
 
 SRCS(
-    AIOContextPool.cpp
     AIO.cpp
+    AIOContextPool.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
     CascadeWriteBuffer.cpp
@@ -31,8 +30,8 @@ SRCS(
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferAIO.cpp
-    ReadBufferFromFileBase.cpp
     ReadBufferFromFile.cpp
+    ReadBufferFromFileBase.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
@@ -40,11 +39,10 @@ SRCS(
     readFloatText.cpp
     ReadHelpers.cpp
     ReadWriteBufferFromHTTP.cpp
-    SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
     WriteBufferAIO.cpp
-    WriteBufferFromFileBase.cpp
     WriteBufferFromFile.cpp
+    WriteBufferFromFileBase.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp
@@ -56,7 +54,6 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
-
 )
 
 END()

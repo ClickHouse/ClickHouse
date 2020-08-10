@@ -30,7 +30,6 @@ public:
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
-        DROP_REPLICA,
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
@@ -62,9 +61,6 @@ public:
     String target_dictionary;
     String database;
     String table;
-    String replica;
-    String replica_zk_path;
-    bool is_drop_whole_replica;
 
     String getID(char) const override { return "SYSTEM query"; }
 

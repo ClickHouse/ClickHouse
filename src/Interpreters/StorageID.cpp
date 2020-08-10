@@ -3,9 +3,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -82,33 +80,6 @@ bool StorageID::operator<(const StorageID & rhs) const
 String StorageID::getFullTableName() const
 {
     return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
-}
-
-String StorageID::getFullNameNotQuoted() const
-{
-    return getDatabaseName() + "." + table_name;
-}
-
-StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
-                                          const String & config_prefix)
-{
-    StorageID res = StorageID::createEmpty();
-    res.database_name = config.getString(config_prefix + ".database", "");
-    res.table_name = config.getString(config_prefix + ".name");
-    const String uuid_str = config.getString(config_prefix + ".uuid", "");
-    if (!uuid_str.empty())
-        res.uuid = parseFromString<UUID>(uuid_str);
-    return res;
-}
-
-String StorageID::getInternalDictionaryName() const
-{
-    assertNotEmpty();
-    if (hasUUID())
-        return toString(uuid);
-    if (database_name.empty())
-        return table_name;
-    return database_name + "." + table_name;
 }
 
 }

@@ -19,9 +19,6 @@ namespace ErrorCodes
 template <typename T, typename Denominator>
 struct AggregateFunctionAvgData
 {
-    using NumeratorType = T;
-    using DenominatorType = Denominator;
-
     T numerator = 0;
     Denominator denominator = 0;
 
@@ -74,24 +71,16 @@ public:
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         writeBinary(this->data(place).numerator, buf);
-
-        if constexpr (std::is_unsigned_v<typename Data::DenominatorType>)
-            writeVarUInt(this->data(place).denominator, buf);
-        else /// Floating point denominator type can be used
-            writeBinary(this->data(place).denominator, buf);
+        writeVarUInt(this->data(place).denominator, buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         readBinary(this->data(place).numerator, buf);
-
-        if constexpr (std::is_unsigned_v<typename Data::DenominatorType>)
-            readVarUInt(this->data(place).denominator, buf);
-        else /// Floating point denominator type can be used
-            readBinary(this->data(place).denominator, buf);
+        readVarUInt(this->data(place).denominator, buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         auto & column = static_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).template result<ResultType>());

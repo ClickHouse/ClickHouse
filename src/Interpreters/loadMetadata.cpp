@@ -17,7 +17,6 @@
 #include <Common/escapeForFileName.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -49,6 +48,7 @@ static void loadDatabase(
     const String & database_path,
     bool force_restore_data)
 {
+
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
@@ -95,19 +95,8 @@ void loadMetadata(Context & context, const String & default_database_name)
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
-        if (it->isLink())
-            continue;
-
         if (!it->isDirectory())
-        {
-            if (endsWith(it.name(), ".sql"))
-            {
-                String db_name = it.name().substr(0, it.name().size() - 4);
-                if (db_name != SYSTEM_DATABASE)
-                    databases.emplace(unescapeForFileName(db_name), path + "/" + db_name);
-            }
             continue;
-        }
 
         /// For '.svn', '.gitignore' directory and similar.
         if (it.name().at(0) == '.')
