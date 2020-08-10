@@ -1,6 +1,6 @@
 ## ClickHouse release 20.5
 
-### ClickHouse release v20.5.4.40-stable 10.08.2020
+### ClickHouse release v20.5.4.40-stable 2020-08-10
 
 #### Bug Fix
 
