@@ -8,4 +8,9 @@
   * Note: the function names are different to avoid confusion with symbols from the system libm.
   */
 
+extern "C"
+{
+
 double preciseExp10(double x);
+
+}

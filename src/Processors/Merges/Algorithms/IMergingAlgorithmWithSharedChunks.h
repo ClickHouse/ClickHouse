@@ -15,8 +15,8 @@ public:
         WriteBuffer * out_row_sources_buf_,
         size_t max_row_refs);
 
-    void initialize(Inputs inputs) override;
-    void consume(Input & input, size_t source_num) override;
+    void initialize(Chunks chunks) override;
+    void consume(Chunk chunk, size_t source_num) override;
 
 private:
     SortDescription description;
@@ -27,16 +27,9 @@ private:
     SortCursorImpls cursors;
 
 protected:
-
-    struct Source
-    {
-        detail::SharedChunkPtr chunk;
-        bool skip_last_row;
-    };
-
-    /// Sources currently being merged.
-    using Sources = std::vector<Source>;
-    Sources sources;
+    /// Chunks currently being merged.
+    using SourceChunks = std::vector<detail::SharedChunkPtr>;
+    SourceChunks source_chunks;
 
     SortingHeap<SortCursor> queue;
 
@@ -45,8 +38,7 @@ protected:
     WriteBuffer * out_row_sources_buf = nullptr;
 
     using RowRef = detail::RowRefWithOwnedChunk;
-    void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
-    bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
+    void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, source_chunks[cursor.impl->order]); }
 };
 
 }

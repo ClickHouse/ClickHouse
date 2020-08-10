@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -11,7 +9,6 @@
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -22,7 +19,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_CLOSE_FILE;
 }
 
 static constexpr auto filename = "/proc/self/statm";
@@ -39,18 +35,7 @@ MemoryStatisticsOS::MemoryStatisticsOS()
 MemoryStatisticsOS::~MemoryStatisticsOS()
 {
     if (0 != ::close(fd))
-    {
-        try
-        {
-            throwFromErrno(
-                    "File descriptor for \"" + std::string(filename) + "\" could not be closed. "
-                    "Something seems to have gone wrong. Inspect errno.", ErrorCodes::CANNOT_CLOSE_FILE);
-        }
-        catch (const ErrnoException &)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+        tryLogCurrentException(__PRETTY_FUNCTION__);
 }
 
 MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
@@ -103,5 +88,3 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 }
 
 }
-
-#endif

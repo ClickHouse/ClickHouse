@@ -3,10 +3,12 @@
 #include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/hex.h>
+#include <sstream>
 
 
 namespace DB
@@ -15,34 +17,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
-    extern const int BAD_ARGUMENTS;
+extern const int CORRUPTED_DATA;
 }
 
-CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_, bool sanity_check)
+CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
-    if (sanity_check)
-    {
-        /// It does not make sense to apply any transformations after generic compression algorithm
-        /// So, generic compression can be only one and only at the end.
-        bool has_generic_compression = false;
-        for (const auto & codec : codecs)
-        {
-            if (codec->isNone())
-                throw Exception("It does not make sense to have codec NONE along with other compression codecs: " + getCodecDescImpl()
-                    + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            if (has_generic_compression)
-                throw Exception("The combination of compression codecs " + getCodecDescImpl() + " is meaningless,"
-                    " because it does not make sense to apply any transformations after generic compression algorithm."
-                    " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
-
-            if (codec->isGenericCompression())
-                has_generic_compression = true;
-        }
-    }
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const
@@ -51,11 +31,6 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
 }
 
 String CompressionCodecMultiple::getCodecDesc() const
-{
-    return getCodecDescImpl();
-}
-
-String CompressionCodecMultiple::getCodecDescImpl() const
 {
     WriteBufferFromOwnString out;
     for (size_t idx = 0; idx < codecs.size(); ++idx)
@@ -103,10 +78,12 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return 1 + codecs.size() + source_size;
 }
 
-void CompressionCodecMultiple::useInfoAboutType(const DataTypePtr & data_type)
+void CompressionCodecMultiple::useInfoAboutType(DataTypePtr data_type)
 {
     for (auto & codec : codecs)
+    {
         codec->useInfoAboutType(data_type);
+    }
 }
 
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
@@ -142,15 +119,6 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
 }
-
-bool CompressionCodecMultiple::isCompression() const
-{
-    for (const auto & codec : codecs)
-        if (codec->isCompression())
-            return true;
-    return false;
-}
-
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {

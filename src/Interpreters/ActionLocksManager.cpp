@@ -19,29 +19,24 @@ namespace ActionLocks
 }
 
 
-ActionLocksManager::ActionLocksManager(const Context & context)
-        : global_context(context.getGlobalContext())
-{
-}
-
 template <typename F>
-inline void forEachTable(F && f, const Context & context)
+inline void forEachTable(F && f)
 {
     for (auto & elem : DatabaseCatalog::instance().getDatabases())
-        for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
             if (auto table = iterator->table())
                 f(table);
 
 }
 
-void ActionLocksManager::add(StorageActionBlockType action_type, const Context & context)
+void ActionLocksManager::add(StorageActionBlockType action_type)
 {
-    forEachTable([&](const StoragePtr & table) { add(table, action_type); }, context);
+    forEachTable([&](const StoragePtr & table) { add(table, action_type); });
 }
 
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, global_context))
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id))
         add(table, action_type);
 }
 
@@ -66,7 +61,7 @@ void ActionLocksManager::remove(StorageActionBlockType action_type)
 
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, global_context))
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id))
         remove(table, action_type);
 }
 

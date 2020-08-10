@@ -47,9 +47,7 @@ const char * ParserComparisonExpression::operators[] =
     ">",             "greater",
     "=",             "equals",
     "LIKE",          "like",
-    "ILIKE",         "ilike",
     "NOT LIKE",      "notLike",
-    "NOT ILIKE",     "notILike",
     "IN",            "in",
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
@@ -78,25 +76,41 @@ const char * ParserTupleElementExpression::operators[] =
 
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTs elements;
-
-    auto parse_element = [&]
-    {
-        ASTPtr element;
-        if (!elem_parser->parse(pos, element, expected))
-            return false;
-
-        elements.push_back(element);
-        return true;
-    };
-
-    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
-        return false;
+    bool first = true;
 
     auto list = std::make_shared<ASTExpressionList>(result_separator);
-    list->children = std::move(elements);
     node = list;
-    return true;
+
+    while (true)
+    {
+        if (first)
+        {
+            ASTPtr elem;
+            if (!elem_parser->parse(pos, elem, expected))
+                break;
+
+            list->children.push_back(elem);
+            first = false;
+        }
+        else
+        {
+            auto prev_pos = pos;
+
+            if (!separator_parser->ignore(pos, expected))
+                break;
+
+            ASTPtr elem;
+            if (!elem_parser->parse(pos, elem, expected))
+            {
+                pos = prev_pos;
+                break;
+            }
+
+            list->children.push_back(elem);
+        }
+    }
+
+    return allow_empty || !first;
 }
 
 
@@ -717,7 +731,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     auto pair = std::make_shared<ASTPair>(with_brackets);
     pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
-    pair->set(pair->second, value);
+    pair->second = value;
     node = pair;
     return true;
 }

@@ -8,6 +8,7 @@
 #include <Common/PODArray.h>
 
 #include <cmath>
+#include <iomanip>
 #include <memory>
 #include <bitset>
 #include <string>

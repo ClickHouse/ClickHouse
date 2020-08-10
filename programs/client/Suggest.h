@@ -5,7 +5,6 @@
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <common/LineReader.h>
-#include <thread>
 
 
 namespace DB

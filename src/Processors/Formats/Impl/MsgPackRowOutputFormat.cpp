@@ -1,7 +1,4 @@
 #include <Processors/Formats/Impl/MsgPackRowOutputFormat.h>
-
-#if USE_MSGPACK
-
 #include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
 
@@ -147,10 +144,8 @@ void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
     }
 }
 
-
 void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
 {
-
     factory.registerOutputFormatProcessor("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
@@ -162,15 +157,3 @@ void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
 }
 
 }
-
-#else
-
-namespace DB
-{
-class FormatFactory;
-void registerOutputFormatProcessorMsgPack(FormatFactory &)
-{
-}
-}
-
-#endif

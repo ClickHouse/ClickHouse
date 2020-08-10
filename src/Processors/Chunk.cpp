@@ -46,7 +46,7 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_
 
 Chunk Chunk::clone() const
 {
-    return Chunk(getColumns(), getNumRows(), chunk_info);
+    return Chunk(getColumns(), getNumRows());
 }
 
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)
@@ -65,13 +65,10 @@ void Chunk::setColumns(MutableColumns columns_, UInt64 num_rows_)
 
 void Chunk::checkNumRowsIsConsistent()
 {
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        auto & column = columns[i];
+    for (auto & column : columns)
         if (column->size() != num_rows)
-            throw Exception("Invalid number of rows in Chunk column " + column->getName()+ " position " + toString(i) + ": expected " +
+            throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
                             toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
-    }
 }
 
 MutableColumns Chunk::mutateColumns()
@@ -79,7 +76,7 @@ MutableColumns Chunk::mutateColumns()
     size_t num_columns = columns.size();
     MutableColumns mut_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        mut_columns[i] = IColumn::mutate(std::move(columns[i]));
+        mut_columns[i] = (*std::move(columns[i])).mutate();
 
     columns.clear();
     num_rows = 0;

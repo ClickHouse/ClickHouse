@@ -1,5 +1,7 @@
 SET joined_subquery_requires_alias = 0;
 
+SYSTEM STOP MERGES;
+
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
 
@@ -15,8 +17,8 @@ CREATE TABLE target_table Engine=SummingMergeTree() ORDER BY id
 AS
    SELECT
      number as id,
-     maxState( toDateTime(0, 'UTC') ) as latest_login_time,
-     maxState( toDateTime(0, 'UTC') ) as latest_checkout_time,
+     maxState( toDateTime(0) ) as latest_login_time,
+     maxState( toDateTime(0) ) as latest_checkout_time,
      minState( toUInt64(-1) ) as fastest_session,
      maxState( toUInt64(0) ) as biggest_inactivity_period
 FROM numbers(50000)
@@ -26,7 +28,7 @@ GROUP BY id;
 
 CREATE TABLE logins (
     id UInt64,
-    ts DateTime('UTC')
+    ts DateTime
 ) Engine=MergeTree ORDER BY id;
 
 
@@ -37,7 +39,7 @@ AS
    SELECT
      id,
      maxState( ts ) as latest_login_time,
-     maxState( toDateTime(0, 'UTC') ) as latest_checkout_time,
+     maxState( toDateTime(0) ) as latest_checkout_time,
      minState( toUInt64(-1) ) as fastest_session,
      if(max(current_latest_checkout_time) > 0, maxState(toUInt64(ts - current_latest_checkout_time)), maxState( toUInt64(0) ) ) as biggest_inactivity_period
    FROM logins
@@ -60,14 +62,14 @@ AS
 -- the same for second pipeline
 CREATE TABLE checkouts (
     id UInt64,
-    ts DateTime('UTC')
+    ts DateTime
 ) Engine=MergeTree ORDER BY id;
 
 CREATE MATERIALIZED VIEW mv_checkouts2target TO target_table
 AS
    SELECT
      id,
-     maxState( toDateTime(0, 'UTC') ) as latest_login_time,
+     maxState( toDateTime(0) ) as latest_login_time,
      maxState( ts ) as latest_checkout_time,
      if(max(current_latest_login_time) > 0, minState( toUInt64(ts - current_latest_login_time)), minState( toUInt64(-1) ) ) as fastest_session,
      maxState( toUInt64(0) ) as biggest_inactivity_period
@@ -75,10 +77,6 @@ AS
    LEFT JOIN (SELECT id, maxMerge(latest_login_time) as current_latest_login_time FROM target_table WHERE id IN (SELECT id FROM checkouts) GROUP BY id) USING (id)
    GROUP BY id;
 
--- This query has effect only for existing tables, so it must be located after CREATE.
-SYSTEM STOP MERGES target_table;
-SYSTEM STOP MERGES checkouts;
-SYSTEM STOP MERGES logins;
 
 -- feed with some initial values
 INSERT INTO logins SELECT number as id,    '2000-01-01 08:00:00' from numbers(50000);
@@ -128,3 +126,5 @@ DROP TABLE IF EXISTS mv_logins2target;
 DROP TABLE IF EXISTS checkouts;
 DROP TABLE IF EXISTS mv_checkouts2target;
 DROP TABLE target_table;
+
+SYSTEM START MERGES;
