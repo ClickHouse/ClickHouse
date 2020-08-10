@@ -124,6 +124,10 @@ if __name__ == "__main__":
         default="latest",
         help="Version of docker image which runner will use to run tests")
 
+    parser.add_argument(
+        "--docker-compose-images-tags",
+        action="append",
+        help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)")
 
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
