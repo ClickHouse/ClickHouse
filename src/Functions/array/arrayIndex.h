@@ -68,8 +68,7 @@ template <
     class Initial,
     class Result,
     class ConcreteAction,
-    bool InvokedNotFromLCSpec = true,
-    bool ResColumnIsConst = false>
+    bool InvokedNotFromLCSpec = true>
 struct ArrayIndexNumImpl
 {
 private:
@@ -137,7 +136,7 @@ private:
                             if (!compare(data[current_offset + j], target, i))
                                 continue;
                         }
-                        else if (0 != data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target, 1))
+                        else if (data.compareAt(current_offset + j, /* index */ 0, target, 1))
                             continue;
                     }
                 }
@@ -148,7 +147,7 @@ private:
                         if (!compare(data[current_offset + j], target, i))
                             continue;
                     }
-                    else if (0 != data.compareAt(current_offset + j, ResColumnIsConst ? 0 : i , target, 1))
+                    else if (data.compareAt(current_offset + j, 0, target, 1))
                         continue;
                 }
 
@@ -734,7 +733,17 @@ private:
     }
 
     /**
-     * Catches arguments of type LC(T).
+     * Catches arguments of type LC(T) (left) and ColumnConst (right).
+     *
+     * The perftests
+     * https://clickhouse-test-reports.s3.yandex.net/12550/2d27fa0fa8c198a82bf1fe3625050ccf56695976/integration_tests_(release).html
+     * showed that the amount of action needed to convert the non-constant right argument to the index column
+     * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
+     *
+     * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant
+     * right arguments here.
+     *
+     * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
     bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
@@ -750,20 +759,14 @@ private:
             return false;
 
         auto col_result = ResultColumnType::create();
-        const IColumn * const col_arg = block.getByPosition(arguments[1]).column.get();
 
-        /**
-         * If the types of #col_arg and #col_lc (or its nested column if Nullable) are
-         * non-integral, everything is ok as equal values would give equal StringRef representations.
-         * But this is not true for different integral types:
-         * consider #col_arg = UInt8 and #col_lc = UInt16.
-         * The right argument StringRef's size would be 2 (and the left one's -- 1).
-         *
-         * So, for integral types, it's not enough to simply call getDataAt on both arguments.
-         * The left argument (the value whose index is being searched in the indices column) must be casted
-         * to the right argument's side to ensure the StringRefs' equality.
-         */
-        const IColumnUnique & col_lc_dict = col_lc->getDictionary();
+        const ColumnConst * const col_arg = checkAndGetColumnConst<ColumnConst>(
+                block.getByPosition(arguments[1]).column.get());
+
+        if (!col_arg)
+            return false;
+
+        const IColumnUnique& col_lc_dict = col_lc->getDictionary();
 
         const bool different_inner_types = col_lc_dict.isNullable()
             ? !col_arg->structureEquals(*col_lc_dict.getNestedColumn().get())
@@ -784,25 +787,32 @@ private:
             ? castColumn(block.getByPosition(arguments[1]), target_type_ptr)
             : col_arg->getPtr();
 
-        const size_t col_arg_is_const = isColumnConst(*col_arg);
-
-        const IColumn & lc_indices = col_lc->getIndexes();
-        const MutableColumnPtr col_arg_indices = col_lc->buildIndexColumn(*col_arg_cloned.get());
-        const ColumnArray::Offsets& lc_offsets = col_array->getOffsets();
-        PaddedPODArray<ResultType> & res_data = col_result->getData();
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
-        if (col_arg_is_const)
-            ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false /* Invoking from LC spec */, true /* const column */>::vector(
-                lc_indices, /* where the value will be searched */
-                lc_offsets,
-                *col_arg_indices.get(), /* target value to search */
-                res_data,
-                null_map_data,
-                null_map_item);
-        else
-            ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction, false>::vector(
-                lc_indices, lc_offsets, *col_arg_indices.get(), res_data, null_map_data, null_map_item);
+        const StringRef elem = col_arg_cloned->getDataAt(0);
+
+        UInt64 index {0};
+
+        if (elem != EMPTY_STRING_REF)
+        {
+            if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
+                index = *maybe_index;
+            else
+            {
+                col_result->getData()[0] = 0;
+                block.getByPosition(result).column = std::move(col_result);
+                return true;
+            }
+        }
+
+        ArrayIndexNumImpl<UInt64, UInt64, ConcreteAction,
+            false /* Invoking from LC spec */>::vector(
+            col_lc->getIndexes(), /* where the value will be searched */
+            col_array->getOffsets(),
+            index, /* target value to search */
+            col_result->getData(),
+            null_map_data,
+            null_map_item);
 
         block.getByPosition(result).column = std::move(col_result);
         return true;

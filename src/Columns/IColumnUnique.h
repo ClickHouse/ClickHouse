@@ -76,7 +76,7 @@ public:
      *
      * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:
      * - On the function call it's present. Therefore we obtain the index in O(1).
-     * - The reverse index is absent. We build the index.
+     * - The reverse index is absent. We search for the index linearly.
      *
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
@@ -86,14 +86,7 @@ public:
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.
      */
-    virtual UInt64 getValueIndex(StringRef value) = 0;
-
-    /**
-     * Same as above, but operates on the columns.
-     * Given a #origin column, writes to another column #target (of type equal to the current column's index type)
-     * with indices corresponding to values in the original column.
-     */
-    virtual void buildIndexColumn(size_t origin_index_type_size, IColumn& target, const IColumn& origin) = 0;
+    virtual std::optional<UInt64> getOrFindValueIndex(StringRef value) const = 0;
 
     void insert(const Field &) override
     {
