@@ -117,17 +117,6 @@ def test_prewhere_not_supported():
     assert instance.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == "0\t0\n0\t1\n1\t0\n1\t1\n"
 
 
-def test_policy_from_users_xml_affects_only_user_assigned():
-    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1,0], [1, 1]])
-    assert node.query("SELECT * FROM mydb.filtered_table1", user="another") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
-
-    assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 0, 0], [0, 0, 6, 0]])
-    assert node.query("SELECT * FROM mydb.filtered_table2", user="another") == TSV([[0, 0, 0, 0], [0, 0, 6, 0], [1, 2, 3, 4], [4, 3, 2, 1]])
-
-    assert node.query("SELECT * FROM mydb.local") == TSV([[1,0], [1, 1], [2, 0], [2, 1]])
-    assert node.query("SELECT * FROM mydb.local", user="another") == TSV([[1, 0], [1, 1]])
-
-
 def test_change_of_users_xml_changes_row_policies():
     copy_policy_xml('normal_filters.xml')
     assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
