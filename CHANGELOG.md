@@ -94,7 +94,7 @@
 
 #### Improvement
 
-* Allowed to set `JOIN` kind and type in more standart way: `LEFT SEMI JOIN` instead of `SEMI LEFT JOIN`. For now both are correct. [#12520](https://github.com/ClickHouse/ClickHouse/pull/12520) ([Artem Zuikov](https://github.com/4ertus2)).
+* Allowed to set `JOIN` kind and type in more standard way: `LEFT SEMI JOIN` instead of `SEMI LEFT JOIN`. For now both are correct. [#12520](https://github.com/ClickHouse/ClickHouse/pull/12520) ([Artem Zuikov](https://github.com/4ertus2)).
 * lifetime_rows/lifetime_bytes for Buffer engine. [#12421](https://github.com/ClickHouse/ClickHouse/pull/12421) ([Azat Khuzhin](https://github.com/azat)).
 * Write the detail exception message to the client instead of 'MySQL server has gone away'. [#12383](https://github.com/ClickHouse/ClickHouse/pull/12383) ([BohuTANG](https://github.com/BohuTANG)).
 * Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII. Setting `output_format_pretty_grid_charset` enables this feature. [#12372](https://github.com/ClickHouse/ClickHouse/pull/12372) ([Sabyanin Maxim](https://github.com/s-mx)).
@@ -103,7 +103,6 @@
 * Added support for `%g` (two digit ISO year) and `%G` (four digit ISO year) substitutions in `formatDateTime` function. [#12136](https://github.com/ClickHouse/ClickHouse/pull/12136) ([vivarum](https://github.com/vivarum)).
 * Added 'type' column in system.disks. [#12115](https://github.com/ClickHouse/ClickHouse/pull/12115) ([ianton-ru](https://github.com/ianton-ru)).
 * Improved `REVOKE` command: now it requires grant/admin option for only access which will be revoked. For example, to execute `REVOKE ALL ON *.* FROM user1` now it doesn't require to have full access rights granted with grant option. Added command `REVOKE ALL FROM user1` - it revokes all granted roles from `user1`. [#12083](https://github.com/ClickHouse/ClickHouse/pull/12083) ([Vitaly Baranov](https://github.com/vitlibar)).
-* Implemented single part uploads for DiskS3. [#12026](https://github.com/ClickHouse/ClickHouse/pull/12026) ([Vladimir Chebotarev](https://github.com/excitoon)).
 * Added replica priority for load_balancing (for manual prioritization of the load balancing). [#11995](https://github.com/ClickHouse/ClickHouse/pull/11995) ([Azat Khuzhin](https://github.com/azat)).
 * Switched paths in S3 metadata to relative which allows to handle S3 blobs more easily. [#11892](https://github.com/ClickHouse/ClickHouse/pull/11892) ([Vladimir Chebotarev](https://github.com/excitoon)).
 
@@ -112,6 +111,7 @@
 * Improved performace of 'ORDER BY' and 'GROUP BY' by prefix of sorting key (enabled with `optimize_aggregation_in_order` setting, disabled by default). [#11696](https://github.com/ClickHouse/ClickHouse/pull/11696) ([Anton Popov](https://github.com/CurtizJ)).
 * Removed injective functions inside `uniq*()` if `set optimize_injective_functions_inside_uniq=1`. [#12337](https://github.com/ClickHouse/ClickHouse/pull/12337) ([Ruslan Kamalov](https://github.com/kamalov-ruslan)).
 * Index not used for IN operator with literals", performance regression introduced around v19.3. This fixes "[#10574](https://github.com/ClickHouse/ClickHouse/issues/10574). [#12062](https://github.com/ClickHouse/ClickHouse/pull/12062) ([nvartolomei](https://github.com/nvartolomei)).
+* Implemented single part uploads for DiskS3 (experimental feature). [#12026](https://github.com/ClickHouse/ClickHouse/pull/12026) ([Vladimir Chebotarev](https://github.com/excitoon)).
 
 #### Experimental Feature
 * Added new in-memory format of parts in `MergeTree`-family tables, which stores data in memory. Parts are written on disk at first merge. Part will be created in in-memory format if its size in rows or bytes is below thresholds `min_rows_for_compact_part` and `min_bytes_for_compact_part`. Also optional support of Write-Ahead-Log is available, which is enabled by default and is controlled by setting `in_memory_parts_enable_wal`. [#10697](https://github.com/ClickHouse/ClickHouse/pull/10697) ([Anton Popov](https://github.com/CurtizJ)).
