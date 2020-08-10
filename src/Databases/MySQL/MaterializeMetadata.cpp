@@ -80,7 +80,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     if (!master_status || master_status.rows() != 1)
         throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
 
-    version = 0;
+    version = 1;
     binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
     binlog_position = (*master_status.getByPosition(1).column)[0].safeGet<UInt64>();
     binlog_do_db = (*master_status.getByPosition(2).column)[0].safeGet<String>();

@@ -339,12 +339,24 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     auto columns = std::make_shared<ASTColumns>();
 
+    const auto & create_materialized_column_declaration = [&](const String & name, const String & type, const auto & default_value)
+    {
+        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        column_declaration->name = name;
+        column_declaration->type = makeASTFunction(type);
+        column_declaration->default_specifier = "MATERIALIZED";
+        column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
+        column_declaration->children.emplace_back(column_declaration->type);
+        column_declaration->children.emplace_back(column_declaration->default_expression);
+        return column_declaration;
+    };
+
     /// Add _sign and _version column.
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
-    columns_name_and_type.emplace_back(NameAndTypePair{sign_column_name, std::make_shared<DataTypeInt8>()});
-    columns_name_and_type.emplace_back(NameAndTypePair{version_column_name, std::make_shared<DataTypeUInt64>()});
     columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_name_and_type));
+    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", UInt64(1)));
+    columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     auto storage = std::make_shared<ASTStorage>();
 

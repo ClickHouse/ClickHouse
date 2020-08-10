@@ -19,7 +19,6 @@ public:
     bool supportsFinal() const override { return nested_storage->supportsFinal(); }
     bool supportsSampling() const override { return nested_storage->supportsSampling(); }
 
-
     StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_);
 
     Pipes read(

@@ -9,7 +9,7 @@
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
-#    include <DataStreams/AddingVersionsBlockOutputStream.h>
+#    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
@@ -37,20 +37,28 @@ namespace ErrorCodes
 
 static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
-static BlockIO tryToExecuteQuery(const String & query_to_execute, const Context & context_, const String & database, const String & comment)
+static Context createQueryContext(const Context & global_context)
+{
+    Settings new_query_settings = global_context.getSettings();
+    new_query_settings.insert_allow_materialized_columns = true;
+
+    Context query_context(global_context);
+    query_context.setSettings(new_query_settings);
+    CurrentThread::QueryScope query_scope(query_context);
+
+    query_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context.setCurrentQueryId(""); // generate random query_id
+    return query_context;
+}
+
+static BlockIO tryToExecuteQuery(const String & query_to_execute, Context & query_context, const String & database, const String & comment)
 {
     try
     {
-        Context context(context_);
-        CurrentThread::QueryScope query_scope(context);
-
         if (!database.empty())
-            context.setCurrentDatabase(database);
+            query_context.setCurrentDatabase(database);
 
-        context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        context.setCurrentQueryId(""); // generate random query_id
-
-        return executeQuery("/*" + comment + "*/ " + query_to_execute, context, true);
+        return executeQuery("/*" + comment + "*/ " + query_to_execute, query_context, true);
     }
     catch (...)
     {
@@ -216,16 +224,35 @@ static inline void cleanOutdatedTables(const String & database_name, const Conte
 
     for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
     {
+        Context query_context = createQueryContext(context);
         String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
         String table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
-        tryToExecuteQuery(" DROP TABLE " + table_name, context, database_name, comment);
+        tryToExecuteQuery(" DROP TABLE " + table_name, query_context, database_name, comment);
     }
 }
 
-static inline BlockOutputStreamPtr getTableOutput(const String & database_name, const String & table_name, const Context & context)
+static inline BlockOutputStreamPtr getTableOutput(const String & database_name, const String & table_name, Context & query_context, bool insert_materialized = false)
 {
+    const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
+
+    std::stringstream insert_columns_str;
+    const StorageInMemoryMetadata & storage_metadata = storage->getInMemoryMetadata();
+    const ColumnsDescription & storage_columns = storage_metadata.getColumns();
+    const NamesAndTypesList & insert_columns_names = insert_materialized ? storage_columns.getAllPhysical() : storage_columns.getOrdinary();
+
+
+    for (auto iterator = insert_columns_names.begin(); iterator != insert_columns_names.end(); ++iterator)
+    {
+        if (iterator != insert_columns_names.begin())
+            insert_columns_str << ", ";
+
+        insert_columns_str << iterator->name;
+    }
+
+
     String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + " VALUES", context, database_name, comment);
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
+        query_context, database_name, comment);
 
     if (!res.out)
         throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -242,21 +269,23 @@ static inline void dumpDataForTables(
     for (; iterator != master_info.need_dumping_tables.end() && !is_cancelled(); ++iterator)
     {
         const auto & table_name = iterator->first;
+        Context query_context = createQueryContext(context);
         String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-        tryToExecuteQuery(query_prefix + " " + iterator->second, context, database_name, comment); /// create table.
+        tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
-        auto out = std::make_shared<AddingVersionsBlockOutputStream>(master_info.version, getTableOutput(database_name, table_name, context));
+        auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
         MySQLBlockInputStream input(
             connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
             out->getHeader(), DEFAULT_BLOCK_SIZE);
 
         Stopwatch watch;
         copyData(input, *out, is_cancelled);
+        const Progress & progress = out->getProgress();
         LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
-            "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-            table_name, out->getWrittenRows(), ReadableSize(out->getWrittenBytes()), watch.elapsedSeconds(),
-            static_cast<size_t>(out->getWrittenRows() / watch.elapsedSeconds()),
-            ReadableSize(out->getWrittenRows() / watch.elapsedSeconds()));
+            "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
+            , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
+            , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
+            , formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
     }
 }
 
@@ -564,9 +593,10 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
 
         try
         {
+            Context query_context = createQueryContext(global_context);
             String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
             String event_database = query_event.schema == mysql_database_name ? database_name : "";
-            tryToExecuteQuery(query_prefix + query_event.query, global_context, event_database, comment);
+            tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
         }
         catch (Exception & exception)
         {
@@ -616,8 +646,9 @@ void MaterializeMySQLSyncThread::Buffers::commit(const Context & context)
     {
         for (auto & table_name_and_buffer : data)
         {
+            Context query_context = createQueryContext(context);
             OneBlockInputStream input(table_name_and_buffer.second->first);
-            BlockOutputStreamPtr out = getTableOutput(database, table_name_and_buffer.first, context);
+            BlockOutputStreamPtr out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
             copyData(input, *out);
         }
 
@@ -640,11 +671,11 @@ MaterializeMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializeMySQL
     const auto & iterator = data.find(table_name);
     if (iterator == data.end())
     {
-        StoragePtr storage = getDatabase(database).tryGetTable(table_name, context);
+        StoragePtr storage = DatabaseCatalog::instance().getTable(StorageID(database, table_name), context);
 
         const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
         BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
-            table_name, std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlockNonMaterialized(), std::vector<size_t>{})).first->second;
+            table_name, std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
 
         Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
 
