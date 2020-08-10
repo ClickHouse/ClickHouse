@@ -1480,6 +1480,21 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
+## optimize_read_in_order {#optimize_read_in_order}
+
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) при работе с таблицами семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `1`.
+
+**См. также**
+
+-   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
+
 ## mutations_sync {#mutations_sync}
 
 Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
@@ -1496,5 +1511,6 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
 -   [Мутации](../../sql-reference/statements/alter.md#mutations)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
