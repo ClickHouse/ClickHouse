@@ -32,7 +32,7 @@ struct MaterializeMetadata
     String binlog_ignore_db;
     String executed_gtid_set;
 
-    size_t version = 0;
+    size_t version = 1;
     std::unordered_map<String, String> need_dumping_tables;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
