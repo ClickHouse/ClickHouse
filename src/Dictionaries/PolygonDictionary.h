@@ -19,10 +19,10 @@ namespace DB
 namespace bg = boost::geometry;
 
 /** An interface for polygon dictionaries.
- *  Polygons are read and stored as multi_polygons from boost::geometry in Euclidean coordinates.
- *  An implementation should inherit from this base class and preprocess the data upon construction if needed.
- *  It must override the find method of this class which retrieves the polygon containing a single point.
- */
+  * Polygons are read and stored as multi_polygons from boost::geometry in Euclidean coordinates.
+  * An implementation should inherit from this base class and preprocess the data upon construction if needed.
+  * It must override the find method of this class which retrieves the polygon containing a single point.
+  */
 class IPolygonDictionary : public IDictionaryBase
 {
 public:
@@ -41,25 +41,20 @@ public:
         SimplePolygon
     };
     /** Controls the different types allowed for providing the coordinates of points.
-     *  Right now a point can be represented by either an array or a tuple of two Float64 values.
-     */
+      * Right now a point can be represented by either an array or a tuple of two Float64 values.
+      */
     enum class PointType
     {
         Array,
         Tuple,
     };
     IPolygonDictionary(
-            const std::string & database_,
-            const std::string & name_,
+            const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
             InputType input_type_,
             PointType point_type_);
-
-    const std::string & getDatabase() const override;
-    const std::string & getName() const override;
-    const std::string & getFullName() const override;
 
     std::string getTypeName() const override;
 
@@ -178,10 +173,14 @@ public:
     // TODO: Refactor the whole dictionary design to perform stronger checks, i.e. make this an override.
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    /** Single coordinate type. */
+    using Coord = Float32;
     /** A two-dimensional point in Euclidean coordinates. */
-    using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
+    using Point = bg::model::d2::point_xy<Coord, bg::cs::cartesian>;
     /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
+    /** A ring in boost used for describing the polygons. */
+    using Ring = bg::model::ring<Point>;
 
 protected:
     /** Returns true if the given point can be found in the polygon dictionary.
@@ -196,9 +195,6 @@ protected:
      */
     std::vector<size_t> ids;
 
-    const std::string database;
-    const std::string name;
-    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
@@ -264,29 +260,6 @@ private:
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
     static std::vector<Point> extractPoints(const Columns &key_columns);
-};
-
-/** Simple implementation of the polygon dictionary. Doesn't generate anything during its construction.
- *  Iterates over all stored polygons for each query, checking each of them in linear time.
- *  Retrieves the polygon with the smallest area containing the given point. If there is more than one any such polygon
- *  may be returned.
- */
-class SimplePolygonDictionary : public IPolygonDictionary
-{
-public:
-    SimplePolygonDictionary(
-            const std::string & database_,
-            const std::string & name_,
-            const DictionaryStructure & dict_struct_,
-            DictionarySourcePtr source_ptr_,
-            DictionaryLifetime dict_lifetime_,
-            InputType input_type_,
-            PointType point_type_);
-
-    std::shared_ptr<const IExternalLoadable> clone() const override;
-
-private:
-    bool find(const Point & point, size_t & id) const override;
 };
 
 }

@@ -11,6 +11,8 @@ namespace ErrorCodes
 {
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int AMBIGUOUS_COLUMN_NAME;
+    extern const int SYNTAX_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -54,11 +56,23 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
     addJoinKeys(asof_left_key, asof_right_key, {1, 2});
 }
 
-
 void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & ast, Data & data)
 {
     if (func.name == "and")
         return; /// go into children
+
+    if (func.name == "or")
+        throw Exception("JOIN ON does not support OR. Unexpected '" + queryToString(ast) + "'", ErrorCodes::NOT_IMPLEMENTED);
+
+    ASOF::Inequality inequality = ASOF::getInequality(func.name);
+    if (func.name == "equals" || inequality != ASOF::Inequality::None)
+    {
+        if (func.arguments->children.size() != 2)
+            throw Exception("Function " + func.name + " takes two arguments, got '" + func.formatForErrorMessage() + "' instead",
+                            ErrorCodes::SYNTAX_ERROR);
+    }
+    else
+        throw Exception("Expected equality or inequality, got '" + queryToString(ast) + "'", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
     if (func.name == "equals")
     {
@@ -66,30 +80,34 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(ast, left, right, data);
         data.addJoinKeys(left, right, table_numbers);
-        return;
     }
-
-    ASOF::Inequality inequality = ASOF::getInequality(func.name);
-
-    if (data.is_asof && (inequality != ASOF::Inequality::None))
+    else if (inequality != ASOF::Inequality::None)
     {
+        if (!data.is_asof)
+            throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
+                            ErrorCodes::NOT_IMPLEMENTED);
+
         if (data.asof_left_key || data.asof_right_key)
-            throwSyntaxException("ASOF JOIN expects exactly one inequality in ON section, unexpected " + queryToString(ast) + ".");
+            throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
+                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(ast, left, right, data);
 
         data.addAsofJoinKeys(left, right, table_numbers, inequality);
-        return;
     }
-
-    throwSyntaxException("Expected equals expression, got " + queryToString(ast) + ".");
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
 {
-    if (const auto * ident = ast->as<ASTIdentifier>())
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (func->name == "arrayJoin")
+            throw Exception("Not allowed function in JOIN ON. Unexpected '" + queryToString(ast) + "'",
+                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+    }
+    else if (const auto * ident = ast->as<ASTIdentifier>())
     {
         if (IdentifierSemantic::getColumnName(*ident))
             out.push_back(ident);
@@ -117,8 +135,8 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
         auto left_name = queryToString(*left_identifiers[0]);
         auto right_name = queryToString(*right_identifiers[0]);
 
-        throwSyntaxException("In expression " + queryToString(expr) + " columns " + left_name + " and " + right_name
-                                + " are from the same table but from different arguments of equal function.");
+        throw Exception("In expression " + queryToString(expr) + " columns " + left_name + " and " + right_name
+            + " are from the same table but from different arguments of equal function", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
     }
 
     return std::make_pair(left_idents_table, right_idents_table);
@@ -207,14 +225,6 @@ size_t CollectJoinOnKeysMatcher::getTableForIdentifiers(std::vector<const ASTIde
     }
 
     return table_number;
-}
-
-[[noreturn]] void CollectJoinOnKeysMatcher::throwSyntaxException(const String & msg)
-{
-    throw Exception("Invalid expression for JOIN ON. " + msg +
-        " Supported syntax: JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) "
-        "[AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]",
-        ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 }
 
 }

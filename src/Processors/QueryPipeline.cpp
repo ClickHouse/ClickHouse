@@ -101,7 +101,7 @@ static OutputPort * uniteExtremes(const std::vector<OutputPort *> & ports, const
 static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const Block & header,
                                 QueryPipeline::ProcessorsContainer & processors)
 {
-    /// Calculate totals fro several streams.
+    /// Calculate totals from several streams.
     /// Take totals from first sources which has any, skip others.
 
     /// ->> Concat -> Limit
@@ -231,13 +231,10 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
         auto & out_header = transform ? transform->getOutputs().front().getHeader()
                                       : stream->getHeader();
 
-        if (stream_type != StreamType::Totals)
-        {
-            if (header)
-                assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
-            else
-                header = out_header;
-        }
+        if (header)
+            assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
+        else
+            header = out_header;
 
         if (transform)
         {
@@ -339,6 +336,12 @@ void QueryPipeline::addPipe(Processors pipe)
         else
             header = output.getHeader();
     }
+
+    if (totals_having_port)
+        assertBlocksHaveEqualStructure(header, totals_having_port->getHeader(), "QueryPipeline");
+
+    if (extremes_port)
+        assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "QueryPipeline");
 
     processors.emplace(pipe);
     current_header = std::move(header);
@@ -654,7 +657,7 @@ void QueryPipeline::unitePipelines(
         if (extremes.size() == 1)
             extremes_port = extremes.back();
         else
-            extremes_port = uniteExtremes(extremes, current_header, processors);
+            extremes_port = uniteExtremes(extremes, common_header, processors);
     }
 
     if (!totals.empty())
@@ -662,7 +665,7 @@ void QueryPipeline::unitePipelines(
         if (totals.size() == 1)
             totals_having_port = totals.back();
         else
-            totals_having_port = uniteTotals(totals, current_header, processors);
+            totals_having_port = uniteTotals(totals, common_header, processors);
     }
 
     current_header = common_header;

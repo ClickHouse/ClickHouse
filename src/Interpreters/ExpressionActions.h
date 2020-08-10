@@ -138,7 +138,7 @@ private:
     void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
     void executeOnTotals(Block & block) const;
 
-    /// Executes action on block (modify it). Block could be splitted in case of JOIN. Then not_processed block is created.
+    /// Executes action on block (modify it). Block could be split in case of JOIN. Then not_processed block is created.
     void execute(Block & block, ExtraBlockPtr & not_processed) const;
     void execute(Block & block, bool dry_run) const;
 };
@@ -347,7 +347,7 @@ struct ExpressionActionsChain
         return steps.back();
     }
 
-    std::string dumpChain();
+    std::string dumpChain() const;
 };
 
 }

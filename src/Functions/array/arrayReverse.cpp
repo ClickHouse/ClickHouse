@@ -41,7 +41,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override;
 
 private:
     template <typename T>
@@ -53,7 +53,7 @@ private:
 };
 
 
-void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t)
+void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const
 {
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (!array)

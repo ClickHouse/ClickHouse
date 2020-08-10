@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -62,7 +61,7 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 

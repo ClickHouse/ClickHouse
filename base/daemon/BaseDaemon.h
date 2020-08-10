@@ -29,7 +29,7 @@
 namespace Poco { class TaskManager; }
 
 
-/// \brief Base class for applications that can run as deamons.
+/// \brief Base class for applications that can run as daemons.
 ///
 /// \code
 /// # Some possible command line options:

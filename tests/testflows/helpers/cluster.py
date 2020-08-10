@@ -164,20 +164,23 @@ class Cluster(object):
         if not os.path.exists(docker_compose_file_path):
             raise TypeError("docker compose file '{docker_compose_file_path}' does not exist")
 
-        self.docker_compose += f" --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
+        self.docker_compose += f" --no-ansi --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
 
-    def shell(self, node):
+    def shell(self, node, timeout=120):
         """Returns unique shell terminal to be used.
         """
         if node is None:
             return Shell()
 
-        return Shell(command=[
+        shell = Shell(command=[
                 "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} bash --noediting"
             ], name=node)
 
-    def bash(self, node, timeout=60):
+        shell.timeout = timeout
+        return shell
+
+    def bash(self, node, timeout=120):
         """Returns thread-local bash terminal
         to a specific node.
 

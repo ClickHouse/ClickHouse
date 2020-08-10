@@ -2,7 +2,6 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Core/SettingsCollection.h>
 
 
 namespace ProfileEvents
@@ -48,6 +47,7 @@ struct QueryLogElement
 
     UInt64 memory_usage{};
 
+    String current_database;
     String query;
 
     Int32 exception_code{}; // because ErrorCodes are int
