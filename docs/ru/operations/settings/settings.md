@@ -957,7 +957,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
                 },
                 {
                         "divide(area, period)": null
-
+                }
         ],
 
         "rows": 3,
@@ -993,7 +993,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
                 },
                 {
                         "divide(area, period)": "-inf"
-
+                }
         ],
 
         "rows": 3,
