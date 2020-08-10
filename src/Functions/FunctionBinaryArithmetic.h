@@ -209,7 +209,8 @@ struct DecimalBinaryOperation
     using ArrayC = typename ColumnDecimal<ResultType>::Container;
     using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
-    static void vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c,
+                             NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             vectorVector(a, b, c, scale_a, scale_b);
@@ -217,7 +218,8 @@ struct DecimalBinaryOperation
             SelfNoOverflow::vectorVector(a, b, c, scale_a, scale_b);
     }
 
-    static void vectorConstant(const ArrayA & a, B b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void vectorConstant(const ArrayA & a, B b, ArrayC & c,
+                               NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             vectorConstant(a, b, c, scale_a, scale_b);
@@ -225,7 +227,8 @@ struct DecimalBinaryOperation
             SelfNoOverflow::vectorConstant(a, b, c, scale_a, scale_b);
     }
 
-    static void constantVector(A a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void constantVector(A a, const ArrayB & b, ArrayC & c,
+                               NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             constantVector(a, b, c, scale_a, scale_b);
@@ -233,7 +236,7 @@ struct DecimalBinaryOperation
             SelfNoOverflow::constantVector(a, b, c, scale_a, scale_b);
     }
 
-    static ResultType constantConstant(A a, B b, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static ResultType constantConstant(A a, B b, NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             return constantConstant(a, b, scale_a, scale_b);
@@ -242,127 +245,175 @@ struct DecimalBinaryOperation
     }
 
     static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c,
-                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+                                       NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != ResultType(1))
+            if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(castToResultType(a[i]), castToResultType(b[i]), scale_a);
+                    c[i] = applyScaled<true>(a[i], b[i], scale_a);
                 return;
             }
-            else if (scale_b != ResultType(1))
+            else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(castToResultType(a[i]), castToResultType(b[i]), scale_b);
+                    c[i] = applyScaled<false>(a[i], b[i], scale_b);
                 return;
             }
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = applyScaledDiv(castToResultType(a[i]), castToResultType(b[i]), scale_a);
+                c[i] = applyScaledDiv(a[i], b[i], scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = apply(castToResultType(a[i]), castToResultType(b[i]));
+            c[i] = apply(a[i], b[i]);
     }
 
     static void NO_INLINE vectorConstant(const ArrayA & a, B b, ArrayC & c,
-                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+                                         NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != ResultType(1))
+            if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(castToResultType(a[i]), castToResultType(b), scale_a);
+                    c[i] = applyScaled<true>(a[i], b, scale_a);
                 return;
             }
-            else if (scale_b != ResultType(1))
+            else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(castToResultType(a[i]), castToResultType(b), scale_b);
+                    c[i] = applyScaled<false>(a[i], b, scale_b);
                 return;
             }
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = applyScaledDiv(castToResultType(a[i]), castToResultType(b), scale_a);
+                c[i] = applyScaledDiv(a[i], b, scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = apply(castToResultType(a[i]), castToResultType(b));
+            c[i] = apply(a[i], b);
     }
 
     static void NO_INLINE constantVector(A a, const ArrayB & b, ArrayC & c,
-                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+                                         NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = b.size();
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != ResultType(1))
+            if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(castToResultType(a), castToResultType(b[i]), scale_a);
+                    c[i] = applyScaled<true>(a, b[i], scale_a);
                 return;
             }
-            else if (scale_b != ResultType(1))
+            else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(castToResultType(a), castToResultType(b[i]), scale_b);
+                    c[i] = applyScaled<false>(a, b[i], scale_b);
                 return;
             }
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = applyScaledDiv(castToResultType(a), castToResultType(b[i]), scale_a);
+                c[i] = applyScaledDiv(a, b[i], scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = apply(castToResultType(a), castToResultType(b[i]));
+            c[i] = apply(a, b[i]);
     }
 
-    static ResultType constantConstant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    static ResultType constantConstant(A a, B b, NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != ResultType(1))
-                return applyScaled<true>(castToResultType(a), castToResultType(b), scale_a);
-            else if (scale_b != ResultType(1))
-                return applyScaled<false>(castToResultType(a), castToResultType(b), scale_b);
+            if (scale_a != 1)
+                return applyScaled<true>(a, b, scale_a);
+            else if (scale_b != 1)
+                return applyScaled<false>(a, b, scale_b);
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
-            return applyScaledDiv(castToResultType(a), castToResultType(b), scale_a);
-        return apply(castToResultType(a), castToResultType(b));
+            return applyScaledDiv(a, b, scale_a);
+        return apply(a, b);
     }
 
 private:
-    // Big integers have troubles with implicit casts, anything better?
-    template <typename CastedType>
-    static NativeResultType castToResultType(CastedType x)
+    template <typename T, typename U>
+    static NativeResultType apply(const T & a, const U & b)
     {
-        if constexpr (is_big_int_v<NativeResultType> && std::is_same_v<CastedType, UInt8>)
-            return static_cast<NativeResultType>(static_cast<UInt16>(x));
-        else if constexpr (is_big_int_v<NativeResultType> && IsDecimalNumber<CastedType>)
-            return static_cast<NativeResultType>(x.value);
+        if constexpr (std::is_same_v<NativeResultType, bInt256>)
+        {
+            if constexpr (IsDecimalNumber<T>)
+                return apply(a.value, b);
+            else if constexpr (IsDecimalNumber<U>)
+                return apply(a, b.value);
+            else if constexpr (std::is_same_v<T, UInt8>)
+                return apply(UInt16(a), b);
+            else if constexpr (std::is_same_v<U, UInt8>)
+                return apply(a, UInt16(b));
+            else
+                return applyNative(static_cast<bInt256>(a), static_cast<bInt256>(b));
+        }
         else
-            return static_cast<NativeResultType>(x);
+            return applyNative(a, b);
+    }
+
+    template <bool scale_left, typename T, typename U>
+    static NativeResultType applyScaled(const T & a, const U & b, NativeResultType scale)
+    {
+        if constexpr (std::is_same_v<NativeResultType, bInt256>)
+        {
+            if constexpr (IsDecimalNumber<T>)
+                return applyScaled<scale_left>(a.value, b, scale);
+            else if constexpr (IsDecimalNumber<U>)
+                return applyScaled<scale_left>(a, b.value, scale);
+            else if constexpr (std::is_same_v<T, UInt8>)
+                return applyScaled<scale_left>(UInt16(a), b, scale);
+            else if constexpr (std::is_same_v<U, UInt8>)
+                return applyScaled<scale_left>(a, UInt16(b), scale);
+            else
+                return applyNativeScaled<scale_left>(static_cast<bInt256>(a), static_cast<bInt256>(b), scale);
+        }
+        else
+            return applyNativeScaled<scale_left>(a, b, scale);
+    }
+
+    template <typename T, typename U>
+    static NativeResultType applyScaledDiv(const T & a, const U & b, NativeResultType scale)
+    {
+        if constexpr (std::is_same_v<NativeResultType, bInt256>)
+        {
+            if constexpr (IsDecimalNumber<T>)
+                return applyScaledDiv(a.value, b, scale);
+            else if constexpr (IsDecimalNumber<U>)
+                return applyScaledDiv(a, b.value, scale);
+            else if constexpr (std::is_same_v<T, UInt8>)
+                return applyScaledDiv(UInt16(a), b, scale);
+            else if constexpr (std::is_same_v<U, UInt8>)
+                return applyScaledDiv(a, UInt16(b), scale);
+            else
+                return applyNativeScaledDiv(static_cast<bInt256>(a), static_cast<bInt256>(b), scale);
+        }
+        else
+            return applyNativeScaledDiv(a, b, scale);
     }
 
     /// there's implicit type convertion here
-    static NativeResultType apply(NativeResultType a, NativeResultType b)
+    static NativeResultType applyNative(NativeResultType a, NativeResultType b)
     {
         if constexpr (can_overflow && _check_overflow)
         {
@@ -376,7 +427,7 @@ private:
     }
 
     template <bool scale_left>
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyNativeScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_plus_minus_compare)
         {
@@ -411,7 +462,7 @@ private:
         }
     }
 
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyNativeScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_division)
         {
