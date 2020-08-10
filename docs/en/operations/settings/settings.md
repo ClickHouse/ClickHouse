@@ -1722,6 +1722,20 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
+## optimize_read_in_order {#optimize_read_in_order}
+
+Enables [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `ORDER BY` optimization is disabled. 
+-   1 — `ORDER BY` optimization is enabled. 
+
+Default value: `1`.
+
+**See Also**
+
+-   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
 
 ## mutations_sync {#mutations_sync}
 
