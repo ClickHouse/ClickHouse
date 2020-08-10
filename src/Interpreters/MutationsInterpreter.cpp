@@ -480,7 +480,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     /// We care about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
-    /// The same about colums, that are needed for calculation of TTL expressions.
+    /// The same about columns, that are needed for calculation of TTL expressions.
     if (!dependencies.empty())
     {
         NameSet changed_columns;

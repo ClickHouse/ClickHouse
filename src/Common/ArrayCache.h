@@ -557,7 +557,7 @@ public:
     /// Only one of several concurrent threads calling this method will call get_size or initialize,
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
     ///
-    /// Exceptions occuring in callbacks will be propagated to the caller.
+    /// Exceptions occurring in callbacks will be propagated to the caller.
     /// Another thread from the set of concurrent threads will then try to call its callbacks etc.
     ///
     /// Returns cached value wrapped by holder, preventing cache entry from eviction.
