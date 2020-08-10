@@ -101,7 +101,7 @@ static OutputPort * uniteExtremes(const std::vector<OutputPort *> & ports, const
 static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const Block & header,
                                 QueryPipeline::ProcessorsContainer & processors)
 {
-    /// Calculate totals fro several streams.
+    /// Calculate totals from several streams.
     /// Take totals from first sources which has any, skip others.
 
     /// ->> Concat -> Limit

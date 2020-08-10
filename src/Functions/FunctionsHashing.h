@@ -484,7 +484,7 @@ struct ImplXxHash32
     static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
-      *  non-reproducable from outside of CH.
+      *  non-reproducible from outside of CH.
       *
       *  Proper way of combining several input is to use streaming mode of hash function
       *  https://github.com/Cyan4973/xxHash/issues/114#issuecomment-334908566
@@ -507,7 +507,7 @@ struct ImplXxHash64
 
     /*
        With current implementation with more than 1 arguments it will give the results
-       non-reproducable from outside of CH. (see comment on ImplXxHash32).
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
      */
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 

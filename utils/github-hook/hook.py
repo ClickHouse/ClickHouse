@@ -284,7 +284,7 @@ class ClickHouseInserter(object):
             except Exception as ex:
                 print("Cannot insert with exception %s", str(ex))
                 if response:
-                    print("Reponse text %s", response.text)
+                    print("Response text %s", response.text)
                 time.sleep(0.1)
         else:
             raise Exception("Cannot insert data into clickhouse")
