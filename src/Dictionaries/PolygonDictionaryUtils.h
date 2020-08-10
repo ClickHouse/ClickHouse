@@ -83,7 +83,7 @@ private:
 
     Poco::Logger * log;
 
-    /** Sorted distinct coordinates of all vertices */
+    /** Sorted distinct coordinates of all vertexes */
     std::vector<Coord> sorted_x;
     std::vector<Edge> all_edges;
 

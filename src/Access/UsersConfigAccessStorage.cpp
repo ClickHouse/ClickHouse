@@ -301,39 +301,33 @@ namespace
                 const String databases_config = "users." + user_name + ".databases";
                 if (config.has(databases_config))
                 {
-                    Poco::Util::AbstractConfiguration::Keys database_keys;
-                    config.keys(databases_config, database_keys);
+                    Poco::Util::AbstractConfiguration::Keys databases;
+                    config.keys(databases_config, databases);
 
                     /// Read tables within databases
-                    for (const String & database_key : database_keys)
+                    for (const String & database : databases)
                     {
-                        const String database_config = databases_config + "." + database_key;
-
-                        String database_name;
-                        if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
-                            database_name = config.getString(database_config + "[@name]");
-                        else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
-                            database_name = database_key.substr(0, bracket_pos);
-                        else
-                            database_name = database_key;
-
-                        Poco::Util::AbstractConfiguration::Keys table_keys;
-                        config.keys(database_config, table_keys);
+                        const String database_config = databases_config + "." + database;
+                        Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
+                        config.keys(database_config, keys_in_database_config);
 
                         /// Read table properties
-                        for (const String & table_key : table_keys)
+                        for (const String & key_in_database_config : keys_in_database_config)
                         {
-                            String table_config = database_config + "." + table_key;
-                            String table_name;
-                            if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
-                                table_name = config.getString(table_config + "[@name]");
-                            else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
-                                table_name = table_key.substr(0, bracket_pos);
-                            else
-                                table_name = table_key;
+                            String table_name = key_in_database_config;
+                            String filter_config = database_config + "." + table_name + ".filter";
 
-                            String filter_config = table_config + ".filter";
-                            all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
+                            if (key_in_database_config.starts_with("table["))
+                            {
+                                const auto table_name_config = database_config + "." + table_name + "[@name]";
+                                if (config.has(table_name_config))
+                                {
+                                    table_name = config.getString(table_name_config);
+                                    filter_config = database_config + ".table[@name='" + table_name + "']";
+                                }
+                            }
+
+                            all_filters_map[{database, table_name}][user_name] = config.getString(filter_config);
                         }
                     }
                 }
@@ -365,24 +359,18 @@ namespace
 
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
-                                                     const String & path_to_constraints,
-                                                     const std::function<void(const std::string_view &)> & check_setting_name_function)
+                                                     const String & path_to_constraints)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(path_to_constraints, keys);
-
         for (const String & setting_name : keys)
         {
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
-
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
-
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
@@ -396,14 +384,12 @@ namespace
             }
             profile_elements.push_back(std::move(profile_element));
         }
-
         return profile_elements;
     }
 
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
-        const String & profile_name,
-        const std::function<void(const std::string_view &)> & check_setting_name_function)
+        const String & profile_name)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -425,14 +411,11 @@ namespace
 
             if (key == "constraints" || key.starts_with("constraints["))
             {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, check_setting_name_function));
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
                 continue;
             }
 
             const auto & setting_name = key;
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
-
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
             profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
@@ -443,10 +426,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseSettingsProfiles(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::function<void(const std::string_view &)> & check_setting_name_function,
-        Poco::Logger * log)
+    std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
@@ -455,7 +435,7 @@ namespace
         {
             try
             {
-                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+                profiles.push_back(parseSettingsProfile(config, profile_name));
             }
             catch (...)
             {
@@ -472,13 +452,6 @@ UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml
 }
 
 
-void UsersConfigAccessStorage::setCheckSettingNameFunction(
-    const std::function<void(const std::string_view &)> & check_setting_name_function_)
-{
-    check_setting_name_function = check_setting_name_function_;
-}
-
-
 void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
@@ -488,7 +461,7 @@ void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfig
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function, getLogger()))
+    for (const auto & entity : parseSettingsProfiles(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }

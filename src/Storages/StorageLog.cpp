@@ -318,7 +318,6 @@ void LogBlockOutputStream::writeSuffix()
 
     /// Finish write.
     marks_stream->next();
-    marks_stream->finalize();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();

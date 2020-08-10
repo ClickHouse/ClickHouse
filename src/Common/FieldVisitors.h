@@ -99,7 +99,7 @@ public:
 };
 
 
-/** Converts numeric value of any type to specified type. */
+/** Converts numberic value of any type to specified type. */
 template <typename T>
 class FieldVisitorConvertToNumber : public StaticVisitor<T>
 {

@@ -22,19 +22,17 @@ namespace ErrorCodes
 class MemorySource : public SourceWithProgress
 {
 public:
-    /// We use range [first, last] which includes right border.
-    /// Blocks are stored in std::list which may be appended in another thread.
-    /// We don't use synchronisation here, because elements in range [first, last] won't be modified.
     MemorySource(
         Names column_names_,
-        BlocksList::iterator first_,
-        BlocksList::iterator last_,
+        BlocksList::iterator begin_,
+        BlocksList::iterator end_,
         const StorageMemory & storage,
         const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
         , column_names(std::move(column_names_))
-        , current(first_)
-        , last(last_) /// [first, last]
+        , begin(begin_)
+        , end(end_)
+        , it(begin)
     {
     }
 
@@ -43,13 +41,13 @@ public:
 protected:
     Chunk generate() override
     {
-        if (is_finished)
+        if (it == end)
         {
             return {};
         }
         else
         {
-            const Block & src = *current;
+            Block src = *it;
             Columns columns;
             columns.reserve(column_names.size());
 
@@ -57,18 +55,15 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            if (current == last)
-                is_finished = true;
-            else
-                ++current;
+            ++it;
             return Chunk(std::move(columns), src.rows());
         }
     }
 private:
     Names column_names;
-    BlocksList::iterator current;
-    BlocksList::iterator last;
-    bool is_finished = false;
+    BlocksList::iterator begin;
+    BlocksList::iterator end;
+    BlocksList::iterator it;
 };
 
 
@@ -128,18 +123,13 @@ Pipes StorageMemory::read(
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        BlocksList::iterator first = data.begin();
-        BlocksList::iterator last = data.begin();
+        BlocksList::iterator begin = data.begin();
+        BlocksList::iterator end = data.begin();
 
-        std::advance(first, stream * size / num_streams);
-        std::advance(last, (stream + 1) * size / num_streams);
+        std::advance(begin, stream * size / num_streams);
+        std::advance(end, (stream + 1) * size / num_streams);
 
-        if (first == last)
-            continue;
-        else
-            --last;
-
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this, metadata_snapshot));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, begin, end, *this, metadata_snapshot));
     }
 
     return pipes;

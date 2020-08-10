@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -36,10 +35,8 @@ SRCS(
     DateLUT.cpp
     DateLUTImpl.cpp
     demangle.cpp
-    errnoToString.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
-    getResource.cpp
     getThreadId.cpp
     JSON.cpp
     LineReader.cpp
@@ -50,7 +47,7 @@ SRCS(
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
-
+    errnoToString.cpp
 )
 
 END()
