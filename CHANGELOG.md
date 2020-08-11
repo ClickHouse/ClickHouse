@@ -136,6 +136,49 @@
 
 ## ClickHouse release 20.5
 
+### ClickHouse release v20.5.4.40-stable 2020-08-10
+
+#### Bug Fix
+
+* Fixed wrong index analysis with functions. It could lead to pruning wrong parts, while reading from `MergeTree` tables. Fixes [#13060](https://github.com/ClickHouse/ClickHouse/issues/13060). Fixes [#12406](https://github.com/ClickHouse/ClickHouse/issues/12406). [#13081](https://github.com/ClickHouse/ClickHouse/pull/13081) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed unnecessary limiting for the number of threads for selects from local replica. [#12840](https://github.com/ClickHouse/ClickHouse/pull/12840) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed performance with large tuples, which are interpreted as functions in `IN` section. The case when user write `WHERE x IN tuple(1, 2, ...)` instead of `WHERE x IN (1, 2, ...)` for some obscure reason. [#12700](https://github.com/ClickHouse/ClickHouse/pull/12700) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed memory tracking for input_format_parallel_parsing (by attaching thread to group). [#12672](https://github.com/ClickHouse/ClickHouse/pull/12672) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed bloom filter index with const expression. This fixes [#10572](https://github.com/ClickHouse/ClickHouse/issues/10572). [#12659](https://github.com/ClickHouse/ClickHouse/pull/12659) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `SIGSEGV` in `StorageKafka` when broker is unavailable (and not only). [#12658](https://github.com/ClickHouse/ClickHouse/pull/12658) ([Azat Khuzhin](https://github.com/azat)).
+* Added support for function `if` with `Array(UUID)` arguments. This fixes [#11066](https://github.com/ClickHouse/ClickHouse/issues/11066). [#12648](https://github.com/ClickHouse/ClickHouse/pull/12648) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed lack of aliases with function `any`. [#12593](https://github.com/ClickHouse/ClickHouse/pull/12593) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed race condition in external dictionaries with cache layout which can lead server crash. [#12566](https://github.com/ClickHouse/ClickHouse/pull/12566) ([alesapin](https://github.com/alesapin)).
+* Remove data for Distributed tables (blocks from async INSERTs) on DROP TABLE. [#12556](https://github.com/ClickHouse/ClickHouse/pull/12556) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed bug which lead to broken old parts after `ALTER DELETE` query when `enable_mixed_granularity_parts=1`. Fixes [#12536](https://github.com/ClickHouse/ClickHouse/issues/12536). [#12543](https://github.com/ClickHouse/ClickHouse/pull/12543) ([alesapin](https://github.com/alesapin)).
+* Better exception for function `in` with invalid number of arguments. [#12529](https://github.com/ClickHouse/ClickHouse/pull/12529) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed race condition in live view tables which could cause data duplication. [#12519](https://github.com/ClickHouse/ClickHouse/pull/12519) ([vzakaznikov](https://github.com/vzakaznikov)).
+* Fixed performance issue, while reading from compact parts. [#12492](https://github.com/ClickHouse/ClickHouse/pull/12492) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed backwards compatibility in binary format of `AggregateFunction(avg, ...)` values. This fixes [#12342](https://github.com/ClickHouse/ClickHouse/issues/12342). [#12486](https://github.com/ClickHouse/ClickHouse/pull/12486) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the deadlock if `text_log` is enabled. [#12452](https://github.com/ClickHouse/ClickHouse/pull/12452) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed overflow when very large LIMIT or OFFSET is specified. This fixes [#10470](https://github.com/ClickHouse/ClickHouse/issues/10470). This fixes [#11372](https://github.com/ClickHouse/ClickHouse/issues/11372). [#12427](https://github.com/ClickHouse/ClickHouse/pull/12427) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed possible segfault if StorageMerge. Closes [#12054](https://github.com/ClickHouse/ClickHouse/issues/12054). [#12401](https://github.com/ClickHouse/ClickHouse/pull/12401) ([tavplubix](https://github.com/tavplubix)).
+* Reverts change introduced in [#11079](https://github.com/ClickHouse/ClickHouse/issues/11079) to resolve [#12098](https://github.com/ClickHouse/ClickHouse/issues/12098). [#12397](https://github.com/ClickHouse/ClickHouse/pull/12397) ([Mike](https://github.com/myrrc)).
+* Avoid exception when negative or floating point constant is used in WHERE condition for indexed tables. This fixes [#11905](https://github.com/ClickHouse/ClickHouse/issues/11905). [#12384](https://github.com/ClickHouse/ClickHouse/pull/12384) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Allow to CLEAR column even if there are depending DEFAULT expressions. This fixes [#12333](https://github.com/ClickHouse/ClickHouse/issues/12333). [#12378](https://github.com/ClickHouse/ClickHouse/pull/12378) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed TOTALS/ROLLUP/CUBE for aggregate functions with `-State` and `Nullable` arguments. This fixes [#12163](https://github.com/ClickHouse/ClickHouse/issues/12163). [#12376](https://github.com/ClickHouse/ClickHouse/pull/12376) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed SIGSEGV if there is an message with error in the middle of the batch in `Kafka` Engine. [#12302](https://github.com/ClickHouse/ClickHouse/pull/12302) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed the behaviour when `SummingMergeTree` engine sums up columns from partition key. Added an exception in case of explicit definition of columns to sum which intersects with partition key columns. This fixes [#7867](https://github.com/ClickHouse/ClickHouse/issues/7867). [#12173](https://github.com/ClickHouse/ClickHouse/pull/12173) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Fixed transform of query to send to external DBMS (e.g. MySQL, ODBC) in presense of aliases. This fixes [#12032](https://github.com/ClickHouse/ClickHouse/issues/12032). [#12151](https://github.com/ClickHouse/ClickHouse/pull/12151) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed bug which leads to incorrect table metadata in ZooKeepeer for ReplicatedVersionedCollapsingMergeTree tables. Fixes [#12093](https://github.com/ClickHouse/ClickHouse/issues/12093). [#12121](https://github.com/ClickHouse/ClickHouse/pull/12121) ([alesapin](https://github.com/alesapin)).
+* Fixed unnecessary limiting the number of threads for selects from `VIEW`. Fixes [#11937](https://github.com/ClickHouse/ClickHouse/issues/11937). [#12085](https://github.com/ClickHouse/ClickHouse/pull/12085) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed crash in JOIN with LowCardinality type with `join_algorithm=partial_merge`. [#12035](https://github.com/ClickHouse/ClickHouse/pull/12035) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fixed wrong result for `if()` with NULLs in condition. [#11807](https://github.com/ClickHouse/ClickHouse/pull/11807) ([Artem Zuikov](https://github.com/4ertus2)).
+
+#### Performance Improvement
+
+* Index not used for IN operator with literals", performance regression introduced around v19.3. This fixes "[#10574](https://github.com/ClickHouse/ClickHouse/issues/10574). [#12062](https://github.com/ClickHouse/ClickHouse/pull/12062) ([nvartolomei](https://github.com/nvartolomei)).
+
+#### Build/Testing/Packaging Improvement
+
+* Install `ca-certificates` before the first `apt-get update` in Dockerfile. [#12095](https://github.com/ClickHouse/ClickHouse/pull/12095) ([Ivan Blinkov](https://github.com/blinkov)).
+
+
 ### ClickHouse release v20.5.2.7-stable 2020-07-02
 
 #### Backward Incompatible Change
