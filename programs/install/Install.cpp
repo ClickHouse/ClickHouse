@@ -175,7 +175,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                std::cerr << "Install must be run as root: sudo ./clickhouse install";
+                std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
             throw;
         }
 
@@ -583,7 +583,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 
@@ -782,7 +782,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -816,7 +816,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -850,7 +850,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -893,7 +893,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
