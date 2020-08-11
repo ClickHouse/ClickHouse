@@ -60,7 +60,5 @@ def test_allowed_host():
         assert query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table") == "5\n"
 
     for client_node in expected_to_fail:
-        with pytest.raises(Exception) as e:
-            result = query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table")
-            print("Client node: {} Server node: {} Result: {}".format(client_node, server_node, result))
-        assert "default: Authentication failed" in str(e)
+        with pytest.raises(Exception, match=r'default: Authentication failed'):
+            query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table")
