@@ -469,6 +469,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             executeScript(command);
         }
 
+        /// All users are allowed to read pid file (for clickhouse status command).
+        fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
         /// Other users in clickhouse group are allowed to read and even delete logs.
         fs::permissions(log_path, fs::perms::owner_all | fs::perms::group_all, fs::perm_options::replace);
 
