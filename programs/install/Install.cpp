@@ -144,6 +144,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Copy binary to the destination directory.
 
+        /// TODO An option to link instead of copy - useful for developers.
+        /// TODO Check if the binary is the same.
+
         size_t binary_size = fs::file_size(binary_self_path);
 
         fs::path prefix = fs::path(options["prefix"].as<std::string>());
