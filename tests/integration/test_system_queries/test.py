@@ -91,7 +91,7 @@ def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
 
     instance.exec_in_container(['bash', '-c', create_macros], privileged=True, user='root')
     instance.query("SYSTEM RELOAD CONFIG")
-    assert TSV(instance.query("select * from system.macros")) == TSV("mac\tro\n")
+    assert TSV(instance.query("select * from system.macros")) == TSV("instance\tch1\nmac\tro\n")
 
 
 def test_SYSTEM_FLUSH_LOGS(started_cluster):
