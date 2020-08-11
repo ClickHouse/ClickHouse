@@ -1,24 +1,39 @@
 if (Protobuf_PROTOC_EXECUTABLE)
     option (ENABLE_PARQUET "Enable parquet" ${ENABLE_LIBRARIES})
+elseif(ENABLE_PARQUET OR USE_INTERNAL_PARQUET_LIBRARY)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use parquet without protoc executable")
 endif()
 
-if (ENABLE_PARQUET)
+if (NOT ENABLE_PARQUET)
+    if(USE_INTERNAL_PARQUET_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal parquet with ENABLE_PARQUET=OFF")
+    endif()
+    message(STATUS "Building without Parquet support")
+    return()
+endif()
 
 if (NOT OS_FREEBSD) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
     option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
+elseif(USE_INTERNAL_PARQUET_LIBRARY)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Using internal parquet is not supported on freebsd")
 endif()
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/CMakeLists.txt")
     if(USE_INTERNAL_PARQUET_LIBRARY)
         message(WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init --recursive")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal parquet library")
+        set(USE_INTERNAL_PARQUET_LIBRARY 0)
     endif()
-    set(USE_INTERNAL_PARQUET_LIBRARY 0)
     set(MISSING_INTERNAL_PARQUET_LIBRARY 1)
 endif()
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     find_package(Arrow)
     find_package(Parquet)
+
+    if(NOT ARROW_INCLUDE_DIR OR PARQUET_INCLUDE_DIR)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system parquet: arrow=${ARROW_INCLUDE_DIR} parquet=${PARQUET_INCLUDE_DIR}" )
+    endif()
 endif()
 
 if(ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
@@ -26,6 +41,8 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     include(cmake/find/snappy.cmake)
     if(SNAPPY_LIBRARY)
         set(CAN_USE_INTERNAL_PARQUET_LIBRARY 1)
+    else()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal parquet library without snappy")
     endif()
 
     include(CheckCXXSourceCompiles)
@@ -33,19 +50,20 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
         set(CMAKE_REQUIRED_LIBRARIES ${DOUBLE_CONVERSION_LIBRARIES})
         set(CMAKE_REQUIRED_INCLUDES ${DOUBLE_CONVERSION_INCLUDE_DIR})
         check_cxx_source_compiles("
-            #include <double-conversion/double-conversion.h>
-            int main() { static const int flags_ = double_conversion::StringToDoubleConverter::ALLOW_CASE_INSENSIBILITY; return 0;}
+               #include <double-conversion/double-conversion.h>
+               int main() { static const int flags_ = double_conversion::StringToDoubleConverter::ALLOW_CASE_INSENSIBILITY; return 0;}
         " HAVE_DOUBLE_CONVERSION_ALLOW_CASE_INSENSIBILITY)
 
         if(NOT HAVE_DOUBLE_CONVERSION_ALLOW_CASE_INSENSIBILITY) # HAVE_STD_RANDOM_SHUFFLE
-            message(STATUS "Disabling internal parquet library because arrow is broken (can't use old double_conversion)")
-            set(CAN_USE_INTERNAL_PARQUET_LIBRARY 0)
+                message (${RECONFIGURE_MESSAGE_LEVEL} "Disabling internal parquet library because arrow is broken (can't use old double_conversion)")
+                set(CAN_USE_INTERNAL_PARQUET_LIBRARY 0)
         endif()
     endif()
 
-   if(NOT CAN_USE_INTERNAL_PARQUET_LIBRARY)
+    if(NOT CAN_USE_INTERNAL_PARQUET_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal parquet")
         set(USE_INTERNAL_PARQUET_LIBRARY 0)
-   else()
+    else()
     set(USE_INTERNAL_PARQUET_LIBRARY 1)
 
     if(USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
@@ -53,7 +71,7 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
         set(PARQUET_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" ${ClickHouse_BINARY_DIR}/contrib/arrow/cpp/src)
     endif()
 
-    if(${USE_STATIC_LIBRARIES})
+    if(MAKE_STATIC_LIBRARIES)
         set(FLATBUFFERS_LIBRARY flatbuffers)
         set(ARROW_LIBRARY arrow_static)
         set(PARQUET_LIBRARY parquet_static)
@@ -72,8 +90,8 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     set(USE_ORC 1)
     set(USE_ARROW 1)
    endif()
-endif()
-
+elseif(OS_FREEBSD)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Using internal parquet library on FreeBSD is not supported")
 endif()
 
 if(USE_PARQUET)

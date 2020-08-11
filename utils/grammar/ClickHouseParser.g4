@@ -185,7 +185,7 @@ clickhouse_type
     | T_AGGREGATE_FUNCTION LPAREN function_name ( COMMA clickhouse_type ) * RPAREN
     | T_ARRAY LPAREN clickhouse_type RPAREN
     | T_TUPLE LPAREN clickhouse_type ( COMMA clickhouse_type ) * RPAREN
-    | T_NULLABLE LPAREN clickhouse_type LPAREN
+    | T_NULLABLE LPAREN clickhouse_type RPAREN
     ;
 
 simple_type

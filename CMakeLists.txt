@@ -28,6 +28,14 @@ endforeach()
 
 project(ClickHouse)
 
+option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
+      "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy" OFF)
+if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
+    set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
+else()
+    set(RECONFIGURE_MESSAGE_LEVEL STATUS)
+endif()
+
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
@@ -57,7 +65,7 @@ if(ENABLE_IPO)
         message(STATUS "IPO/LTO is supported, enabling")
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     else()
-        message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
     endif()
 else()
     message(STATUS "IPO/LTO not enabled.")
@@ -133,6 +141,8 @@ option (ENABLE_TESTS "Enables tests" ON)
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies ENABLE_FASTMEMCPY." ON)
+elseif(GLIBC_COMPATIBILITY)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
@@ -141,6 +151,13 @@ endif ()
 
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
+endif ()
 
 option (ADD_GDB_INDEX_FOR_GOLD "Set to add .gdb-index to resulting binaries for gold linker. NOOP if lld is used." 0)
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
@@ -176,10 +193,7 @@ if(NOT DISABLE_CPU_OPTIMIZE)
     include(cmake/cpu_features.cmake)
 endif()
 
-if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
-    option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
-endif()
-
+option(ARCH_NATIVE "Enable -march=native compiler flag" 0)
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
@@ -238,6 +252,8 @@ if (COMPILER_CLANG)
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+    elseif (ENABLE_THINLTO)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
