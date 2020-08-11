@@ -388,6 +388,130 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayIndex>(); }
 
+    /// Get function name.
+    String getName() const override { return name; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+
+        if (!array_type)
+            throw Exception("First argument for function " + getName() + " must be an array.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!arguments[1]->onlyNull() && !allowArguments(array_type->getNestedType(), arguments[1]))
+            throw Exception("Types of array and 2nd argument of function \""
+                + getName() + "\" must be identical up to nullability, cardinality, "
+                "numeric types, or Enum and numeric type. Passed: "
+                + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeNumber<ResultType>>();
+    }
+
+    /**
+      * If one or both arguments passed to this function are nullable,
+      * we create a new block that contains non-nullable arguments:
+      *
+      * - if the 1st argument is a non-constant array of nullable values,
+      * it is turned into a non-constant array of ordinary values + a null
+      * byte map;
+      * - if the 2nd argument is a nullable value, it is turned into an
+      * ordinary value + a null byte map.
+      *
+      * Note that since constant arrays have quite a specific structure
+      * (they are vectors of Fields, which may represent the NULL value),
+      * they do not require any preprocessing.
+      */
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    {
+        ColumnPtr& ptr = block.getByPosition(arguments[0]).column;
+
+        /**
+         * The columns here have two general cases, either being Array(T) or Const(Array(T)).
+         * The last type will return nullptr after casting to ColumnArray, so we leave the casting
+         * to execute* functions.
+         */
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(ptr.get());
+        const ColumnNullable * nullable = nullptr;
+
+        if (col_array)
+            nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
+
+        auto & arg_column = block.getByPosition(arguments[1]).column;
+        const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
+
+        if (!nullable && !arg_nullable)
+            executeOnNonNullable(block, arguments, result);
+        else
+        {
+            /**
+             * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new block
+             * and operate on it. The block structure follows:
+             * {0, 1, 2, 3, 4}
+             * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
+             */
+            Block source_block = { {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""} };
+
+            if (nullable)
+            {
+                const auto & nested_col = nullable->getNestedColumnPtr();
+
+                auto & data = source_block.getByPosition(0);
+
+                data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
+                data.type = std::make_shared<DataTypeArray>(
+                    static_cast<const DataTypeNullable &>(
+                        *static_cast<const DataTypeArray &>(
+                            *block.getByPosition(arguments[0]).type
+                        ).getNestedType()
+                    ).getNestedType());
+
+                auto & null_map = source_block.getByPosition(2);
+
+                null_map.column = nullable->getNullMapColumnPtr();
+                null_map.type = std::make_shared<DataTypeUInt8>();
+            }
+            else
+            {
+                auto & data = source_block.getByPosition(0);
+                data = block.getByPosition(arguments[0]);
+            }
+
+            if (arg_nullable)
+            {
+                auto & arg = source_block.getByPosition(1);
+                arg.column = arg_nullable->getNestedColumnPtr();
+                arg.type =
+                    static_cast<const DataTypeNullable &>(
+                        *block.getByPosition(arguments[1]).type
+                    ).getNestedType();
+
+                auto & null_map = source_block.getByPosition(3);
+                null_map.column = arg_nullable->getNullMapColumnPtr();
+                null_map.type = std::make_shared<DataTypeUInt8>();
+            }
+            else
+            {
+                auto & arg = source_block.getByPosition(1);
+                arg = block.getByPosition(arguments[1]);
+            }
+
+            /// Now perform the function.
+            executeOnNonNullable(source_block, {0, 1, 2, 3}, 4);
+
+            /// Move the result to its final position.
+            const ColumnWithTypeAndName & source_col = source_block.getByPosition(4);
+            ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+            dest_col.column = std::move(source_col.column);
+        }
+    }
+
 private:
     using ResultType = typename ConcreteAction::ResultType;
     using ResultColumnType = ColumnVector<ResultType>;
@@ -758,144 +882,21 @@ private:
                 null_map_data,
                 nullptr);
         else
+        {
+            const auto casted = col_nested.convertToFullColumnIfLowCardinality();
             ArrayIndexMainImpl<ConcreteAction>::vector(
-                col_nested,
+                *casted.get(),
                 col->getOffsets(),
                 *item_arg.convertToFullColumnIfConst(),
                 col_res->getData(),
                 null_map_data,
                 null_map_item);
+        }
 
         block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
-public:
-    /// Get function name.
-    String getName() const override { return name; }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!arguments[1]->onlyNull() && !allowArguments(array_type->getNestedType(), arguments[1]))
-            throw Exception("Types of array and 2nd argument of function \""
-                + getName() + "\" must be identical up to nullability, cardinality, "
-                "numeric types, or Enum and numeric type. Passed: "
-                + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
-    }
-
-    /**
-      * If one or both arguments passed to this function are nullable,
-      * we create a new block that contains non-nullable arguments:
-      *
-      * - if the 1st argument is a non-constant array of nullable values,
-      * it is turned into a non-constant array of ordinary values + a null
-      * byte map;
-      * - if the 2nd argument is a nullable value, it is turned into an
-      * ordinary value + a null byte map.
-      *
-      * Note that since constant arrays have quite a specific structure
-      * (they are vectors of Fields, which may represent the NULL value),
-      * they do not require any preprocessing.
-      */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
-    {
-        ColumnPtr& ptr = block.getByPosition(arguments[0]).column;
-
-        /**
-         * The columns here have two general cases, either being Array(T) or Const(Array(T)).
-         * The last type will return nullptr after casting to ColumnArray, so we leave the casting
-         * to execute* functions.
-         */
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(ptr.get());
-        const ColumnNullable * nullable = nullptr;
-
-        if (col_array)
-            nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
-
-        auto & arg_column = block.getByPosition(arguments[1]).column;
-        const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
-
-        if (!nullable && !arg_nullable)
-            executeOnNonNullable(block, arguments, result);
-        else
-        {
-            /**
-             * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new block
-             * and operate on it. The block structure follows:
-             * {0, 1, 2, 3, 4}
-             * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
-             */
-            Block source_block = { {}, {}, {}, {}, {nullptr, block.getByPosition(result).type, ""} };
-
-            if (nullable)
-            {
-                const auto & nested_col = nullable->getNestedColumnPtr();
-
-                auto & data = source_block.getByPosition(0);
-
-                data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
-                data.type = std::make_shared<DataTypeArray>(
-                    static_cast<const DataTypeNullable &>(
-                        *static_cast<const DataTypeArray &>(
-                            *block.getByPosition(arguments[0]).type
-                        ).getNestedType()
-                    ).getNestedType());
-
-                auto & null_map = source_block.getByPosition(2);
-
-                null_map.column = nullable->getNullMapColumnPtr();
-                null_map.type = std::make_shared<DataTypeUInt8>();
-            }
-            else
-            {
-                auto & data = source_block.getByPosition(0);
-                data = block.getByPosition(arguments[0]);
-            }
-
-            if (arg_nullable)
-            {
-                auto & arg = source_block.getByPosition(1);
-                arg.column = arg_nullable->getNestedColumnPtr();
-                arg.type =
-                    static_cast<const DataTypeNullable &>(
-                        *block.getByPosition(arguments[1]).type
-                    ).getNestedType();
-
-                auto & null_map = source_block.getByPosition(3);
-                null_map.column = arg_nullable->getNullMapColumnPtr();
-                null_map.type = std::make_shared<DataTypeUInt8>();
-            }
-            else
-            {
-                auto & arg = source_block.getByPosition(1);
-                arg = block.getByPosition(arguments[1]);
-            }
-
-            /// Now perform the function.
-            executeOnNonNullable(source_block, {0, 1, 2, 3}, 4);
-
-            /// Move the result to its final position.
-            const ColumnWithTypeAndName & source_col = source_block.getByPosition(4);
-            ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-            dest_col.column = std::move(source_col.column);
-        }
-    }
-
-private:
     void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (!(executeIntegral<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(block, arguments, result)
