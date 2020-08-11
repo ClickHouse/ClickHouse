@@ -844,13 +844,13 @@ void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_pt
                 std::to_string(update_queue.size()));
 }
 
-void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
+void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr) const
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, bunch_update_unit.getRequestedIds().size());
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, update_unit_ptr->requested_ids.size());
 
-    std::unordered_map<Key, UInt8> remaining_ids{bunch_update_unit.getRequestedIds().size()};
-    for (const auto id : bunch_update_unit.getRequestedIds())
+    std::unordered_map<Key, UInt8> remaining_ids{update_unit_ptr->requested_ids.size()};
+    for (const auto id : update_unit_ptr->requested_ids)
         remaining_ids.insert({id, 0});
 
     const auto now = std::chrono::system_clock::now();
@@ -864,7 +864,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
             Stopwatch watch;
 
-            BlockInputStreamPtr stream = current_source_ptr->loadIds(bunch_update_unit.getRequestedIds());
+            BlockInputStreamPtr stream = current_source_ptr->loadIds(update_unit_ptr->requested_ids);
             stream->readPrefix();
 
 
@@ -917,7 +917,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
-                    bunch_update_unit.informCallersAboutPresentId(id, cell_idx);
+                    update_unit_ptr->present_id_handler(id, cell_idx);
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
                 }
@@ -979,9 +979,9 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                 if (was_default)
                     cell.setDefault();
                 if (was_default)
-                    bunch_update_unit.informCallersAboutAbsentId(id, cell_idx);
+                    update_unit_ptr->absent_id_handler(id, cell_idx);
                 else
-                    bunch_update_unit.informCallersAboutPresentId(id, cell_idx);
+                    update_unit_ptr->present_id_handler(id, cell_idx);
                 continue;
             }
             /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
@@ -1013,7 +1013,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
             setDefaultAttributeValue(attribute, cell_idx);
 
         /// inform caller that the cell has not been found
-        bunch_update_unit.informCallersAboutAbsentId(id, cell_idx);
+        update_unit_ptr->absent_id_handler(id, cell_idx);
     }
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
