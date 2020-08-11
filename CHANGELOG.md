@@ -8,7 +8,7 @@
 * Added storage `RabbitMQ`. [#11069](https://github.com/ClickHouse/ClickHouse/pull/11069) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Implemented PostgreSQL-like `ILIKE` operator for [#11710](https://github.com/ClickHouse/ClickHouse/issues/11710). [#12125](https://github.com/ClickHouse/ClickHouse/pull/12125) ([Mike](https://github.com/myrrc)).
 * Supported RIGHT and FULL JOIN with `SET join_algorithm = 'partial_merge'`. Only ALL strictness is allowed (ANY, SEMI, ANTI, ASOF are not). [#12118](https://github.com/ClickHouse/ClickHouse/pull/12118) ([Artem Zuikov](https://github.com/4ertus2)).
-* Added a function `initializedAggregation` to initialize an aggregation based on a single value. [#12109](https://github.com/ClickHouse/ClickHouse/pull/12109) ([Guillaume Tassery](https://github.com/YiuRULE)).
+* Added a function `initializeAggregation` to initialize an aggregation based on a single value. [#12109](https://github.com/ClickHouse/ClickHouse/pull/12109) ([Guillaume Tassery](https://github.com/YiuRULE)).
 * Supported `ALTER TABLE ... [ADD|MODIFY] COLUMN ... FIRST` [#4006](https://github.com/ClickHouse/ClickHouse/issues/4006). [#12073](https://github.com/ClickHouse/ClickHouse/pull/12073) ([Winter Zhang](https://github.com/zhang2014)).
 * Added function `parseDateTimeBestEffortUS`. [#12028](https://github.com/ClickHouse/ClickHouse/pull/12028) ([flynn](https://github.com/ucasFL)).
 * Support format `ORC` for output (was supported only for input). [#11662](https://github.com/ClickHouse/ClickHouse/pull/11662) ([Kruglov Pavel](https://github.com/Avogar)).
