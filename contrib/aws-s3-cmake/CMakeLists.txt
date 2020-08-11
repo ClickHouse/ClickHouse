@@ -18,7 +18,6 @@ file(GLOB AWS_CORE_SOURCES
     "${AWS_CORE_LIBRARY_DIR}/source/client/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/http/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/http/standard/*.cpp"
-    "${AWS_CORE_LIBRARY_DIR}/source/http/curl/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/config/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/external/cjson/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/external/tinyxml2/*.cpp"
