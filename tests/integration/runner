@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     env_tags = ""
 
-    if args.docker_compose_images_tags in not None:
+    if args.docker_compose_images_tags is not None:
         for img_tag in args.docker_compose_images_tags:
             [image, tag] = img_tag.split(":")
             if image == "yandex/clickhouse-mysql-golang-client":
