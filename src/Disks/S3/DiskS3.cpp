@@ -483,7 +483,8 @@ DiskS3::DiskS3(
     size_t min_upload_part_size_,
     size_t min_multi_part_upload_size_,
     size_t min_bytes_for_seek_)
-    : name(std::move(name_))
+    : IDisk(std::make_unique<AsyncExecutor>())
+    , name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
@@ -743,11 +744,6 @@ void DiskS3::createFile(const String & path)
 void DiskS3::setReadOnly(const String & path)
 {
     Poco::File(metadata_path + path).setReadOnly(true);
-}
-
-std::unique_ptr<Executor> DiskS3::getExecutor()
-{
-    return std::make_unique<AsyncExecutor>();
 }
 
 }

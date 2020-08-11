@@ -4,6 +4,7 @@
 #include <Core/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Disks/Executor.h>
 
 #include <memory>
 #include <mutex>
@@ -29,7 +30,6 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-class Executor;
 
 /**
  * Mode of opening a file for write.
@@ -67,6 +67,9 @@ using SpacePtr = std::shared_ptr<Space>;
 class IDisk : public Space
 {
 public:
+    /// Default constructor.
+    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>()) : executor(std::move(executor_)) { }
+
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
@@ -182,7 +185,9 @@ public:
 
 private:
     /// Returns executor to perform asynchronous operations.
-    virtual std::unique_ptr<Executor> getExecutor();
+    Executor & getExecutor() { return *executor; }
+
+    std::unique_ptr<Executor> executor;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

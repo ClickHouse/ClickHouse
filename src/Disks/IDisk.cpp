@@ -59,45 +59,15 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
 
 void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
-    auto exec = to_disk->getExecutor();
+    auto & exec = to_disk->getExecutor();
     ResultsCollector results;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, *exec, results);
+    asyncCopy(*this, from_path, *to_disk, to_path, exec, results);
 
     for (auto & result : results)
         result.wait();
     for (auto & result : results)
         result.get();
-}
-
-/// Executes task synchronously in case when disk doesn't support async operations.
-class SyncExecutor : public Executor
-{
-public:
-    SyncExecutor() = default;
-    std::future<void> execute(std::function<void()> task) override
-    {
-        auto promise = std::make_shared<std::promise<void>>();
-        try
-        {
-            task();
-            promise->set_value();
-        }
-        catch (...)
-        {
-            try
-            {
-                promise->set_exception(std::current_exception());
-            }
-            catch (...) { }
-        }
-        return promise->get_future();
-    }
-};
-
-std::unique_ptr<Executor> IDisk::getExecutor()
-{
-    return std::make_unique<SyncExecutor>();
 }
 
 void IDisk::truncateFile(const String &, size_t)
