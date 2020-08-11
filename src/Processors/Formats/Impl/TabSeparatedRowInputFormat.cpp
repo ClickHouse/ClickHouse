@@ -38,7 +38,7 @@ static void checkForCarriageReturn(ReadBuffer & in)
         throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\\\r.",
             ErrorCodes::INCORRECT_DATA);
 }
 
@@ -140,16 +140,24 @@ void TabSeparatedRowInputFormat::readPrefix()
         if (format_settings.with_names_use_header)
         {
             String column_name;
-            do
+            for (;;)
             {
                 readEscapedString(column_name, in);
-                addInputColumn(column_name);
+                if (!checkChar('\t', in))
+                {
+                    /// Check last column for \r before adding it, otherwise an error will be:
+                    ///     "Unknown field found in TSV header"
+                    checkForCarriageReturn(in);
+                    addInputColumn(column_name);
+                    break;
+                }
+                else
+                    addInputColumn(column_name);
             }
-            while (checkChar('\t', in));
+
 
             if (!in.eof())
             {
-                checkForCarriageReturn(in);
                 assertChar('\n', in);
             }
         }
