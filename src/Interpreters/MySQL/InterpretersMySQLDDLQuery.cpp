@@ -201,11 +201,11 @@ static String getUniqueColumnName(NamesAndTypesList columns_name_and_type, const
 
 static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
 {
-    const auto & numbers_partition = [&](const String & column_name, const DataTypePtr & type, size_t type_max_size)
+    const auto & numbers_partition = [&](const String & column_name, bool is_nullable, size_t type_max_size)
     {
         ASTPtr column = std::make_shared<ASTIdentifier>(column_name);
 
-        if (type->isNullable())
+        if (is_nullable)
             column = makeASTFunction("assumeNotNull", column);
 
         return makeASTFunction("intDiv", column, std::make_shared<ASTLiteral>(UInt64(type_max_size / 1000)));
@@ -237,21 +237,24 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
             {
                 best_size = type->getSizeOfValueInMemory();
                 best_partition = std::make_shared<ASTIdentifier>(primary_key.name);
+
+                if (primary_key.type->isNullable())
+                    best_partition = makeASTFunction("assumeNotNull", best_partition);
             }
             else if (which.isInt16() || which.isUInt16())
             {
                 best_size = type->getSizeOfValueInMemory();
-                best_partition = numbers_partition(primary_key.name, type, std::numeric_limits<UInt16>::max());
+                best_partition = numbers_partition(primary_key.name, primary_key.type->isNullable(), std::numeric_limits<UInt16>::max());
             }
             else if (which.isInt32() || which.isUInt32())
             {
                 best_size = type->getSizeOfValueInMemory();
-                best_partition = numbers_partition(primary_key.name, type, std::numeric_limits<UInt32>::max());
+                best_partition = numbers_partition(primary_key.name, primary_key.type->isNullable(), std::numeric_limits<UInt32>::max());
             }
             else if (which.isInt64() || which.isUInt64())
             {
                 best_size = type->getSizeOfValueInMemory();
-                best_partition = numbers_partition(primary_key.name, type, std::numeric_limits<UInt64>::max());
+                best_partition = numbers_partition(primary_key.name, primary_key.type->isNullable(), std::numeric_limits<UInt64>::max());
             }
         }
     }
