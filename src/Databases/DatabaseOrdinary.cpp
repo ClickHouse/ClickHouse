@@ -142,7 +142,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         }
     };
 
-
     iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
@@ -235,8 +234,7 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     String statement;
 
     {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
         readStringUntilEOF(statement, in);
     }
 

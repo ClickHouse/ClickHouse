@@ -8,7 +8,7 @@ namespace DB
 {
 /// ALTERs in StorageReplicatedMergeTree have to be executed sequentially (one
 /// by one). But ReplicatedMergeTreeQueue execute all entries almost
-/// concurrently. The only depency between entries is data parts, but they are
+/// concurrently. The only dependency between entries is data parts, but they are
 /// not suitable in alters case.
 ///
 /// This class stores information about current alters in

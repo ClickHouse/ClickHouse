@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <string>
 #include <vector>
 #include <functional>
@@ -31,6 +32,10 @@ struct StringRef
     /// Non-constexpr due to reinterpret_cast.
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
     StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
+    {
+        /// Sanity check for overflowed values.
+        assert(size < 0x8000000000000000ULL);
+    }
 
     constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
 

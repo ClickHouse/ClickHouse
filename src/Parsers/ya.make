@@ -44,6 +44,7 @@ SRCS(
     ASTSampleRatio.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
+    ASTSetQuery.cpp
     ASTSetRoleQuery.cpp
     ASTSettingsProfileElement.cpp
     ASTShowAccessEntitiesQuery.cpp
@@ -61,6 +62,7 @@ SRCS(
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
     formatAST.cpp
+    formatSettingName.cpp
     IAST.cpp
     iostream_debug_helpers.cpp
     IParserBase.cpp

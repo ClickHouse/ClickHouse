@@ -15,7 +15,7 @@ namespace DB
 /// Parse `name = value`.
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
-    ParserIdentifier name_p;
+    ParserCompoundIdentifier name_p;
     ParserLiteral value_p;
     ParserToken s_eq(TokenType::Equals);
 

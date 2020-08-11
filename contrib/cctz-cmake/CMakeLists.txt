@@ -1,9 +1,42 @@
-option (USE_INTERNAL_CCTZ "Use internal cctz library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CCTZ_LIBRARY "Use internal cctz library" ${NOT_UNBUNDLED})
 
-if (USE_INTERNAL_CCTZ)
-    SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
+if (NOT USE_INTERNAL_CCTZ_LIBRARY)
+    find_library (LIBRARY_CCTZ cctz)
+    find_path (INCLUDE_CCTZ NAMES cctz/civil_time.h)
 
-    SET (SRCS
+    if (LIBRARY_CCTZ AND INCLUDE_CCTZ)
+        set (EXTERNAL_CCTZ_LIBRARY_FOUND 1)
+
+        set(CMAKE_REQUIRED_LIBRARIES ${LIBRARY_CCTZ})
+        set(CMAKE_REQUIRED_INCLUDES ${INCLUDE_CCTZ})
+        check_cxx_source_compiles(
+            "
+            #include <cctz/civil_time.h>
+            int main() {
+                cctz::civil_day date;
+            }
+            "
+            EXTERNAL_CCTZ_LIBRARY_WORKS
+        )
+
+        if (NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
+            message (${RECONFIGURE_MESSAGE_LEVEL}  "External cctz is not working: ${LIBRARY_CCTZ} ${INCLUDE_CCTZ}")
+        else()
+            add_library (cctz UNKNOWN IMPORTED)
+            set_property (TARGET cctz PROPERTY IMPORTED_LOCATION ${LIBRARY_CCTZ})
+            set_property (TARGET cctz PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_CCTZ})
+        endif()
+    else()
+        set (EXTERNAL_CCTZ_LIBRARY_FOUND 0)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system cctz")
+    endif()
+endif()
+
+if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
+    set(USE_INTERNAL_CCTZ_LIBRARY 1)
+    set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
+
+    set (SRCS
         ${LIBRARY_DIR}/src/civil_time_detail.cc
         ${LIBRARY_DIR}/src/time_zone_fixed.cc
         ${LIBRARY_DIR}/src/time_zone_format.cc
@@ -27,13 +60,6 @@ if (USE_INTERNAL_CCTZ)
     # Build a libray with embedded tzdata
 
     if (OS_LINUX AND ARCH_AMD64)
-
-        find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-        if (OBJCOPY_PATH)
-            message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
-        else ()
-            message(FATAL_ERROR "Cannot find objcopy.")
-        endif ()
 
         set (TIMEZONES
             Africa/Abidjan
@@ -624,29 +650,6 @@ if (USE_INTERNAL_CCTZ)
         # library into single string.
         add_dependencies(cctz tzdata)
         target_link_libraries(cctz INTERFACE "-Wl,--whole-archive $<TARGET_FILE:tzdata> -Wl,--no-whole-archive")
-    endif ()
-
-else ()
-    find_library (LIBRARY_CCTZ cctz)
-    find_path (INCLUDE_CCTZ NAMES cctz/civil_time.h)
-
-    add_library (cctz UNKNOWN IMPORTED)
-    set_property (TARGET cctz PROPERTY IMPORTED_LOCATION ${LIBRARY_CCTZ})
-    set_property (TARGET cctz PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_CCTZ})
-
-    set(CMAKE_REQUIRED_LIBRARIES cctz)
-    check_cxx_source_compiles(
-        "
-        #include <cctz/civil_time.h>
-        int main() {
-            cctz::civil_day date;
-        }
-        "
-        EXTERNAL_CCTZ_WORKS
-    )
-
-    if (NOT EXTERNAL_CCTZ_WORKS)
-        message (FATAL_ERROR "cctz is unusable: ${LIBRARY_CCTZ} ${INCLUDE_CCTZ}")
     endif ()
 endif ()
 

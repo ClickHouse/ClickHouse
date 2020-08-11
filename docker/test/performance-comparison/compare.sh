@@ -318,10 +318,10 @@ create view right_query_log as select *
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
-        query_duration_ms from left_query_log
+        query_duration_ms, memory_usage from left_query_log
     union all
     select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
-        query_duration_ms from right_query_log
+        query_duration_ms, memory_usage from right_query_log
     ;
 
 -- This is a single source of truth on all metrics we have for query runs. The
@@ -345,10 +345,11 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                             arrayMap(x->toFloat64(x), ProfileEvents.Values))]
                     ),
                     arrayReduce('sumMapState', [(
-                        ['client_time', 'server_time'],
+                        ['client_time', 'server_time', 'memory_usage'],
                         arrayMap(x->if(x != 0., x, -0.), [
                             toFloat64(query_runs.time),
-                            toFloat64(query_duration_ms / 1000.)]))])
+                            toFloat64(query_duration_ms / 1000.),
+                            toFloat64(memory_usage)]))])
                 ]
             )) as metrics_tuple).1 metric_names,
         metrics_tuple.2 metric_values
@@ -514,16 +515,20 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     ;
 
 create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
-    select
-        toDecimal64(left, 3), toDecimal64(right, 3),
+    with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
-        left > right
-            ? '- ' || toString(toDecimal64(left / (right + 0.001), 3)) || 'x'
-            : '+ ' || toString(toDecimal64(right / (left + 0.001), 3)) || 'x',
-         toDecimal64(diff, 3), toDecimal64(stat_threshold, 3),
-         changed_fail, test, query_index, query_display_name
+        (left > right ? left / right : right / left) as times_change_float,
+        isFinite(times_change_float) as times_change_finite,
+        toDecimal64(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
+        times_change_finite
+            ? (left > right ? '-' : '+') || toString(times_change_decimal) || 'x'
+            : '--' as times_change_str
+    select
+        toDecimal64(left, 3), toDecimal64(right, 3), times_change_str,
+        toDecimal64(diff, 3), toDecimal64(stat_threshold, 3),
+        changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
@@ -603,11 +608,18 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
 
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
+    with
+        -- server_time is sometimes reported as zero (if it's less than 1 ms),
+        -- so we have to work around this to not get an error about conversion
+        -- of NaN to decimal.
+        (left > right ? left / right : right / left) as times_change_float,
+        isFinite(times_change_float) as times_change_finite,
+        toDecimal64(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
+        times_change_finite
+            ? (left > right ? '-' : '+') || toString(times_change_decimal) || 'x'
+            : '--' as times_change_str
     select changed_fail, unstable_fail,
-        toDecimal64(left, 3), toDecimal64(right, 3),
-        left > right
-            ? '- ' || toString(toDecimal64(left / (right + 0.001), 3)) || 'x'
-            : '+ ' || toString(toDecimal64(right / (left + 0.001), 3)) || 'x',
+        toDecimal64(left, 3), toDecimal64(right, 3), times_change_str,
         toDecimal64(isFinite(diff) ? diff : 0, 3),
         toDecimal64(isFinite(stat_threshold) ? stat_threshold : 0, 3),
         test, query_index, query_display_name

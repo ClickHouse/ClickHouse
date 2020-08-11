@@ -11,7 +11,7 @@ from termcolor import colored
 import sys
 
 COLORMAP = {
-    "success": colored("succes", 'green'),
+    "success": colored("success", 'green'),
     "failure": colored("failure", 'red'),
     "error": colored("error", 'red'),
     "pending": colored("pending", 'yellow'),
