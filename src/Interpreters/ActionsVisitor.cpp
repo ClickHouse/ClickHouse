@@ -549,7 +549,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
             NameSet joined_columns;
             joined_columns.insert(result_name);
-            data.addAction(ExpressionAction::arrayJoin(joined_columns, false, data.context));
+            data.addAction(ExpressionAction::arrayJoin(std::make_shared<ArrayJoinAction>(joined_columns, false, data.context)));
         }
 
         return;

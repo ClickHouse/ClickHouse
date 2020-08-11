@@ -143,11 +143,11 @@ ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_c
     return a;
 }
 
-ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context)
+ExpressionAction ExpressionAction::arrayJoin(ArrayJoinActionPtr array_join_)
 {
     ExpressionAction a;
     a.type = ARRAY_JOIN;
-    a.array_join = std::make_shared<ArrayJoinAction>(array_joined_columns, array_join_is_left, context);
+    a.array_join = std::move(array_join_);
     return a;
 }
 

@@ -173,18 +173,22 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     if (select_query)
     {
+        NamesAndTypesList array_join_columns;
+
         bool is_array_join_left;
-        ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
-        if (array_join_expression_list)
+        if (ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left))
         {
             getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
-            addMultipleArrayJoinAction(temp_actions, is_array_join_left);
+            if (auto array_join = addMultipleArrayJoinAction(temp_actions, is_array_join_left))
+                temp_actions->add(ExpressionAction::arrayJoin(array_join));
 
-            array_join_columns.clear();
             for (auto & column : temp_actions->getSampleBlock().getNamesAndTypesList())
                 if (syntax->array_join_result_to_source.count(column.name))
                     array_join_columns.emplace_back(column);
         }
+
+        columns_after_array_join = sourceColumns();
+        columns_after_array_join.insert(columns_after_array_join.end(), array_join_columns.begin(), array_join_columns.end());
 
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
@@ -192,6 +196,10 @@ void ExpressionAnalyzer::analyzeAggregation()
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             addJoinAction(temp_actions);
         }
+
+        columns_after_join = columns_after_array_join;
+        const auto & added_by_join = analyzedJoin().columnsAddedByJoin();
+        columns_after_join.insert(columns_after_join.end(), added_by_join.begin(), added_by_join.end());
     }
 
     has_aggregation = makeAggregateDescriptions(temp_actions);
@@ -281,16 +289,6 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 }
 
 
-NamesAndTypesList ExpressionAnalyzer::sourceWithJoinedColumns() const
-{
-    auto result_columns = sourceColumns();
-    result_columns.insert(result_columns.end(), array_join_columns.begin(), array_join_columns.end());
-    result_columns.insert(result_columns.end(),
-                        analyzedJoin().columnsAddedByJoin().begin(), analyzedJoin().columnsAddedByJoin().end());
-    return result_columns;
-}
-
-
 void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
@@ -374,7 +372,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
             }
             else
             {
-                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(sourceWithJoinedColumns(), context);
+                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(columns_after_join, context);
                 getRootActions(left_in_operand, true, temp_actions);
 
                 Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
@@ -455,7 +453,7 @@ const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() cons
 }
 
 /// "Big" ARRAY JOIN.
-void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool array_join_is_left) const
+ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool array_join_is_left) const
 {
     NameSet result_columns;
     for (const auto & result_source : syntax->array_join_result_to_source)
@@ -468,25 +466,27 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
         result_columns.insert(result_source.first);
     }
 
-    actions->add(ExpressionAction::arrayJoin(result_columns, array_join_is_left, context));
+    return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, context);
 }
 
-bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
+ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
     bool is_array_join_left;
     ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
     if (!array_join_expression_list)
-        return false;
+        return nullptr;
 
     ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
 
     getRootActions(array_join_expression_list, only_types, step.actions);
 
-    addMultipleArrayJoinAction(step.actions, is_array_join_left);
+    auto array_join =  addMultipleArrayJoinAction(step.actions, is_array_join_left);
+    for (const auto & column : array_join->columns)
+        step.required_output.emplace_back(column);
 
-    return true;
+    return array_join;
 }
 
 void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
@@ -496,7 +496,7 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr j
 
 bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
 {
-    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions);
     return true;
@@ -506,7 +506,7 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
 {
     JoinPtr table_join = makeTableJoin(*syntax->ast_join);
 
-    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
     addJoinAction(step.actions, table_join);
     return true;
@@ -720,7 +720,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     if (!select_query->where())
         return false;
 
-    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     auto where_column_name = select_query->where()->getColumnName();
     step.required_output.push_back(where_column_name);
@@ -744,7 +744,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     if (!select_query->groupBy())
         return false;
 
-    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     ASTs asts = select_query->groupBy()->children;
     for (const auto & ast : asts)
@@ -755,10 +755,9 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
 
     if (optimize_aggregation_in_order)
     {
-        auto all_columns = sourceWithJoinedColumns();
         for (auto & child : asts)
         {
-            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
+            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(columns_after_join, context));
             getRootActions(child, only_types, group_by_elements_actions.back());
         }
     }
@@ -770,7 +769,7 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 {
     const auto * select_query = getAggregatingQuery();
 
-    ExpressionActionsChain::Step & step = chain.lastStep(sourceColumns());
+    ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     for (const auto & desc : aggregate_descriptions)
         for (const auto & name : desc.argument_names)
@@ -844,10 +843,9 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
 
     if (optimize_read_in_order)
     {
-        auto all_columns = sourceWithJoinedColumns();
         for (auto & child : select_query->orderBy()->children)
         {
-            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
+            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(columns_after_join, context));
             getRootActions(child, only_types, order_by_elements_actions.back());
         }
     }
@@ -1093,7 +1091,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
-        query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
+        array_join = query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
+        if (array_join)
+        {
+            before_array_join = chain.getLastActions(true);
+            if (before_array_join)
+                chain.addStep();
+        }
 
         if (query_analyzer.hasTableJoin())
         {
