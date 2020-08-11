@@ -11,7 +11,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=False)
+clickhouse_node = cluster.add_instance('node1', config_dir="configs", with_mysql=False)
 
 
 @pytest.fixture(scope="module")
