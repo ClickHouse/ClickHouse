@@ -144,15 +144,15 @@ if __name__ == "__main__":
     for img_tag in args.docker_compose_images_tags:
         [image, tag] = img_tag.split(":")
         if image == "yandex/clickhouse-mysql-golang-client":
-            env_tags += "-e {}={}".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
         elif image == "yandex/clickhouse-mysql-java-client":
-            env_tags += "-e {}={}".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
+            env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
         elif image == "yandex/clickhouse-mysql-js-client":
-            env_tags += "-e {}={}".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
+            env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
         elif image == "yandex/clickhouse-mysql-php-client":
-            env_tags += "-e {}={}".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
+            env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
         elif image == "yandex/clickhouse-postgresql-java-client":
-            env_tags += "-e {}={}".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
+            env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
         else:
             raise Exception("Unknown image {}".format(image))
 
