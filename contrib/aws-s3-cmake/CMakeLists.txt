@@ -91,7 +91,6 @@ set_property(TARGET aws_s3_checksums PROPERTY C_STANDARD 99)
 
 add_library(aws_s3 ${S3_UNIFIED_SRC})
 
-target_compile_definitions(aws_s3 PUBLIC -DENABLE_CURL_CLIENT)
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MAJOR=1")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MINOR=7")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
