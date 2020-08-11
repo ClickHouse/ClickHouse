@@ -148,25 +148,19 @@ struct ConvertImpl
                     else
                         throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
-                else
-#if 0 /// Original line before big int support. TODO: cleanup
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-#else
+                else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
                 {
-                    if constexpr (is_big_int_v<ToFieldType> && std::is_same_v<FromFieldType, UInt8>)
+                    if constexpr (std::is_same_v<FromFieldType, UInt8>)
                         vec_to[i] = static_cast<ToFieldType>(static_cast<UInt16>(vec_from[i]));
-                    else if constexpr (std::is_same_v<ToFieldType, UInt8> && is_big_int_v<FromFieldType>)
+                    else if constexpr (std::is_same_v<ToFieldType, UInt8>)
                         vec_to[i] = static_cast<UInt16>(vec_from[i]);
-                    else if constexpr (std::is_same_v<ToFieldType, UInt128> && is_big_int_v<FromFieldType>)
-                    {
-                        // This should probably be removed after final big int integration
-                        static constexpr FromFieldType mask64 = (1ull << 63) + ((1ull << 63) - 1);
-                        vec_to[i] = UInt128(static_cast<UInt64>(vec_from[i] & mask64), static_cast<UInt64>((vec_from[i] >> 64) & mask64));
-                    }
+                    else if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
+                        throw Exception("Conversion between UUID and big ints is not implemented", ErrorCodes::NOT_IMPLEMENTED);
                     else
                         vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                 }
-#endif
+                else
+                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
             }
 
             block.getByPosition(result).column = std::move(col_to);

@@ -31,37 +31,35 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
+    using NativeU = typename NativeType<U>::Type;
+
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-#if 1
-        if constexpr ((std::is_same_v<T, UInt8> && is_big_int_v<U>) || (std::is_same_v<U, UInt8> && is_big_int_v<T>))
-            sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
-        else if constexpr (IsDecimalNumber<T> && is_big_int_v<U>)
-            sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
-        else if constexpr (IsDecimalNumber<U> && is_big_int_v<T>)
-            sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i]);
-        else if constexpr ((std::is_same_v<T, Decimal256> || is_big_int_v<T>) && std::is_same_v<U, UInt128>)
-            throw Exception("No conversion between old UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
-        else if constexpr (std::is_same_v<T, Decimal256>)
+        const auto & src = slice.data[i];
+        auto & dst = sink.elements[sink.current_offset];
+
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
-            if constexpr (std::is_same_v<U, UInt8>)
-                sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i].value));
-            else if constexpr (IsDecimalNumber<U>)
-                sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i].value);
+            if constexpr (std::is_same_v<T, UInt8> || std::is_same_v<U, UInt8>)
+            {
+                if constexpr (IsDecimalNumber<T>)
+                    dst = static_cast<NativeU>(static_cast<UInt16>(src.value));
+                else
+                    dst = static_cast<NativeU>(static_cast<UInt16>(src));
+            }
+            else if constexpr (std::is_same_v<U, UInt128>)
+            {
+                throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if constexpr (IsDecimalNumber<T>)
+                dst = static_cast<NativeU>(src.value);
             else
-                sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
+                dst = static_cast<NativeU>(src);
         }
-        else if constexpr (std::is_floating_point_v<T> && std::is_same_v<U, Decimal256>)
-            sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int64>(slice.data[i]));
-        else if constexpr (std::is_same_v<T, UInt8> && std::is_same_v<U, Decimal256>)
-            sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
         else
-            sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
-#else
-        /// It's an original line before big int support. TODO: simplify code above
-        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
-#endif
+            dst = static_cast<NativeU>(src);
+
         ++sink.current_offset;
     }
 }
