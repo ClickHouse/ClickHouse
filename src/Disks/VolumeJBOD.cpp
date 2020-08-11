@@ -93,8 +93,10 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 
 bool VolumeJBOD::areMergesAllowed() const
 {
-    return (are_merges_allowed_from_query && *are_merges_allowed_from_query && are_merges_allowed_in_config)
-        || (!are_merges_allowed_from_query && are_merges_allowed_in_config);
+    if (are_merges_allowed_from_query)
+        return *are_merges_allowed_from_query;
+    else
+        return are_merges_allowed_in_config;
 }
 
 void VolumeJBOD::setAllowMergesFromQuery(bool allow)

@@ -136,16 +136,16 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
             {
                 ASTPtr ast;
-                if (ParserStringLiteral{}.parse(pos, ast, expected))
-                    storage_policy_str = ast->as<ASTLiteral &>().value.safeGet<String>();
+                if (ParserIdentifier{}.parse(pos, ast, expected))
+                    storage_policy_str = ast->as<ASTIdentifier &>().name;
                 else
                     return false;
 
                 if (!ParserToken{TokenType::Dot}.ignore(pos, expected))
                     return false;
 
-                if (ParserStringLiteral{}.parse(pos, ast, expected))
-                    volume_str = ast->as<ASTLiteral &>().value.safeGet<String>();
+                if (ParserIdentifier{}.parse(pos, ast, expected))
+                    volume_str = ast->as<ASTIdentifier &>().name;
                 else
                     return false;
             }

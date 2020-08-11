@@ -87,6 +87,24 @@ def test_system_tables(start_cluster):
             "move_factor": 0.1,
         },
         {
+            "policy_name": "small_jbod_with_external_no_merges",
+            "volume_name": "main",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "volume_type": "JBOD",
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "small_jbod_with_external_no_merges",
+            "volume_name": "external",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "volume_type": "JBOD",
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
             "policy_name": "one_more_small_jbod_with_external",
             "volume_name": "m",
             "volume_priority": "1",
@@ -292,6 +310,9 @@ def get_random_string(length):
 
 def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
+
+def get_used_parts_for_table(node, table_name):
+    return node.query("SELECT name FROM system.parts WHERE table = '{}' AND active = 1 ORDER BY modification_time".format(table_name)).splitlines()
 
 def test_no_warning_about_zero_max_data_part_size(start_cluster):
     def get_log(node):
@@ -1200,7 +1221,7 @@ def test_move_while_merge(start_cluster):
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
 
-        parts = node1.query("SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        parts = get_used_parts_for_table(node1, name)
         assert len(parts) == 2
 
         def optimize():
@@ -1280,3 +1301,72 @@ def test_move_across_policies_does_not_work(start_cluster):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
         node1.query("DROP TABLE IF EXISTS {name}2".format(name=name))
+
+
+def _insert_merge_execute(name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
+    try:
+        node1.restart_clickhouse(kill=True)
+
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY tuple()
+            TTL now()-1 TO VOLUME 'external'
+            SETTINGS storage_policy='{policy}'
+        """.format(name=name, policy=policy))
+
+        for i in range(parts):
+            node1.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+
+        disks = get_used_disks_for_table(node1, name)
+        assert set(disks) == {"external"}
+
+        node1.query("""OPTIMIZE TABLE {name}""".format(name=name))
+
+        parts = get_used_parts_for_table(node1, name)
+        assert len(parts) == parts_before_cmds
+
+        for cmd in cmds:
+            node1.query(cmd)
+
+        node1.query("""OPTIMIZE TABLE {name}""".format(name=name))
+
+        parts = get_used_parts_for_table(node1, name)
+        assert len(parts) == parts_after_cmds
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
+    name = "test_no_merges_in_configuration_allow_from_query_without_reload"
+    _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
+            "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external"
+        ], 2, 1)
+
+
+def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
+    name = "test_no_merges_in_configuration_allow_from_query_with_reload"
+    _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
+            "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external",
+            "SYSTEM RELOAD CONFIG"
+        ], 2, 1)
+
+
+def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):
+    name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
+    _insert_merge_execute(name, "small_jbod_with_external", 2, [
+            "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
+            "INSERT INTO {name} VALUES (2)".format(name=name)
+        ], 1, 2)
+
+
+def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_cluster):
+    name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
+    _insert_merge_execute(name, "small_jbod_with_external", 2, [
+            "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
+            "INSERT INTO {name} VALUES (2)".format(name=name),
+            "SYSTEM RELOAD CONFIG"
+        ], 1, 2)
