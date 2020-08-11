@@ -43,7 +43,7 @@ Pipes StorageMaterializeMySQL::read(
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
-    Block nested_header = nested_metadata->getSampleBlockNonMaterialized();
+    Block nested_header = nested_metadata->getSampleBlock();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
     ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
 
