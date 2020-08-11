@@ -75,6 +75,10 @@ public:
 
     void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
     void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
+
+private:
+
+    bool prefix_written = false;
 };
 }
 
