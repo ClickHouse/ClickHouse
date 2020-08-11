@@ -9,25 +9,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Result, typename A, typename B>
-inline Result applySpecial(A /*a*/, B /*b*/)
-{
-    throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 template <typename A, typename B>
 struct DivideFloatingImpl
 {
     using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
     static const constexpr bool allow_decimal = true;
     static const constexpr bool allow_fixed_string = false;
-    static constexpr bool is_special = is_big_int_v<A> || is_big_int_v<B>;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
-        if constexpr (is_special)
-            return applySpecial<Result>(a, b);
+        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+            throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
             return static_cast<Result>(a) / b;
     }

@@ -9,25 +9,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Result, typename A, typename B>
-inline Result applySpecial([[maybe_unused]] A a, [[maybe_unused]] B b)
-{
-    // Big integers are not in 2p representation, what should the result be?
-    throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 template <typename A, typename B>
 struct BitRotateLeftImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
-    static constexpr bool is_special = is_big_int_v<ResultType>;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
-        if constexpr (is_special)
-            return applySpecial<Result, A, B>(a, b);
+        if constexpr (is_big_int_v<ResultType>)
+            throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
         else
             return (static_cast<Result>(a) << static_cast<Result>(b))
                 | (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));

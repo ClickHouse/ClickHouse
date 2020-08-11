@@ -5,21 +5,6 @@
 namespace DB
 {
 
-template <typename Result, typename A, typename B>
-inline Result applyBigInt([[maybe_unused]] A a, [[maybe_unused]] B b)
-{
-    if constexpr (std::is_floating_point_v<A>)
-        return a * static_cast<A>(b);
-    else if constexpr (std::is_floating_point_v<B>)
-        return static_cast<B>(a) * b;
-    else if constexpr (std::is_same_v<A, UInt8>)
-        return static_cast<Result>(static_cast<UInt16>(a)) * static_cast<Result>(b);
-    else if constexpr (std::is_same_v<B, UInt8>)
-        return static_cast<Result>(a) * static_cast<UInt16>(b);
-    else
-        return static_cast<Result>(a) * static_cast<Result>(b);
-}
-
 template <typename A, typename B>
 struct MultiplyImpl
 {
@@ -31,7 +16,12 @@ struct MultiplyImpl
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-            return applyBigInt<Result, A, B>(a, b);
+        {
+            using CastA = std::conditional_t<std::is_same_v<A, UInt8>, uint8_t, std::conditional_t<std::is_floating_point_v<B>, B, A>>;
+            using CastB = std::conditional_t<std::is_same_v<B, UInt8>, uint8_t, std::conditional_t<std::is_floating_point_v<A>, A, B>>;
+
+            return static_cast<Result>(static_cast<CastA>(a)) * static_cast<Result>(static_cast<CastB>(b));
+        }
         else
             return static_cast<Result>(a) * b;
     }

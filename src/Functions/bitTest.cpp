@@ -11,26 +11,18 @@ namespace ErrorCodes
 }
 
 template <typename A, typename B>
-inline UInt8 applySpecial([[maybe_unused]] A a, [[maybe_unused]] B b)
-{
-    if constexpr (!std::is_same_v<B, UInt32>)
-        throw Exception("Bit test for big integers is implemented only with UInt32 as second argument", ErrorCodes::NOT_IMPLEMENTED);
-    else
-        return bit_test(a, b);
-}
-
-template <typename A, typename B>
 struct BitTestImpl
 {
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
-    static constexpr bool is_special = is_big_int_v<A> || is_big_int_v<B>;
 
     template <typename Result = ResultType>
     NO_SANITIZE_UNDEFINED static inline Result apply(A a, B b)
     {
-        if constexpr (is_special)
-            return applySpecial(a, b);
+        if constexpr (is_big_int_v<B>)
+            throw Exception("bitTest is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+        else if constexpr (is_big_int_v<A>)
+            return bit_test(a, static_cast<UInt32>(b));
         else
             return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
     }
