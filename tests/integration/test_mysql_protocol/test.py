@@ -11,10 +11,11 @@ import pymysql.connections
 
 from docker.models.containers import Container
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=["configs/log_conf.xml", "configs/ssl_conf.xml", "configs/mysql.xml"], user_configs=["configs/users.xml"], env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
@@ -33,7 +34,7 @@ def server_address():
 
 @pytest.fixture(scope='module')
 def mysql_client():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'mysql', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_client.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysql1_1')
 
@@ -59,28 +60,28 @@ def mysql_server(mysql_client):
 
 @pytest.fixture(scope='module')
 def golang_container():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'golang', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_golang_client.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_golang1_1')
 
 
 @pytest.fixture(scope='module')
 def php_container():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'php-mysqlnd', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_php_client.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_php1_1')
 
 
 @pytest.fixture(scope='module')
 def nodejs_container():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'mysqljs', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_js_client.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_mysqljs1_1')
 
 
 @pytest.fixture(scope='module')
 def java_container():
-    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'java', 'docker_compose.yml')
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_java_client.yml')
     subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java1_1')
 
