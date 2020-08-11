@@ -9,7 +9,6 @@ CFLAGS(
 PEERDIR(
     clickhouse/base/daemon
     clickhouse/base/loggers
-    clickhouse/programs/client/readpassphrase
     clickhouse/src
 )
 
