@@ -654,7 +654,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-The size of blocks to form for insertion into a table.
+The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
 But when using clickhouse-client, the client parses the data itself, and the ‘max\_insert\_block\_size’ setting on the server doesn’t affect the size of the inserted blocks.
