@@ -105,8 +105,6 @@ public:
 private:
     bool tryReserve(UInt64 bytes);
 
-    std::unique_ptr<Executor> getExecutor() override;
-
 private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
