@@ -44,9 +44,12 @@ void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
     writeCString("]\n", out);
 }
 
-void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
+void JSONCompactEachRowRowOutputFormat::writeBeforeTotals()
 {
     writeChar('\n', out);
+}
+void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
+{
     size_t num_columns = columns.size();
     writeChar('[', out);
     for (size_t i = 0; i < num_columns; ++i)
