@@ -168,6 +168,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
+    if (create.storage->engine->name == "MaterializeMySQL" && !context.getSettingsRef().allow_experimental_database_materialize_mysql && !internal)
+    {
+        throw Exception("MaterializeMySQL is an experimental database engine. "
+                        "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    }
+
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", context);
 
     if (create.uuid != UUIDHelpers::Nil)

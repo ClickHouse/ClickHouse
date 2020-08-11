@@ -11,7 +11,6 @@ NO_COMPILER_WARNINGS()
 SRCS(
     AddingDefaultBlockOutputStream.cpp
     AddingDefaultsBlockInputStream.cpp
-    AddingVersionsBlockOutputStream.cpp
     AsynchronousBlockInputStream.cpp
     BlockIO.cpp
     BlockStreamProfileInfo.cpp
