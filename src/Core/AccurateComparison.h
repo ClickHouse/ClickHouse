@@ -35,10 +35,7 @@ using DB::UInt64;
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
 constexpr bool is_safe_conversion = (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
-    || (is_integral_or_big_v<A> && is_integral_or_big_v<B> && !(is_signed_v<A> ^ is_signed_v<B>))
-    || (std::is_same_v<A, DB::Int128> && std::is_same_v<B, DB::Int128>)
-    || (is_integral_or_big_v<A> && std::is_same_v<B, DB::Int128>)
-    || (std::is_same_v<A, DB::Int128> && is_integral_or_big_v<B>);
+    || (is_integer_v<A> && is_integer_v<B> && !(is_signed_v<A> ^ is_signed_v<B>));
 template <typename A, typename B>
 using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>, bool>;
 template <typename A, typename B>
@@ -48,7 +45,7 @@ using bool_if_not_safe_conversion = std::enable_if_t<!is_safe_conversion<A, B>, 
 /// Case 2. Are params IntXX and UIntYY ?
 template <typename TInt, typename TUInt>
 constexpr bool is_any_int_vs_uint
-    = is_integral_or_big_v<TInt> && is_integral_or_big_v<TUInt> && is_signed_v<TInt> && is_unsigned_v<TUInt>;
+    = is_integer_v<TInt> && is_integer_v<TUInt> && is_signed_v<TInt> && is_unsigned_v<TUInt>;
 
 
 // Case 2a. Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
@@ -132,7 +129,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 // Case 3a. Comparison via conversion to double.
 template <typename TAInt, typename TAFloat>
 using bool_if_double_can_be_used
-    = std::enable_if_t<is_integral_or_big_v<TAInt> && (sizeof(TAInt) <= 4) && std::is_floating_point_v<TAFloat>, bool>;
+    = std::enable_if_t<is_integer_v<TAInt> && (sizeof(TAInt) <= 4) && std::is_floating_point_v<TAFloat>, bool>;
 
 template <typename TAInt, typename TAFloat>
 inline bool_if_double_can_be_used<TAInt, TAFloat> greaterOpTmpl(TAInt a, TAFloat b)
@@ -405,8 +402,8 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 {
-    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
+    static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return static_cast<DB::Float64>(i) > f;
@@ -417,8 +414,8 @@ inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Float64 f, DB::Int128 i)
 {
-    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
+    static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return f > static_cast<DB::Float64>(i);

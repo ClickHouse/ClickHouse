@@ -82,7 +82,7 @@ struct DivideIntegralImpl
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
         else if constexpr (is_signed_v<A> || is_signed_v<B>)
         {
-            if constexpr (is_integral_or_big_v<A> && is_integral_or_big_v<B>)
+            if constexpr (is_integer_v<A> && is_integer_v<B>)
             {
                 return checkedDivision(make_signed_t<A>(a),
                     sizeof(A) > sizeof(B) ? make_signed_t<A>(b) : make_signed_t<B>(b));

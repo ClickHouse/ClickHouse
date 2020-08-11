@@ -64,7 +64,7 @@ using Int8 = ::Int8;
 using Int16 = ::Int16;
 using Int32 = ::Int32;
 using Int64 = ::Int64;
-using Int128 = __int128;
+using Int128 = ::Int128;
 using bInt256 = ::bInt256;
 
 using Float32 = float;

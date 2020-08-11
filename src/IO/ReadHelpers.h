@@ -832,11 +832,11 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_or_big_v<T>, void>
+inline std::enable_if_t<is_integer_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
-inline std::enable_if_t<is_integral_or_big_v<T>, bool>
+inline std::enable_if_t<is_integer_v<T>, bool>
 tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
 
 template <typename T>
@@ -1064,11 +1064,11 @@ inline bool tryParse(T & res, const char * data, size_t size)
 }
 
 template <typename T>
-inline std::enable_if_t<!is_integral_or_big_v<T>, void>
+inline std::enable_if_t<!is_integer_v<T>, void>
 readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 template <typename T>
-inline std::enable_if_t<is_integral_or_big_v<T>, void>
+inline std::enable_if_t<is_integer_v<T>, void>
 readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);

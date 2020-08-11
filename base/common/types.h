@@ -23,6 +23,8 @@ using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
 
+using Int128 = __int128;
+
 /// We have to use 127 and 255 bit integers to safe a bit for a sign serialization
 //using bInt256 = boost::multiprecision::int256_t;
 using bInt256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
@@ -41,6 +43,7 @@ struct is_signed
     static constexpr bool value = std::is_signed_v<T>;
 };
 
+template <> struct is_signed<Int128> { static constexpr bool value = true; };
 template <> struct is_signed<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
@@ -58,17 +61,19 @@ template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
 
+/// TODO: is_integral includes char, char8_t and wchar_t.
 template <typename T>
-struct is_integral_or_big
+struct is_integer
 {
     static constexpr bool value = std::is_integral_v<T>;
 };
 
-template <> struct is_integral_or_big<bUInt256> { static constexpr bool value = true; };
-template <> struct is_integral_or_big<bInt256> { static constexpr bool value = true; };
+template <> struct is_integer<Int128> { static constexpr bool value = true; };
+template <> struct is_integer<bInt256> { static constexpr bool value = true; };
+template <> struct is_integer<bUInt256> { static constexpr bool value = true; };
 
 template <typename T>
-inline constexpr bool is_integral_or_big_v = is_integral_or_big<T>::value;
+inline constexpr bool is_integer_v = is_integer<T>::value;
 
 
 template <typename T>

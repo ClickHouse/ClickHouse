@@ -814,7 +814,7 @@ inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinar
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_or_big_v<T> && !is_big_int_v<T>, void>
+inline std::enable_if_t<is_integer_v<T> && !is_big_int_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -843,7 +843,7 @@ String decimalFractional(const T & x, UInt32 scale)
 {
     if constexpr (std::is_same_v<T, bInt256>)
     {
-        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+        static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
 
         if (x <= std::numeric_limits<UInt32>::max())
             return decimalFractional(static_cast<UInt32>(x), scale);

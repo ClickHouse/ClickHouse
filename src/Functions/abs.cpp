@@ -19,9 +19,9 @@ struct AbsImpl
         else if constexpr (is_big_int_v<A>)
             // from boost/multiprecision/number.hpp
             return static_cast<ResultType>(abs(a));
-        else if constexpr (is_integral_or_big_v<A> && is_signed_v<A>)
+        else if constexpr (is_integer_v<A> && is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
-        else if constexpr (is_integral_or_big_v<A> && is_unsigned_v<A>)
+        else if constexpr (is_integer_v<A> && is_unsigned_v<A>)
             return static_cast<ResultType>(a);
         else if constexpr (std::is_floating_point_v<A>)
             return static_cast<ResultType>(std::abs(a));
