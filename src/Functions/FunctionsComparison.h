@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
@@ -884,11 +885,18 @@ private:
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
             throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
 
+        auto & res = block.getByPosition(result);
+        if (res.type->onlyNull())
+        {
+            res.column = res.type->createColumnConstWithDefaultValue(input_rows_count);
+            return;
+        }
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
-        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
+        const auto * x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
+        const auto * y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
 
         Columns x_columns;
         Columns y_columns;
@@ -1135,17 +1143,22 @@ public:
                 FunctionComparison<Op, Name>::create(context)));
 
             bool has_nullable = false;
+            bool has_null = false;
 
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                has_nullable = has_nullable || adaptor.build(args)->getReturnType()->isNullable();
+                auto element_type = adaptor.build(args)->getReturnType();
+                has_nullable = has_nullable || element_type->isNullable();
+                has_null = has_null || element_type->onlyNull();
             }
 
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
+            if (has_null)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             if (has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
