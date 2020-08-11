@@ -98,7 +98,7 @@ public:
     bool is_function_compiled = false;
 
     /// For ARRAY JOIN
-    std::shared_ptr<ArrayJoinAction> array_join;
+    ArrayJoinActionPtr array_join;
 
     /// For JOIN
     std::shared_ptr<const TableJoin> table_join;
@@ -117,7 +117,7 @@ public:
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
-    static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
+    static ExpressionAction arrayJoin(ArrayJoinActionPtr array_join_);
     static ExpressionAction ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
