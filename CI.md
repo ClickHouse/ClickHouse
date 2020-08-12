@@ -6,7 +6,7 @@
     - Checks if the PR can be successfully merged with the master branch.
     - Not present in the checks list if there are no conflicts.
     - Status if the conflicts are present: `Cannot fetch mergecommit`.
-1. [Docs check](#docs-check)
+1. [Docs check](#-docs-check)
     - Tries to build the ClickHouse's documentation website.
     - Checks the inner cross-links status.
 2. Description check
@@ -18,25 +18,28 @@
 4. Marker check
     - Checks that all CI's check have been initiated.
     - Status on success: `All checks were started`.
-5. [Style check](#style-check)
+5. [Style check](#-style-check)
     - Checks the code style according to `utils/check-style/check-style` binary.
     - Status on success: `Style check passed`.
-6. [PVS check](#pvs-check)
+6. [PVS check](#-pvs-check)
     - Static analysis tool, checks code with PVS-studio.
-7. [Fast test](#fast-test)
+7. [Fast test](#-fast-test)
     - First executable check.
     - Builds a subset of ClickHouse's code (without embedded compiler, ZooKeeper, etc.).
     - Runs a subset of tests (functional, stateless, stateful, and integration ones).
     - Blocks the start of Build check on errors.
     - Intended to detect some errors and limit the CI run time on broken commits.
-    - Success status: `fail: 0, passed: 1944, skipped: 229` (may differ).
-8. Build check
-    - Build ClickHouse with various compilers (gcc-9, clang-10) and various sanitizers: undefined (UBSan), 
-    address (ASan), memory (MSan), and thread (TSan).
+    - Status on success: `fail: 0, passed: 1944, skipped: 229` (may differ).
+8. [Build check](#-build-check)
+    - Builds ClickHouse in various configurations for use in further steps.
+    - Uses compilers `gcc-9` and `clang-10`.
+    - Uses build modes `Debug` and `RelWithDebInfo`.
+    - Uses sanitizers: `undefined` (UBSan), `address` (Asan), `memory` (MSan), and `thread` (TSan).
+    - Status on success: `20/20 builds are OK` (may vary).
 9. Special build check
     - Checks the code with `clang-tidy`.
 10. Compatibility check
-    - Checks that `clickhouse` binary runs on distros with old libc versions.
+    - Checks that `clickhouse` binary runs on distributions with old libc versions.
 11. AST fuzzer
 12. Functional stateful tests
 13. Functional stateless tests
@@ -48,19 +51,19 @@
     - Intended to measure the queries' relative and absolute performance changes.
     - The longest check: takes about 5 hours to run.
 
-### <a id="docs-check"></a> Docs check
+### Docs check
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check.html)
 - `docs_output.txt` contains the building log. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check/docs_output.txt)
-### <a id="style-check"></a> Style check
+### Style check
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
 - `output.txt` contains the check resulting errors (invalid tabulation etc), blank page means no errors. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt).
 
-### <a id="pvs-check"></a> PVS check
+### PVS check
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/pvs_check.html)
 - `test_run.txt.out.log` contains the building and analyzing log file. It includes only parsing or not-found errors.
 - `HTML report` contains the analysis results. For its description visit PVS's [official site](https://www.viva64.com/en/m/0036/#ID14E9A2B2CD).
 
-### <a id="fast-test"></a> Fast test
+### Fast test
 [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/fast_test.html)
 
 #### Status page files
@@ -81,6 +84,34 @@
 - *Test name* contains the name of the test (without the path e.g. all types of tests will be stripped to the name).
 - *Test status* -- one of _Skipped_, _Success_, or _Fail_.
 - *Test time, sec.* -- empty on this test.
+
+### Build check
+
+[Status page example](https://clickhouse-builds.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/clickhouse_build_check/report.html).
+
+#### Status page columns:
+
+- **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
+- **Build type**: `Debug` or `RelWithDebInfo` (cmake).
+- **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
+- **Bundled**: ???
+- **Splitted** ???
+- **Status**: `success` or `fail`
+- **Build log**: link to the building and files copying log, useful when build failed.
+- **Build time**.
+- **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
+    - `clickhouse-client_XXX_all.deb`
+    - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
+    - `clickhouse-common-staticXXX_amd64.deb`
+    - `clickhouse-server_XXX_all.deb`
+    - `clickhouse-test_XXX_all.deb`
+    - `clickhouse_XXX_amd64.buildinfo`
+    - `clickhouse_XXX_amd64.changes`
+    - `clickhouse`: Main built binary.
+    - `clickhouse-odbc-bridge`
+    - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
+    - `shared_build.tgz`: build with shared libraries.
+    - `performance.tgz`: Special ??? build for performance tests.
 
 ## Where the tests are run
 
