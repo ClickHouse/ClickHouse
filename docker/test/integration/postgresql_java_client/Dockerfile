@@ -1,3 +1,6 @@
+# docker build -t yandex/clickhouse-postgresql-java-client .
+# PostgreSQL Java client docker container
+
 FROM ubuntu:18.04
 
 RUN apt-get update && \
