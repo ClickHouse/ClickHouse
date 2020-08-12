@@ -1205,4 +1205,10 @@ How to prepare the benchmark report:
 
 `grep clk log.txt | awk '{ if ($3 == "ms") { print $2 / 1000; } else if ($3 == "sec") { print $2 } else { print } }'`
 
-
+```
+awk '{
+    if (i % 3 == 0) { a = $1 }
+    else if (i % 3 == 1) { b = $1 }
+    else if (i % 3 == 2) { c = $1; print "[" a ", " b ", " c "]," };
+    ++i; }' < tmp.txt
+```
