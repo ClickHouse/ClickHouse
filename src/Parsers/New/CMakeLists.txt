@@ -1,7 +1,10 @@
 set (SRCS
     AST/ColumnExpr.cpp
+    AST/CreateDatabaseQuery.cpp
+    AST/CreateTableQuery.cpp
     AST/DDLQuery.cpp
     AST/DropQuery.cpp
+    AST/EngineExpr.cpp
     AST/Identifier.cpp
     AST/JoinExpr.cpp
     AST/LimitExpr.cpp
@@ -13,6 +16,7 @@ set (SRCS
     AST/SelectUnionQuery.cpp
     AST/SetQuery.cpp
     AST/SettingExpr.cpp
+    AST/TableElementExpr.cpp
     AST/TableExpr.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp

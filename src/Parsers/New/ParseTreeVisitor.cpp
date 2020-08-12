@@ -1,11 +1,16 @@
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/New/AST/CreateDatabaseQuery.h>
+#include <Parsers/New/AST/CreateTableQuery.h>
 #include <Parsers/New/AST/DDLQuery.h>
 #include <Parsers/New/AST/DropQuery.h>
+#include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/SetQuery.h>
+
+#include <support/Any.h>
 
 
 namespace DB
@@ -58,23 +63,15 @@ antlrcpp::Any ParseTreeVisitor::visitDistributedStmt(ClickHouseParser::Distribut
 {
     PtrTo<DDLQuery> query;
 
-    if (ctx->dropStmt())
+    if (ctx->createDatabaseStmt())
+        query = ctx->createDatabaseStmt()->accept(this).as<PtrTo<CreateDatabaseQuery>>();
+    else if (ctx->dropStmt())
         query = ctx->dropStmt()->accept(this).as<PtrTo<DropQuery>>();
 
     if (ctx->CLUSTER())
         query->setOnCluster(ctx->identifier()->accept(this));
 
     return query;
-}
-
-antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
-{
-    return DropQuery::createDropDatabase(!!ctx->EXISTS(), ctx->databaseIdentifier()->accept(this));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
-{
-    return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), ctx->tableIdentifier()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
@@ -100,6 +97,29 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 antlrcpp::Any ParseTreeVisitor::visitSetStmt(ClickHouseParser::SetStmtContext *ctx)
 {
     return std::make_shared<SetQuery>(ctx->settingExpr()->accept(this).as<PtrTo<SettingExpr>>());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx)
+{
+    return std::make_shared<CreateDatabaseQuery>(
+        !!ctx->IF(),
+        ctx->databaseIdentifier()->accept(this),
+        ctx->engineExpr() ? ctx->engineExpr()->accept(this).as<PtrTo<EngineExpr>>() : nullptr);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx)
+{
+    return std::make_shared<CreateTableQuery>(!!ctx->IF(), ctx->tableIdentifier()->accept(this), ctx->schemaClause()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
+{
+    return DropQuery::createDropDatabase(!!ctx->EXISTS(), ctx->databaseIdentifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
+{
+    return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), ctx->tableIdentifier()->accept(this));
 }
 
 }

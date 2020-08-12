@@ -28,6 +28,36 @@ public:
 
     virtual antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitSchemaAsSubqueryClause(ClickHouseParser::SchemaAsSubqueryClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitSchemaAsTableClause(ClickHouseParser::SchemaAsTableClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitEngineClause(ClickHouseParser::EngineClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitPartitionByClause(ClickHouseParser::PartitionByClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitPrimaryKeyClause(ClickHouseParser::PrimaryKeyClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitSampleByClause(ClickHouseParser::SampleByClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitTtlClause(ClickHouseParser::TtlClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitEngineExpr(ClickHouseParser::EngineExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitTableElementColumn(ClickHouseParser::TableElementColumnContext *context) = 0;
+
+    virtual antlrcpp::Any visitTableElementPropertyExpr(ClickHouseParser::TableElementPropertyExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *context) = 0;
+
     virtual antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *context) = 0;
@@ -60,8 +90,6 @@ public:
 
     virtual antlrcpp::Any visitSettingsClause(ClickHouseParser::SettingsClauseContext *context) = 0;
 
-    virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
-
     virtual antlrcpp::Any visitJoinExprOp(ClickHouseParser::JoinExprOpContext *context) = 0;
 
     virtual antlrcpp::Any visitJoinExprTable(ClickHouseParser::JoinExprTableContext *context) = 0;
@@ -91,6 +119,8 @@ public:
     virtual antlrcpp::Any visitSettingExprList(ClickHouseParser::SettingExprListContext *context) = 0;
 
     virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext *context) = 0;
 

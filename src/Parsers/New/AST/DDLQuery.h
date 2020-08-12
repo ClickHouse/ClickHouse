@@ -14,7 +14,7 @@ class DDLQuery : public Query
         // ON CLUSTER identifier always goes as the last child.
         void setOnCluster(PtrTo<Identifier> identifier);
 
-    private:
+    protected:
         PtrTo<Identifier> cluster;
 };
 

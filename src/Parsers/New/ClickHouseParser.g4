@@ -19,10 +19,53 @@ query
 // DDL statement
 
 distributedStmt:
-    ( dropStmt
+    ( createDatabaseStmt
+    | createTableStmt
+    | dropStmt
     )
     (ON CLUSTER identifier)?
     ;
+
+// CREATE statement
+
+createDatabaseStmt: CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?;
+createTableStmt: CREATE TABLE (IF NOT EXISTS)? tableIdentifier schemaClause;
+
+/* FIXME: if not a backward-compatibility it could look like:
+ *
+ *    createTableStmt: CREATE TABLE (IF NOT EXISTS)? tableIdentifier schemaClause engineClause;
+ *    schemaClause: LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN | AS tableExpr;
+ *    engineClause: … ; // same
+ *
+ */
+schemaClause
+    : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN engineClause  # SchemaDescriptionClause
+    | engineClause? AS selectUnionStmt                                       # SchemaAsSubqueryClause
+    | AS tableIdentifier engineClause?                                       # SchemaAsTableClause
+    | AS identifier LPAREN tableArgList? RPAREN                              # SchemaAsFunctionClause
+    ;
+engineClause:
+    engineExpr
+    orderByClause?
+    partitionByClause?
+    primaryKeyClause?
+    sampleByClause?
+    ttlClause?
+    settingsClause?
+    ;
+partitionByClause: PARTITION BY columnExpr;
+primaryKeyClause: PRIMARY KEY columnExpr;
+sampleByClause: SAMPLE BY columnExpr;
+ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
+
+engineExpr: ENGINE EQ_SINGLE? identifier (LPAREN tableArgList? RPAREN)?;
+tableElementExpr
+    : identifier identifier tableElementPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?  # TableElementColumn
+    // TODO: INDEX
+    // TODO: CONSTRAINT
+    ;
+tableElementPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
+ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
 
 // DROP statement
 
@@ -63,10 +106,6 @@ limitByClause: LIMIT limitExpr BY columnExprList;
 limitClause: LIMIT limitExpr;
 settingsClause: SETTINGS settingExprList;
 
-// SET statement
-
-setStmt: SET settingExpr;
-
 joinExpr
     : tableExpr                                                           # JoinExprTable
     | LPAREN joinExpr RPAREN                                              # JoinExprParens
@@ -94,6 +133,10 @@ orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE
 ratioExpr: NUMBER_LITERAL (SLASH NUMBER_LITERAL); // TODO: not complete!
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE literal;
+
+// SET statement
+
+setStmt: SET settingExpr;
 
 // Columns
 
@@ -152,15 +195,14 @@ databaseIdentifier: identifier;
 
 // Basics
 
-literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL;
-keyword // do not use directly in grammar - this rule allows to use keywords as identifiers. Except NULL_SQL.
-    : ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER
-    | COLLATE | CROSS | DAY | DATABASE | DESCENDING | DISTINCT | DROP | ELSE | END | EXISTS | EXTRACT | FINAL
-    | FIRST | FORMAT | FROM | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL
-    | INTO | IS | JOIN | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MINUTE | MONTH | NOT | NULLS | OFFSET
-    | ON | OR | ORDER | OUTER | OUTFILE | PREWHERE | QUARTER | RIGHT | SAMPLE | SECOND | SELECT | SEMI | SET
-    | SETTINGS | TABLE | TEMPORARY | THEN | TOTALS | TRAILING | TRIM | UNION | USING | WEEK | WHEN | WHERE
-    | WITH | YEAR
+literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL; // TODO: don't forget literal functions, like hostname(), toTypeName(), etc.
+keyword  // except NULL_SQL, SELECT
+    : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER | COLLATE | CREATE
+    | CROSS | DAY | DATABASE | DEFAULT | DELETE | DESCENDING | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL
+    | FIRST | FORMAT | FROM | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
+    | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OR | ORDER | OUTER | OUTFILE
+    | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | TABLE | TEMPORARY | THEN | TOTALS
+    | TRAILING | TRIM | TO | TTL | UNION | USING | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

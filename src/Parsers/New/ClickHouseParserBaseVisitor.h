@@ -33,6 +33,66 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSchemaAsSubqueryClause(ClickHouseParser::SchemaAsSubqueryClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSchemaAsTableClause(ClickHouseParser::SchemaAsTableClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitEngineClause(ClickHouseParser::EngineClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitPartitionByClause(ClickHouseParser::PartitionByClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitPrimaryKeyClause(ClickHouseParser::PrimaryKeyClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSampleByClause(ClickHouseParser::SampleByClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTtlClause(ClickHouseParser::TtlClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitEngineExpr(ClickHouseParser::EngineExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableElementColumn(ClickHouseParser::TableElementColumnContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTableElementPropertyExpr(ClickHouseParser::TableElementPropertyExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -97,10 +157,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual antlrcpp::Any visitJoinExprOp(ClickHouseParser::JoinExprOpContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -158,6 +214,10 @@ public:
   }
 
   virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
