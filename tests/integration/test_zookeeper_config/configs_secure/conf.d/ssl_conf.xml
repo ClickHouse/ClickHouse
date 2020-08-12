@@ -1,8 +1,8 @@
 <yandex>
     <openSSL>
         <client>
-            <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
+            <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
