@@ -33,7 +33,7 @@
     - Build ClickHouse with various compilers (gcc-9, clang-10) and various sanitizers:
     undfined (UBSan), address (ASan), memory (MSan), and thread (TSan).
 9. Special build check
-    - ???
+    - Checks the code with `clang-tidy`
 10. Compatibility check
     - Checks that `clickhouse` binary runs on distros with old libc versions.
 11. AST fuzzer
