@@ -19,8 +19,7 @@ set -e
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/clickhouse
-export CLICKHOUSE_TESTS_CONFIG_DIR=/clickhouse-config
-export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-base-config
+export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-config
 export CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH=/clickhouse-odbc-bridge
 
 export DOCKER_MYSQL_GOLANG_CLIENT_TAG=${DOCKER_MYSQL_GOLANG_CLIENT_TAG:=latest}
