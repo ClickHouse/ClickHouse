@@ -135,6 +135,7 @@ SRCS(
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
+    date_trunc.cpp
     defaultValueOfArgumentType.cpp
     demange.cpp
     divide.cpp
