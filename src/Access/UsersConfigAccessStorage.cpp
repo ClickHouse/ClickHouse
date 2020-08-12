@@ -482,6 +482,13 @@ UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_,
 UsersConfigAccessStorage::~UsersConfigAccessStorage() = default;
 
 
+String UsersConfigAccessStorage::getStoragePath() const
+{
+    std::lock_guard lock{load_mutex};
+    return path;
+}
+
+
 void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock{load_mutex};

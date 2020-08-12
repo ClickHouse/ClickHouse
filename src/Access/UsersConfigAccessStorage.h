@@ -26,6 +26,8 @@ public:
     ~UsersConfigAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
+    String getStoragePath() const override;
+    bool isStorageReadOnly() const override { return true; }
 
     void setConfig(const Poco::Util::AbstractConfiguration & config);
 
