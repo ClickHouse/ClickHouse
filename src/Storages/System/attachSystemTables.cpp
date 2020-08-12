@@ -57,6 +57,7 @@
 #include <Storages/System/StorageSystemQuotaLimits.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
 #include <Storages/System/StorageSystemQuotasUsage.h>
+#include <Storages/System/StorageSystemUserDirectories.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 
 #ifdef OS_LINUX
@@ -102,6 +103,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemQuotaLimits>(system_database, "quota_limits");
     attach<StorageSystemQuotaUsage>(system_database, "quota_usage");
     attach<StorageSystemQuotasUsage>(system_database, "quotas_usage");
+    attach<StorageSystemUserDirectories>(system_database, "user_directories");
     attach<StorageSystemPrivileges>(system_database, "privileges");
 
 #if !defined(ARCADIA_BUILD)
