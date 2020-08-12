@@ -329,7 +329,7 @@ def test_python_client(server_address):
 
 def test_golang_client(server_address, golang_container):
     # type: (str, Container) -> None
-    with open(os.path.join(SCRIPT_DIR, 'clients', 'golang', '0.reference')) as fp:
+    with open(os.path.join(SCRIPT_DIR,'golang.reference')) as fp:
         reference = fp.read()
 
     code, (stdout, stderr) = golang_container.exec_run('./main --host {host} --port {port} --user default --password 123 --database '
@@ -386,7 +386,7 @@ def test_mysqljs_client(server_address, nodejs_container):
 
 def test_java_client(server_address, java_container):
     # type: (str, Container) -> None
-    with open(os.path.join(SCRIPT_DIR, 'clients', 'java', '0.reference')) as fp:
+    with open(os.path.join(SCRIPT_DIR, 'java.reference')) as fp:
         reference = fp.read()
 
     # database not exists exception.
