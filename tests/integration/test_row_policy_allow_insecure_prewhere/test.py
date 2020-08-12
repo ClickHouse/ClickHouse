@@ -51,5 +51,5 @@ def test_PREWHERE():
     node.query("SELECT s FROM mydb.prewhere_filter PREWHERE 1 WHERE c = 3 FORMAT Null", settings=settings)
 
     # WHERE w/o optimize_move_to_prewhere (just make sure it works)
-    node.query("SELECT * FROM mydb.prewhere_no_filter WHERE a = 3 AND b = 3 FORMAT Null")
-    node.query("SELECT * FROM mydb.prewhere_filter    WHERE a = 3 FORMAT Null")
+    node.query("SELECT * FROM mydb.prewhere_no_filter WHERE a = 3 AND b = 3 FORMAT Null", settings={'optimize_move_to_prewhere': 0})
+    node.query("SELECT * FROM mydb.prewhere_filter    WHERE a = 3 FORMAT Null", settings={'optimize_move_to_prewhere': 0})
