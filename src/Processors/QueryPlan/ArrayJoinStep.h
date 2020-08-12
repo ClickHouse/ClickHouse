@@ -11,7 +11,7 @@ class ArrayJoinStep : public ITransformingStep
 {
 public:
     explicit ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPtr array_join_);
-    String getName() const override { return "Expression"; }
+    String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
