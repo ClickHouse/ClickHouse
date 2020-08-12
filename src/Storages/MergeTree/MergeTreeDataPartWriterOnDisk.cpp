@@ -87,7 +87,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         disk->createDirectories(part_path);
 }
 
-// Implemetation is splitted into static functions for ability
+// Implementation is split into static functions for ability
 /// of making unit tests without creation instance of IMergeTreeDataPartWriter,
 /// which requires a lot of dependencies and access to filesystem.
 static size_t computeIndexGranularityImpl(
@@ -260,6 +260,11 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             if (prev_pos == 0 && current_index_offset != 0)
             {
                 limit = current_index_offset;
+            }
+            else if (skip_index_current_data_mark == index_granularity.getMarksCount())
+            {
+                /// Case, when last granule was exceeded and no new granule was created.
+                limit = rows - prev_pos;
             }
             else
             {

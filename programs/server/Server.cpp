@@ -570,6 +570,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (users_config_path != config_path)
         checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
 
+    if (config().has("custom_settings_prefixes"))
+        global_context->getAccessControlManager().setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+
     auto users_config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
         include_from_path,
@@ -613,9 +616,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
-
-    if (config().has("custom_settings_prefixes"))
-        global_context->getAccessControlManager().setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());

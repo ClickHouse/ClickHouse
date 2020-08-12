@@ -100,7 +100,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
     }
 
-
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
     fs::path metadata_path = fs::canonical(context.getPath());
@@ -168,6 +167,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
+    if (create.storage->engine->name == "MaterializeMySQL" && !context.getSettingsRef().allow_experimental_database_materialize_mysql && !internal)
+    {
+        throw Exception("MaterializeMySQL is an experimental database engine. "
+                        "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    }
+
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", context);
 
     if (create.uuid != UUIDHelpers::Nil)
@@ -209,7 +214,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             renamed = true;
         }
 
-        database->loadStoredObjects(context, has_force_restore_data_flag);
+        database->loadStoredObjects(context, has_force_restore_data_flag, create.attach && force_attach);
     }
     catch (...)
     {
@@ -339,7 +344,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.null_modifier)
             {
                 if (column_type->isNullable())
-                    throw Exception("Cant use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+                    throw Exception("Can't use [NOT] NULL modifier with Nullable type", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
                 if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
@@ -694,7 +699,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         assertOrSetUUID(create, database);
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
-          * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
+          * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
           */
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 

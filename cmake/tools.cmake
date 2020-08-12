@@ -41,25 +41,23 @@ STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSIO
 LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
 option (LINKER_NAME "Linker name or full path")
-if (COMPILER_GCC)
+if (COMPILER_GCC AND NOT LINKER_NAME)
     find_program (LLD_PATH NAMES "ld.lld")
     find_program (GOLD_PATH NAMES "ld.gold")
-else ()
+elseif (NOT LINKER_NAME)
     find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
     find_program (GOLD_PATH NAMES "ld.gold" "gold")
 endif ()
 
-if (OS_LINUX)
+if (OS_LINUX AND NOT LINKER_NAME)
     # We prefer LLD linker over Gold or BFD on Linux.
-    if (NOT LINKER_NAME)
-        if (LLD_PATH)
-            if (COMPILER_GCC)
-                # GCC driver requires one of supported linker names like "lld".
-                set (LINKER_NAME "lld")
-            else ()
-                # Clang driver simply allows full linker path.
-                set (LINKER_NAME ${LLD_PATH})
-            endif ()
+    if (LLD_PATH)
+        if (COMPILER_GCC)
+            # GCC driver requires one of supported linker names like "lld".
+            set (LINKER_NAME "lld")
+        else ()
+            # Clang driver simply allows full linker path.
+            set (LINKER_NAME ${LLD_PATH})
         endif ()
     endif ()
 
