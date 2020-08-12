@@ -218,7 +218,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
         copyData(*packet_sender->in, buf_for_handshake_response, packet_size - pos);
         ReadBufferFromString payload(buf_for_handshake_response.str());
         payload.ignore(PACKET_HEADER_SIZE);
-        packet.readPayload(payload);
+        packet.readPayloadImpl(payload);
         packet_sender->sequence_id++;
     }
 }
@@ -259,7 +259,7 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
 void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
-    packet.readPayload(payload);
+    packet.readPayloadImpl(payload);
     String database = connection_context.getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
@@ -350,7 +350,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
     SSLRequest ssl_request;
     ReadBufferFromMemory payload(buf, pos);
     payload.ignore(PACKET_HEADER_SIZE);
-    ssl_request.readPayload(payload);
+    ssl_request.readPayloadImpl(payload);
     connection_context.mysql.client_capabilities = ssl_request.capability_flags;
     connection_context.mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;

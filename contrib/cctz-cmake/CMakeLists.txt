@@ -59,7 +59,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
     # Build a libray with embedded tzdata
 
-    if (OS_LINUX AND ARCH_AMD64)
+    if (OS_LINUX)
 
         set (TIMEZONES
             Africa/Abidjan
@@ -635,7 +635,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
             add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary -O elf64-x86-64 -B i386 ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
+                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
                 COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
                     ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ})
 
@@ -649,7 +649,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
         # libraries in linker command. To avoid this we hardcode whole-archive
         # library into single string.
         add_dependencies(cctz tzdata)
-        target_link_libraries(cctz INTERFACE "-Wl,--whole-archive $<TARGET_FILE:tzdata> -Wl,--no-whole-archive")
+        target_link_libraries(cctz INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:tzdata> -Wl,${NO_WHOLE_ARCHIVE}")
     endif ()
 endif ()
 
