@@ -112,13 +112,17 @@ public:
     antlrcpp::Any visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *ctx) override;
     antlrcpp::Any visitColumnLambdaExpr(ClickHouseParser::ColumnLambdaExprContext *ctx) override;
     antlrcpp::Any visitColumnParamList(ClickHouseParser::ColumnParamListContext *ctx) override;
+    antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *ctx) override;
+    antlrcpp::Any visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext *ctx) override;
+    antlrcpp::Any visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *ctx) override;
+    antlrcpp::Any visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext *ctx) override;
 
     // Table expressions (alphabetically)
 
     antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext *ctx) override;
     antlrcpp::Any visitTableArgList(ClickHouseParser::TableArgListContext *ctx) override;
+    antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *ctx) override;
     antlrcpp::Any visitTableElementColumn(ClickHouseParser::TableElementColumnContext *ctx) override;
-    antlrcpp::Any visitTableElementPropertyExpr(ClickHouseParser::TableElementPropertyExprContext *ctx) override;
     antlrcpp::Any visitTableExprAlias(ClickHouseParser::TableExprAliasContext *ctx) override;
     antlrcpp::Any visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx) override;
     antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx) override;
@@ -132,6 +136,7 @@ public:
     // Basic expressions (alphabetically)
 
     antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *ctx) override;  // returns |AST::ColumnExpr::BinaryOpType|
+    antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *ctx) override;
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
     antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *ctx) override;
     antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;

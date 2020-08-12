@@ -60,11 +60,11 @@ ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 
 engineExpr: ENGINE EQ_SINGLE? identifier (LPAREN tableArgList? RPAREN)?;
 tableElementExpr
-    : identifier identifier tableElementPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?  # TableElementColumn
+    : identifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?  # TableElementColumn
     // TODO: INDEX
     // TODO: CONSTRAINT
     ;
-tableElementPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
+tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
 
 // DROP statement
@@ -140,15 +140,20 @@ setStmt: SET settingExpr;
 
 // Columns
 
+columnTypeExpr
+    : identifier                                                       # ColumnTypeExprSimple
+    | identifier LPAREN columnParamList RPAREN                         # ColumnTypeExprParam
+    | identifier LPAREN enumValue (COMMA enumValue)* RPAREN            # ColumnTypeExprEnum
+    | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN  # ColumnTypeExprComplex
+    ;
 columnExprList: columnExpr (COMMA columnExpr)*;
 columnExpr
     : literal                                                                        # ColumnExprLiteral
-    // TODO: don't forget qualified asterisk
-    | ASTERISK                                                                       # ColumnExprAsterisk
+    | ASTERISK                                                                       # ColumnExprAsterisk // TODO: don't forget qualified asterisk
     | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple // or a single expression in parens
     | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
     | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
-    // TODO: | CAST LPAREN columnExpr AS identifier RPAREN                           # ColumnExprCast
+    // TODO: | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                       # ColumnExprCast
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
@@ -225,3 +230,4 @@ binaryOp
     | NOT? LIKE
     | GLOBAL? NOT? IN
     ;
+enumValue: STRING_LITERAL EQ_SINGLE NUMBER_LITERAL;

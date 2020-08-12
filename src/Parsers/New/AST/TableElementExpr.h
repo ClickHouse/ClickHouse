@@ -6,7 +6,7 @@
 namespace DB::AST
 {
 
-class TableElementPropertyExpr : public INode
+class TableColumnPropertyExpr : public INode
 {
     public:
         enum class PropertyType
@@ -16,7 +16,7 @@ class TableElementPropertyExpr : public INode
             ALIAS,
         };
 
-        TableElementPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr);
+        TableColumnPropertyExpr(PropertyType type, PtrTo<ColumnExpr> expr);
 
     private:
         PropertyType property_type;
@@ -26,7 +26,7 @@ class TableElementExpr : public INode
 {
     public:
         static PtrTo<TableElementExpr> createColumn(
-            PtrTo<Identifier> name, PtrTo<Identifier> type, PtrTo<TableElementPropertyExpr> property, PtrTo<ColumnExpr> ttl);
+            PtrTo<Identifier> name, PtrTo<ColumnTypeExpr> type, PtrTo<TableColumnPropertyExpr> property, PtrTo<ColumnExpr> ttl);
 
     private:
         enum class ExprType

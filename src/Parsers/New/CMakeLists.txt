@@ -1,5 +1,6 @@
 set (SRCS
     AST/ColumnExpr.cpp
+    AST/ColumnTypeExpr.cpp
     AST/CreateDatabaseQuery.cpp
     AST/CreateTableQuery.cpp
     AST/DDLQuery.cpp

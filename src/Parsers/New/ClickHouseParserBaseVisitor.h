@@ -85,7 +85,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTableElementPropertyExpr(ClickHouseParser::TableElementPropertyExprContext *ctx) override {
+  virtual antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -218,6 +218,22 @@ public:
   }
 
   virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -366,6 +382,10 @@ public:
   }
 
   virtual antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *ctx) override {
     return visitChildren(ctx);
   }
 

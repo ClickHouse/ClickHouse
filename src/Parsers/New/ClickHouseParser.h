@@ -43,7 +43,7 @@ public:
     RuleCreateDatabaseStmt = 4, RuleCreateTableStmt = 5, RuleSchemaClause = 6, 
     RuleEngineClause = 7, RulePartitionByClause = 8, RulePrimaryKeyClause = 9, 
     RuleSampleByClause = 10, RuleTtlClause = 11, RuleEngineExpr = 12, RuleTableElementExpr = 13, 
-    RuleTableElementPropertyExpr = 14, RuleTtlExpr = 15, RuleDropStmt = 16, 
+    RuleTableColumnPropertyExpr = 14, RuleTtlExpr = 15, RuleDropStmt = 16, 
     RuleSelectUnionStmt = 17, RuleSelectStmt = 18, RuleWithClause = 19, 
     RuleFromClause = 20, RuleSampleClause = 21, RuleArrayJoinClause = 22, 
     RulePrewhereClause = 23, RuleWhereClause = 24, RuleGroupByClause = 25, 
@@ -51,12 +51,13 @@ public:
     RuleLimitClause = 29, RuleSettingsClause = 30, RuleJoinExpr = 31, RuleJoinOp = 32, 
     RuleJoinOpCross = 33, RuleJoinConstraintClause = 34, RuleLimitExpr = 35, 
     RuleOrderExprList = 36, RuleOrderExpr = 37, RuleRatioExpr = 38, RuleSettingExprList = 39, 
-    RuleSettingExpr = 40, RuleSetStmt = 41, RuleColumnExprList = 42, RuleColumnExpr = 43, 
-    RuleColumnParamList = 44, RuleColumnArgList = 45, RuleColumnArgExpr = 46, 
-    RuleColumnLambdaExpr = 47, RuleColumnIdentifier = 48, RuleTableExpr = 49, 
-    RuleTableIdentifier = 50, RuleTableArgList = 51, RuleTableArgExpr = 52, 
-    RuleDatabaseIdentifier = 53, RuleLiteral = 54, RuleKeyword = 55, RuleIdentifier = 56, 
-    RuleUnaryOp = 57, RuleBinaryOp = 58
+    RuleSettingExpr = 40, RuleSetStmt = 41, RuleColumnTypeExpr = 42, RuleColumnExprList = 43, 
+    RuleColumnExpr = 44, RuleColumnParamList = 45, RuleColumnArgList = 46, 
+    RuleColumnArgExpr = 47, RuleColumnLambdaExpr = 48, RuleColumnIdentifier = 49, 
+    RuleTableExpr = 50, RuleTableIdentifier = 51, RuleTableArgList = 52, 
+    RuleTableArgExpr = 53, RuleDatabaseIdentifier = 54, RuleLiteral = 55, 
+    RuleKeyword = 56, RuleIdentifier = 57, RuleUnaryOp = 58, RuleBinaryOp = 59, 
+    RuleEnumValue = 60
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -83,7 +84,7 @@ public:
   class TtlClauseContext;
   class EngineExprContext;
   class TableElementExprContext;
-  class TableElementPropertyExprContext;
+  class TableColumnPropertyExprContext;
   class TtlExprContext;
   class DropStmtContext;
   class SelectUnionStmtContext;
@@ -111,6 +112,7 @@ public:
   class SettingExprListContext;
   class SettingExprContext;
   class SetStmtContext;
+  class ColumnTypeExprContext;
   class ColumnExprListContext;
   class ColumnExprContext;
   class ColumnParamListContext;
@@ -127,7 +129,8 @@ public:
   class KeywordContext;
   class IdentifierContext;
   class UnaryOpContext;
-  class BinaryOpContext; 
+  class BinaryOpContext;
+  class EnumValueContext; 
 
   class  QueryListContext : public antlr4::ParserRuleContext {
   public:
@@ -416,9 +419,9 @@ public:
   public:
     TableElementColumnContext(TableElementExprContext *ctx);
 
-    std::vector<IdentifierContext *> identifier();
-    IdentifierContext* identifier(size_t i);
-    TableElementPropertyExprContext *tableElementPropertyExpr();
+    IdentifierContext *identifier();
+    ColumnTypeExprContext *columnTypeExpr();
+    TableColumnPropertyExprContext *tableColumnPropertyExpr();
     antlr4::tree::TerminalNode *TTL();
     ColumnExprContext *columnExpr();
 
@@ -427,9 +430,9 @@ public:
 
   TableElementExprContext* tableElementExpr();
 
-  class  TableElementPropertyExprContext : public antlr4::ParserRuleContext {
+  class  TableColumnPropertyExprContext : public antlr4::ParserRuleContext {
   public:
-    TableElementPropertyExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    TableColumnPropertyExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     ColumnExprContext *columnExpr();
     antlr4::tree::TerminalNode *DEFAULT();
@@ -441,7 +444,7 @@ public:
    
   };
 
-  TableElementPropertyExprContext* tableElementPropertyExpr();
+  TableColumnPropertyExprContext* tableColumnPropertyExpr();
 
   class  TtlExprContext : public antlr4::ParserRuleContext {
   public:
@@ -984,6 +987,72 @@ public:
   };
 
   SetStmtContext* setStmt();
+
+  class  ColumnTypeExprContext : public antlr4::ParserRuleContext {
+  public:
+    ColumnTypeExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+   
+    ColumnTypeExprContext() = default;
+    void copyFrom(ColumnTypeExprContext *context);
+    using antlr4::ParserRuleContext::copyFrom;
+
+    virtual size_t getRuleIndex() const override;
+
+   
+  };
+
+  class  ColumnTypeExprParamContext : public ColumnTypeExprContext {
+  public:
+    ColumnTypeExprParamContext(ColumnTypeExprContext *ctx);
+
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *LPAREN();
+    ColumnParamListContext *columnParamList();
+    antlr4::tree::TerminalNode *RPAREN();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnTypeExprSimpleContext : public ColumnTypeExprContext {
+  public:
+    ColumnTypeExprSimpleContext(ColumnTypeExprContext *ctx);
+
+    IdentifierContext *identifier();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnTypeExprComplexContext : public ColumnTypeExprContext {
+  public:
+    ColumnTypeExprComplexContext(ColumnTypeExprContext *ctx);
+
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<ColumnTypeExprContext *> columnTypeExpr();
+    ColumnTypeExprContext* columnTypeExpr(size_t i);
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnTypeExprEnumContext : public ColumnTypeExprContext {
+  public:
+    ColumnTypeExprEnumContext(ColumnTypeExprContext *ctx);
+
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<EnumValueContext *> enumValue();
+    EnumValueContext* enumValue(size_t i);
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  ColumnTypeExprContext* columnTypeExpr();
 
   class  ColumnExprListContext : public antlr4::ParserRuleContext {
   public:
@@ -1606,6 +1675,21 @@ public:
   };
 
   BinaryOpContext* binaryOp();
+
+  class  EnumValueContext : public antlr4::ParserRuleContext {
+  public:
+    EnumValueContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *STRING_LITERAL();
+    antlr4::tree::TerminalNode *EQ_SINGLE();
+    antlr4::tree::TerminalNode *NUMBER_LITERAL();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  EnumValueContext* enumValue();
 
 
   virtual bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;

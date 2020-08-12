@@ -73,6 +73,17 @@ class ClickHouseUnlexer(Grammarinator):
     INTERVAL_TYPE.min_depth = 2
 
     @depthcontrol
+    def ALIAS(self):
+        current = self.create_node(UnlexerRule(name='ALIAS'))
+        current += self.unlexer.A()
+        current += self.unlexer.L()
+        current += self.unlexer.I()
+        current += self.unlexer.A()
+        current += self.unlexer.S()
+        return current
+    ALIAS.min_depth = 1
+
+    @depthcontrol
     def ALL(self):
         current = self.create_node(UnlexerRule(name='ALL'))
         current += self.unlexer.A()
@@ -238,6 +249,18 @@ class ClickHouseUnlexer(Grammarinator):
     COLLATE.min_depth = 1
 
     @depthcontrol
+    def CREATE(self):
+        current = self.create_node(UnlexerRule(name='CREATE'))
+        current += self.unlexer.C()
+        current += self.unlexer.R()
+        current += self.unlexer.E()
+        current += self.unlexer.A()
+        current += self.unlexer.T()
+        current += self.unlexer.E()
+        return current
+    CREATE.min_depth = 1
+
+    @depthcontrol
     def CROSS(self):
         current = self.create_node(UnlexerRule(name='CROSS'))
         current += self.unlexer.C()
@@ -272,6 +295,31 @@ class ClickHouseUnlexer(Grammarinator):
     DAY.min_depth = 1
 
     @depthcontrol
+    def DEFAULT(self):
+        current = self.create_node(UnlexerRule(name='DEFAULT'))
+        current += self.unlexer.D()
+        current += self.unlexer.E()
+        current += self.unlexer.F()
+        current += self.unlexer.A()
+        current += self.unlexer.U()
+        current += self.unlexer.L()
+        current += self.unlexer.T()
+        return current
+    DEFAULT.min_depth = 1
+
+    @depthcontrol
+    def DELETE(self):
+        current = self.create_node(UnlexerRule(name='DELETE'))
+        current += self.unlexer.D()
+        current += self.unlexer.E()
+        current += self.unlexer.L()
+        current += self.unlexer.E()
+        current += self.unlexer.T()
+        current += self.unlexer.E()
+        return current
+    DELETE.min_depth = 1
+
+    @depthcontrol
     def DESCENDING(self):
         current = self.create_node(UnlexerRule(name='DESCENDING'))
         choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_12', i), 1) for i, w in enumerate([1, 1])])
@@ -294,6 +342,16 @@ class ClickHouseUnlexer(Grammarinator):
             current += self.unlexer.G()
         return current
     DESCENDING.min_depth = 1
+
+    @depthcontrol
+    def DISK(self):
+        current = self.create_node(UnlexerRule(name='DISK'))
+        current += self.unlexer.D()
+        current += self.unlexer.I()
+        current += self.unlexer.S()
+        current += self.unlexer.K()
+        return current
+    DISK.min_depth = 1
 
     @depthcontrol
     def DISTINCT(self):
@@ -337,6 +395,18 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.D()
         return current
     END.min_depth = 1
+
+    @depthcontrol
+    def ENGINE(self):
+        current = self.create_node(UnlexerRule(name='ENGINE'))
+        current += self.unlexer.E()
+        current += self.unlexer.N()
+        current += self.unlexer.G()
+        current += self.unlexer.I()
+        current += self.unlexer.N()
+        current += self.unlexer.E()
+        return current
+    ENGINE.min_depth = 1
 
     @depthcontrol
     def EXISTS(self):
@@ -544,6 +614,15 @@ class ClickHouseUnlexer(Grammarinator):
     JOIN.min_depth = 1
 
     @depthcontrol
+    def KEY(self):
+        current = self.create_node(UnlexerRule(name='KEY'))
+        current += self.unlexer.K()
+        current += self.unlexer.E()
+        current += self.unlexer.Y()
+        return current
+    KEY.min_depth = 1
+
+    @depthcontrol
     def LAST(self):
         current = self.create_node(UnlexerRule(name='LAST'))
         current += self.unlexer.L()
@@ -607,6 +686,24 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.L()
         return current
     LOCAL.min_depth = 1
+
+    @depthcontrol
+    def MATERIALIZED(self):
+        current = self.create_node(UnlexerRule(name='MATERIALIZED'))
+        current += self.unlexer.M()
+        current += self.unlexer.A()
+        current += self.unlexer.T()
+        current += self.unlexer.E()
+        current += self.unlexer.R()
+        current += self.unlexer.I()
+        current += self.unlexer.A()
+        current += self.unlexer.L()
+        current += self.unlexer.I()
+        current += self.unlexer.Z()
+        current += self.unlexer.E()
+        current += self.unlexer.D()
+        return current
+    MATERIALIZED.min_depth = 1
 
     @depthcontrol
     def MINUTE(self):
@@ -725,6 +822,21 @@ class ClickHouseUnlexer(Grammarinator):
     OUTFILE.min_depth = 1
 
     @depthcontrol
+    def PARTITION(self):
+        current = self.create_node(UnlexerRule(name='PARTITION'))
+        current += self.unlexer.P()
+        current += self.unlexer.A()
+        current += self.unlexer.R()
+        current += self.unlexer.T()
+        current += self.unlexer.I()
+        current += self.unlexer.T()
+        current += self.unlexer.I()
+        current += self.unlexer.O()
+        current += self.unlexer.N()
+        return current
+    PARTITION.min_depth = 1
+
+    @depthcontrol
     def PREWHERE(self):
         current = self.create_node(UnlexerRule(name='PREWHERE'))
         current += self.unlexer.P()
@@ -737,6 +849,19 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.E()
         return current
     PREWHERE.min_depth = 1
+
+    @depthcontrol
+    def PRIMARY(self):
+        current = self.create_node(UnlexerRule(name='PRIMARY'))
+        current += self.unlexer.P()
+        current += self.unlexer.R()
+        current += self.unlexer.I()
+        current += self.unlexer.M()
+        current += self.unlexer.A()
+        current += self.unlexer.R()
+        current += self.unlexer.Y()
+        return current
+    PRIMARY.min_depth = 1
 
     @depthcontrol
     def QUARTER(self):
@@ -868,6 +993,14 @@ class ClickHouseUnlexer(Grammarinator):
     THEN.min_depth = 1
 
     @depthcontrol
+    def TO(self):
+        current = self.create_node(UnlexerRule(name='TO'))
+        current += self.unlexer.T()
+        current += self.unlexer.O()
+        return current
+    TO.min_depth = 1
+
+    @depthcontrol
     def TOTALS(self):
         current = self.create_node(UnlexerRule(name='TOTALS'))
         current += self.unlexer.T()
@@ -904,6 +1037,15 @@ class ClickHouseUnlexer(Grammarinator):
     TRIM.min_depth = 1
 
     @depthcontrol
+    def TTL(self):
+        current = self.create_node(UnlexerRule(name='TTL'))
+        current += self.unlexer.T()
+        current += self.unlexer.T()
+        current += self.unlexer.L()
+        return current
+    TTL.min_depth = 1
+
+    @depthcontrol
     def UNION(self):
         current = self.create_node(UnlexerRule(name='UNION'))
         current += self.unlexer.U()
@@ -924,6 +1066,18 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.G()
         return current
     USING.min_depth = 1
+
+    @depthcontrol
+    def VOLUME(self):
+        current = self.create_node(UnlexerRule(name='VOLUME'))
+        current += self.unlexer.V()
+        current += self.unlexer.O()
+        current += self.unlexer.L()
+        current += self.unlexer.U()
+        current += self.unlexer.M()
+        current += self.unlexer.E()
+        return current
+    VOLUME.min_depth = 1
 
     @depthcontrol
     def WEEK(self):

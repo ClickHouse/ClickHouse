@@ -54,7 +54,7 @@ public:
 
     virtual antlrcpp::Any visitTableElementColumn(ClickHouseParser::TableElementColumnContext *context) = 0;
 
-    virtual antlrcpp::Any visitTableElementPropertyExpr(ClickHouseParser::TableElementPropertyExprContext *context) = 0;
+    virtual antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *context) = 0;
 
     virtual antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *context) = 0;
 
@@ -121,6 +121,14 @@ public:
     virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *context) = 0;
 
     virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext *context) = 0;
 
@@ -195,6 +203,8 @@ public:
     virtual antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *context) = 0;
 
     virtual antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *context) = 0;
+
+    virtual antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *context) = 0;
 
 
 };
