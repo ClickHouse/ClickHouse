@@ -69,11 +69,10 @@ public:
         std::vector<Node *> children = {};
     };
 
-private:
-
     using Nodes = std::list<Node>;
-    Nodes nodes;
 
+private:
+    Nodes nodes;
     Node * root = nullptr;
 
     void checkInitialized() const;

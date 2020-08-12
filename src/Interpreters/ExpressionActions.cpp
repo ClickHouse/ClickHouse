@@ -1077,6 +1077,138 @@ void ExpressionActions::optimizeArrayJoin()
     }
 }
 
+ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
+{
+    auto split_actions = std::make_shared<ExpressionActions>(*this);
+    split_actions->actions.clear();
+    split_actions->sample_block.clear();
+    split_actions->input_columns.clear();
+
+    for (const auto & input_column : input_columns)
+    {
+        if (array_joined_columns.count(input_column.name) == 0)
+        {
+            split_actions->input_columns.emplace_back(input_column);
+            split_actions->sample_block.insert(ColumnWithTypeAndName(nullptr, input_column.type, input_column.name));
+        }
+    }
+
+    /// Do not split action if input depends only on array joined columns.
+    if (split_actions->input_columns.empty())
+        return split_actions;
+
+    NameSet array_join_dependent_columns = array_joined_columns;
+    /// Columns needed to evaluate arrayJoin or those that depend on it.
+    /// Actions to delete them can not be moved to the left of the arrayJoin.
+    NameSet array_join_dependencies;
+
+    Actions new_actions;
+    for (const auto & action : actions)
+    {
+        if (action.type == ExpressionAction::PROJECT)
+        {
+            NamesWithAliases split_aliases;
+            NamesWithAliases depend_aliases;
+            for (const auto & pair : action.projection)
+            {
+                if (!pair.second.empty() || array_join_dependent_columns.count(pair.first))
+                {
+                    if (array_join_dependent_columns.count(pair.first))
+                    {
+                        array_join_dependent_columns.insert(pair.second);
+                        if (!pair.second.empty())
+                            depend_aliases.emplace_back(std::move(pair));
+                    }
+                    else if (!pair.second.empty())
+                        split_aliases.emplace_back(std::move(pair));
+                }
+            }
+
+            if (!split_aliases.empty())
+                split_actions->add(ExpressionAction::addAliases(split_aliases));
+
+            if (!depend_aliases.empty())
+                new_actions.emplace_back(ExpressionAction::addAliases(depend_aliases));
+
+            continue;
+        }
+
+        bool depends_on_array_join = false;
+        for (auto & column : action.getNeededColumns())
+            if (array_join_dependent_columns.count(column) != 0)
+                depends_on_array_join = true;
+
+        if (depends_on_array_join)
+        {
+            if (!action.result_name.empty())
+                array_join_dependent_columns.insert(action.result_name);
+            if (action.array_join)
+                array_join_dependent_columns.insert(action.array_join->columns.begin(), action.array_join->columns.end());
+
+            auto needed = action.getNeededColumns();
+            array_join_dependencies.insert(needed.begin(), needed.end());
+            new_actions.emplace_back(action);
+        }
+        else
+        {
+            /// Replace PROJECT to ADD_ALIASES, because project may remove columns needed for array join
+//            if (action.type == ExpressionAction::PROJECT)
+//            {
+//                NamesWithAliases projection;
+//
+//                for (auto & column : action.projection)
+//                {
+//                    if (!column.second.empty())
+//                    {
+//                        projection.emplace_back(column);
+//                        column.second.clear();
+//                    }
+//                }
+//
+//                /// new_actions.emplace_back(action);
+//
+//                if (!projection.empty())
+//                {
+//                    action.type = ExpressionAction::ADD_ALIASES;
+//                    action.projection.swap(projection);
+//                    split_actions->add(std::move(action));
+//                }
+//            }
+//            else
+
+            if (action.type == ExpressionAction::REMOVE_COLUMN)
+            {
+                if (array_join_dependencies.count(action.source_name))
+                    new_actions.emplace_back(action);
+                else
+                    split_actions->add(action);
+
+                continue;
+            }
+
+            split_actions->add(action);
+        }
+    }
+
+    if (split_actions->getActions().empty())
+        return split_actions;
+
+    std::swap(actions, new_actions);
+
+    /// Add input from split actions result.
+    NamesAndTypesList inputs_from_array_join;
+    for (auto & column : input_columns)
+        if (array_joined_columns.count(column.name))
+            inputs_from_array_join.emplace_back(std::move(column));
+
+    input_columns = split_actions->getSampleBlock().getNamesAndTypesList();
+    input_columns.insert(input_columns.end(), inputs_from_array_join.begin(), inputs_from_array_join.end());
+
+    if (!actions.empty())
+        prependProjectInput();
+
+    return split_actions;
+}
 
 JoinPtr ExpressionActions::getTableJoinAlgo() const
 {
@@ -1378,7 +1510,7 @@ void ExpressionActionsChain::Step::finalize(const Names & required_output_)
     }
 }
 
-void ExpressionActionsChain::Step::prependProjectInput()
+void ExpressionActionsChain::Step::prependProjectInput() const
 {
     switch (kind)
     {
