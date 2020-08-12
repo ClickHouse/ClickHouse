@@ -127,7 +127,6 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
         with pytest.raises(QueryRuntimeException) as exception:
             mysql_node.query("CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'")
-            clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_bad_arguments, root, 'clickhouse')")
-
+            clickhouse_node.query("CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql1:3306', test_bad_arguments, root, 'clickhouse')")
         assert 'Database engine MySQL requested literal argument.' in str(exception.value)
         mysql_node.query("DROP DATABASE test_bad_arguments")

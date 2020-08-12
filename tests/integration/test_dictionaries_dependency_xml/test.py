@@ -3,11 +3,11 @@ import os
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
 DICTIONARY_FILES = ['configs/dictionaries/dep_x.xml', 'configs/dictionaries/dep_y.xml', 'configs/dictionaries/dep_z.xml']
 
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-instance = cluster.add_instance('instance', main_configs=DICTIONARY_FILES)
+cluster = ClickHouseCluster(__file__)
+instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG+DICTIONARY_FILES,)
 
 
 @pytest.fixture(scope="module")
