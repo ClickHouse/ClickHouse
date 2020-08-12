@@ -1163,3 +1163,40 @@ Run queries:
 It works rather slowly. It is barely using more than a single CPU core. And there is nothing about performance tuning in:
 https://www.monetdb.org/Documentation/ServerAdministration/ServerSetupAndConfiguration
 
+
+The last 7 queries from the benchmark benefit from index. Let's create it:
+
+`CREATE INDEX hits_idx ON hits ("CounterID", "EventDate");`
+
+```
+sql>CREATE INDEX hits_idx ON hits ("CounterID", "EventDate");
+operation successful
+clk: 5.374 sec
+```
+
+Ok. It was created quickly and successful.
+Let's check how does it speed up queries...
+
+```
+sql>SELECT DATE_TRUNC('minute', "EventTime") AS "Minute", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-02' AND "Refresh" = 0 AND "DontCountHits" = 0 GROUP BY DATE_TRUNC('minute', "EventTime") ORDER BY DATE_TRUNC('minute', "EventTime");
++--------+-----------+
+| Minute | PageViews |
++========+===========+
++--------+-----------+
+0 tuples
+clk: 4.042 sec
+```
+
+There is almost no difference.
+And the trivial index lookup query is still slow:
+
+```
+sql>SELECT count(*) FROM hits WHERE "CounterID" = 62;
++--------+
+| %1     |
++========+
+| 738172 |
++--------+
+1 tuple
+clk: 1.406 sec
+```
