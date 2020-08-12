@@ -458,7 +458,7 @@ def empty_username_and_empty_password(self, server=None, rbac=False):
 )
 @Examples("rbac", [
     (False,),
-    (True,)
+    (True, Requirements(RQ_SRS_007_LDAP_Configuration_User_RBAC("1.0")))
 ])
 def feature(self, rbac, servers=None, node="clickhouse1"):
     """Check that users can be authenticated using an LDAP server when
