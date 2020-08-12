@@ -12,26 +12,10 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-    template <typename StoragePtrT>
-    String joinStorageNames(const std::vector<StoragePtrT> & storages)
-    {
-        String result;
-        for (const auto & storage : storages)
-        {
-            if (!result.empty())
-                result += ", ";
-            result += storage->getStorageName();
-        }
-        return result;
-    }
-}
-
-
 MultipleAccessStorage::MultipleAccessStorage(
+    const String & storage_name_,
     std::vector<std::unique_ptr<Storage>> nested_storages_)
-    : IAccessStorage(joinStorageNames(nested_storages_))
+    : IAccessStorage(storage_name_)
     , nested_storages(std::move(nested_storages_))
     , ids_cache(512 /* cache size */)
 {

@@ -296,7 +296,7 @@ namespace
 
 
 DiskAccessStorage::DiskAccessStorage()
-    : IAccessStorage("disk")
+    : IAccessStorage("local directory")
 {
 }
 

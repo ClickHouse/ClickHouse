@@ -114,7 +114,7 @@ private:
 
 
 AccessControlManager::AccessControlManager()
-    : MultipleAccessStorage(createStorages()),
+    : MultipleAccessStorage("user directories", createStorages()),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
       role_cache(std::make_unique<RoleCache>(*this)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
