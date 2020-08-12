@@ -13,7 +13,7 @@ class MultipleAccessStorage : public IAccessStorage
 public:
     using Storage = IAccessStorage;
 
-    MultipleAccessStorage(std::vector<std::unique_ptr<Storage>> nested_storages_);
+    MultipleAccessStorage(const String & storage_name_, std::vector<std::unique_ptr<Storage>> nested_storages_);
 
     const Storage * findStorage(const UUID & id) const;
     Storage * findStorage(const UUID & id);
