@@ -5,6 +5,9 @@
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp)
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+# get tzdata version (ubuntu/debian only, build on other platforms will end up with empty TZDATA_VERSION)
+execute_process(COMMAND dpkg-query --showformat=\${Version} --show tzdata OUTPUT_VARIABLE TZDATA_VERSION)
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
 

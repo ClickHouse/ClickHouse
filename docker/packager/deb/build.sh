@@ -3,7 +3,7 @@
 set -x -e
 
 # Update tzdata to the latest version. It is embedded into clickhouse binary.
-sudo apt-get update && sudo apt-get install tzdata
+apt-get update && apt-get -y install tzdata
 
 ccache --show-stats ||:
 ccache --zero-stats ||:
