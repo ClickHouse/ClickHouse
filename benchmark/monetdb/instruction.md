@@ -339,7 +339,7 @@ You can find the log in `log.txt` file.
 Postprocess data:
 
 ```
-grep clk log.txt | awk '{ if ($3 == "ms") { print $2 / 1000; } else if ($3 == "sec") { print $2 } else { print } }'
+grep clk log.txt | tr -d '\r' | awk '{ if ($3 == "ms") { print $2 / 1000; } else if ($3 == "sec") { print $2 } else { print } }'
 ```
 
 Then replace values with "min" (minutes) timing manually and save to `tmp.txt`.
