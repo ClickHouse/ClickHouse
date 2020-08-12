@@ -908,6 +908,105 @@ load_balancing = first_or_random
 
 Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
 
+## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
+
+При выводе данных в формате [JSON](../../interfaces/formats.md#json) включает отображение значений `+nan`, `-nan`, `+inf`, `-inf`.
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Рассмотрим следующую таблицу `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+Когда `output_format_json_quote_denormals = 0`, следующий запрос возвращает значения `null`.
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+Если `output_format_json_quote_denormals = 1`, то запрос вернет:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.

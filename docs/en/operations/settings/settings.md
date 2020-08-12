@@ -998,6 +998,105 @@ The results of the compilation are saved in the build directory in the form of .
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
+## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
+
+Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/formats.md#json) output format.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Consider the following table `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+When `output_format_json_quote_denormals = 0`, the query returns `null` values in output:
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+When `output_format_json_quote_denormals = 1`, the query returns:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
