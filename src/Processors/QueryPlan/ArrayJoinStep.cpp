@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <IO/Operators.h>
@@ -32,6 +33,18 @@ ArrayJoinStep::ArrayJoinStep(const DataStream & input_stream_, ArrayJoinActionPt
 {
 }
 
+void ArrayJoinStep::updateInputStream(DataStream input_stream, Block result_header)
+{
+    output_stream = createOutputStream(
+            input_stream,
+            ArrayJoinTransform::transformHeader(input_stream.header, array_join),
+            getDataStreamTraits());
+
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+    res_header = std::move(result_header);
+}
+
 void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
@@ -39,6 +52,14 @@ void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline)
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<ArrayJoinTransform>(header, array_join, on_totals);
     });
+
+    if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
+    {
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(header, res_header, ConvertingTransform::MatchColumnsMode::Name);
+        });
+    }
 }
 
 void ArrayJoinStep::describeActions(FormatSettings & settings) const

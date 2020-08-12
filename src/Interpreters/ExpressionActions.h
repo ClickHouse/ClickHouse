@@ -144,6 +144,8 @@ private:
     void execute(Block & block, bool dry_run) const;
 };
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** Contains a sequence of actions on the block.
   */
@@ -182,6 +184,8 @@ public:
     /// If the last action is ARRAY JOIN, and it does not affect the columns from required_columns, discard and return it.
     /// Change the corresponding output types to arrays.
     bool popUnusedArrayJoin(const Names & required_columns, ExpressionAction & out_action);
+
+    ExpressionActionsPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     /// - Adds actions to delete all but the specified columns.
     /// - Removes unused input columns.
@@ -275,8 +279,6 @@ private:
     void optimizeArrayJoin();
 };
 
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 
 /** The sequence of transformations over the block.
   * It is assumed that the result of each step is fed to the input of the next step.
@@ -353,7 +355,7 @@ struct ExpressionActionsChain
 
         void finalize(const Names & required_output_);
 
-        void prependProjectInput();
+        void prependProjectInput() const;
 
         std::string dump() const
         {
@@ -368,6 +370,8 @@ struct ExpressionActionsChain
                     return "ARRAY JOIN";
                 }
             }
+
+            __builtin_unreachable();
         }
     };
 

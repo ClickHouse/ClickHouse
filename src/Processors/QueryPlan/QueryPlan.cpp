@@ -3,6 +3,8 @@
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/LimitStep.h>
 #include "MergingSortedStep.h"
@@ -10,6 +12,9 @@
 #include "MergeSortingStep.h"
 #include "PartialSortingStep.h"
 #include "TotalsHavingStep.h"
+#include "ExpressionStep.h"
+#include "ArrayJoinStep.h"
+#include "FilterStep.h"
 
 namespace DB
 {
@@ -408,6 +413,76 @@ static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_
     parent.swap(child);
 }
 
+static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_node, QueryPlan::Nodes & nodes)
+{
+    auto & parent = parent_node->step;
+    auto & child = child_node->step;
+    auto * expression_step = typeid_cast<ExpressionStep *>(parent.get());
+    auto * filter_step = typeid_cast<FilterStep *>(parent.get());
+    auto * array_join_step = typeid_cast<ArrayJoinStep *>(child.get());
+
+    if (!(expression_step || filter_step) || !array_join_step)
+        return;
+
+    const auto & array_join = array_join_step->arrayJoin();
+    const auto & expression = expression_step ? expression_step->getExpression()
+                                              : filter_step->getExpression();
+
+    auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
+
+    /// No actions can be moved before ARRAY JOIN.
+    if (split_actions->getActions().empty())
+        return;
+
+    auto expected_header = parent->getOutputStream().header;
+
+    /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
+    if (expression->getActions().empty())
+    {
+        /// Expression -> ArrayJoin
+        std::swap(parent, child);
+        /// ArrayJoin -> Expression
+        if (expression_step)
+            child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
+                                                     std::move(split_actions));
+        else
+            child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
+                                                 std::move(split_actions),
+                                                 filter_step->getFilterColumnName(),
+                                                 filter_step->removesFilterColumn());
+
+        array_join_step->updateInputStream(child->getOutputStream(), expected_header);
+        return;
+    }
+
+    /// Add new expression step before ARRAY JOIN.
+    /// Expression/Filter -> ArrayJoin -> Something
+    auto & node = nodes.emplace_back();
+    node.children.swap(child_node->children);
+    child_node->children.emplace_back(&node);
+    /// Expression/Filter -> ArrayJoin -> node -> Something
+//    if (filter_step && split_actions->getSampleBlock().has(filter_step->getFilterColumnName()))
+//    {
+//        /// Filter -> ArrayJoin -> node -> Something
+//        node.step = std::make_unique<FilterStep>(node.children.at(0)->step->getOutputStream(),
+//                                                 std::move(split_actions),
+//                                                 filter_step->getFilterColumnName(),
+//                                                 filter_step->removesFilterColumn());
+//
+//        array_join_step->updateInputStream(node.step->getOutputStream());
+//
+//        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(),
+//                                                  filter_step->getExpression());
+//        /// Expression -> ArrayJoin -> Filter -> Something
+//    }
+
+    node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
+                                                 std::move(split_actions));
+    array_join_step->updateInputStream(node.step->getOutputStream(), {});
+    expression_step ? expression_step->updateInputStream(array_join_step->getOutputStream(), expected_header)
+                    : filter_step->updateInputStream(array_join_step->getOutputStream(), expected_header);
+}
+
 void QueryPlan::optimize()
 {
     struct Frame
@@ -436,7 +511,13 @@ void QueryPlan::optimize()
             ++frame.next_child;
         }
         else
+        {
+            /// Last entrance, try lift up.
+            if (frame.node->children.size() == 1)
+                tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
+
             stack.pop();
+        }
     }
 }
 

@@ -21,10 +21,15 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void updateInputStream(DataStream input_stream, Block result_header);
+
     void describeActions(FormatSettings & settings) const override;
+
+    const ExpressionActionsPtr & getExpression() const { return expression; }
 
 private:
     ExpressionActionsPtr expression;
+    Block res_header;
 };
 
 /// TODO: add separate step for join.

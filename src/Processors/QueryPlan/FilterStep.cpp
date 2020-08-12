@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 
@@ -40,6 +41,18 @@ FilterStep::FilterStep(
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
+void FilterStep::updateInputStream(DataStream input_stream, Block result_header)
+{
+    output_stream = createOutputStream(
+            input_stream,
+            res_header ? res_header : FilterTransform::transformHeader(input_stream.header, expression, filter_column_name, remove_filter_column),
+            getDataStreamTraits());
+
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+    res_header = std::move(result_header);
+}
+
 void FilterStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
@@ -47,6 +60,14 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
+
+    if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
+    {
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(header, res_header, ConvertingTransform::MatchColumnsMode::Name);
+        });
+    }
 }
 
 void FilterStep::describeActions(FormatSettings & settings) const
