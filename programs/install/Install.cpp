@@ -144,6 +144,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Copy binary to the destination directory.
 
+        /// TODO An option to link instead of copy - useful for developers.
+        /// TODO Check if the binary is the same.
+
         size_t binary_size = fs::file_size(binary_self_path);
 
         fs::path prefix = fs::path(options["prefix"].as<std::string>());
@@ -175,7 +178,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                std::cerr << "Install must be run as root: sudo ./clickhouse install";
+                std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
             throw;
         }
 
@@ -469,6 +472,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             executeScript(command);
         }
 
+        /// All users are allowed to read pid file (for clickhouse status command).
+        fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
         /// Other users in clickhouse group are allowed to read and even delete logs.
         fs::permissions(log_path, fs::perms::owner_all | fs::perms::group_all, fs::perm_options::replace);
 
@@ -583,7 +589,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 
@@ -782,7 +788,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -816,7 +822,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -850,7 +856,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -893,7 +899,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
