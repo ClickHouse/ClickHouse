@@ -27,8 +27,8 @@ public:
     std::string getName() const override { return "SystemDetachedParts"; }
 
 protected:
-    explicit StorageSystemDetachedParts()
-        : IStorage({"system", "detached_parts"})
+    explicit StorageSystemDetachedParts(const StorageID & table_id_)
+        : IStorage(table_id_)
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(ColumnsDescription{{
@@ -90,7 +90,7 @@ protected:
 StoragePtr
 createDetachedPartsTable()
 {
-    return StorageSystemDetachedParts::create();
+    return StorageSystemDetachedParts::create(StorageID{"system", "detached_parts"});
 }
 
 }
