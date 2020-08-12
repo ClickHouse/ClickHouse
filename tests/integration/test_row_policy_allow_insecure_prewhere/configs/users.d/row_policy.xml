@@ -6,7 +6,7 @@
                 <mydb>
                     <!-- PREWHERE -->
                     <prewhere_filter>
-                        <filter>b = 1</filter>
+                        <filter>b = 3</filter>
                     </prewhere_filter>
                 </mydb>
             </databases>

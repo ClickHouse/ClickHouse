@@ -32,7 +32,7 @@ def test_PREWHERE():
         'max_threads': 1,
         'optimize_move_to_prewhere': 1,
         # enough to trigger an error if PREWHERE does not works
-        'max_bytes_to_read': 1000 + 10*4,
+        'max_bytes_to_read': 1000 + 30,
     }
 
     # Check that filter does works
@@ -40,13 +40,16 @@ def test_PREWHERE():
     assert int(node.query("SELECT count() FROM mydb.prewhere_filter")) == 1
 
     # PREWHERE
-    node.query("SELECT * FROM mydb.prewhere_no_filter PREWHERE c = 1 AND b = 1 FORMAT Null", settings=settings)
-    node.query("SELECT * FROM mydb.prewhere_filter    PREWHERE c = 1 FORMAT Null", settings=settings)
+    node.query("SELECT * FROM mydb.prewhere_no_filter PREWHERE c = 3 AND b = 3 FORMAT Null", settings=settings)
+    node.query("SELECT * FROM mydb.prewhere_filter    PREWHERE c = 3 FORMAT Null", settings=settings)
 
     # WHERE w/ optimize_move_to_prewhere
-    node.query("SELECT * FROM mydb.prewhere_no_filter WHERE c = 1 AND b = 1 FORMAT Null", settings=settings)
-    node.query("SELECT * FROM mydb.prewhere_filter    WHERE c = 1 FORMAT Null", settings=settings)
+    node.query("SELECT * FROM mydb.prewhere_no_filter WHERE c = 3 AND b = 3 FORMAT Null", settings=settings)
+    node.query("SELECT * FROM mydb.prewhere_filter    WHERE c = 3 FORMAT Null", settings=settings)
+
+    # PREWHERE and WHERE w/ optimize_move_to_prewhere
+    node.query("SELECT s FROM mydb.prewhere_filter PREWHERE 1 WHERE c = 3 FORMAT Null", settings=settings)
 
     # WHERE w/o optimize_move_to_prewhere (just make sure it works)
-    node.query("SELECT * FROM mydb.prewhere_no_filter WHERE a = 1 AND b = 1 FORMAT Null")
-    node.query("SELECT * FROM mydb.prewhere_filter    WHERE a = 1 FORMAT Null")
+    node.query("SELECT * FROM mydb.prewhere_no_filter WHERE a = 3 AND b = 3 FORMAT Null")
+    node.query("SELECT * FROM mydb.prewhere_filter    WHERE a = 3 FORMAT Null")
