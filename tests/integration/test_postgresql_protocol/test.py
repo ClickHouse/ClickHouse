@@ -133,7 +133,7 @@ def test_python_client(server_address):
 
 
 def test_java_client(server_address, java_container):
-    with open(os.path.join(SCRIPT_DIR, 'clients', 'java', '0.reference')) as fp:
+    with open(os.path.join(SCRIPT_DIR, 'java.reference')) as fp:
         reference = fp.read()
 
     # database not exists exception.
