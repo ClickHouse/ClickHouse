@@ -35,7 +35,7 @@
 9. Special build check
     - ???
 10. Compatibility check
-    - ???
+    - Checks that `clickhouse` binary runs on distros with old libc versions.
 11. AST fuzzer
 12. Functional stateful tests
 13. Functional stateless tests
