@@ -9,7 +9,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance('node',
-            config_dir='configs',
+            main_configs=["configs/config.d/storage_configuration.xml"],
             tmpfs=['/disk1:size=100M', '/disk2:size=100M'])
 
 @pytest.fixture(scope='module')
