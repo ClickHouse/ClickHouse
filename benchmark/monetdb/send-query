@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-#!/bin/expect
+#!/usr/bin/expect
 
 # Set timeout
 set timeout 600
@@ -7,12 +6,12 @@ set timeout 600
 # Get arguments
 set query [lindex $argv 0]
 
-spawn mclient -u monetdb -d hits
+spawn mclient -u monetdb -d test --timer=clock
 expect "password:"
 send "monetdb\r"
 
 expect "sql>"
-send "$query\r"
+send "$query;\r"
 
 expect "sql>"
 send "\\q\r"
