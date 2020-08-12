@@ -1200,3 +1200,9 @@ sql>SELECT count(*) FROM hits WHERE "CounterID" = 62;
 1 tuple
 clk: 1.406 sec
 ```
+
+How to prepare the benchmark report:
+
+`grep clk log.txt | awk '{ if ($3 == "ms") { print $2 / 1000; } else if ($3 == "sec") { print $2 } else { print } }'`
+
+
