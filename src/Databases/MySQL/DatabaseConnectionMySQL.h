@@ -19,12 +19,12 @@ class Context;
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL final : public IDatabase
+class DatabaseConnectionMySQL final : public IDatabase
 {
 public:
-    ~DatabaseMySQL() override;
+    ~DatabaseConnectionMySQL() override;
 
-    DatabaseMySQL(
+    DatabaseConnectionMySQL(
         const Context & global_context, const String & database_name, const String & metadata_path,
         const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
 
@@ -50,7 +50,7 @@ public:
 
     void createTable(const Context &, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
 
-    void loadStoredObjects(Context &, bool) override;
+    void loadStoredObjects(Context &, bool, bool force_attach) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
@@ -91,7 +91,7 @@ private:
 
     void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time) const;
 
-    ThreadFromGlobalPool thread{&DatabaseMySQL::cleanOutdatedTables, this};
+    ThreadFromGlobalPool thread;
 };
 
 }
