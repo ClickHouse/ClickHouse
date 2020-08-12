@@ -12,8 +12,9 @@ from helpers.test_tools import TSV
 
 node_options = dict(
     with_zookeeper=True,
-    main_configs=['configs/remote_servers.xml'],
-    config_dir='configs',
+    main_configs=["configs/remote_servers.xml", "configs/config.d/instant_moves.xml",
+                  "configs/config.d/part_log.xml", "configs/config.d/zookeeper_session_timeout.xml",
+                  "configs/config.d/storage_configuration.xml"],
     tmpfs=['/external:size=200M', '/internal:size=1M'])
 
 cluster = ClickHouseCluster(__file__)

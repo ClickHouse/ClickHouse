@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+ <yandex>
+    <openSSL>
+        <client>
+            <cacheSessions>true</cacheSessions>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</yandex>

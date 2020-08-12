@@ -8,7 +8,7 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', config_dir='configs')
+node = cluster.add_instance('node', main_configs=["configs/config.d/text_log.xml"])
 
 @pytest.fixture(scope='module')
 def start_cluster():

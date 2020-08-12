@@ -17,10 +17,23 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
 
     def prepare(self, replace_hostnames_with_ips=True):
         try:
+            main_configs = [os.path.join(self.test_config_dir, "config.d/clusters.xml"),
+                            os.path.join(self.test_config_dir, "config.d/zookeeper_session_timeout.xml"),
+                            os.path.join(self.test_config_dir, "config.d/macro.xml"),
+                            os.path.join(self.test_config_dir, "config.d/query_log.xml"),
+                            os.path.join(self.test_config_dir, "config.d/ddl.xml")]
+            user_configs = [os.path.join(self.test_config_dir, "users.d/restricted_user.xml"),
+                            os.path.join(self.test_config_dir, "users.d/query_log.xml")]
+            if self.test_config_dir == "configs_secure":
+                main_configs += [os.path.join(self.test_config_dir, "server.crt"),
+                                 os.path.join(self.test_config_dir, "server.key"),
+                                 os.path.join(self.test_config_dir, "dhparam.pem"),
+                                 os.path.join(self.test_config_dir, "config.d/ssl_conf.xml")]
             for i in xrange(4):
                 self.add_instance(
                     'ch{}'.format(i+1),
-                    config_dir=self.test_config_dir,
+                    main_configs=main_configs,
+                    user_configs=user_configs,
                     macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
                     with_zookeeper=True)
 
