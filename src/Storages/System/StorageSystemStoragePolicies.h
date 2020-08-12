@@ -30,7 +30,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemStoragePolicies(const std::string & name_);
+    StorageSystemStoragePolicies(const StorageID & table_id_);
 };
 
 }

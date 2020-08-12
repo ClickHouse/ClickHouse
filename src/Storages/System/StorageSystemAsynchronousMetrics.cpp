@@ -16,8 +16,8 @@ NamesAndTypesList StorageSystemAsynchronousMetrics::getNamesAndTypes()
 }
 
 
-StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::string & name_, const AsynchronousMetrics & async_metrics_)
-    : IStorageSystemOneBlock(name_), async_metrics(async_metrics_)
+StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const StorageID & table_id_, const AsynchronousMetrics & async_metrics_)
+    : IStorageSystemOneBlock(table_id_), async_metrics(async_metrics_)
 {
 }
 

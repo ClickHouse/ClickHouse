@@ -21,7 +21,7 @@ protected:
     virtual void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const = 0;
 
 public:
-    IStorageSystemOneBlock(const String & name_) : IStorage({"system", name_})
+    IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
         StorageInMemoryMetadata metadata_;
         metadata_.setColumns(ColumnsDescription(Self::getNamesAndTypes()));
