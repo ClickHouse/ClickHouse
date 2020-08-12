@@ -13,13 +13,6 @@
 #    include "config_functions.h"
 #endif
 
-/** More efficient implementations of mathematical functions are possible when using a separate library.
-  * Disabled due to license compatibility limitations.
-  * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
-  * Then rebuild with -DENABLE_VECTORCLASS=1
-  */
-
-
 namespace DB
 {
 
