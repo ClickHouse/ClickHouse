@@ -534,31 +534,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         },
         /* already_loaded = */ true);
 
-    /// Initialize users config reloader.
-    std::string users_config_path = config().getString("users_config", config_path);
-    /// If path to users' config isn't absolute, try guess its root (current) dir.
-    /// At first, try to find it in dir of main config, after will use current dir.
-    if (users_config_path.empty() || users_config_path[0] != '/')
-    {
-        std::string config_dir = Poco::Path(config_path).parent().toString();
-        if (Poco::File(config_dir + users_config_path).exists())
-            users_config_path = config_dir + users_config_path;
-    }
-
-    if (users_config_path != config_path)
-        checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
-
     auto & access_control = global_context->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
-    if (!users_config_path.empty())
-        access_control.addUsersConfigStorage(users_config_path, include_from_path, path, [&] { return global_context->getZooKeeper(); });
-
-    /// Sets a local directory storing information about access control.
-    std::string access_control_local_path = config().getString("access_control_path", "");
-    if (!access_control_local_path.empty())
-        access_control.addDiskStorage(access_control_local_path);
+    /// Initialize access storages.
+    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()

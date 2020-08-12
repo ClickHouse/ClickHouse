@@ -82,6 +82,19 @@ public:
     void addMemoryStorage();
     void addMemoryStorage(const String & storage_name_);
 
+    /// Adds storages from <users_directories> config.
+    void addStoragesFromUserDirectoriesConfig(const Poco::Util::AbstractConfiguration & config,
+                                              const String & key,
+                                              const String & config_dir,
+                                              const String & dbms_dir,
+                                              const String & include_from_path,
+                                              const zkutil::GetZooKeeper & get_zookeeper_function);
+
+    /// Adds storages from the main config.
+    void addStoragesFromMainConfig(const Poco::Util::AbstractConfiguration & config,
+                                   const String & config_path,
+                                   const zkutil::GetZooKeeper & get_zookeeper_function);
+
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
