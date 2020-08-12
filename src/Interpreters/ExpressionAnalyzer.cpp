@@ -469,7 +469,7 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActi
     return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, context);
 }
 
-ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
+ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -482,9 +482,12 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
 
     getRootActions(array_join_expression_list, only_types, step.actions);
 
-    auto array_join =  addMultipleArrayJoinAction(step.actions, is_array_join_left);
-    for (const auto & column : array_join->columns)
-        step.required_output.emplace_back(column);
+    before_array_join = chain.getLastActions();
+    auto array_join = addMultipleArrayJoinAction(step.actions, is_array_join_left);
+
+    chain.steps.push_back(ExpressionActionsChain::Step(array_join, step.getResultColumns()));
+
+    chain.addStep();
 
     return array_join;
 }
@@ -1091,13 +1094,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
-        array_join = query_analyzer.appendArrayJoin(chain, only_types || !first_stage);
-        if (array_join)
-        {
-            before_array_join = chain.getLastActions(true);
-            if (before_array_join)
-                chain.addStep();
-        }
+        array_join = query_analyzer.appendArrayJoin(chain, before_array_join, only_types || !first_stage);
 
         if (query_analyzer.hasTableJoin())
         {
@@ -1123,7 +1120,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             {
                 Block before_where_sample;
                 if (chain.steps.size() > 1)
-                    before_where_sample = chain.steps[chain.steps.size() - 2].actions->getSampleBlock();
+                    before_where_sample = Block(chain.steps[chain.steps.size() - 2].getResultColumns());
                 else
                     before_where_sample = source_header;
                 if (sanitizeBlock(before_where_sample))

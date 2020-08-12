@@ -1255,7 +1255,7 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumnsWithTypeAndName();
+    ColumnsWithTypeAndName columns = steps.back().getResultColumns();
     steps.push_back(Step(std::make_shared<ExpressionActions>(columns, context)));
 }
 
@@ -1273,7 +1273,7 @@ void ExpressionActionsChain::finalize()
         if (i + 1 < static_cast<int>(steps.size()))
         {
             const NameSet & additional_input = steps[i + 1].additional_input;
-            for (const auto & it : steps[i + 1].actions->getRequiredColumnsWithTypes())
+            for (const auto & it : steps[i + 1].getRequiredColumns())
             {
                 if (additional_input.count(it.name) == 0)
                 {
@@ -1285,27 +1285,28 @@ void ExpressionActionsChain::finalize()
                 }
             }
         }
-        steps[i].actions->finalize(required_output);
+        steps[i].finalize(required_output);
     }
 
+    /// TODO: move to QueryPlan
     /// When possible, move the ARRAY JOIN from earlier steps to later steps.
-    for (size_t i = 1; i < steps.size(); ++i)
-    {
-        ExpressionAction action;
-        if (steps[i - 1].actions->popUnusedArrayJoin(steps[i - 1].required_output, action))
-            steps[i].actions->prependArrayJoin(action, steps[i - 1].actions->getSampleBlock());
-    }
+//    for (size_t i = 1; i < steps.size(); ++i)
+//    {
+//        ExpressionAction action;
+//        if (steps[i - 1].actions->popUnusedArrayJoin(steps[i - 1].required_output, action))
+//            steps[i].actions->prependArrayJoin(action, steps[i - 1].actions->getSampleBlock());
+//    }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
     for (size_t i = 1; i < steps.size(); ++i)
     {
-        size_t columns_from_previous = steps[i - 1].actions->getSampleBlock().columns();
+        size_t columns_from_previous = steps[i - 1].getResultColumns().size();
 
         /// If unnecessary columns are formed at the output of the previous step, we'll add them to the beginning of this step.
         /// Except when we drop all the columns and lose the number of rows in the block.
-        if (!steps[i].actions->getRequiredColumnsWithTypes().empty()
-            && columns_from_previous > steps[i].actions->getRequiredColumnsWithTypes().size())
-            steps[i].actions->prependProjectInput();
+        if (!steps[i].getResultColumns().empty()
+            && columns_from_previous > steps[i].getRequiredColumns().size())
+            steps[i].prependProjectInput();
     }
 }
 
@@ -1319,10 +1320,79 @@ std::string ExpressionActionsChain::dumpChain() const
         ss << "required output:\n";
         for (const std::string & name : steps[i].required_output)
             ss << name << "\n";
-        ss << "\n" << steps[i].actions->dumpActions() << "\n";
+        ss << "\n" << steps[i].dump() << "\n";
     }
 
     return ss.str();
+}
+
+ExpressionActionsChain::Step::Step(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
+    : kind(Kind::ARRAY_JOIN)
+    , array_join(std::move(array_join_))
+    , columns_after_array_join(std::move(required_columns_))
+{
+    for (auto & column : columns_after_array_join)
+    {
+        required_columns.emplace_back(NameAndTypePair(column.name, column.type));
+
+        if (array_join->columns.count(column.name) > 0)
+        {
+            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            column.type = array->getNestedType();
+            /// Arrays are materialized
+            column.column = nullptr;
+        }
+    }
+}
+
+void ExpressionActionsChain::Step::finalize(const Names & required_output_)
+{
+    switch (kind)
+    {
+        case Kind::ACTIONS:
+        {
+            actions->finalize(required_output_);
+            return;
+        }
+        case Kind::ARRAY_JOIN:
+        {
+            NamesAndTypesList new_required_columns;
+            ColumnsWithTypeAndName new_result_columns;
+
+            NameSet names(required_output_.begin(), required_output_.end());
+            for (const auto & column : columns_after_array_join)
+            {
+                if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+                    new_result_columns.emplace_back(column);
+            }
+            for (const auto & column : required_columns)
+            {
+                if (array_join->columns.count(column.name) != 0 || names.count(column.name) != 0)
+                    new_required_columns.emplace_back(column);
+            }
+
+            std::swap(required_columns, new_required_columns);
+            std::swap(columns_after_array_join, new_result_columns);
+            return;
+        }
+    }
+}
+
+void ExpressionActionsChain::Step::prependProjectInput()
+{
+    switch (kind)
+    {
+        case Kind::ACTIONS:
+        {
+            actions->prependProjectInput();
+            return;
+        }
+        case Kind::ARRAY_JOIN:
+        {
+            /// TODO: remove unused columns before ARRAY JOIN ?
+            return;
+        }
+    }
 }
 
 }
