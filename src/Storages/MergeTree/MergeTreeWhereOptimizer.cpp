@@ -190,7 +190,7 @@ ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions)
 
 void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 {
-    if (!select.where() || select.prewhere())
+    if (!select.where())
         return;
 
     Conditions where_conditions = analyze(select.where());
@@ -238,7 +238,12 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     /// Rewrite the SELECT query.
 
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
-    select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
+    /// Here PREWHERE can exists only for allow_insecure_prewhere and row-level security filters moved to PREWHERE
+    if (select.prewhere())
+        select.setExpression(ASTSelectQuery::Expression::PREWHERE, makeASTFunction("and",
+            select.prewhere()->clone(), reconstruct(prewhere_conditions)));
+    else
+        select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
     LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
 }
