@@ -23,7 +23,9 @@
 
 /* OPENBSD ORIGINAL: lib/libc/gen/readpassphrase.c */
 
-#include "includes.h"
+#ifndef _PATH_TTY
+#define _PATH_TTY "/dev/tty"
+#endif
 
 #include <termios.h>
 #include <signal.h>
