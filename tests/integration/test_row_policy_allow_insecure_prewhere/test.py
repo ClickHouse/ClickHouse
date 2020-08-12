@@ -1,10 +1,14 @@
 # pylint: disable=line-too-long
 
+import re
 import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", config_dir="configs")
+
+def strip(s):
+    return re.sub(r'[\s]+', ' ', s.strip())
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -49,6 +53,19 @@ def test_PREWHERE():
 
     # PREWHERE and WHERE w/ optimize_move_to_prewhere
     node.query("SELECT s FROM mydb.prewhere_filter PREWHERE 1 WHERE c = 3 FORMAT Null", settings=settings)
+    # EXPLAIN PREWHERE and WHERE w/ optimize_move_to_prewhere
+    assert strip(node.query("EXPLAIN SYNTAX SELECT s FROM mydb.prewhere_no_filter WHERE b = 3 AND 1 = 1 AND c = 3", settings=settings)) == \
+        strip("""
+        SELECT s
+        FROM mydb.prewhere_no_filter
+        PREWHERE (b = 3) AND (c = 3)
+        """)
+    assert strip(node.query("EXPLAIN SYNTAX SELECT s FROM mydb.prewhere_filter WHERE c = 3", settings=settings)) == \
+        strip("""
+        SELECT s
+        FROM mydb.prewhere_filter
+        PREWHERE (b = 3) AND (c = 3)
+        """)
 
     # WHERE w/o optimize_move_to_prewhere (just make sure it works)
     node.query("SELECT * FROM mydb.prewhere_no_filter WHERE a = 3 AND b = 3 FORMAT Null", settings={'optimize_move_to_prewhere': 0})
