@@ -245,7 +245,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     else
         select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" is in PREWHERE after optimization", select.prewhere());
 }
 
 
