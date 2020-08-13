@@ -1,5 +1,7 @@
 #include <Core/MySQL/PacketsConnection.h>
-#include <Core/MySQLProtocol.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/MySQL/MySQLPackets.h>
 
 namespace DB
 {
@@ -9,6 +11,9 @@ namespace MySQLProtocol
 
 namespace ConnectionPhase
 {
+
+static const size_t SCRAMBLE_LENGTH = 20;
+static const size_t AUTH_PLUGIN_DATA_PART_1_LENGTH = 8;
 
 Handshake::Handshake() : connection_id(0x00), capability_flags(0x00), character_set(0x00), status_flags(0x00)
 {
@@ -44,7 +49,7 @@ void Handshake::readPayloadImpl(ReadBuffer & payload)
     payload.readStrict((reinterpret_cast<char *>(&capability_flags)) + 2, 2);
 
     UInt8 auth_plugin_data_length = 0;
-    if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
+    if (capability_flags & Capability::CLIENT_PLUGIN_AUTH)
     {
         payload.readStrict(reinterpret_cast<char *>(&auth_plugin_data_length), 1);
     }
@@ -54,7 +59,7 @@ void Handshake::readPayloadImpl(ReadBuffer & payload)
     }
 
     payload.ignore(10);
-    if (capability_flags & MySQLProtocol::CLIENT_SECURE_CONNECTION)
+    if (capability_flags & Capability::CLIENT_SECURE_CONNECTION)
     {
         UInt8 part2_length = (SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH);
         auth_plugin_data.resize(SCRAMBLE_LENGTH);
@@ -62,7 +67,7 @@ void Handshake::readPayloadImpl(ReadBuffer & payload)
         payload.ignore(1);
     }
 
-    if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
+    if (capability_flags & Capability::CLIENT_PLUGIN_AUTH)
     {
         readNullTerminated(auth_plugin_name, payload);
     }
