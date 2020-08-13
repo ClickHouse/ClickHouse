@@ -27,6 +27,18 @@ If you want to use distributed queries in functional tests, you can leverage `re
 
 Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively.
 
+### Running a particular test locally {#functional-test-locally}
+
+Start the ClickHouse server locally, listening on the default port (9000). To
+run, for example, the test `01428_hash_set_nan_key`, change to the repository
+folder and run the following command:
+
+```
+PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
+```
+
+For more options, see `tests/clickhouse-test --help`.
+
 ## Known Bugs {#known-bugs}
 
 If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `tests/queries/bugs` directory. These tests will be moved to `tests/queries/0_stateless` when bugs are fixed.
