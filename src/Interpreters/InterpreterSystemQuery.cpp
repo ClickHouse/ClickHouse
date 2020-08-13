@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>

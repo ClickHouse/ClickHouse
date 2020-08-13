@@ -11,7 +11,7 @@ namespace ErrorCodes
 
 Block ArrayJoinTransform::transformHeader(Block header, const ArrayJoinActionPtr & array_join)
 {
-    array_join->execute(header, true);
+    array_join->execute(header);
     return header;
 }
 
@@ -30,7 +30,7 @@ ArrayJoinTransform::ArrayJoinTransform(
 void ArrayJoinTransform::transform(Chunk & chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    array_join->execute(block, false);
+    array_join->execute(block);
     chunk.setColumns(block.getColumns(), block.rows());
 }
 

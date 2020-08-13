@@ -20,7 +20,7 @@ public:
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void updateInputStream(DataStream input_stream, Block result_header);
+    void updateInputStream(DataStream input_stream, bool keep_header);
 
     void describeActions(FormatSettings & settings) const override;
 
@@ -32,7 +32,6 @@ private:
     ExpressionActionsPtr expression;
     String filter_column_name;
     bool remove_filter_column;
-    Block res_header;
 };
 
 }
