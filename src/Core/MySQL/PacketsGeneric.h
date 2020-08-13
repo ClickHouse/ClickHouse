@@ -2,10 +2,6 @@
 
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include <Core/MySQL/PacketsConnection.h>
-#include <Core/MySQL/PacketsProtocolText.h>
-#include <Core/MySQL/Authentication.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {

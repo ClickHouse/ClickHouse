@@ -26,6 +26,9 @@
 #include <Core/MySQL/PacketPayloadReadBuffer.h>
 #include <Core/MySQL/PacketPayloadWriteBuffer.h>
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQL/Authentication.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -56,7 +59,6 @@ namespace MySQLProtocol
 {
 
 //const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
-const size_t SCRAMBLE_LENGTH = 20;
 const size_t PACKET_HEADER_SIZE = 4;
 const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
@@ -85,14 +87,6 @@ enum Command
     COM_RESET_CONNECTION = 0x1f,
     COM_DAEMON = 0x1d
 };
-
-
-class ProtocolError : public DB::Exception
-{
-public:
-    using Exception::Exception;
-};
-
 
 namespace Replication
 {
