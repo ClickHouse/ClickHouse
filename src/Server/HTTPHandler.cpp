@@ -596,8 +596,15 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&session, &response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
+            /// Release the session when the query is done.
+            if (session)
+            {
+                session->release();
+                session = nullptr;
+            }
+
             response.setContentType(content_type);
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
