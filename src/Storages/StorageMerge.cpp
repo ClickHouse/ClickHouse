@@ -152,19 +152,13 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 Pipes StorageMerge::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & src_query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     unsigned num_streams)
 {
     Pipes res;
-
-    SelectQueryInfo query_info = src_query_info;
-    query_info.query = src_query_info.query->clone();
-
-    /// Original query could contain JOIN but we need only the first joined table and its columns.
-    removeJoin(*query_info.query->as<ASTSelectQuery>());
 
     bool has_table_virtual_column = false;
     Names real_column_names;
@@ -269,6 +263,9 @@ Pipes StorageMerge::createSources(
     const auto & [storage, struct_lock, table_name] = storage_with_lock;
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
+
+    /// Original query could contain JOIN but we need only the first joined table and its columns.
+    removeJoin(*modified_query_info.query->as<ASTSelectQuery>());
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
