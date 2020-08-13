@@ -25,6 +25,13 @@ protected:
     virtual void writePayloadImpl(WriteBuffer & buffer) const = 0;
 };
 
+size_t getLengthEncodedNumberSize(uint64_t x);
+size_t getLengthEncodedStringSize(const String & s);
+
+void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
+void writeLengthEncodedString(const String & s, WriteBuffer & buffer);
+void writeNulTerminatedString(const String & s, WriteBuffer & buffer);
+
 }
 
 }

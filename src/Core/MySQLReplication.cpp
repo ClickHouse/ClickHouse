@@ -15,6 +15,7 @@ namespace ErrorCodes
 namespace MySQLReplication
 {
     using namespace MySQLProtocol;
+    using namespace MySQLProtocol::ProtocolText;
 
     /// https://dev.mysql.com/doc/internals/en/binlog-event-header.html
     void EventHeader::parse(ReadBuffer & payload)

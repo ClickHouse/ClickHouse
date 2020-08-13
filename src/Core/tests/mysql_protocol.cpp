@@ -13,6 +13,7 @@ int main(int argc, char ** argv)
     using namespace MySQLProtocol;
     using namespace MySQLProtocol::Authentication;
     using namespace MySQLProtocol::ConnectionPhase;
+    using namespace MySQLProtocol::ProtocolText;
 
 
     uint8_t sequence_id = 1;
@@ -36,7 +37,7 @@ int main(int argc, char ** argv)
         std::string s0;
         WriteBufferFromString out0(s0);
 
-        Handshake server_handshake(server_capability_flags, -1, "ClickHouse", "mysql_native_password", "aaaaaaaaaaaaaaaaaaaaa");
+        Handshake server_handshake(server_capability_flags, -1, "ClickHouse", "mysql_native_password", "aaaaaaaaaaaaaaaaaaaaa", CharacterSet::utf8_general_ci);
         server_handshake.writePayload(out0, sequence_id);
 
         /// 1.2 Client reads the greeting
@@ -143,12 +144,12 @@ int main(int argc, char ** argv)
         // 1. Server writes packet
         std::string s0;
         WriteBufferFromString out0(s0);
-        ColumnDefinitionPacket server("schema", "tbl", "org_tbl", "name", "org_name", 33, 0x00, MYSQL_TYPE_STRING, 0x00, 0x00);
+        ColumnDefinition server("schema", "tbl", "org_tbl", "name", "org_name", 33, 0x00, MYSQL_TYPE_STRING, 0x00, 0x00);
         server.writePayload(out0, sequence_id);
 
         // 2. Client reads packet
         ReadBufferFromString in0(s0);
-        ColumnDefinitionPacket client;
+        ColumnDefinition client;
         client.readPayload(in0, sequence_id);
 
         // Check
