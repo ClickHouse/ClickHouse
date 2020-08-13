@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -573,6 +574,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     /// Let's find what range to read from each part.
     {
+        std::atomic<size_t> total_rows {0};
+
         auto process_part = [&](size_t part_index)
         {
             auto & part = parts[part_index];
@@ -599,7 +602,20 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
                         index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings, reader_settings, log);
 
             if (!ranges.ranges.empty())
+            {
+                if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+                {
+                    /// Fail fast if estimated number of rows to read exceeds the limit
+                    size_t total_rows_estimate = total_rows.fetch_add(ranges.getRowsCount());
+                    if (total_rows_estimate > settings.max_rows_to_read)
+                        throw Exception(
+                            "Limit for rows exceeded, max rows: " + formatReadableQuantity(settings.max_rows_to_read)
+                            + ", current rows: " + formatReadableQuantity(total_rows_estimate),
+                            ErrorCodes::TOO_MANY_ROWS);
+                }
+
                 parts_with_ranges[part_index] = std::move(ranges);
+            }
         };
 
         size_t num_threads = std::min(size_t(num_streams), parts.size());
