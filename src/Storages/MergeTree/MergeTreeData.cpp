@@ -1252,7 +1252,16 @@ void MergeTreeData::dropAllData()
     clearPartsFromFilesystem(all_parts);
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
-        disk->removeRecursive(path);
+    {
+        try
+        {
+            disk->removeRecursive(path);
+        }
+        catch (const Poco::FileNotFoundException &)
+        {
+            /// If the file is already deleted, do nothing.
+        }
+    }
 
     LOG_TRACE(log, "dropAllData: done.");
 }
