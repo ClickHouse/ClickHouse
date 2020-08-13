@@ -29,7 +29,9 @@ endforeach()
 project(ClickHouse)
 
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
-      "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy" OFF)
+       "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy"
+       ON
+)
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
