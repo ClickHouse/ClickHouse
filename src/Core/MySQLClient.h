@@ -57,7 +57,7 @@ private:
     std::shared_ptr<WriteBuffer> out;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
-    std::shared_ptr<PacketSender> packet_sender;
+    std::shared_ptr<PacketEndpoint> packet_sender;
 
     void handshake();
     void registerSlaveOnMaster(UInt32 slave_id);

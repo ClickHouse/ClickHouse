@@ -10,24 +10,9 @@
 
 namespace DB::MySQLProtocol
 {
+    extern const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 
 
-
-void PacketSender::resetSequenceId()
-{
-    sequence_id = 0;
-}
-
-String PacketSender::packetToText(const String & payload)
-{
-    String result;
-    for (auto c : payload)
-    {
-        result += ' ';
-        result += std::to_string(static_cast<unsigned char>(c));
-    }
-    return result;
-}
 
 uint64_t readLengthEncodedNumber(ReadBuffer & ss)
 {
@@ -168,57 +153,6 @@ ColumnDefinitionPacket getColumnDefinition(const String & column_name, const Typ
             break;
     }
     return ColumnDefinitionPacket(column_name, charset, 0, column_type, flags, 0);
-}
-
-bool PacketPayloadReadBuffer::nextImpl()
-{
-    if (!has_read_header || (payload_length == max_packet_size && offset == payload_length))
-    {
-        has_read_header = true;
-        working_buffer.resize(0);
-        offset = 0;
-        payload_length = 0;
-        in.readStrict(reinterpret_cast<char *>(&payload_length), 3);
-
-        if (payload_length > max_packet_size)
-        {
-            std::ostringstream tmp;
-            tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
-            throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-        }
-
-        size_t packet_sequence_id = 0;
-        in.read(reinterpret_cast<char &>(packet_sequence_id));
-        if (packet_sequence_id != sequence_id)
-        {
-            std::ostringstream tmp;
-            tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << static_cast<unsigned int>(sequence_id) << '.';
-            throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-        }
-        sequence_id++;
-
-        if (payload_length == 0)
-            return false;
-    }
-    else if (offset == payload_length)
-    {
-        return false;
-    }
-
-    in.nextIfAtEnd();
-    working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end());
-    size_t count = std::min(in.available(), payload_length - offset);
-    working_buffer.resize(count);
-    in.ignore(count);
-
-    offset += count;
-
-    return true;
-}
-
-PacketPayloadReadBuffer::PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_)
-    : ReadBuffer(in_.position(), 0), in(in_), sequence_id(sequence_id_) // not in.buffer().begin(), because working buffer may include previous packet
-{
 }
 
 //void ReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
