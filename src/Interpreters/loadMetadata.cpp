@@ -170,7 +170,8 @@ void loadMetadata(Context & context, const String & default_database_name)
 void loadMetadataSystem(Context & context)
 {
     String path = context.getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
-    if (Poco::File(path).exists())
+    String metadata_file = path + ".sql";
+    if (Poco::File(path).exists() || Poco::File(metadata_file).exists())
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
         loadDatabase(context, DatabaseCatalog::SYSTEM_DATABASE, path, true);
