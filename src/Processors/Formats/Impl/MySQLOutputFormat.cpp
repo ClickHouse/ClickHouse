@@ -39,7 +39,7 @@ void MySQLOutputFormat::initialize()
 
         if (!(context->mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
         {
-            packet_sender->sendPacket(EOF_Packet(0, 0));
+            packet_sender->sendPacket(EOFPacket(0, 0));
         }
     }
 }
@@ -75,12 +75,12 @@ void MySQLOutputFormat::finalize()
 
     const auto & header = getPort(PortKind::Main).getHeader();
     if (header.columns() == 0)
-        packet_sender->sendPacket(OK_Packet(0x0, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
+        packet_sender->sendPacket(OKPacket(0x0, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
     if (context->mysql.client_capabilities & CLIENT_DEPRECATE_EOF)
-        packet_sender->sendPacket(OK_Packet(0xfe, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
+        packet_sender->sendPacket(OKPacket(0xfe, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
-        packet_sender->sendPacket(EOF_Packet(0, 0), true);
+        packet_sender->sendPacket(EOFPacket(0, 0), true);
 }
 
 void MySQLOutputFormat::flush()

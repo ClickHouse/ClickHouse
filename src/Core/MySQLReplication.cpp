@@ -717,8 +717,8 @@ namespace MySQLReplication
             case PACKET_EOF:
                 throw ReplicationError("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
             case PACKET_ERR:
-                ERR_Packet err;
-                err.readPayloadImpl(payload);
+                ERRPacket err;
+                err.readPayloadWithUnpacked(payload);
                 throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the header flag.

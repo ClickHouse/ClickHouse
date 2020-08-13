@@ -117,10 +117,10 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+            packet_sender->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         }
 
-        OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
+        OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
         packet_sender->sendPacket(ok_packet, true);
 
         while (true)
@@ -166,7 +166,7 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                packet_sender->sendPacket(ERR_Packet(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
+                packet_sender->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }
     }
@@ -218,7 +218,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
         copyData(*packet_sender->in, buf_for_handshake_response, packet_size - pos);
         ReadBufferFromString payload(buf_for_handshake_response.str());
         payload.ignore(PACKET_HEADER_SIZE);
-        packet.readPayloadImpl(payload);
+        packet.readPayloadWithUnpacked(payload);
         packet_sender->sequence_id++;
     }
 }
@@ -241,7 +241,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+        packet_sender->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         throw;
     }
     LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
@@ -253,29 +253,29 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
     connection_context.setCurrentDatabase(database);
-    packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
+    packet_sender->sendPacket(OKPacket(0, client_capability_flags, 0, 0, 1), true);
 }
 
 void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
-    packet.readPayloadImpl(payload);
+    packet.readPayloadWithUnpacked(payload);
     String database = connection_context.getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, connection_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
-        ColumnDefinition column_definition(
+        ColumnDefinitionPacket column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
         packet_sender->sendPacket(column_definition);
     }
-    packet_sender->sendPacket(OK_Packet(0xfe, client_capability_flags, 0, 0, 0), true);
+    packet_sender->sendPacket(OKPacket(0xfe, client_capability_flags, 0, 0, 0), true);
 }
 
 void MySQLHandler::comPing()
 {
-    packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
+    packet_sender->sendPacket(OKPacket(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
 static bool isFederatedServerSetupSetCommand(const String & query);
@@ -288,7 +288,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     // As Clickhouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
-        packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
+        packet_sender->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
     }
     else
     {
@@ -318,7 +318,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         );
 
         if (!with_output)
-            packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
+            packet_sender->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
     }
 }
 
@@ -350,7 +350,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
     SSLRequest ssl_request;
     ReadBufferFromMemory payload(buf, pos);
     payload.ignore(PACKET_HEADER_SIZE);
-    ssl_request.readPayloadImpl(payload);
+    ssl_request.readPayloadWithUnpacked(payload);
     connection_context.mysql.client_capabilities = ssl_request.capability_flags;
     connection_context.mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
