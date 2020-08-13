@@ -10,6 +10,7 @@ namespace DB
 {
 
 using namespace MySQLProtocol;
+using namespace MySQLProtocol::ProtocolText;
 
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)

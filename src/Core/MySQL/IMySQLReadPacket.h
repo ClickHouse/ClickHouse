@@ -33,7 +33,7 @@ public:
     void readPayloadWithUnpacked(ReadBuffer & in) override;
 };
 
-uint64_t readLengthEncodedNumber(ReadBuffer & ss);
+uint64_t readLengthEncodedNumber(ReadBuffer & buffer);
 void readLengthEncodedString(String & s, ReadBuffer & buffer);
 
 //inline void readLengthEncodedString(String & s, ReadBuffer & buffer)

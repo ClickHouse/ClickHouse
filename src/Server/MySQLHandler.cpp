@@ -32,6 +32,7 @@ namespace DB
 
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::ConnectionPhase;
+using namespace MySQLProtocol::ProtocolText;
 
 #if USE_SSL
 using Poco::Net::SecureStreamSocket;
@@ -79,7 +80,8 @@ void MySQLHandler::run()
 
     try
     {
-        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, auth_plugin->getName(), auth_plugin->getAuthPluginData());
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
+            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8_general_ci);
         packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -266,7 +268,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
-        ColumnDefinitionPacket column_definition(
+        ColumnDefinition column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
         packet_sender->sendPacket(column_definition);

@@ -15,9 +15,10 @@ Handshake::Handshake() : connection_id(0x00), capability_flags(0x00), character_
 }
 
 Handshake::Handshake(
-    uint32_t capability_flags_, uint32_t connection_id_, String server_version_, String auth_plugin_name_, String auth_plugin_data_)
+    uint32_t capability_flags_, uint32_t connection_id_,
+    String server_version_, String auth_plugin_name_, String auth_plugin_data_, uint8_t charset_)
     : protocol_version(0xa), server_version(std::move(server_version_)), connection_id(connection_id_), capability_flags(capability_flags_),
-      character_set(CharacterSet::utf8_general_ci), status_flags(0), auth_plugin_name(std::move(auth_plugin_name_)),
+      character_set(charset_), status_flags(0), auth_plugin_name(std::move(auth_plugin_name_)),
       auth_plugin_data(std::move(auth_plugin_data_))
 {
 }

@@ -62,13 +62,6 @@ const size_t MYSQL_ERRMSG_SIZE = 512;
 const size_t PACKET_HEADER_SIZE = 4;
 const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
-
-enum CharacterSet
-{
-    utf8_general_ci = 33,
-    binary = 63
-};
-
 enum StatusFlags
 {
     SERVER_SESSION_STATE_CHANGED = 0x4000
@@ -113,13 +106,6 @@ enum Command
     COM_DAEMON = 0x1d
 };
 
-// https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
-enum ColumnDefinitionFlags
-{
-    UNSIGNED_FLAG = 32,
-    BINARY_FLAG = 128
-};
-
 
 class ProtocolError : public DB::Exception
 {
@@ -127,35 +113,6 @@ public:
     using Exception::Exception;
 };
 
-
-uint64_t readLengthEncodedNumber(ReadBuffer & ss);
-
-inline void readLengthEncodedString(String & s, ReadBuffer & buffer)
-{
-    uint64_t len = readLengthEncodedNumber(buffer);
-    s.resize(len);
-    buffer.readStrict(reinterpret_cast<char *>(s.data()), len);
-}
-
-void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
-
-inline void writeLengthEncodedString(const String & s, WriteBuffer & buffer)
-{
-    writeLengthEncodedNumber(s.size(), buffer);
-    buffer.write(s.data(), s.size());
-}
-
-inline void writeNulTerminatedString(const String & s, WriteBuffer & buffer)
-{
-    buffer.write(s.data(), s.size());
-    buffer.write(0);
-}
-
-size_t getLengthEncodedNumberSize(uint64_t x);
-
-size_t getLengthEncodedStringSize(const String & s);
-
-ColumnDefinitionPacket getColumnDefinition(const String & column_name, const TypeIndex index);
 
 namespace Replication
 {
