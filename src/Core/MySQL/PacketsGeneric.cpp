@@ -1,5 +1,6 @@
 #include <Core/MySQL/PacketsGeneric.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

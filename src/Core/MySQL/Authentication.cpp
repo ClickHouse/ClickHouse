@@ -1,8 +1,22 @@
 #include <Core/MySQL/Authentication.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Poco/RandomStream.h>
+#include <Poco/SHA1Engine.h>
+#include <Access/User.h>
+#include <Access/AccessControlManager.h>
+
+#include <ext/scope_guard.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int OPENSSL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
+
+}
 
 namespace MySQLProtocol
 {
@@ -11,6 +25,8 @@ using namespace ConnectionPhase;
 
 namespace Authentication
 {
+
+static const size_t SCRAMBLE_LENGTH = 20;
 
 Native41::Native41()
 {
