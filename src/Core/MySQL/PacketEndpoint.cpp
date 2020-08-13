@@ -18,9 +18,9 @@ PacketEndpoint::PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & s
 {
 }
 
-PacketPayloadReadBuffer PacketEndpoint::getPayload()
+MySQLPacketPayloadReadBuffer PacketEndpoint::getPayload()
 {
-    return PacketPayloadReadBuffer(*in, sequence_id);
+    return MySQLPacketPayloadReadBuffer(*in, sequence_id);
 }
 
 void PacketEndpoint::receivePacket(IMySQLReadPacket & packet)

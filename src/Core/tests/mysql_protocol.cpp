@@ -1,6 +1,6 @@
 #include <string>
 
-#include <Core/MySQLClient.h>
+#include <Core/MySQL/MySQLClient.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsConnection.h>
@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
     String database;
 
     UInt8 charset_utf8 = 33;
-    UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
+    UInt32 max_packet_size = MAX_PACKET_LENGTH;
     String mysql_native_password = "mysql_native_password";
 
     UInt32 server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH

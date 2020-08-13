@@ -12,6 +12,8 @@ namespace MySQLProtocol
 namespace Generic
 {
 
+const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
+
 enum StatusFlags
 {
     SERVER_SESSION_STATE_CHANGED = 0x4000

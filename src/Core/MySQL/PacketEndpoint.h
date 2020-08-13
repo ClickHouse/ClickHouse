@@ -4,7 +4,7 @@
 #include <IO/WriteBuffer.h>
 #include "IMySQLReadPacket.h"
 #include "IMySQLWritePacket.h"
-#include "PacketPayloadReadBuffer.h"
+#include "IO/MySQLPacketPayloadReadBuffer.h"
 
 namespace DB
 {
@@ -21,7 +21,6 @@ public:
     uint8_t & sequence_id;
     ReadBuffer * in;
     WriteBuffer * out;
-    size_t max_packet_size = MAX_PACKET_LENGTH;
 
     /// For writing.
     PacketEndpoint(WriteBuffer & out_, uint8_t & sequence_id_);
@@ -29,7 +28,7 @@ public:
     /// For reading and writing.
     PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
 
-    PacketPayloadReadBuffer getPayload();
+    MySQLPacketPayloadReadBuffer getPayload();
 
     void receivePacket(IMySQLReadPacket & packet);
 

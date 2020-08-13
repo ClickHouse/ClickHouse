@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/MySQL/PacketPayloadReadBuffer.h>
-#include <Core/MySQL/PacketPayloadWriteBuffer.h>
+#include <IO/MySQLPacketPayloadReadBuffer.h>
+#include <IO/MySQLPacketPayloadWriteBuffer.h>
 #include <Core/MySQL/PacketEndpoint.h>
 
 /// Implementation of MySQL wire protocol.

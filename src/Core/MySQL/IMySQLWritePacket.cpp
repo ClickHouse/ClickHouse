@@ -1,5 +1,5 @@
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include <Core/MySQL/PacketPayloadWriteBuffer.h>
+#include <IO/MySQLPacketPayloadWriteBuffer.h>
 #include <sstream>
 
 namespace DB
@@ -10,7 +10,7 @@ namespace MySQLProtocol
 
 void IMySQLWritePacket::writePayload(WriteBuffer & buffer, uint8_t & sequence_id) const
 {
-    PacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
+    MySQLPacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
     writePayloadImpl(buf);
     buf.next();
     if (buf.remainingPayloadSize())

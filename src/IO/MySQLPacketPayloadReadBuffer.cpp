@@ -1,4 +1,4 @@
-#include <Core/MySQL/PacketPayloadReadBuffer.h>
+#include <IO/MySQLPacketPayloadReadBuffer.h>
 #include <sstream>
 
 namespace DB
@@ -9,17 +9,16 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
-namespace MySQLProtocol
-{
+const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 
-PacketPayloadReadBuffer::PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_)
+MySQLPacketPayloadReadBuffer::MySQLPacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_)
     : ReadBuffer(in_.position(), 0), in(in_), sequence_id(sequence_id_) // not in.buffer().begin(), because working buffer may include previous packet
 {
 }
 
-bool PacketPayloadReadBuffer::nextImpl()
+bool MySQLPacketPayloadReadBuffer::nextImpl()
 {
-    if (!has_read_header || (payload_length == max_packet_size && offset == payload_length))
+    if (!has_read_header || (payload_length == MAX_PACKET_LENGTH && offset == payload_length))
     {
         has_read_header = true;
         working_buffer.resize(0);
@@ -27,7 +26,7 @@ bool PacketPayloadReadBuffer::nextImpl()
         payload_length = 0;
         in.readStrict(reinterpret_cast<char *>(&payload_length), 3);
 
-        if (payload_length > max_packet_size)
+        if (payload_length > MAX_PACKET_LENGTH)
         {
             std::ostringstream tmp;
             tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
@@ -61,8 +60,6 @@ bool PacketPayloadReadBuffer::nextImpl()
     offset += count;
 
     return true;
-}
-
 }
 
 }
