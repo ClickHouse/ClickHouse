@@ -5,6 +5,8 @@
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
 
+#include <Common/OpenSSLHelpers.h>
+
 #include <ext/scope_guard.h>
 
 namespace DB
@@ -15,7 +17,6 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
-
 }
 
 namespace MySQLProtocol

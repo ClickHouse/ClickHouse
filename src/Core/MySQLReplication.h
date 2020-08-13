@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Field.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/PacketsReplication.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>

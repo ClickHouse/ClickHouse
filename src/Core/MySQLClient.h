@@ -1,7 +1,6 @@
 #pragma once
-#include <Core/MySQLProtocol.h>
-#include <Core/MySQLReplication.h>
 #include <Core/Types.h>
+#include <Core/MySQLReplication.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -11,18 +10,14 @@
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
+#include <Core/MySQL/IMySQLWritePacket.h>
 
 
 namespace DB
 {
+
 using namespace MySQLProtocol;
 using namespace MySQLReplication;
-
-class MySQLClientError : public DB::Exception
-{
-public:
-    using Exception::Exception;
-};
 
 class MySQLClient
 {

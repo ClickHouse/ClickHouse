@@ -3,7 +3,10 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
 
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB

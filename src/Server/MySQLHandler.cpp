@@ -5,16 +5,25 @@
 #include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/copyData.h>
 #include <Interpreters/executeQuery.h>
+#include <IO/copyData.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Storages/IStorage.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <regex>
+#include <Access/User.h>
+#include <Access/AccessControlManager.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -25,6 +34,7 @@
 #    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
+
 #endif
 
 namespace DB
@@ -47,6 +57,10 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
 }
+
+
+static const size_t PACKET_HEADER_SIZE = 4;
+static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);

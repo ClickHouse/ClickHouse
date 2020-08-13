@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Core/MySQLProtocol.h>
 #include <Interpreters/ProcessList.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
