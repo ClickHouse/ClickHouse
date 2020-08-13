@@ -1,5 +1,6 @@
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/PacketPayloadWriteBuffer.h>
+#include <sstream>
 
 namespace DB
 {

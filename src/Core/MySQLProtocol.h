@@ -22,7 +22,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include <Core/MySQL/MySQLPackets.h>
+#include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketPayloadReadBuffer.h>
 #include <Core/MySQL/PacketPayloadWriteBuffer.h>
 #include <Core/MySQL/PacketEndpoint.h>
@@ -57,14 +57,8 @@ namespace MySQLProtocol
 
 //const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 const size_t SCRAMBLE_LENGTH = 20;
-const size_t MYSQL_ERRMSG_SIZE = 512;
 const size_t PACKET_HEADER_SIZE = 4;
 const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
-
-enum StatusFlags
-{
-    SERVER_SESSION_STATE_CHANGED = 0x4000
-};
 
 enum Command
 {

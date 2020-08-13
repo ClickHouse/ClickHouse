@@ -10,6 +10,7 @@ namespace DB
 {
 
 using namespace MySQLProtocol;
+using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 
 
