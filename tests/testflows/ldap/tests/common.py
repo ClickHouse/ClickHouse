@@ -179,13 +179,13 @@ def add_users_identified_with_ldap(*users):
     try:
         with Given("I create users"):
             for user in users:
-                node.query(f"CREATE USER {user['username']} IDENTIFIED WITH ldap_server BY '{user['server']}'")
+                node.query(f"CREATE USER '{user['username']}' IDENTIFIED WITH ldap_server BY '{user['server']}'")
         yield
     finally:
         with Finally("I remove users"):
             for user in users:
                 with By(f"dropping user {user['username']}", flags=TE):
-                    node.query(f"DROP USER IF EXISTS {user['username']}")
+                    node.query(f"DROP USER IF EXISTS '{user['username']}'")
 
 @contextmanager
 def ldap_authenticated_users(*users, config_d_dir="/etc/clickhouse-server/users.d",
