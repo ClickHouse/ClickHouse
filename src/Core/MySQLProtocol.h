@@ -173,14 +173,6 @@ public:
  */
 class PacketPayloadReadBuffer : public ReadBuffer
 {
-public:
-    PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_)
-        : ReadBuffer(in_.position(), 0)  // not in.buffer().begin(), because working buffer may include previous packet
-        , in(in_)
-        , sequence_id(sequence_id_)
-    {
-    }
-
 private:
     ReadBuffer & in;
     uint8_t & sequence_id;
@@ -195,51 +187,10 @@ private:
     size_t offset = 0;
 
 protected:
-    bool nextImpl() override
-    {
-        if (!has_read_header || (payload_length == max_packet_size && offset == payload_length))
-        {
-            has_read_header = true;
-            working_buffer.resize(0);
-            offset = 0;
-            payload_length = 0;
-            in.readStrict(reinterpret_cast<char *>(&payload_length), 3);
+    bool nextImpl() override;
 
-            if (payload_length > max_packet_size)
-            {
-                std::ostringstream tmp;
-                tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
-                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-            }
-
-            size_t packet_sequence_id = 0;
-            in.read(reinterpret_cast<char &>(packet_sequence_id));
-            if (packet_sequence_id != sequence_id)
-            {
-                std::ostringstream tmp;
-                tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << static_cast<unsigned int>(sequence_id) << '.';
-                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-            }
-            sequence_id++;
-
-            if (payload_length == 0)
-                return false;
-        }
-        else if (offset == payload_length)
-        {
-            return false;
-        }
-
-        in.nextIfAtEnd();
-        working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end());
-        size_t count = std::min(in.available(), payload_length - offset);
-        working_buffer.resize(count);
-        in.ignore(count);
-
-        offset += count;
-
-        return true;
-    }
+public:
+    PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_);
 };
 
 
@@ -250,18 +201,7 @@ public:
 
     ReadPacket(ReadPacket &&) = default;
 
-    virtual void readPayload(ReadBuffer & in, uint8_t & sequence_id)
-    {
-        PacketPayloadReadBuffer payload(in, sequence_id);
-        payload.next();
-        readPayloadImpl(payload);
-        if (!payload.eof())
-        {
-            std::stringstream tmp;
-            tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
-            throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-        }
-    }
+    virtual void readPayload(ReadBuffer & in, uint8_t & sequence_id);
 
     virtual void readPayloadImpl(ReadBuffer & buf) = 0;
 
@@ -272,11 +212,7 @@ public:
 class LimitedReadPacket : public ReadPacket
 {
 public:
-    void readPayload(ReadBuffer & in, uint8_t & sequence_id) override
-    {
-        LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
-        ReadPacket::readPayload(limited, sequence_id);
-    }
+    void readPayload(ReadBuffer & in, uint8_t & sequence_id) override;
 };
 
 

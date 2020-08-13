@@ -13,6 +13,7 @@
 
 namespace DB
 {
+
 namespace MySQLReplication
 {
     static const int EVENT_VERSION_V4 = 4;
