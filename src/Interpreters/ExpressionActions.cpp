@@ -1079,11 +1079,22 @@ void ExpressionActions::optimizeArrayJoin()
 
 ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
 {
+    /// Create new actions.
+    /// Copy from this because we don't have context.
+    /// TODO: remove context from constructor?
     auto split_actions = std::make_shared<ExpressionActions>(*this);
     split_actions->actions.clear();
     split_actions->sample_block.clear();
     split_actions->input_columns.clear();
 
+    /// Expected chain:
+    /// Expression (this) -> ArrayJoin (array_joined_columns) -> Expression (split_actions)
+
+    /// We are going to move as many actions as we can from this to split_actions.
+    /// We can move all inputs which are not depend on array_joined_columns
+    /// (with some exceptions to PROJECT and REMOVE_COLUMN
+
+    /// Use the same inputs for split_actions, except array_joined_columns.
     for (const auto & input_column : input_columns)
     {
         if (array_joined_columns.count(input_column.name) == 0)
@@ -1097,31 +1108,39 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
     if (split_actions->input_columns.empty())
         return split_actions;
 
+    /// Actions which depend on ARRAY JOIN result.
     NameSet array_join_dependent_columns = array_joined_columns;
-    /// Columns needed to evaluate arrayJoin or those that depend on it.
-    /// Actions to delete them can not be moved to the left of the arrayJoin.
-    NameSet array_join_dependencies;
+    /// Arguments of actions which depend on ARRAY JOIN result.
+    /// This columns can't be deleted in split_actions.
+    NameSet array_join_dependent_columns_arguments;
 
+    /// We create new_actions list for `this`. Current actions are moved to new_actions nor added to split_actions.
     Actions new_actions;
     for (const auto & action : actions)
     {
+        /// Exception for PROJECT.
+        /// It removes columns, so it will remove split_actions output which may be needed for actions from `this`.
+        /// So, we replace it ADD_ALIASES.
+        /// Usually, PROJECT is added to begin of actions in order to remove unused output of prev actions.
+        /// We skip it now, but will prependProjectInput at the end.
         if (action.type == ExpressionAction::PROJECT)
         {
+            /// Each alias has separate dependencies, so we split this action into two parts.
             NamesWithAliases split_aliases;
             NamesWithAliases depend_aliases;
             for (const auto & pair : action.projection)
             {
-                if (!pair.second.empty() || array_join_dependent_columns.count(pair.first))
+                /// Skip if is not alias.
+                if (pair.second.empty())
+                    continue;
+
+                if (array_join_dependent_columns.count(pair.first))
                 {
-                    if (array_join_dependent_columns.count(pair.first))
-                    {
-                        array_join_dependent_columns.insert(pair.second);
-                        if (!pair.second.empty())
-                            depend_aliases.emplace_back(std::move(pair));
-                    }
-                    else if (!pair.second.empty())
-                        split_aliases.emplace_back(std::move(pair));
+                    array_join_dependent_columns.insert(pair.second);
+                    depend_aliases.emplace_back(std::move(pair));
                 }
+                else
+                    split_aliases.emplace_back(std::move(pair));
             }
 
             if (!split_aliases.empty())
@@ -1140,45 +1159,25 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
 
         if (depends_on_array_join)
         {
+            /// Add result of this action to array_join_dependent_columns too.
             if (!action.result_name.empty())
                 array_join_dependent_columns.insert(action.result_name);
             if (action.array_join)
                 array_join_dependent_columns.insert(action.array_join->columns.begin(), action.array_join->columns.end());
 
+            /// Add arguments of this action to array_join_dependent_columns_arguments.
             auto needed = action.getNeededColumns();
-            array_join_dependencies.insert(needed.begin(), needed.end());
+            array_join_dependent_columns_arguments.insert(needed.begin(), needed.end());
+
             new_actions.emplace_back(action);
         }
         else
         {
-            /// Replace PROJECT to ADD_ALIASES, because project may remove columns needed for array join
-//            if (action.type == ExpressionAction::PROJECT)
-//            {
-//                NamesWithAliases projection;
-//
-//                for (auto & column : action.projection)
-//                {
-//                    if (!column.second.empty())
-//                    {
-//                        projection.emplace_back(column);
-//                        column.second.clear();
-//                    }
-//                }
-//
-//                /// new_actions.emplace_back(action);
-//
-//                if (!projection.empty())
-//                {
-//                    action.type = ExpressionAction::ADD_ALIASES;
-//                    action.projection.swap(projection);
-//                    split_actions->add(std::move(action));
-//                }
-//            }
-//            else
-
+            /// Exception for REMOVE_COLUMN.
+            /// We cannot move it to split_actions if any argument from `this` needed that column.
             if (action.type == ExpressionAction::REMOVE_COLUMN)
             {
-                if (array_join_dependencies.count(action.source_name))
+                if (array_join_dependent_columns_arguments.count(action.source_name))
                     new_actions.emplace_back(action);
                 else
                     split_actions->add(action);
@@ -1190,20 +1189,24 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
         }
     }
 
+    /// Return empty actions if nothing was separated. Keep `this` unchanged.
     if (split_actions->getActions().empty())
         return split_actions;
 
     std::swap(actions, new_actions);
 
-    /// Add input from split actions result.
+    /// Collect inputs from ARRAY JOIN.
     NamesAndTypesList inputs_from_array_join;
     for (auto & column : input_columns)
         if (array_joined_columns.count(column.name))
             inputs_from_array_join.emplace_back(std::move(column));
 
+    /// Fix inputs for `this`.
+    /// It is output of split_actions + inputs from ARRAY JOIN.
     input_columns = split_actions->getSampleBlock().getNamesAndTypesList();
     input_columns.insert(input_columns.end(), inputs_from_array_join.begin(), inputs_from_array_join.end());
 
+    /// Remove not needed columns.
     if (!actions.empty())
         prependProjectInput();
 
@@ -1419,15 +1422,6 @@ void ExpressionActionsChain::finalize()
         }
         steps[i].finalize(required_output);
     }
-
-    /// TODO: move to QueryPlan
-    /// When possible, move the ARRAY JOIN from earlier steps to later steps.
-//    for (size_t i = 1; i < steps.size(); ++i)
-//    {
-//        ExpressionAction action;
-//        if (steps[i - 1].actions->popUnusedArrayJoin(steps[i - 1].required_output, action))
-//            steps[i].actions->prependArrayJoin(action, steps[i - 1].actions->getSampleBlock());
-//    }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
     for (size_t i = 1; i < steps.size(); ++i)
