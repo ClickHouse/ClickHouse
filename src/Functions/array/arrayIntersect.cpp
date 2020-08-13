@@ -48,15 +48,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     const Context & context;
 
-    /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     struct UnpackedArrays
     {
@@ -251,6 +251,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
             }
             else
             {
+
                 if (!arg.type->equals(*return_type) && !arg.type->equals(*nullable_return_type))
                 {
                     /// If result has array type Array(T) still cast Array(Nullable(U)) to Array(Nullable(T))
@@ -384,7 +385,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     const auto & return_type = block.getByPosition(result).type;
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
@@ -417,15 +418,16 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
     TypeListNativeNumbers::forEach(NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
     TypeListDecimalNumbers::forEach(DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
-    using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
-        size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;
+    using DateMap = ClearableHashMap<DataTypeDate::FieldType, size_t, DefaultHash<DataTypeDate::FieldType>,
+            HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(DataTypeDate::FieldType)>>;
 
-    using DateTimeMap = ClearableHashMapWithStackMemory<
-        DataTypeDateTime::FieldType, size_t,
-        DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
+    using DateTimeMap = ClearableHashMap<DataTypeDateTime::FieldType, size_t, DefaultHash<DataTypeDateTime::FieldType>,
+            HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(DataTypeDateTime::FieldType)>>;
 
-    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
-        StringRefHash, INITIAL_SIZE_DEGREE>;
+    using StringMap = ClearableHashMap<StringRef, size_t, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     if (!result_column)
     {
@@ -453,8 +455,8 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
 template <typename T, size_t>
 void FunctionArrayIntersect::NumberExecutor::operator()()
 {
-    using Map = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
-        INITIAL_SIZE_DEGREE>;
+    using Map = ClearableHashMap<T, size_t, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
         result = execute<Map, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
@@ -463,8 +465,8 @@ void FunctionArrayIntersect::NumberExecutor::operator()()
 template <typename T, size_t>
 void FunctionArrayIntersect::DecimalExecutor::operator()()
 {
-    using Map = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
-        INITIAL_SIZE_DEGREE>;
+    using Map = ClearableHashMap<T, size_t, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     if (!result)
         if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))

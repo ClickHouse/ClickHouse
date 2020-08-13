@@ -5,6 +5,7 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
@@ -16,7 +17,6 @@ namespace DB
 
 struct Range;
 
-class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -31,7 +31,7 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
-        : log(&Poco::Logger::get("Set")),
+        : log(&Logger::get("Set")),
         limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
@@ -100,7 +100,7 @@ private:
     /// Types for set_elements.
     DataTypes set_elements_types;
 
-    Poco::Logger * log;
+    Logger * log;
 
     /// Limitations on the maximum size of the set
     SizeLimits limits;
@@ -228,13 +228,16 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
     using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
+
+    ColumnsWithInfinity left_point;
+    ColumnsWithInfinity right_point;
 };
 
 }

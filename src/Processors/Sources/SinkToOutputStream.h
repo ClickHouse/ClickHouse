@@ -22,6 +22,7 @@ protected:
 
 private:
     BlockOutputStreamPtr stream;
+    bool initialized = false;
 };
 
 }

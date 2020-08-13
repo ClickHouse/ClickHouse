@@ -1,42 +1,9 @@
-option (USE_INTERNAL_CCTZ_LIBRARY "Use internal cctz library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CCTZ "Use internal cctz library" ${NOT_UNBUNDLED})
 
-if (NOT USE_INTERNAL_CCTZ_LIBRARY)
-    find_library (LIBRARY_CCTZ cctz)
-    find_path (INCLUDE_CCTZ NAMES cctz/civil_time.h)
+if (USE_INTERNAL_CCTZ)
+    SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
 
-    if (LIBRARY_CCTZ AND INCLUDE_CCTZ)
-        set (EXTERNAL_CCTZ_LIBRARY_FOUND 1)
-
-        set(CMAKE_REQUIRED_LIBRARIES ${LIBRARY_CCTZ})
-        set(CMAKE_REQUIRED_INCLUDES ${INCLUDE_CCTZ})
-        check_cxx_source_compiles(
-            "
-            #include <cctz/civil_time.h>
-            int main() {
-                cctz::civil_day date;
-            }
-            "
-            EXTERNAL_CCTZ_LIBRARY_WORKS
-        )
-
-        if (NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
-            message (${RECONFIGURE_MESSAGE_LEVEL}  "External cctz is not working: ${LIBRARY_CCTZ} ${INCLUDE_CCTZ}")
-        else()
-            add_library (cctz UNKNOWN IMPORTED)
-            set_property (TARGET cctz PROPERTY IMPORTED_LOCATION ${LIBRARY_CCTZ})
-            set_property (TARGET cctz PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_CCTZ})
-        endif()
-    else()
-        set (EXTERNAL_CCTZ_LIBRARY_FOUND 0)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system cctz")
-    endif()
-endif()
-
-if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
-    set(USE_INTERNAL_CCTZ_LIBRARY 1)
-    set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
-
-    set (SRCS
+    SET (SRCS
         ${LIBRARY_DIR}/src/civil_time_detail.cc
         ${LIBRARY_DIR}/src/time_zone_fixed.cc
         ${LIBRARY_DIR}/src/time_zone_format.cc
@@ -59,7 +26,10 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
     # Build a libray with embedded tzdata
 
-    if (OS_LINUX)
+    # We invoke 'ld' and 'objcopy' directly because lld linker has no option to generate object file with binary data.
+    # Note: we can invoke specific ld from toolchain and relax condition on ARCH_AMD64.
+
+    if (OS_LINUX AND ARCH_AMD64)
 
         set (TIMEZONES
             Africa/Abidjan
@@ -635,8 +605,8 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
             add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
-                COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
+                COMMAND cd ${TZDIR} && ld -r -b binary -o ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${TIMEZONE}
+                COMMAND objcopy --rename-section .data=.rodata,alloc,load,readonly,data,contents
                     ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ})
 
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
@@ -644,12 +614,30 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
         add_library(tzdata STATIC ${TZ_OBJS})
         set_target_properties(tzdata PROPERTIES LINKER_LANGUAGE C)
-        # whole-archive prevents symbols from being discarded for unknown reason
-        # CMake can shuffle each of target_link_libraries arguments with other
-        # libraries in linker command. To avoid this we hardcode whole-archive
-        # library into single string.
-        add_dependencies(cctz tzdata)
-        target_link_libraries(cctz INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:tzdata> -Wl,${NO_WHOLE_ARCHIVE}")
+        target_link_libraries(cctz -Wl,--whole-archive tzdata -Wl,--no-whole-archive) # whole-archive prevents symbols from being discarded
+    endif ()
+
+else ()
+    find_library (LIBRARY_CCTZ cctz)
+    find_path (INCLUDE_CCTZ NAMES cctz/civil_time.h)
+
+    add_library (cctz UNKNOWN IMPORTED)
+    set_property (TARGET cctz PROPERTY IMPORTED_LOCATION ${LIBRARY_CCTZ})
+    set_property (TARGET cctz PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_CCTZ})
+
+    set(CMAKE_REQUIRED_LIBRARIES cctz)
+    check_cxx_source_compiles(
+        "
+        #include <cctz/civil_time.h>
+        int main() {
+            cctz::civil_day date;
+        }
+        "
+        EXTERNAL_CCTZ_WORKS
+    )
+
+    if (NOT EXTERNAL_CCTZ_WORKS)
+        message (FATAL_ERROR "cctz is unusable: ${LIBRARY_CCTZ} ${INCLUDE_CCTZ}")
     endif ()
 endif ()
 

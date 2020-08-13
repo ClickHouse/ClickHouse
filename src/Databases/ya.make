@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -11,16 +10,11 @@ SRCS(
     DatabaseFactory.cpp
     DatabaseLazy.cpp
     DatabaseMemory.cpp
+    DatabaseMySQL.cpp
     DatabaseOnDisk.cpp
     DatabaseOrdinary.cpp
     DatabasesCommon.cpp
     DatabaseWithDictionaries.cpp
-    MySQL/DatabaseConnectionMySQL.cpp
-    MySQL/DatabaseMaterializeMySQL.cpp
-    MySQL/MaterializeMetadata.cpp
-    MySQL/MaterializeMySQLSettings.cpp
-    MySQL/MaterializeMySQLSyncThread.cpp
-
 )
 
 END()

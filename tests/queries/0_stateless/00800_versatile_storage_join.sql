@@ -71,5 +71,3 @@ SELECT joinGet('test_00800.join_test', 'b', 1);
 
 USE default;
 DROP TABLE test_00800.join_test;
-
-DROP DATABASE test_00800;

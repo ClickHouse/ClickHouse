@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
 #include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 
 #include <gtest/gtest.h>
 
@@ -34,7 +35,7 @@ public:
     {
         const auto & param = GetParam();
         const auto & source = param.source;
-        data = std::make_unique<PaddedPODArray<char>>(source.data(), source.data() + source.size());
+        data = std::make_unique<PaddedPODArray<const char>>(source.data(), source.data() + source.size());
 
         // add predefined padding that forms tokens to ensure no reads past end of buffer.
         const char extra_padding[] = "this is the end \xd1\x8d\xd1\x82\xd0\xbe\xd0\xba\xd0\xbe \xd0\xbd\xd0\xb5\xd1\x86";
@@ -43,7 +44,7 @@ public:
         data->resize(data->size() - sizeof(extra_padding));
     }
 
-    std::unique_ptr<PaddedPODArray<char>> data;
+    std::unique_ptr<PaddedPODArray<const char>> data;
 };
 
 TEST_P(SplitTokenExtractorTest, next)
@@ -177,7 +178,7 @@ INSTANTIATE_TEST_SUITE_P(SIMD_Cases,
             {"abcdef"}
         },
         {
-            "Token crosses boundary of 16-byte chunk",
+            "Token crosses bounday of 16-byte chunk",
             "            abcdef",
             {"abcdef"}
         },

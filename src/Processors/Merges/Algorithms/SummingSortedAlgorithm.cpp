@@ -47,8 +47,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 
     void init(const char * function_name, const DataTypes & argument_types)
     {
-        AggregateFunctionProperties properties;
-        function = AggregateFunctionFactory::instance().get(function_name, argument_types, {}, properties);
+        function = AggregateFunctionFactory::instance().get(function_name, argument_types);
         add_function = function->getAddressOfAddFunction();
         state.reset(function->sizeOfData(), function->alignOfData());
     }
@@ -92,12 +91,6 @@ static bool isInPrimaryKey(const SortDescription & description, const std::strin
             return true;
 
     return false;
-}
-
-static bool isInPartitionKey(const std::string & column_name, const Names & partition_key_columns)
-{
-    auto is_in_partition_key = std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name);
-    return is_in_partition_key != partition_key_columns.end();
 }
 
 /// Returns true if merge result is not empty
@@ -187,8 +180,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
 static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
-    const Names & column_names_to_sum,
-    const Names & partition_key_columns)
+    const Names & column_names_to_sum)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -230,8 +222,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Are they inside the primary key or partition key?
-            if (isInPrimaryKey(description, column.name, i) ||  isInPartitionKey(column.name, partition_key_columns))
+            /// Are they inside the PK?
+            if (isInPrimaryKey(description, column.name, i))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -505,7 +497,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
             {
                 try
                 {
-                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, nullptr);
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
 
                     /// Update zero status of current row
                     if (desc.column_numbers.size() == 1)
@@ -624,27 +616,26 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Block & header, size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
-    const Names & partition_key_columns,
     size_t max_block_size)
     : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header, description, column_names_to_sum, partition_key_columns))
+    , columns_definition(defineColumns(header, description, column_names_to_sum))
     , merged_data(getMergedDataColumns(header, columns_definition), max_block_size, columns_definition)
 {
 }
 
-void SummingSortedAlgorithm::initialize(Inputs inputs)
+void SummingSortedAlgorithm::initialize(Chunks chunks)
 {
-    for (auto & input : inputs)
-        if (input.chunk)
-            preprocessChunk(input.chunk);
+    for (auto & chunk : chunks)
+        if (chunk)
+            preprocessChunk(chunk);
 
-    initializeQueue(std::move(inputs));
+    initializeQueue(std::move(chunks));
 }
 
-void SummingSortedAlgorithm::consume(Input & input, size_t source_num)
+void SummingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
 {
-    preprocessChunk(input.chunk);
-    updateCursor(input, source_num);
+    preprocessChunk(chunk);
+    updateCursor(std::move(chunk), source_num);
 }
 
 IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
@@ -655,15 +646,6 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
         bool key_differs;
 
         SortCursor current = queue.current();
-
-        if (current->isLast() && skipLastRowFor(current->order))
-        {
-            /// If we skip this row, it's not equals with any key we process.
-            last_key.reset();
-            /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
-        }
 
         {
             detail::RowRef current_key;

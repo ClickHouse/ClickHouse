@@ -1,12 +1,14 @@
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
+#include "config_functions.h"
+#if USE_H3
+#    include <Columns/ColumnString.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <Common/typeid_cast.h>
 
-#include <h3api.h>
+#    include <h3api.h>
 
-#define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
+#    define H3_INDEX_STRING_LENGTH 17 // includes \0 terminator
 
 namespace DB
 {
@@ -38,7 +40,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
@@ -81,3 +83,4 @@ void registerFunctionH3ToString(FunctionFactory & factory)
 }
 
 }
+#endif

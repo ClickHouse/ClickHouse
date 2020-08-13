@@ -69,12 +69,15 @@ static bool operator<(const RangeHashedDictionary::Range & left, const RangeHash
 
 
 RangeHashedDictionary::RangeHashedDictionary(
-    const StorageID & dict_id_,
+    const std::string & database_,
+    const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -157,8 +160,8 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
-                            getDictionaryID().getNameForLogs()};
+            throw Exception{full_name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
+                            ErrorCodes::BAD_ARGUMENTS};
     }
 }
 
@@ -686,10 +689,11 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
             throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<RangeHashedDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<RangeHashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("range_hashed", create_layout, false);
 }

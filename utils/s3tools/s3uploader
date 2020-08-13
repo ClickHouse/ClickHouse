@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
 import logging
@@ -90,7 +90,7 @@ if __name__ == "__main__":
                         help='Path to clickhouse database on filesystem')
     parser.add_argument('--s3-path', help='Path in s3, where to upload file')
     parser.add_argument('--tmp-prefix', default='/tmp',
-                        help='Prefix to store temporary downloaded file')
+                        help='Prefix to store temporay downloaded file')
     data_group = parser.add_mutually_exclusive_group(required=True)
     table_name_argument = data_group.add_argument('--table-name',
                             help='Name of table with database, if you are uploading partitions')

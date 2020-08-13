@@ -1,6 +1,5 @@
 details {
     background: #444451;
-    color: #eee;
     padding: 1rem;
     margin-bottom: 1rem;
     margin-top: 1rem;
@@ -8,7 +7,6 @@ details {
 
 summary {
     font-weight: bold;
-    color: #eee;
 }
 
 #sidebar {
@@ -34,8 +32,13 @@ summary {
 }
 
 .headerlink {
+    display: none;
     text-decoration: none !important;
     margin-left: .5rem;
+}
+
+#content {
+    overflow-x: scroll;
 }
 
 #content table {
@@ -64,19 +67,15 @@ summary {
 }
 
 #content code {
-    color: #000;
+    color: #111;
     background: #eee;
-    padding: 0.125rem 0.25rem;
+    padding: 2px;
 }
 
-#content code.syntax {
-    padding: 0;
-}
 
 #content pre {
-    background: #efefef;
+    background: #eee;
     padding: 1rem;
-    line-height: 1.25;
 }
 
 #docsearch-input:focus, #docsearch-input:active {
@@ -171,13 +170,9 @@ summary {
 }
 
 @media (prefers-color-scheme: dark) {
-    body[data-spy], body.amp, body.blog, #to-full-website {
+    body[data-spy] {
         background: #1c1c1c;
         color: #efefef;
-    }
-
-    .invert-dark {
-        filter: invert(100%);
     }
 
     #sidebar {
@@ -195,14 +190,12 @@ summary {
     #content td {
         border: 1px solid #444451;
     }
-
     #content code {
         background: #444;
         color: #eee;
-        padding: 0.125rem 0.25rem;
     }
 
-    #content pre, .blog .tag, .blog .dropdown-menu {
+    #content pre {
         background: #444;
         color: #eee;
     }

@@ -3,7 +3,6 @@
 #include <Core/Types.h>
 #include <Compression/ICompressionCodec.h>
 
-
 namespace DB
 {
 
@@ -34,8 +33,10 @@ public:
     uint8_t getMethodByte() const override;
     String getCodecDesc() const override
     {
-        return variant == Variant::Byte ? "T64" : "T64('bit')";
+        return String("T64") + ((variant == Variant::Byte) ? "" : "(\'bit\')");
     }
+
+    void useInfoAboutType(DataTypePtr data_type) override;
 
 protected:
     UInt32 doCompressData(const char * src, UInt32 src_size, char * dst) const override;
@@ -47,12 +48,12 @@ protected:
         return uncompressed_size + MAX_COMPRESSED_BLOCK_SIZE + HEADER_SIZE;
     }
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-
 private:
     TypeIndex type_idx;
     Variant variant;
 };
+
+class CompressionCodecFactory;
+void registerCodecT64(CompressionCodecFactory & factory);
 
 }
