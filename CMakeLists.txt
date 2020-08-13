@@ -263,7 +263,9 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+    if (NOT ENABLE_TESTS AND NOT SANITIZE)
+        option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+    endif()
 
     # We cannot afford to use LTO when compiling unitests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
@@ -294,6 +296,8 @@ if (COMPILER_CLANG)
     else ()
         message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
     endif ()
+elseif (ENABLE_THINLTO)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
