@@ -388,15 +388,28 @@ private:
                 PresentIdHandler present_id_handler_,
                 AbsentIdHandler absent_id_handler_) :
                 requested_ids(std::move(requested_ids_)),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
                 present_id_handler(present_id_handler_),
-                absent_id_handler(absent_id_handler_),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()){}
+                absent_id_handler(absent_id_handler_){}
 
         explicit UpdateUnit(std::vector<Key> requested_ids_) :
                 requested_ids(std::move(requested_ids_)),
+                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()),
                 present_id_handler([](Key, size_t){}),
-                absent_id_handler([](Key, size_t){}),
-                alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, requested_ids.size()){}
+                absent_id_handler([](Key, size_t){}){}
+
+
+        PresentIdHandler getPresentIdHandler()
+        {
+            std::lock_guard lock(callback_mutex);
+            return can_use_callback ? present_id_handler : PresentIdHandler{};
+        }
+
+        AbsentIdHandler getAbsentIdHandler()
+        {
+            std::lock_guard lock(callback_mutex);
+            return can_use_callback ? absent_id_handler : AbsentIdHandler{};
+        }
 
         std::vector<Key> requested_ids;
 
@@ -405,15 +418,16 @@ private:
         std::mutex callback_mutex;
         bool can_use_callback{true};
 
-        PresentIdHandler present_id_handler;
-        AbsentIdHandler absent_id_handler;
-
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
 
         /// While UpdateUnit is alive, it is accounted in update_queue size.
         CurrentMetrics::Increment alive_batch{CurrentMetrics::CacheDictionaryUpdateQueueBatches};
         CurrentMetrics::Increment alive_keys;
+
+      private:
+        PresentIdHandler present_id_handler;
+        AbsentIdHandler absent_id_handler;
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
