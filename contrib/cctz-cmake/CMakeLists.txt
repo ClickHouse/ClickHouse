@@ -73,6 +73,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
         foreach(TIMEZONE ${TIMEZONES})
             string(REPLACE "/" "_" TIMEZONE_ID ${TIMEZONE})
+            string(REPLACE "+" "_PLUS_" TIMEZONE_ID ${TIMEZONE_ID})
             set(TZ_OBJ ${TIMEZONE_ID}.o)
             set(TZ_OBJS ${TZ_OBJS} ${TZ_OBJ})
 
