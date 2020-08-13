@@ -873,21 +873,40 @@ private:
                 col->getOffsets(),
                 col_res->getData(),
                 null_map_data);
-        else if (isColumnConst(item_arg))
+        else if (isColumnConst(item_arg)) // note that col_nested is not LC as this case is already processed
             ArrayIndexMainImpl<ConcreteAction, true>::vector(
                 col_nested,
                 col->getOffsets(),
-                assert_cast<const ColumnConst &>(item_arg).getDataColumn(),
+                typeid_cast<const ColumnConst &>(item_arg).getDataColumn(),
                 col_res->getData(), /// TODO This is wrong.
                 null_map_data,
                 nullptr);
         else
         {
-            const auto casted = col_nested.convertToFullColumnIfLowCardinality();
+            /// Possible case similar to LowCardinality one, where tho integral ColumnVector's of different
+            /// types are compared, so we have to cast the right column if needed.
+
+            const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(
+                    block.getByPosition(arguments[0]).type.get());
+
+            // e.g. LC(Vector(U))
+            const DataTypePtr right_type = block.getByPosition(arguments[1]).type;
+
+            // e.g. Vector(T)
+            const DataTypePtr left_lc_inner_type = recursiveRemoveLowCardinality(array_type->getNestedType());
+            //e.g. Vector(U)
+            const DataTypePtr right_lc_inner_type = recursiveRemoveLowCardinality(right_type);
+
+            const ColumnPtr right_casted = !left_lc_inner_type->equals(*right_lc_inner_type.get())
+                ? castColumn(block.getByPosition(arguments[1]), left_lc_inner_type)
+                : item_arg.convertToFullColumnIfLowCardinality();
+
+            const auto left_casted = col_nested.convertToFullColumnIfLowCardinality();
+
             ArrayIndexMainImpl<ConcreteAction>::vector(
-                *casted.get(),
+                *left_casted.get(),
                 col->getOffsets(),
-                *item_arg.convertToFullColumnIfConst(),
+                *right_casted.get(),
                 col_res->getData(),
                 null_map_data,
                 null_map_item);
