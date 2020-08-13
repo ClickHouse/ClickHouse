@@ -3,6 +3,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+}
+
 const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 
 MySQLPacketPayloadWriteBuffer::MySQLPacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_)
