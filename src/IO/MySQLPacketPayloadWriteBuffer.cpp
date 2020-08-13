@@ -1,14 +1,11 @@
-#include <Core/MySQL/PacketPayloadWriteBuffer.h>
+#include <IO/MySQLPacketPayloadWriteBuffer.h>
 
 namespace DB
 {
 
-namespace MySQLProtocol
-{
+const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 
-extern const size_t MAX_PACKET_LENGTH;
-
-PacketPayloadWriteBuffer::PacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_)
+MySQLPacketPayloadWriteBuffer::MySQLPacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_)
     : WriteBuffer(out_.position(), 0), out(out_), sequence_id(sequence_id_), total_left(payload_length_)
 {
     startNewPacket();
@@ -16,7 +13,7 @@ PacketPayloadWriteBuffer::PacketPayloadWriteBuffer(WriteBuffer & out_, size_t pa
     pos = out.position();
 }
 
-void PacketPayloadWriteBuffer::startNewPacket()
+void MySQLPacketPayloadWriteBuffer::startNewPacket()
 {
     payload_length = std::min(total_left, MAX_PACKET_LENGTH);
     bytes_written = 0;
@@ -27,7 +24,7 @@ void PacketPayloadWriteBuffer::startNewPacket()
     bytes += 4;
 }
 
-void PacketPayloadWriteBuffer::setWorkingBuffer()
+void MySQLPacketPayloadWriteBuffer::setWorkingBuffer()
 {
     out.nextIfAtEnd();
     working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
@@ -40,7 +37,7 @@ void PacketPayloadWriteBuffer::setWorkingBuffer()
     }
 }
 
-void PacketPayloadWriteBuffer::nextImpl()
+void MySQLPacketPayloadWriteBuffer::nextImpl()
 {
     const int written = pos - working_buffer.begin();
     if (eof)
@@ -54,8 +51,6 @@ void PacketPayloadWriteBuffer::nextImpl()
         startNewPacket();
 
     setWorkingBuffer();
-}
-
 }
 
 }

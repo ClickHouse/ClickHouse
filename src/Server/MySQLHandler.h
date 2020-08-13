@@ -58,7 +58,7 @@ protected:
 
     Context connection_context;
 
-    std::shared_ptr<MySQLProtocol::PacketEndpoint> packet_sender;
+    std::shared_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
 
 private:
     size_t connection_id = 0;

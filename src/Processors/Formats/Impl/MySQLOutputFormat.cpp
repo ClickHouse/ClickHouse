@@ -30,17 +30,17 @@ void MySQLOutputFormat::initialize()
 
     if (header.columns())
     {
-        packet_sender->sendPacket(LengthEncodedNumber(header.columns()));
+        packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()));
 
         for (size_t i = 0; i < header.columns(); i++)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            packet_sender->sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
+            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
         }
 
         if (!(context->mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
         {
-            packet_sender->sendPacket(EOFPacket(0, 0));
+            packet_endpoint->sendPacket(EOFPacket(0, 0));
         }
     }
 }
@@ -54,7 +54,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
     for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
         ProtocolText::ResultSetRow row_packet(data_types, chunk.getColumns(), i);
-        packet_sender->sendPacket(row_packet);
+        packet_endpoint->sendPacket(row_packet);
     }
 }
 
@@ -76,17 +76,17 @@ void MySQLOutputFormat::finalize()
 
     const auto & header = getPort(PortKind::Main).getHeader();
     if (header.columns() == 0)
-        packet_sender->sendPacket(OKPacket(0x0, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
+        packet_endpoint->sendPacket(OKPacket(0x0, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
     if (context->mysql.client_capabilities & CLIENT_DEPRECATE_EOF)
-        packet_sender->sendPacket(OKPacket(0xfe, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
+        packet_endpoint->sendPacket(OKPacket(0xfe, context->mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
-        packet_sender->sendPacket(EOFPacket(0, 0), true);
+        packet_endpoint->sendPacket(EOFPacket(0, 0), true);
 }
 
 void MySQLOutputFormat::flush()
 {
-    packet_sender->out->next();
+    packet_endpoint->out->next();
 }
 
 void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)

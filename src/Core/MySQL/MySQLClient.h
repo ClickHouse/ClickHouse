@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Types.h>
-#include <Core/MySQLReplication.h>
+#include <Core/MySQL/MySQLReplication.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -44,7 +44,6 @@ private:
 
     uint8_t seq = 0;
     const UInt8 charset_utf8 = 33;
-    const UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
     const String mysql_native_password = "mysql_native_password";
 
     MySQLFlavor replication;
@@ -52,7 +51,7 @@ private:
     std::shared_ptr<WriteBuffer> out;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
-    std::shared_ptr<PacketEndpoint> packet_sender;
+    std::shared_ptr<PacketEndpoint> packet_endpoint;
 
     void handshake();
     void registerSlaveOnMaster(UInt32 slave_id);

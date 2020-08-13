@@ -1,6 +1,6 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <sstream>
-#include <Core/MySQL/PacketPayloadReadBuffer.h>
+#include <IO/MySQLPacketPayloadReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 
 namespace DB
@@ -16,7 +16,7 @@ namespace MySQLProtocol
 
 void IMySQLReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
 {
-    PacketPayloadReadBuffer payload(in, sequence_id);
+    MySQLPacketPayloadReadBuffer payload(in, sequence_id);
     payload.next();
     readPayloadImpl(payload);
     if (!payload.eof())

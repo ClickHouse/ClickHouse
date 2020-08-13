@@ -33,7 +33,7 @@ public:
 
     virtual void authenticate(
         const String & user_name, std::optional<String> auth_response, Context & context,
-        std::shared_ptr<PacketEndpoint> packet_sender, bool is_secure_connection, const Poco::Net::SocketAddress & address) = 0;
+        std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) = 0;
 };
 
 /// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
@@ -50,7 +50,7 @@ public:
 
     void authenticate(
         const String & user_name, std::optional<String> auth_response, Context & context,
-        std::shared_ptr<PacketEndpoint> packet_sender, bool /* is_secure_connection */, const Poco::Net::SocketAddress & address) override;
+        std::shared_ptr<PacketEndpoint> packet_endpoint, bool /* is_secure_connection */, const Poco::Net::SocketAddress & address) override;
 
 private:
     String scramble;
@@ -70,7 +70,7 @@ public:
 
     void authenticate(
         const String & user_name, std::optional<String> auth_response, Context & context,
-        std::shared_ptr<PacketEndpoint> packet_sender, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
+        std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
 
 private:
     RSA & public_key;

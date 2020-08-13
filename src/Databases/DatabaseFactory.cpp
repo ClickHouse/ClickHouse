@@ -18,7 +18,7 @@
 #endif
 
 #if USE_MYSQL
-#    include <Core/MySQLClient.h>
+#    include <Core/MySQL/MySQLClient.h>
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>

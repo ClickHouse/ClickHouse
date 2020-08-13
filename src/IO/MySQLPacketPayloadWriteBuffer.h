@@ -5,16 +5,13 @@
 namespace DB
 {
 
-namespace MySQLProtocol
-{
-
 /** Writing packets.
  *  https://dev.mysql.com/doc/internals/en/mysql-packet.html
  */
-class PacketPayloadWriteBuffer : public WriteBuffer
+class MySQLPacketPayloadWriteBuffer : public WriteBuffer
 {
 public:
-    PacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_);
+    MySQLPacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_);
 
     bool remainingPayloadSize() { return total_left; }
 
@@ -35,7 +32,5 @@ private:
     /// Sets working buffer to the rest of current packet payload.
     void setWorkingBuffer();
 };
-
-}
 
 }

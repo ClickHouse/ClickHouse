@@ -60,12 +60,3 @@ void BinlogDump::writePayloadImpl(WriteBuffer & buffer) const
 
 }
 }
-
-namespace DB::MySQLProtocol
-{
-    extern const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
-
-
-
-
-}

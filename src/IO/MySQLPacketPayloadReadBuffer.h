@@ -5,20 +5,14 @@
 namespace DB
 {
 
-namespace MySQLProtocol
-{
-
-extern const size_t MAX_PACKET_LENGTH;
-
 /** Reading packets.
  *  Internally, it calls (if no more data) next() method of the underlying ReadBufferFromPocoSocket, and sets the working buffer to the rest part of the current packet payload.
  */
-class PacketPayloadReadBuffer : public ReadBuffer
+class MySQLPacketPayloadReadBuffer : public ReadBuffer
 {
 private:
     ReadBuffer & in;
     uint8_t & sequence_id;
-    const size_t max_packet_size = MAX_PACKET_LENGTH;
 
     bool has_read_header = false;
 
@@ -32,10 +26,8 @@ protected:
     bool nextImpl() override;
 
 public:
-    PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_);
+    MySQLPacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_);
 };
-
-}
 
 }
 

@@ -73,13 +73,13 @@ Native41::Native41(const String & password, const String & auth_plugin_data)
 
 void Native41::authenticate(
     const String & user_name, std::optional<String> auth_response, Context & context,
-    std::shared_ptr<PacketEndpoint> packet_sender, bool, const Poco::Net::SocketAddress & address)
+    std::shared_ptr<PacketEndpoint> packet_endpoint, bool, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
     {
-        packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
         AuthSwitchResponse response;
-        packet_sender->receivePacket(response);
+        packet_endpoint->receivePacket(response);
         auth_response = response.value;
     }
 
@@ -134,18 +134,18 @@ Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logg
 
 void Sha256Password::authenticate(
     const String & user_name, std::optional<String> auth_response, Context & context,
-    std::shared_ptr<PacketEndpoint> packet_sender, bool is_secure_connection, const Poco::Net::SocketAddress & address)
+    std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
     {
-        packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+        packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
 
-        if (packet_sender->in->eof())
+        if (packet_endpoint->in->eof())
             throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse. Specifying user password using 'password_double_sha1_hex' may fix the problem.",
                             ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
 
         AuthSwitchResponse response;
-        packet_sender->receivePacket(response);
+        packet_endpoint->receivePacket(response);
         auth_response = response.value;
         LOG_TRACE(log, "Authentication method mismatch.");
     }
@@ -174,11 +174,11 @@ void Sha256Password::authenticate(
         LOG_TRACE(log, "Key: {}", pem);
 
         AuthMoreData data(pem);
-        packet_sender->sendPacket(data, true);
+        packet_endpoint->sendPacket(data, true);
         sent_public_key = true;
 
         AuthSwitchResponse response;
-        packet_sender->receivePacket(response);
+        packet_endpoint->receivePacket(response);
         auth_response = response.value;
     }
     else
