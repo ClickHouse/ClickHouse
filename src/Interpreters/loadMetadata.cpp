@@ -38,6 +38,7 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
     interpreter.execute();
 }

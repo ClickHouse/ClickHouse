@@ -20,7 +20,7 @@ services:
       test: clickhouse client --query='select 1'
       interval: 3s
       timeout: 10s
-      retries: 5
+      retries: 100
       start_period: 30s
     cap_add:
       - SYS_PTRACE
