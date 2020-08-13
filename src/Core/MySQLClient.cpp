@@ -1,10 +1,17 @@
 #include "MySQLClient.h"
+
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQLReplication.h>
 
 namespace DB
 {
 using namespace Generic;
 using namespace Replication;
+using namespace ProtocolText;
 using namespace Authentication;
 using namespace ConnectionPhase;
 
@@ -67,7 +74,7 @@ void MySQLClient::handshake()
     packet_sender->receivePacket(handshake);
     if (handshake.auth_plugin_name != mysql_native_password)
     {
-        throw MySQLClientError(
+        throw Exception(
             "Only support " + mysql_native_password + " auth plugin name, but got " + handshake.auth_plugin_name,
             ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
@@ -84,9 +91,9 @@ void MySQLClient::handshake()
     packet_sender->resetSequenceId();
 
     if (packet_response.getType() == PACKET_ERR)
-        throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     else if (packet_response.getType() == PACKET_AUTH_SWITCH)
-        throw MySQLClientError("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::writeCommand(char command, String query)
@@ -99,7 +106,7 @@ void MySQLClient::writeCommand(char command, String query)
     switch (packet_response.getType())
     {
         case PACKET_ERR:
-            throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+            throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         case PACKET_OK:
             break;
         default:
@@ -117,7 +124,7 @@ void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
-        throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::ping()

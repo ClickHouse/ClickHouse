@@ -3,7 +3,10 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
 #if !defined(ARCADIA_BUILD)
