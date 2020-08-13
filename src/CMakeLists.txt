@@ -140,6 +140,7 @@ endmacro()
 
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_core Core)
+add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
