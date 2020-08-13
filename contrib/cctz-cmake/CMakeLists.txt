@@ -79,9 +79,10 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
             add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
-                COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
-                    ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ})
+                COMMAND cp ${TZDIR}/${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID}
+                COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS}
+                            --rename-section .data=.rodata,alloc,load,readonly,data,contents ${TIMEZONE_ID} ${TZ_OBJ}
+                COMMAND rm ${CMAKE_CURRENT_BINARY_DIR}/${TIMEZONE_ID})
 
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
         endforeach(TIMEZONE)
