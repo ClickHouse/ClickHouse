@@ -92,7 +92,6 @@ void attach(IDatabase & system_database, const String & table_name, StorageArgs 
 }
 
 
-///TODO allow store system tables in DatabaseAtomic
 void attachSystemTablesLocal(IDatabase & system_database)
 {
     attach<StorageSystemOne>(system_database, "one");
