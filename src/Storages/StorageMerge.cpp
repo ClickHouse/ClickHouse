@@ -38,6 +38,27 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
+namespace
+{
+
+/// Rewrite original query removing joined tables from it
+void removeJoin(const ASTSelectQuery & select)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.size() < 2)
+        return;
+
+    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    if (!joined_table.table_join)
+        return;
+
+    /// The most simple temporary solution: leave only the first table in query.
+    /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
+    tables->children.resize(1);
+}
+
+}
+
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
@@ -131,13 +152,19 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 Pipes StorageMerge::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & src_query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     unsigned num_streams)
 {
     Pipes res;
+
+    SelectQueryInfo query_info = src_query_info;
+    query_info.query = src_query_info.query->clone();
+
+    /// Original query could contain JOIN but we need only the first joined table and its columns.
+    removeJoin(*query_info.query->as<ASTSelectQuery>());
 
     bool has_table_virtual_column = false;
     Names real_column_names;
