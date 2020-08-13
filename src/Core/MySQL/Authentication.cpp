@@ -5,6 +5,7 @@
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
 
+#include <Common/MemoryTracker.h>
 #include <Common/OpenSSLHelpers.h>
 
 #include <ext/scope_guard.h>
@@ -52,7 +53,7 @@ Native41::Native41(const String & password, const String & auth_plugin_data)
     /// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
     /// SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat> SHA1( SHA1( password ) ) )
     Poco::SHA1Engine engine1;
-    engine1.update(password.data());
+    engine1.update(password);
     const Poco::SHA1Engine::Digest & password_sha1 = engine1.digest();
 
     Poco::SHA1Engine engine2;
@@ -167,7 +168,7 @@ void Sha256Password::authenticate(
         char * pem_buf = nullptr;
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wold-style-cast"
-        long pem_size = BIO_get_mem_data(mem, &pem_buf);
+        int64_t pem_size = BIO_get_mem_data(mem, &pem_buf);
 #    pragma GCC diagnostic pop
         String pem(pem_buf, pem_size);
 
@@ -196,7 +197,7 @@ void Sha256Password::authenticate(
     if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
     {
         LOG_TRACE(log, "Received nonempty password.");
-        auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
+        auto * ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
         unsigned char plaintext[RSA_size(&private_key)];
         int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
