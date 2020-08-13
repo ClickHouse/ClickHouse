@@ -883,7 +883,7 @@ private:
                 nullptr);
         else
         {
-            /// Possible case similar to LowCardinality one, where tho integral ColumnVector's of different
+            /// Possible case similar to LowCardinality one, where two integral ColumnVectors of different
             /// types are compared, so we have to cast the right column if needed.
 
             const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(
