@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-
 #include <algorithm>
 #include <cmath>
 
