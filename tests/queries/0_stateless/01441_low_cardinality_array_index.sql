@@ -18,6 +18,7 @@ SELECT count() FROM t_01411 WHERE has(arr, str);
 SELECT count() FROM t_01411 WHERE indexOf(arr, str) > 0;
 
 DROP TABLE IF EXISTS t_01411;
+DROP TABLE IF EXISTS t_01411_num;
 
 CREATE TABLE t_01411_num(
     num UInt8,
