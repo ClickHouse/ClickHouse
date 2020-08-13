@@ -185,6 +185,7 @@ def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
     """Check that login fails after user cn is changed in LDAP."""
     self.context.ldap_node = self.context.cluster.node(server)
     user = None
+    new_user = None
 
     try:
         with Given(f"I add user to LDAP"):
@@ -196,7 +197,7 @@ def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I change user password in LDAP"):
-                change_user_cn_in_ldap(user, "myuser2")
+                new_user = change_user_cn_in_ldap(user, "myuser2")
 
             with Then("when I try to login again it should fail"):
                 login_and_execute_query(username=user["cn"], password=user["userpassword"],
@@ -205,8 +206,8 @@ def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
                 )
     finally:
         with Finally("I make sure LDAP user is deleted"):
-            if user is not None:
-                delete_user_from_ldap(user, exitcode=None)
+            if new_user is not None:
+                delete_user_from_ldap(new_user, exitcode=None)
 
 @TestScenario
 @Requirements(
