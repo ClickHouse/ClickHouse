@@ -41,16 +41,19 @@ FilterStep::FilterStep(
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
-void FilterStep::updateInputStream(DataStream input_stream, Block result_header)
+void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
+    Block out_header = std::move(output_stream->header);
+    if (keep_header)
+        out_header = FilterTransform::transformHeader(input_stream.header, expression, filter_column_name, remove_filter_column);
+
     output_stream = createOutputStream(
             input_stream,
-            res_header ? res_header : FilterTransform::transformHeader(input_stream.header, expression, filter_column_name, remove_filter_column),
+            std::move(out_header),
             getDataStreamTraits());
 
     input_streams.clear();
     input_streams.emplace_back(std::move(input_stream));
-    res_header = std::move(result_header);
 }
 
 void FilterStep::transformPipeline(QueryPipeline & pipeline)
@@ -61,11 +64,11 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
 
-    if (res_header && !blocksHaveEqualStructure(res_header, output_stream->header))
+    if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
     {
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<ConvertingTransform>(header, res_header, ConvertingTransform::MatchColumnsMode::Name);
+            return std::make_shared<ConvertingTransform>(header, output_stream->header, ConvertingTransform::MatchColumnsMode::Name);
         });
     }
 }
