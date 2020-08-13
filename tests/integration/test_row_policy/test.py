@@ -117,46 +117,6 @@ def test_prewhere_not_supported():
     assert instance.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == "0\t0\n0\t1\n1\t0\n1\t1\n"
 
 
-def test_single_table_name():
-    copy_policy_xml('tag_with_table_name.xml')
-    assert instance.query("SELECT * FROM mydb.table") == "1\t0\n1\t1\n"
-    assert instance.query("SELECT * FROM mydb.filtered_table2") == "0\t0\t0\t0\n0\t0\t6\t0\n"
-    assert instance.query("SELECT * FROM mydb.filtered_table3") == "0\t1\n1\t0\n"
-
-    assert instance.query("SELECT a FROM mydb.table") == "1\n1\n"
-    assert instance.query("SELECT b FROM mydb.table") == "0\n1\n"
-    assert instance.query("SELECT a FROM mydb.table WHERE a = 1") == "1\n1\n"
-    assert instance.query("SELECT a = 1 FROM mydb.table") == "1\n1\n"
-
-    assert instance.query("SELECT a FROM mydb.filtered_table3") == "0\n1\n"
-    assert instance.query("SELECT b FROM mydb.filtered_table3") == "1\n0\n"
-    assert instance.query("SELECT c FROM mydb.filtered_table3") == "1\n1\n"
-    assert instance.query("SELECT a + b FROM mydb.filtered_table3") == "1\n1\n"
-    assert instance.query("SELECT a FROM mydb.filtered_table3 WHERE c = 1") == "0\n1\n"
-    assert instance.query("SELECT c = 1 FROM mydb.filtered_table3") == "1\n1\n"
-    assert instance.query("SELECT a + b = 1 FROM mydb.filtered_table3") == "1\n1\n"
-
-
-def test_custom_table_name():
-    copy_policy_xml('multiple_tags_with_table_names.xml')
-    assert instance.query("SELECT * FROM mydb.table") == "1\t0\n1\t1\n"
-    assert instance.query("SELECT * FROM mydb.filtered_table2") == "0\t0\t0\t0\n0\t0\t6\t0\n"
-    assert instance.query("SELECT * FROM mydb.`.filtered_table4`") == "0\t1\n1\t0\n"
-
-    assert instance.query("SELECT a FROM mydb.table") == "1\n1\n"
-    assert instance.query("SELECT b FROM mydb.table") == "0\n1\n"
-    assert instance.query("SELECT a FROM mydb.table WHERE a = 1") == "1\n1\n"
-    assert instance.query("SELECT a = 1 FROM mydb.table") == "1\n1\n"
-
-    assert instance.query("SELECT a FROM mydb.`.filtered_table4`") == "0\n1\n"
-    assert instance.query("SELECT b FROM mydb.`.filtered_table4`") == "1\n0\n"
-    assert instance.query("SELECT c FROM mydb.`.filtered_table4`") == "1\n1\n"
-    assert instance.query("SELECT a + b FROM mydb.`.filtered_table4`") == "1\n1\n"
-    assert instance.query("SELECT a FROM mydb.`.filtered_table4` WHERE c = 1") == "0\n1\n"
-    assert instance.query("SELECT c = 1 FROM mydb.`.filtered_table4`") == "1\n1\n"
-    assert instance.query("SELECT a + b = 1 FROM mydb.`.filtered_table4`") == "1\n1\n"
-
-
 def test_change_of_users_xml_changes_row_policies():
     copy_policy_xml('normal_filters.xml')
     assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
@@ -280,6 +240,20 @@ def test_dcl_management():
 
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", instance.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
+
+
+def test_tags_with_db_and_table_names():
+    copy_policy_xml('tags_with_db_and_table_names.xml')
+    
+    assert node.query("SELECT * FROM mydb.table") == TSV([[0, 0], [0, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 6, 0]])
+    assert node.query("SELECT * FROM mydb.filtered_table3") == TSV([[0, 0]])
+    assert node.query("SELECT * FROM mydb.`.filtered_table4`") == TSV([[1, 1]])
+
+    assert node.query("SHOW CREATE POLICIES default") == TSV(["CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
+                                                              "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
+                                                              "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
+                                                              "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default"])
 
 
 def test_miscellaneous_engines():
