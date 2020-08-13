@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/interpolate.h>
 

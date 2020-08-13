@@ -46,29 +46,23 @@ VolumePtr createVolumeFromConfig(
     throw Exception("Unknown raid type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
-void updateVolumeFromConfig(
+VolumePtr updateVolumeFromConfig(
     VolumePtr volume,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix
+    const String & config_prefix,
+    DiskSelectorPtr & disk_selector
 )
 {
     String raid_type = config.getString(config_prefix + ".raid_type", "JBOD");
-    if (raid_type == "RAID 1" || raid_type == "RAID-1" || raid_type == "RAID1")
+    if (raid_type == "JBOD")
     {
-        VolumeRAID1 * volume_raid1 = dynamic_cast<VolumeRAID1 *>(volume.get());
-        if (volume_raid1 == nullptr)
-            throw Exception("Invalid raid type '" + raid_type + "', shall be RAID-1", ErrorCodes::INVALID_RAID_TYPE);
-
-        volume_raid1->updateFromConfig(config, config_prefix);
-    }
-    else if (raid_type == "JBOD")
-    {
-        VolumeJBOD * volume_jbod = dynamic_cast<VolumeJBOD *>(volume.get());
-        if (volume_jbod == nullptr)
+        VolumeJBODPtr volume_jbod = std::dynamic_pointer_cast<VolumeJBOD>(volume);
+        if (!volume_jbod)
             throw Exception("Invalid raid type '" + raid_type + "', shall be JBOD", ErrorCodes::INVALID_RAID_TYPE);
 
-        volume_jbod->updateFromConfig(config, config_prefix);
+        return std::make_shared<VolumeJBOD>(*volume_jbod, config, config_prefix, disk_selector);
     }
+    throw Exception("Unknown raid type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
 }

@@ -14,10 +14,11 @@ VolumePtr createVolumeFromConfig(
     DiskSelectorPtr disk_selector
 );
 
-void updateVolumeFromConfig(
+VolumePtr updateVolumeFromConfig(
     VolumePtr volume,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix
+    const String & config_prefix,
+    DiskSelectorPtr & disk_selector
 );
 
 }

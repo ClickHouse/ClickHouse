@@ -1,11 +1,18 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Disks/IVolume.h>
 
+
 namespace DB
 {
+
+class VolumeJBOD;
+
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+using VolumesJBOD = std::vector<VolumeJBODPtr>;
 
 /**
  * Implements something similar to JBOD (https://en.wikipedia.org/wiki/Non-RAID_drive_architectures#JBOD).
@@ -28,7 +35,12 @@ public:
         DiskSelectorPtr disk_selector
     );
 
-    void updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    VolumeJBOD(
+        const VolumeJBOD & volume_jbod,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disk_selector
+    );
 
     VolumeType getType() const override { return VolumeType::JBOD; }
 
@@ -51,12 +63,10 @@ public:
     bool are_merges_allowed_in_config = true;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
-    std::shared_ptr<bool> are_merges_allowed_from_query;
+    std::optional<bool> are_merges_allowed_from_query;
+
 private:
     mutable std::atomic<size_t> last_used = 0;
 };
-
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
-using VolumesJBOD = std::vector<VolumeJBODPtr>;
 
 }

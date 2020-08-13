@@ -36,7 +36,12 @@ public:
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
 
-    StoragePolicyPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
+    StoragePolicy(
+        const StoragePolicy & storage_policy,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disks
+    );
 
     bool isDefaultPolicy() const;
 

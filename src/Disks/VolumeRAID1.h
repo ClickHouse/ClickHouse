@@ -3,10 +3,15 @@
 #include <Disks/createVolume.h>
 #include <Disks/VolumeJBOD.h>
 
+
 namespace DB
 {
 
-/// Volume which reserserves space on each underlying disk.
+class VolumeRAID1;
+
+using VolumeRAID1Ptr = std::shared_ptr<VolumeRAID1>;
+
+/// Volume which reserves space on each underlying disk.
 ///
 /// NOTE: Just interface implementation, doesn't used in codebase,
 /// also not available for user.
@@ -27,16 +32,18 @@ public:
     {
     }
 
-    void updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    VolumeRAID1(
+        VolumeRAID1 & volume_raid1,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disk_selector)
+        : VolumeJBOD(volume_raid1, config, config_prefix, disk_selector)
     {
-        VolumeJBOD::updateFromConfig(config, config_prefix);
     }
 
     VolumeType getType() const override { return VolumeType::RAID1; }
 
     ReservationPtr reserve(UInt64 bytes) override;
 };
-
-using VolumeRAID1Ptr = std::shared_ptr<VolumeRAID1>;
 
 }

@@ -20,11 +20,6 @@ VolumeJBOD::VolumeJBOD(
     DiskSelectorPtr disk_selector)
     : IVolume(name_, config, config_prefix, disk_selector)
 {
-    updateFromConfig(config, config_prefix);
-}
-
-void VolumeJBOD::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
     Poco::Logger * logger = &Poco::Logger::get("StorageConfiguration");
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
@@ -60,6 +55,16 @@ void VolumeJBOD::updateFromConfig(const Poco::Util::AbstractConfiguration & conf
         LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
 
     are_merges_allowed_in_config = config.getBool(config_prefix + ".allow_merges", true);
+}
+
+VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disk_selector)
+    : IVolume(volume_jbod.name, config, config_prefix, disk_selector)
+    , are_merges_allowed_from_query(volume_jbod.are_merges_allowed_from_query)
+    , last_used(volume_jbod.last_used.load(std::memory_order_relaxed))
+{
 }
 
 DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
@@ -101,10 +106,7 @@ bool VolumeJBOD::areMergesAllowed() const
 
 void VolumeJBOD::setAllowMergesFromQuery(bool allow)
 {
-    if (are_merges_allowed_from_query)
-        *are_merges_allowed_from_query = allow;
-    else
-        are_merges_allowed_from_query = std::make_shared<bool>(allow);
+    are_merges_allowed_from_query = allow;
 }
 
 }
