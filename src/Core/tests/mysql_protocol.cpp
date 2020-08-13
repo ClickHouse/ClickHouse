@@ -12,6 +12,7 @@ int main(int argc, char ** argv)
     using namespace DB;
     using namespace MySQLProtocol;
     using namespace MySQLProtocol::Authentication;
+    using namespace MySQLProtocol::ConnectionPhase;
 
 
     uint8_t sequence_id = 1;

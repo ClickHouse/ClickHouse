@@ -5,6 +5,7 @@ namespace DB
 {
 using namespace Replication;
 using namespace Authentication;
+using namespace ConnectionPhase;
 
 namespace ErrorCodes
 {
@@ -44,7 +45,7 @@ void MySQLClient::connect()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-    packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
+    packet_sender = std::make_shared<PacketEndpoint>(*in, *out, seq);
     handshake();
 }
 
