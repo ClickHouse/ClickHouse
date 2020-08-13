@@ -185,6 +185,7 @@ public:
     /// Change the corresponding output types to arrays.
     bool popUnusedArrayJoin(const Names & required_columns, ExpressionAction & out_action);
 
+    /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
     ExpressionActionsPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     /// - Adds actions to delete all but the specified columns.
