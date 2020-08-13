@@ -102,7 +102,7 @@ size_t getLengthEncodedStringSize(const String & s)
     return getLengthEncodedNumberSize(s.size()) + s.size();
 }
 
-ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex type_index)
+ColumnDefinitionPacket getColumnDefinition(const String & column_name, const TypeIndex type_index)
 {
     ColumnType column_type;
     CharacterSet charset = CharacterSet::binary;
@@ -167,7 +167,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex
             charset = CharacterSet::utf8_general_ci;
             break;
     }
-    return ColumnDefinition(column_name, charset, 0, column_type, flags, 0);
+    return ColumnDefinitionPacket(column_name, charset, 0, column_type, flags, 0);
 }
 
 bool PacketPayloadReadBuffer::nextImpl()
@@ -221,23 +221,23 @@ PacketPayloadReadBuffer::PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & seq
 {
 }
 
-void ReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
-{
-    PacketPayloadReadBuffer payload(in, sequence_id);
-    payload.next();
-    readPayloadImpl(payload);
-    if (!payload.eof())
-    {
-        std::stringstream tmp;
-        tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
-        throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-    }
-}
-
-void LimitedReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
-{
-    LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
-    ReadPacket::readPayload(limited, sequence_id);
-}
+//void ReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
+//{
+//    PacketPayloadReadBuffer payload(in, sequence_id);
+//    payload.next();
+//    readPayloadImpl(payload);
+//    if (!payload.eof())
+//    {
+//        std::stringstream tmp;
+//        tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
+//        throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+//    }
+//}
+//
+//void LimitedReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
+//{
+//    LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
+//    ReadPacket::readPayload(limited, sequence_id);
+//}
 
 }

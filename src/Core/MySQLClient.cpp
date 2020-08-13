@@ -77,7 +77,7 @@ void MySQLClient::handshake()
         client_capability_flags, max_packet_size, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    PacketResponse packet_response(client_capability_flags, true);
+    ResponsePacket packet_response(client_capability_flags, true);
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
 
@@ -92,7 +92,7 @@ void MySQLClient::writeCommand(char command, String query)
     WriteCommand write_command(command, query);
     packet_sender->sendPacket<WriteCommand>(write_command, true);
 
-    PacketResponse packet_response(client_capability_flags);
+    ResponsePacket packet_response(client_capability_flags);
     packet_sender->receivePacket(packet_response);
     switch (packet_response.getType())
     {
@@ -111,7 +111,7 @@ void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
     RegisterSlave register_slave(slave_id);
     packet_sender->sendPacket<RegisterSlave>(register_slave, true);
 
-    PacketResponse packet_response(client_capability_flags);
+    ResponsePacket packet_response(client_capability_flags);
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)

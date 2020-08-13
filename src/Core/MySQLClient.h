@@ -64,7 +64,7 @@ private:
     void writeCommand(char command, String query);
 };
 
-class WriteCommand : public WritePacket
+class WriteCommand : public IMySQLWritePacket
 {
 public:
     char command;

@@ -7,7 +7,7 @@ namespace DB
 namespace MySQLProtocol
 {
 
-void IMySQLReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
+void IMySQLReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
 {
     PacketPayloadReadBuffer payload(in, sequence_id);
     payload.next();
@@ -20,10 +20,21 @@ void IMySQLReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
     }
 }
 
+void IMySQLReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
+{
+    readPayloadImpl(in);
+}
+
 void LimitedReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
 {
     LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
-    ReadPacket::readPayload(limited, sequence_id);
+    IMySQLReadPacket::readPayload(limited, sequence_id);
+}
+
+void LimitedReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
+{
+    LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
+    IMySQLReadPacket::readPayloadWithUnpacked(limited);
 }
 
 }

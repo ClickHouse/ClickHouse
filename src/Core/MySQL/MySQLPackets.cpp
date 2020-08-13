@@ -425,22 +425,22 @@ void ResponsePacket::readPayloadImpl(ReadBuffer & payload)
     {
         case PACKET_OK:
             packetType = PACKET_OK;
-            ok.readPayloadImpl(payload);
+            ok.readPayloadWithUnpacked(payload);
             break;
         case PACKET_ERR:
             packetType = PACKET_ERR;
-            err.readPayloadImpl(payload);
+            err.readPayloadWithUnpacked(payload);
             break;
         case PACKET_EOF:
             if (is_handshake)
             {
                 packetType = PACKET_AUTH_SWITCH;
-                auth_switch.readPayloadImpl(payload);
+                auth_switch.readPayloadWithUnpacked(payload);
             }
             else
             {
                 packetType = PACKET_EOF;
-                eof.readPayloadImpl(payload);
+                eof.readPayloadWithUnpacked(payload);
             }
             break;
         case PACKET_LOCALINFILE:

@@ -466,7 +466,7 @@ namespace MySQLReplication
         void updateLogName(String binlog) { binlog_name = std::move(binlog); }
     };
 
-    class IFlavor : public MySQLProtocol::ReadPacket
+    class IFlavor : public MySQLProtocol::IMySQLReadPacket
     {
     public:
         virtual String getName() const = 0;
