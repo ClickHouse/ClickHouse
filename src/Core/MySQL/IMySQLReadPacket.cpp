@@ -1,8 +1,15 @@
 #include <Core/MySQL/IMySQLReadPacket.h>
-#include <Core/MySQLProtocol.h>
+#include <sstream>
+#include <Core/MySQL/PacketPayloadReadBuffer.h>
+#include <IO/LimitReadBuffer.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
+}
 
 namespace MySQLProtocol
 {
@@ -16,7 +23,7 @@ void IMySQLReadPacket::readPayload(ReadBuffer & in, uint8_t & sequence_id)
     {
         std::stringstream tmp;
         tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
-        throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        throw Exception(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
 }
 

@@ -33,6 +33,7 @@ namespace DB
 using namespace MySQLProtocol;
 using namespace MySQLProtocol::ConnectionPhase;
 using namespace MySQLProtocol::ProtocolText;
+using namespace MySQLProtocol::Generic;
 
 #if USE_SSL
 using Poco::Net::SecureStreamSocket;

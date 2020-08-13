@@ -1,11 +1,16 @@
-#include <Core/MySQL/MySQLPackets.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
 
 namespace MySQLProtocol
 {
+
+namespace Generic
+{
+
+static const size_t MYSQL_ERRMSG_SIZE = 512;
 
 void SSLRequest::readPayloadImpl(ReadBuffer & buf)
 {
@@ -247,6 +252,8 @@ size_t LengthEncodedNumber::getPayloadSize() const
 void LengthEncodedNumber::writePayloadImpl(WriteBuffer & buffer) const
 {
     writeLengthEncodedNumber(value, buffer);
+}
+
 }
 
 }

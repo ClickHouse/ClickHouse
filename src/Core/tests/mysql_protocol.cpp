@@ -11,6 +11,7 @@ int main(int argc, char ** argv)
 {
     using namespace DB;
     using namespace MySQLProtocol;
+    using namespace MySQLProtocol::Generic;
     using namespace MySQLProtocol::Authentication;
     using namespace MySQLProtocol::ConnectionPhase;
     using namespace MySQLProtocol::ProtocolText;

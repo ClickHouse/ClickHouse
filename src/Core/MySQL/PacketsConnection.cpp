@@ -1,13 +1,15 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/MySQL/MySQLPackets.h>
+#include <Core/MySQL/PacketsGeneric.h>
 
 namespace DB
 {
 
 namespace MySQLProtocol
 {
+
+using namespace Generic;
 
 namespace ConnectionPhase
 {

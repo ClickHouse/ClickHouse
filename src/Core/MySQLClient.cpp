@@ -3,6 +3,7 @@
 
 namespace DB
 {
+using namespace Generic;
 using namespace Replication;
 using namespace Authentication;
 using namespace ConnectionPhase;

@@ -36,13 +36,6 @@ public:
 uint64_t readLengthEncodedNumber(ReadBuffer & buffer);
 void readLengthEncodedString(String & s, ReadBuffer & buffer);
 
-//inline void readLengthEncodedString(String & s, ReadBuffer & buffer)
-//{
-//    uint64_t len = readLengthEncodedNumber(buffer);
-//    s.resize(len);
-//    buffer.readStrict(reinterpret_cast<char *>(s.data()), len);
-//}
-
 }
 
 }

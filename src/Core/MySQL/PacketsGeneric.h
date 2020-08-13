@@ -13,6 +13,14 @@ namespace DB
 namespace MySQLProtocol
 {
 
+namespace Generic
+{
+
+enum StatusFlags
+{
+    SERVER_SESSION_STATE_CHANGED = 0x4000
+};
+
 enum Capability
 {
     CLIENT_CONNECT_WITH_DB = 0x00000008,
@@ -60,7 +68,7 @@ public:
     OKPacket(uint32_t capabilities_);
 
     OKPacket(uint8_t header_, uint32_t capabilities_, uint64_t affected_rows_,
-        uint32_t status_flags_, int16_t warnings_, String session_state_changes_ = "", String info_ = "");
+             uint32_t status_flags_, int16_t warnings_, String session_state_changes_ = "", String info_ = "");
 };
 
 class EOFPacket : public IMySQLWritePacket, public IMySQLReadPacket
@@ -161,6 +169,8 @@ protected:
 public:
     explicit LengthEncodedNumber(uint64_t value_);
 };
+
+}
 
 }
 
