@@ -161,6 +161,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
+    bool removed_by_other_entry = false;
     /// These several fields are informational only (for viewing by the user using system tables).
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
