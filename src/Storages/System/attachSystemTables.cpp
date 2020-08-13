@@ -69,19 +69,23 @@ namespace DB
 namespace
 {
 
-template<typename StorageT>
-void attach(IDatabase & system_database, const String & table_name)
+template<typename StorageT, typename... StorageArgs>
+void attach(IDatabase & system_database, const String & table_name, StorageArgs && ... args)
 {
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
+        /// Attach to Ordinary database
         auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
-        system_database.attachTable(table_name, StorageT::create(table_id));
+        system_database.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...));
     }
     else
     {
+        /// Attach to Atomic database
+        /// NOTE: UUIDs are not persistent, but it's ok since no data are stored on disk for these storages
+        /// and path is actually not used
         auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
-        system_database.attachTable(table_name, StorageT::create(table_id), path);
+        system_database.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...), path);
     }
 }
 
@@ -92,12 +96,10 @@ void attach(IDatabase & system_database, const String & table_name)
 void attachSystemTablesLocal(IDatabase & system_database)
 {
     attach<StorageSystemOne>(system_database, "one");
-
-    //system_database.attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false));
-    //system_database.attachTable("numbers_mt", StorageSystemNumbers::create(StorageID("system", "numbers_mt"), true));
-    //system_database.attachTable("zeros", StorageSystemZeros::create(StorageID("system", "zeros"), false));
-    //system_database.attachTable("zeros_mt", StorageSystemZeros::create(StorageID("system", "zeros_mt"), true));
-
+    attach<StorageSystemNumbers>(system_database, "numbers", false);
+    attach<StorageSystemNumbers>(system_database, "numbers_mt", true);
+    attach<StorageSystemZeros>(system_database, "zeros", false);
+    attach<StorageSystemZeros>(system_database, "zeros_mt", true);
     attach<StorageSystemDatabases>(system_database, "databases");
     attach<StorageSystemTables>(system_database, "tables");
     attach<StorageSystemColumns>(system_database, "columns");
@@ -141,7 +143,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attachSystemTablesLocal(system_database);
 
     attach<StorageSystemParts>(system_database, "parts");
-    //attach<>(system_database, "detached_parts", createDetachedPartsTable());
+    attach<StorageSystemDetachedParts>(system_database, "detached_parts");
     attach<StorageSystemPartsColumns>(system_database, "parts_columns");
     attach<StorageSystemDisks>(system_database, "disks");
     attach<StorageSystemStoragePolicies>(system_database, "storage_policies");
@@ -162,9 +164,9 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
         attach<StorageSystemZooKeeper>(system_database, "zookeeper");
 }
 
-void attachSystemTablesAsync(IDatabase & /*system_database*/, AsynchronousMetrics & /*async_metrics*/)
+void attachSystemTablesAsync(IDatabase & system_database, AsynchronousMetrics & async_metrics)
 {
-    //system_database.attachTable("asynchronous_metrics", StorageSystemAsynchronousMetrics::create("asynchronous_metrics", async_metrics));
+    attach<StorageSystemAsynchronousMetrics>(system_database, "asynchronous_metrics", async_metrics);
 }
 
 }
