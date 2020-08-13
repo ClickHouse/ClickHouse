@@ -109,6 +109,22 @@ CacheDictionary::~CacheDictionary()
     update_pool.wait();
 }
 
+size_t CacheDictionary::getBytesAllocated() const
+{
+    /// In case of existing string arena we check the size of it.
+    /// But the same appears in setAttributeValue() function, which is called from update() function
+    /// which in turn is called from another thread.
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+    return bytes_allocated + (string_arena ? string_arena->size() : 0);
+}
+
+const IDictionarySource * CacheDictionary::getSource() const
+{
+    /// Mutex required here because of the getSourceAndUpdateIfNeeded() function
+    /// which is used from another thread.
+    std::lock_guard lock(source_mutex);
+    return source_ptr.get();
+}
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {

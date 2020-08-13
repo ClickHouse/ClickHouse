@@ -66,7 +66,7 @@ public:
 
     std::string getTypeName() const override { return "Cache"; }
 
-    size_t getBytesAllocated() const override { return bytes_allocated + (string_arena ? string_arena->size() : 0); }
+    size_t getBytesAllocated() const override;
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
@@ -97,7 +97,7 @@ public:
                 max_threads_for_updates);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    const IDictionarySource * getSource() const override;
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
