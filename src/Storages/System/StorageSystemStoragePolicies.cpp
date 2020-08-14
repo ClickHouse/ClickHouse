@@ -35,7 +35,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipes StorageSystemStoragePolicies::read(
+Pipe StorageSystemStoragePolicies::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -85,10 +85,7 @@ Pipes StorageSystemStoragePolicies::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
-
-    return pipes;
+    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
 }
 
 }
