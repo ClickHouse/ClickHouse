@@ -30,7 +30,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemDisks(const std::string & name_);
+    StorageSystemDisks(const StorageID & table_id_);
 };
 
 }
