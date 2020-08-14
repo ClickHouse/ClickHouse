@@ -17,11 +17,6 @@
 #include <IO/WriteHelpers.h>
 
 
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
-
 namespace DB
 {
 
@@ -185,7 +180,7 @@ public:
         this->data(place).read(buf, threshold);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
@@ -247,7 +242,7 @@ public:
         this->data(place).read(buf, threshold);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
@@ -255,8 +250,3 @@ public:
 
 
 }
-
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
-

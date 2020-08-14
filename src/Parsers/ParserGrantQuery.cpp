@@ -19,8 +19,6 @@ namespace ErrorCodes
 
 namespace
 {
-    using Kind = ASTGrantQuery::Kind;
-
     bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & access_flags)
     {
         static constexpr auto is_one_of_access_type_words = [](IParser::Pos & pos_)
@@ -156,16 +154,13 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, Kind kind, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRoles(IParser::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
             roles_p.allowRoleNames().useIDMode(id_mode);
-            if (kind == Kind::REVOKE)
-                roles_p.allowAll();
-
-            ASTPtr ast;
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
@@ -179,6 +174,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            using Kind = ASTGrantQuery::Kind;
             if (kind == Kind::GRANT)
             {
                 if (!ParserKeyword{"TO"}.ignore(pos, expected))
@@ -221,6 +217,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         attach = true;
     }
 
+    using Kind = ASTGrantQuery::Kind;
     Kind kind;
     if (ParserKeyword{"GRANT"}.ignore(pos, expected))
         kind = Kind::GRANT;
@@ -245,7 +242,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, kind, attach, roles))
+    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
         return false;
 
     if (cluster.empty())

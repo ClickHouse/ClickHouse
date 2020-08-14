@@ -36,6 +36,7 @@ public:
     ~DatabaseWithOwnTablesBase() override;
 
 protected:
+    mutable std::mutex mutex;
     Tables tables;
     Poco::Logger * log;
     const Context & global_context;

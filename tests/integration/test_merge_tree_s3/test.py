@@ -225,10 +225,6 @@ def test_move_partition_to_another_disk(cluster):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
-    node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 's3'")
-    assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
-
 
 def test_table_manipulations(cluster):
     create_table(cluster, "s3_test")

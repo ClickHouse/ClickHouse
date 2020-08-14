@@ -37,8 +37,6 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
-class UncompressedCache;
-
 
 namespace ErrorCodes
 {
@@ -48,6 +46,7 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
@@ -78,7 +77,6 @@ public:
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
-        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -88,7 +86,6 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -145,7 +142,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinumumCompressedSize() const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -194,7 +191,7 @@ public:
      * Possible state transitions:
      * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
      * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
+     * Precommitted -> Commited:    we successfully committed a part to active dataset
      * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:        a cleaner selected this part for deletion
      * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
@@ -304,15 +301,15 @@ public:
     /// Returns full path to part dir
     String getFullPath() const;
 
+    /// Makes checks and move part to new directory
+    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
+    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
+
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix) const;
 
-    /// Makes checks and move part to new directory
-    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
-
     /// Makes clone of a part in detached/ directory via hard links
-    virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
+    void makeCloneInDetached(const String & prefix) const;
 
     /// Makes full clone of part in detached/ on another disk
     void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
@@ -327,8 +324,6 @@ public:
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
     void calculateColumnsSizesOnDisk();
-
-    String getRelativePathForPrefix(const String & prefix) const;
 
 protected:
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -347,14 +342,12 @@ protected:
 
     void removeIfNeeded();
 
-    virtual void checkConsistency(bool require_part_metadata) const;
+    virtual void checkConsistency(bool require_part_metadata) const = 0;
     void checkConsistencyBase() const;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
-
-    String getRelativePathForDetachedPart(const String & prefix) const;
+    virtual void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
 private:
     /// In compact parts order of columns is necessary
@@ -363,7 +356,7 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
     /// Loads marks index granularity into memory
@@ -380,14 +373,15 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    /// Generate unique path to detach part
+    String getRelativePathForDetachedPart(const String & prefix) const;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
-bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 
 }

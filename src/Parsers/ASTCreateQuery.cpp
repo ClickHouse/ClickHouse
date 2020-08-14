@@ -186,13 +186,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->select, select->clone());
     if (tables)
         res->set(res->tables, tables->clone());
-
     if (dictionary)
-    {
-        assert(is_dictionary);
-        res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         res->set(res->dictionary, dictionary->clone());
-    }
 
     cloneOutputOptions(*res);
 
@@ -210,13 +205,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << backQuoteIfNeed(database);
-
-        if (uuid != UUIDHelpers::Nil)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-                          << quoteString(toString(uuid));
-        }
-
         formatOnCluster(settings);
 
         if (storage)
@@ -259,9 +247,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << "DICTIONARY "
                       << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
                       << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-        if (uuid != UUIDHelpers::Nil)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-                          << quoteString(toString(uuid));
         formatOnCluster(settings);
     }
 

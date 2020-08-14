@@ -10,7 +10,6 @@
 #include <vector>
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
 
@@ -25,7 +24,7 @@ namespace DB
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
@@ -106,7 +105,7 @@ private:
 class AvroRowInputFormat : public IRowInputFormat
 {
 public:
-    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "AvroRowInputFormat"; }
 
@@ -140,7 +139,6 @@ private:
 
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
-    FormatSettings format_settings;
 };
 
 }

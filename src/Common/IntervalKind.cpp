@@ -51,10 +51,10 @@ IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
             return IntervalKind::Year;
         if (!(num_seconds % 7889238))
             return IntervalKind::Quarter;
-        if (!(num_seconds % 2629746))
-            return IntervalKind::Month;
         if (!(num_seconds % 604800))
             return IntervalKind::Week;
+        if (!(num_seconds % 2629746))
+            return IntervalKind::Month;
         if (!(num_seconds % 86400))
             return IntervalKind::Day;
         if (!(num_seconds % 3600))

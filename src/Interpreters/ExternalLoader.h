@@ -27,7 +27,6 @@ struct ExternalLoaderConfigSettings
     std::string external_config;
     std::string external_name;
     std::string external_database;
-    std::string external_uuid;
 };
 
 /** Interface for manage user-defined objects.

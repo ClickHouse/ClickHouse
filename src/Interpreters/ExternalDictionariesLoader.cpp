@@ -18,7 +18,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
     : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
     , context(context_)
 {
-    setConfigSettings({"dictionary", "name", "database", "uuid"});
+    setConfigSettings({"dictionary", "name", "database"});
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }

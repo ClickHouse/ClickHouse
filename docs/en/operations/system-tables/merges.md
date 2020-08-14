@@ -17,5 +17,3 @@ Columns:
 -   `rows_read` (UInt64) — Number of rows read.
 -   `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
 -   `rows_written` (UInt64) — Number of rows written.
-
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/merges) <!--hide-->

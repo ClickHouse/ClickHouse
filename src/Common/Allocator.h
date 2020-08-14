@@ -70,7 +70,6 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
-    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -91,7 +90,6 @@ public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
     {
-        checkSize(size);
         CurrentMemoryTracker::alloc(size);
         return allocNoTrack(size, alignment);
     }
@@ -99,7 +97,6 @@ public:
     /// Free memory range.
     void free(void * buf, size_t size)
     {
-        checkSize(size);
         freeNoTrack(buf, size);
         CurrentMemoryTracker::free(size);
     }
@@ -110,8 +107,6 @@ public:
       */
     void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
     {
-        checkSize(new_size);
-
         if (old_size == new_size)
         {
             /// nothing to do.
@@ -247,13 +242,6 @@ private:
         {
             ::free(buf);
         }
-    }
-
-    void checkSize(size_t size)
-    {
-        /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-        if (size >= 0x8000000000000000ULL)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
     }
 
 #ifndef NDEBUG

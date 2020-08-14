@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

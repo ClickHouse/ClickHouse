@@ -21,13 +21,13 @@ namespace
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
     DataPartWidePtr data_part_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -36,14 +36,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
-        metadata_snapshot_,
-        uncompressed_cache_,
-        std::move(mark_cache_),
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+        std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
+        std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
 {
     try
     {
@@ -67,7 +61,11 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     try
     {
         size_t num_columns = columns.size();
-        checkNumberOfColumns(num_columns);
+
+        if (res_columns.size() != num_columns)
+            throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
+                            "Expected " + toString(num_columns) + ", "
+                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
 
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to

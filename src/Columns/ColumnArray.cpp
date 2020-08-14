@@ -42,12 +42,11 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    if (!offsets_concrete->empty() && nested_column)
+    size_t size = offsets_concrete->size();
+    if (size != 0 && nested_column)
     {
-        Offset last_offset = offsets_concrete->getData().back();
-
         /// This will also prevent possible overflow in offset.
-        if (nested_column->size() != last_offset)
+        if (nested_column->size() != offsets_concrete->getData()[size - 1])
             throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -258,12 +257,6 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
         prev_offset = offsets_data[i];
     }
-}
-
-void ColumnArray::updateHashFast(SipHash & hash) const
-{
-    offsets->updateHashFast(hash);
-    data->updateHashFast(hash);
 }
 
 void ColumnArray::insert(const Field & x)

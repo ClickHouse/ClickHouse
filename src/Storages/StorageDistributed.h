@@ -18,8 +18,8 @@ namespace DB
 struct Settings;
 class Context;
 
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -70,19 +70,18 @@ public:
     bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
@@ -91,7 +90,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;
@@ -102,7 +101,7 @@ public:
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     size_t getShardCount() const;
-    const String & getRelativeDataPath() const { return relative_data_path; }
+    std::pair<const std::string &, const std::string &> getPath();
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
@@ -123,8 +122,8 @@ public:
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(const Context &, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, const Context & context) const;
+    ClusterPtr getOptimizedCluster(const Context &, const ASTPtr & query_ptr) const;
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
@@ -144,7 +143,6 @@ public:
     const String cluster_name;
 
     bool has_sharding_key;
-    bool sharding_key_is_deterministic = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
 
@@ -163,7 +161,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
+        const String & storage_policy_,
         const String & relative_data_path_,
         bool attach_);
 
@@ -175,14 +173,16 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
+        const String & storage_policy_,
         const String & relative_data_path_,
         bool attach);
 
-    String relative_data_path;
+    void createStorage();
 
+    String storage_policy;
+    String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    StoragePolicyPtr storage_policy;
+    VolumeJBODPtr volume;
 
     struct ClusterNodeData
     {

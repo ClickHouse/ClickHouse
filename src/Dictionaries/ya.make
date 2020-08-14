@@ -53,18 +53,15 @@ SRCS(
     HTTPDictionarySource.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
+    MongoDBBlockInputStream.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
-    PolygonDictionaryImplementations.cpp
-    PolygonDictionaryUtils.cpp
     RangeHashedDictionary.cpp
     readInvalidateQuery.cpp
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
-    SSDCacheDictionary.cpp
-    SSDComplexKeyCacheDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
 

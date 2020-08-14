@@ -1,0 +1,7 @@
+version: '2.3'
+services:
+  php1:
+    build:
+      context: ./
+    # to keep container running
+    command: sleep infinity

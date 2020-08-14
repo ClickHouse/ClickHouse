@@ -9,7 +9,7 @@ toc_title: hidden
 
 -   [SELECT](statements/select/index.md)
 -   [INSERT INTO](statements/insert-into.md)
--   [CREATE](statements/create/index.md)
+-   [CREATE](statements/create.md)
 -   [ALTER](statements/alter.md#query_language_queries_alter)
 -   [Прочие виды запросов](statements/misc.md)
 

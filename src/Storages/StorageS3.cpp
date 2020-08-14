@@ -153,7 +153,7 @@ namespace
             : sample_block(sample_block_)
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, true), compression_method, 3);
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -204,13 +204,10 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , name(uri_.storage_name)
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
+    setConstraints(constraints_);
 
     auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
     Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);
@@ -218,7 +215,7 @@ StorageS3::StorageS3(
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
     client = S3::ClientFactory::instance().create(
-        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers), context_.getRemoteHostFilter());
+        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers));
 }
 
 
@@ -284,9 +281,8 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 }
 
 
-Pipe StorageS3::read(
+Pipes StorageS3::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -310,31 +306,29 @@ Pipe StorageS3::read(
             need_file_column,
             format_name,
             getName(),
-            metadata_snapshot->getSampleBlock(),
+            getHeaderBlock(column_names),
             context,
-            metadata_snapshot->getColumns().getDefaults(),
+            getColumns().getDefaults(),
             max_block_size,
             chooseCompressionMethod(uri.endpoint, compression_method),
             client,
             uri.bucket,
             key));
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    narrowPipe(pipe, num_streams);
-    return pipe;
+    return narrowPipes(std::move(pipes), num_streams);
 }
 
-BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        format_name, min_upload_part_size, metadata_snapshot->getSampleBlock(),
-        context_global, chooseCompressionMethod(uri.endpoint, compression_method),
+        format_name, min_upload_part_size, getSampleBlock(), context_global,
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client, uri.bucket, uri.key);
 }
 
-void registerStorageS3Impl(const String & name, StorageFactory & factory)
+void registerStorageS3(StorageFactory & factory)
 {
-    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
+    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
@@ -372,16 +366,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
     {
         .source_access_type = AccessType::S3,
     });
-}
-
-void registerStorageS3(StorageFactory & factory)
-{
-    return registerStorageS3Impl("S3", factory);
-}
-
-void registerStorageCOS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("COSN", factory);
 }
 
 NamesAndTypesList StorageS3::getVirtuals() const

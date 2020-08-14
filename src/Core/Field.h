@@ -95,7 +95,7 @@ template <typename T>
 class DecimalField
 {
 public:
-    DecimalField(T value = 0, UInt32 scale_ = 0)
+    DecimalField(T value, UInt32 scale_)
     :   dec(value),
         scale(scale_)
     {}
@@ -187,7 +187,6 @@ template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type =
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
-template <> struct NearestFieldTypeImpl<std::string_view> { using Type = String; };
 template <> struct NearestFieldTypeImpl<String> { using Type = String; };
 template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
 template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
@@ -273,10 +272,7 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
-
-    /// Templates to avoid ambiguity.
-    template <typename T, typename Z = void *>
-    using enable_if_not_field_or_stringlike_t = std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field> && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
+    static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal128; }
 
     Field()
         : which(Types::Null)
@@ -297,17 +293,20 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_stringlike_t<T> = nullptr);
+    Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *> = nullptr);
 
     /// Create a string inplace.
-    Field(const std::string_view & str) { create(str.data(), str.size()); }
-    Field(const String & str) { create(std::string_view{str}); }
-    Field(String && str) { create(std::move(str)); }
-    Field(const char * str) { create(std::string_view{str}); }
-
     template <typename CharT>
     Field(const CharT * data, size_t size)
     {
+        create(data, size);
+    }
+
+    /// NOTE In case when field already has string type, more direct assign is possible.
+    template <typename CharT>
+    void assignString(const CharT * data, size_t size)
+    {
+        destroy();
         create(data, size);
     }
 
@@ -341,19 +340,9 @@ public:
         return *this;
     }
 
-    /// Allows expressions like
-    /// Field f = 1;
-    /// Things to note:
-    /// 1. float <--> int needs explicit cast
-    /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_stringlike_t<T, Field> &
-    operator=(T && rhs);
-
-    Field & operator =(const std::string_view & str);
-    Field & operator =(const String & str) { return *this = std::string_view{str}; }
-    Field & operator =(String && str);
-    Field & operator =(const char * str) { return *this = std::string_view{str}; }
+    std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
+    operator= (T && rhs);
 
     ~Field()
     {
@@ -420,6 +409,7 @@ public:
             throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
         return get<T>();
     }
+
 
     bool operator< (const Field & rhs) const
     {
@@ -564,8 +554,6 @@ public:
         return f(null);
     }
 
-    String dump() const;
-    static Field restoreFromDump(const std::string_view & dump_);
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -602,20 +590,6 @@ private:
         *ptr = std::forward<T>(x);
     }
 
-    template <typename CharT>
-    std::enable_if_t<sizeof(CharT) == 1> assignString(const CharT * data, size_t size)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(reinterpret_cast<const char *>(data), size);
-    }
-
-    void assignString(String && str)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(std::move(str));
-    }
 
     void create(const Field & x)
     {
@@ -641,12 +615,6 @@ private:
     std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
         new (&storage) String(reinterpret_cast<const char *>(data), size);
-        which = Types::String;
-    }
-
-    void create(String && str)
-    {
-        new (&storage) String(std::move(str));
         which = Types::String;
     }
 
@@ -785,16 +753,23 @@ decltype(auto) castToNearestFieldType(T && x)
         return U(x);
 }
 
+/// This (rather tricky) code is to avoid ambiguity in expressions like
+/// Field f = 1;
+/// instead of
+/// Field f = Int64(1);
+/// Things to note:
+/// 1. float <--> int needs explicit cast
+/// 2. customized types needs explicit cast
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>)
+Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
 template <typename T>
-Field::enable_if_not_field_or_stringlike_t<T, Field> &
-Field::operator=(T && rhs)
+std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
+Field::operator= (T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     using U = decltype(val);
@@ -805,33 +780,10 @@ Field::operator=(T && rhs)
     }
     else
         assignConcrete(std::forward<U>(val));
+
     return *this;
 }
 
-
-inline Field & Field::operator=(const std::string_view & str)
-{
-    if (which != Types::String)
-    {
-        destroy();
-        create(str.data(), str.size());
-    }
-    else
-        assignString(str.data(), str.size());
-    return *this;
-}
-
-inline Field & Field::operator=(String && str)
-{
-    if (which != Types::String)
-    {
-        destroy();
-        create(std::move(str));
-    }
-    else
-        assignString(std::move(str));
-    return *this;
-}
 
 class ReadBuffer;
 class WriteBuffer;
@@ -859,27 +811,7 @@ void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
 
-
-__attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateData &, WriteBuffer &)
-{
-    // This probably doesn't make any sense, but we have to have it for
-    // completeness, so that we can use toString(field_value) in field visitors.
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert a Field of type AggregateFunctionStateData to human-readable text");
-}
-
-template <typename T>
-inline void writeText(const DecimalField<T> & value, WriteBuffer & buf)
-{
-    writeText(value.getValue(), value.getScale(), buf);
-}
-
-template <typename T>
-void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
-
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
 [[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
-
-String toString(const Field & x);
-
 }

@@ -1,6 +1,7 @@
 #include <Core/Defines.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 
 #include <Common/typeid_cast.h>
@@ -396,7 +397,7 @@ void registerDataTypeString(DataTypeFactory & factory)
 {
     factory.registerDataType("String", create);
 
-    /// These synonims are added for compatibility.
+    /// These synonyms are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("NCHAR", "String", DataTypeFactory::CaseInsensitive);
