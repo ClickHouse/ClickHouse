@@ -85,7 +85,10 @@ Pipe StorageMaterializeMySQL::read(
         auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
         ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
 
-        pipe.addTransform(std::make_shared<FilterTransform>(pipe.getHeader(), expression_actions, filter_column_name, false));
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(header, expression_actions, filter_column_name, false);
+        });
     }
 
     return pipe;
