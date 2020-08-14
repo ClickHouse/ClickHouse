@@ -164,10 +164,6 @@ private:
     /// The user can specify to redirect query output to a file.
     std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
-    /// If the current format will output data to terminal.
-    /// If true - we need to carefully cleanup progress info between data.
-    /// Otherwise it will only lead to flickering of progress when a block of data arrives but nothing is output.
-    bool has_output_to_terminal = true;
 
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
@@ -1522,8 +1518,6 @@ private:
         }
 
         std_out.next();
-
-        has_output_to_terminal = true;
     }
 
 
@@ -1750,8 +1744,6 @@ private:
             {
                 if (query_with_output->out_file)
                 {
-                    has_output_to_terminal = false;
-
                     const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
 
@@ -1773,9 +1765,6 @@ private:
 
             if (has_vertical_output_suffix)
                 current_format = "Vertical";
-
-            if (current_format == "Null")
-                has_output_to_terminal = false;
 
             block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
             block_out_stream->writePrefix();
@@ -1821,9 +1810,6 @@ private:
         if (!block)
             return;
 
-        if (has_output_to_terminal)
-            clearProgress();
-
         processed_rows += block.rows();
         initBlockOutputStream(block);
 
@@ -1837,11 +1823,15 @@ private:
             written_first_block = true;
         }
 
+        bool clear_progess = std_out.offset() > 0;
+        if (clear_progess)
+            clearProgress();
+
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (has_output_to_terminal)
+        if (clear_progess)
             writeProgress();
     }
 
@@ -1851,7 +1841,6 @@ private:
         initLogsOutputStream();
         logs_out_stream->write(block);
         logs_out_stream->flush();
-        has_output_to_terminal = true;
     }
 
 
@@ -2035,8 +2024,7 @@ private:
 
     void onEndOfStream()
     {
-        if (has_output_to_terminal)
-            clearProgress();
+        clearProgress();
 
         if (block_out_stream)
             block_out_stream->writeSuffix();
