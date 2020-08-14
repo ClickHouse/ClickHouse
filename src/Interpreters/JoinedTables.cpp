@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -201,6 +202,9 @@ StoragePtr JoinedTables::getLeftTableStorage()
 bool JoinedTables::resolveTables()
 {
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
+    if (tables_with_columns.size() != table_expressions.size())
+        throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
+
     checkTablesWithColumns(tables_with_columns, context);
 
     return !tables_with_columns.empty();
