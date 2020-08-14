@@ -61,7 +61,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         DiskSelectorPtr disk_selector)
-    : IVolume(volume_jbod.name, config, config_prefix, disk_selector)
+    : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
     , are_merges_allowed_from_query(volume_jbod.are_merges_allowed_from_query)
     , last_used(volume_jbod.last_used.load(std::memory_order_relaxed))
 {
