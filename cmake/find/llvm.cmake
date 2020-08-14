@@ -1,10 +1,12 @@
-# Broken in macos. TODO: update clang, re-test, enable
-if (NOT APPLE)
-    option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile_expressions' option for query execution" ${ENABLE_LIBRARIES})
+if (APPLE OR SPLIT_SHARED_LIBRARIES OR NOT ARCH_AMD64)
+    set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+endif()
+
+option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile_expressions' option for query execution" ${ENABLE_LIBRARIES})
+# Broken in macos. TODO: update clang, re-test, enable on Apple
+if (ENABLE_EMBEDDED_COMPILER AND NOT SPLIT_SHARED_LIBRARIES AND ARCH_AMD64 AND NOT (SANITIZE STREQUAL "undefined"))
     option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library." ${NOT_UNBUNDLED})
-elseif(ENABLE_EMBEDDED_COMPILER OR USE_INTERNAL_LLVM_LIBRARY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Embedded compiler is not currently supported on Apple")
-endif ()
+endif()
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
     if(USE_INTERNAL_LLVM_LIBRARY)
@@ -13,10 +15,12 @@ if (NOT ENABLE_EMBEDDED_COMPILER)
     return()
 endif()
 
-if (USE_INTERNAL_LLVM_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
-    message (WARNING "submodule contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't fidd internal LLVM library")
-    set (USE_INTERNAL_LLVM_LIBRARY 0)
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
+    if (USE_INTERNAL_LLVM_LIBRARY)
+        message (WARNING "submodule contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't fidd internal LLVM library")
+    endif()
+    set (MISSING_INTERNAL_LLVM_LIBRARY 1)
 endif ()
 
 if (NOT USE_INTERNAL_LLVM_LIBRARY)
@@ -46,35 +50,38 @@ if (NOT USE_INTERNAL_LLVM_LIBRARY)
         set (LLVM_FOUND 0)
         set (USE_EMBEDDED_COMPILER 0)
     endif ()
-else()
+endif()
+
+if(NOT LLVM_FOUND AND NOT MISSING_INTERNAL_LLVM_LIBRARY)
     if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
-        message(WARNING "Option ENABLE_EMBEDDED_COMPILER is set but LLVM library cannot build if build directory is the same as source directory.")
+        message(WARNING "Option ENABLE_EMBEDDED_COMPILER is set but internal LLVM library cannot build if build directory is the same as source directory.")
         set (LLVM_FOUND 0)
         set (USE_EMBEDDED_COMPILER 0)
     elseif (SPLIT_SHARED_LIBRARIES)
         # llvm-tablegen cannot find shared libraries that we build. Probably can be easily fixed.
-        message(WARNING "Option ENABLE_EMBEDDED_COMPILER is not compatible with SPLIT_SHARED_LIBRARIES. Build of LLVM will be disabled.")
+        message(WARNING "Option USE_INTERNAL_LLVM_LIBRARY is not compatible with SPLIT_SHARED_LIBRARIES. Build of LLVM will be disabled.")
         set (LLVM_FOUND 0)
         set (USE_EMBEDDED_COMPILER 0)
     elseif (NOT ARCH_AMD64)
         # It's not supported yet, but you can help.
-        message(WARNING "Option ENABLE_EMBEDDED_COMPILER is only available for x86_64. Build of LLVM will be disabled.")
+        message(WARNING "Option USE_INTERNAL_LLVM_LIBRARY is only available for x86_64. Build of LLVM will be disabled.")
         set (LLVM_FOUND 0)
         set (USE_EMBEDDED_COMPILER 0)
     elseif (SANITIZE STREQUAL "undefined")
         # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
-        message(WARNING "Option ENABLE_EMBEDDED_COMPILER does not work with UBSan, because 'llvm-tblgen' tool from LLVM has undefined behaviour. Build of LLVM will be disabled.")
+        message(WARNING "Option USE_INTERNAL_LLVM_LIBRARY does not work with UBSan, because 'llvm-tblgen' tool from LLVM has undefined behaviour. Build of LLVM will be disabled.")
         set (LLVM_FOUND 0)
         set (USE_EMBEDDED_COMPILER 0)
     else ()
+        set (USE_INTERNAL_LLVM_LIBRARY ON)
         set (LLVM_FOUND 1)
         set (USE_EMBEDDED_COMPILER 1)
         set (LLVM_VERSION "9.0.0bundled")
         set (LLVM_INCLUDE_DIRS
-            ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include
-            ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include
+            "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include"
+            "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include"
         )
-        set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm)
+        set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm/llvm")
     endif()
 endif()
 
