@@ -35,7 +35,7 @@ namespace DB
   */
 
 template <typename T>
-struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
+struct AggregateFunctionUniqUpToData
 {
 /** If count == threshold + 1 - this means that it is "overflowed" (values greater than threshold).
   * In this case (for example, after calling the merge function), the `data` array does not necessarily contain the initialized values
@@ -43,9 +43,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
   *   then set count to `threshold + 1`, and values from another state are not copied.
   */
     UInt8 count = 0;
-
-    T data[0];
-
+    alignas(1) T data[0];
 
     size_t size() const
     {
