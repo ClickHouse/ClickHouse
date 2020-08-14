@@ -1839,6 +1839,7 @@ private:
     void onLogData(Block & block)
     {
         initLogsOutputStream();
+        clearProgress();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
