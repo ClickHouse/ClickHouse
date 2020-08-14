@@ -344,7 +344,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     const auto & create_materialized_column_declaration = [&](const String & name, const String & type, const auto & default_value)
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = name;
         column_declaration->type = makeASTFunction(type);
         column_declaration->default_specifier = "MATERIALIZED";
