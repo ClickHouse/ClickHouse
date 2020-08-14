@@ -7,6 +7,7 @@ set (SRCS
     AST/DropQuery.cpp
     AST/EngineExpr.cpp
     AST/Identifier.cpp
+    AST/InsertQuery.cpp
     AST/JoinExpr.cpp
     AST/LimitExpr.cpp
     AST/Literal.cpp
@@ -19,6 +20,7 @@ set (SRCS
     AST/SettingExpr.cpp
     AST/TableElementExpr.cpp
     AST/TableExpr.cpp
+    AST/ValueExpr.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp
     ClickHouseParserBaseVisitor.cpp

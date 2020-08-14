@@ -62,6 +62,12 @@ public:
 
     virtual antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitValuesClause(ClickHouseParser::ValuesClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *context) = 0;
+
     virtual antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *context) = 0;
@@ -121,6 +127,14 @@ public:
     virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *context) = 0;
 
     virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitValueExprList(ClickHouseParser::ValueExprListContext *context) = 0;
+
+    virtual antlrcpp::Any visitValueExprLiteral(ClickHouseParser::ValueExprLiteralContext *context) = 0;
+
+    virtual antlrcpp::Any visitValueExprTuple(ClickHouseParser::ValueExprTupleContext *context) = 0;
+
+    virtual antlrcpp::Any visitValueExprArray(ClickHouseParser::ValueExprArrayContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *context) = 0;
 

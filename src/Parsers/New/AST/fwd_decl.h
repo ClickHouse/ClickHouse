@@ -7,7 +7,7 @@
 namespace DB::AST
 {
 class INode;
-template <class T, char Separator>
+template <class T, char Separator = ','>
 class List;
 
 template <class T = INode>
@@ -45,16 +45,19 @@ class TableElementExpr;
 class TableExpr;
 class TableIdentifier;
 class TTLExpr;
+class ValueExpr;
 
-using ColumnExprList = List<ColumnExpr, ','>;
-using ColumnParamList = List<Literal, ','>;
-using ColumnTypeExprList = List<ColumnTypeExpr, ','>;
-using EnumValueList = List<EnumValue, ','>;
-using OrderExprList = List<OrderExpr, ','>;
+using ColumnExprList = List<ColumnExpr>;
+using ColumnNameList = List<Identifier>;
+using ColumnParamList = List<Literal>;
+using ColumnTypeExprList = List<ColumnTypeExpr>;
+using EnumValueList = List<EnumValue>;
+using OrderExprList = List<OrderExpr>;
 using QueryList = List<Query, ';'>;
-using SettingExprList = List<SettingExpr, ','>;
-using TableArgList = List<TableArgExpr, ','>;
-using TableElementList = List<TableElementExpr, ','>;
-using TTLExprList = List<TTLExpr, ','>;
+using SettingExprList = List<SettingExpr>;
+using TableArgList = List<TableArgExpr>;
+using TableElementList = List<TableElementExpr>;
+using TTLExprList = List<TTLExpr>;
+using ValueExprList = List<ValueExpr>;
 
 }

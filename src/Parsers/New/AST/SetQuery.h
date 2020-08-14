@@ -9,7 +9,7 @@ namespace DB::AST
 class SetQuery : public Query
 {
     public:
-        explicit SetQuery(PtrTo<SettingExpr> expr);
+        explicit SetQuery(PtrTo<SettingExprList> list);
 
         ASTPtr convertToOld() const override;
 };

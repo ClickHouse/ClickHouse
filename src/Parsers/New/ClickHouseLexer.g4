@@ -95,6 +95,7 @@ TRIM: T R I M;
 TTL: T T L;
 UNION: U N I O N;
 USING: U S I N G;
+VALUES: V A L U E S;
 VOLUME: V O L U M E;
 WEEK: W E E K;
 WHEN: W H E N;
@@ -105,6 +106,7 @@ YEAR: Y E A R;
 // Tokens
 
 IDENTIFIER: (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DIGIT)*;
+// TODO: DECIMAL_LITERAL
 NUMBER_LITERAL: DIGIT+; // Unsigned natural integer with meaningless leading zeroes. TODO: don't forget exponential repr.
 STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) )* QUOTE_SINGLE; // It's important that quote-symbol is a single character.
 

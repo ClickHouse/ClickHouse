@@ -5,12 +5,14 @@
 #include <Parsers/New/AST/DDLQuery.h>
 #include <Parsers/New/AST/DropQuery.h>
 #include <Parsers/New/AST/EngineExpr.h>
+#include <Parsers/New/AST/InsertQuery.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/SetQuery.h>
 
 #include <support/Any.h>
+#include "Parsers/New/AST/fwd_decl.h"
 
 
 namespace DB
@@ -96,7 +98,7 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 
 antlrcpp::Any ParseTreeVisitor::visitSetStmt(ClickHouseParser::SetStmtContext *ctx)
 {
-    return std::make_shared<SetQuery>(ctx->settingExpr()->accept(this).as<PtrTo<SettingExpr>>());
+    return std::make_shared<SetQuery>(ctx->settingExprList()->accept(this).as<PtrTo<SettingExprList>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx)
@@ -120,6 +122,15 @@ antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropData
 antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx)
 {
     return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), ctx->tableIdentifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
+{
+    auto list = std::make_shared<ColumnNameList>();
+
+    for (auto * name : ctx->identifier()) list->append(name->accept(this));
+
+    return std::make_shared<InsertQuery>(ctx->tableIdentifier()->accept(this), list, ctx->valuesClause()->accept(this));
 }
 
 }

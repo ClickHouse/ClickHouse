@@ -1068,6 +1068,18 @@ class ClickHouseUnlexer(Grammarinator):
     USING.min_depth = 1
 
     @depthcontrol
+    def VALUES(self):
+        current = self.create_node(UnlexerRule(name='VALUES'))
+        current += self.unlexer.V()
+        current += self.unlexer.A()
+        current += self.unlexer.L()
+        current += self.unlexer.U()
+        current += self.unlexer.E()
+        current += self.unlexer.S()
+        return current
+    VALUES.min_depth = 1
+
+    @depthcontrol
     def VOLUME(self):
         current = self.create_node(UnlexerRule(name='VOLUME'))
         current += self.unlexer.V()

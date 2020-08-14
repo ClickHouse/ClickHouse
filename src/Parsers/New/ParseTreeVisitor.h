@@ -18,14 +18,14 @@ public:
     antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx) override;
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *ctx) override;
     antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx) override;
+    antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override;
+    antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx) override;
+    antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override;
+    antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx) override;
+    antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx) override;
     antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override;
     antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx) override;
     antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override;
-
-    // CREATE statements
-
-    antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override;
-    antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx) override;
 
     // CREATE clauses
 
@@ -44,10 +44,13 @@ public:
     antlrcpp::Any visitTtlClause(ClickHouseParser::TtlClauseContext *ctx) override;
     antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *ctx) override;
 
-    // DROP statements
+    // INSERT clauses
 
-    antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override;
-    antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx) override;
+    antlrcpp::Any visitValuesClause(ClickHouseParser::ValuesClauseContext *ctx) override;
+
+    // INSERT expressions
+
+    antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx) override;
 
     // SELECT clauses
 
@@ -84,6 +87,13 @@ public:
     antlrcpp::Any visitJoinOpFull(ClickHouseParser::JoinOpFullContext *ctx) override;
     antlrcpp::Any visitJoinOpInner(ClickHouseParser::JoinOpInnerContext *ctx) override;
     antlrcpp::Any visitJoinOpLeftRight(ClickHouseParser::JoinOpLeftRightContext *ctx) override;
+
+    // Value expressions (alphabetically)
+
+    antlrcpp::Any visitValueExprArray(ClickHouseParser::ValueExprArrayContext *ctx) override;
+    antlrcpp::Any visitValueExprList(ClickHouseParser::ValueExprListContext *ctx) override;
+    antlrcpp::Any visitValueExprLiteral(ClickHouseParser::ValueExprLiteralContext *ctx) override;
+    antlrcpp::Any visitValueExprTuple(ClickHouseParser::ValueExprTupleContext *ctx) override;
 
     // Column expressions (alphabetically)
 

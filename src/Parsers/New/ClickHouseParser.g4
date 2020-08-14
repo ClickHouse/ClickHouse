@@ -12,6 +12,7 @@ queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
 
 query
     : distributedStmt
+    | insertStmt
     | selectUnionStmt
     | setStmt
     ;
@@ -73,6 +74,17 @@ dropStmt
     : DROP DATABASE (IF EXISTS)? databaseIdentifier       # DropDatabaseStmt
     | DROP TEMPORARY? TABLE (IF EXISTS)? tableIdentifier  # DropTableStmt
     ;
+
+// INSERT statement
+
+insertStmt: INSERT INTO tableIdentifier (LPAREN identifier (COMMA identifier)* RPAREN)? valuesClause;
+
+valuesClause
+    : VALUES valueTupleExpr (COMMA valueTupleExpr)*
+    | selectUnionStmt
+    ;
+
+valueTupleExpr: LPAREN valueExprList RPAREN;  // same as ValueExprTuple
 
 // SELECT statement
 
@@ -136,7 +148,16 @@ settingExpr: identifier EQ_SINGLE literal;
 
 // SET statement
 
-setStmt: SET settingExpr;
+setStmt: SET settingExprList;
+
+// Values
+
+valueExprList: valueExpr (COMMA valueExpr)*;
+valueExpr
+    : literal                           # ValueExprLiteral
+    | valueTupleExpr                    # ValueExprTuple
+    | LBRACKET valueExprList? RBRACKET  # ValueExprArray
+    ;
 
 // Columns
 
@@ -163,7 +184,7 @@ columnExpr
     | columnExpr DOT NUMBER_LITERAL                                                  # ColumnExprTupleAccess
     | unaryOp columnExpr                                                             # ColumnExprUnaryOp
     | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
-    | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp
+    | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp // TODO: don't forget `IN subquery`
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
     | columnExpr AS identifier                                                       # ColumnExprAlias
@@ -207,7 +228,7 @@ keyword  // except NULL_SQL, SELECT
     | FIRST | FORMAT | FROM | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
     | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OR | ORDER | OUTER | OUTFILE
     | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | TABLE | TEMPORARY | THEN | TOTALS
-    | TRAILING | TRIM | TO | TTL | UNION | USING | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | TRAILING | TRIM | TO | TTL | UNION | USING | VALUES | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;
