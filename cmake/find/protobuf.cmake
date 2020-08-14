@@ -1,12 +1,18 @@
 option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
 
-if(ENABLE_PROTOBUF)
+if(NOT ENABLE_PROTOBUF)
+    if(USE_INTERNAL_PROTOBUF_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal protobuf with ENABLE_PROTOBUF=OFF")
+    endif()
+    return()
+endif()
 
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/protobuf/cmake/CMakeLists.txt")
    if(USE_INTERNAL_PROTOBUF_LIBRARY)
        message(WARNING "submodule contrib/protobuf is missing. to fix try run: \n git submodule update --init --recursive")
+       message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal protobuf")
        set(USE_INTERNAL_PROTOBUF_LIBRARY 0)
    endif()
    set(MISSING_INTERNAL_PROTOBUF_LIBRARY 1)
@@ -14,6 +20,9 @@ endif()
 
 if(NOT USE_INTERNAL_PROTOBUF_LIBRARY)
     find_package(Protobuf)
+    if (NOT Protobuf_LIBRARY OR NOT Protobuf_INCLUDE_DIR)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system protobuf")
+    endif()
 endif()
 
 if (Protobuf_LIBRARY AND Protobuf_INCLUDE_DIR)
@@ -36,11 +45,11 @@ if(OS_FREEBSD AND SANITIZE STREQUAL "address")
     if(LLVM_INCLUDE_DIRS)
         set(Protobuf_INCLUDE_DIR ${Protobuf_INCLUDE_DIR} ${LLVM_INCLUDE_DIRS})
     else()
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use protobuf on FreeBSD with address sanitizer without LLVM")
         set(USE_PROTOBUF 0)
     endif()
 endif()
 
 include (${ClickHouse_SOURCE_DIR}/cmake/protobuf_generate_cpp.cmake)
-endif()
 
 message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY} : ${Protobuf_PROTOC_EXECUTABLE}")
