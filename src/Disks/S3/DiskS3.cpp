@@ -407,12 +407,69 @@ public:
         disk->reserved_bytes += size;
     }
 
-    ~DiskS3Reservation() override;
+    ~DiskS3Reservation() override
+    {
+        try
+        {
+            std::lock_guard lock(disk->reservation_mutex);
+            if (disk->reserved_bytes < size)
+            {
+                disk->reserved_bytes = 0;
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            }
+            else
+            {
+                disk->reserved_bytes -= size;
+            }
+
+            if (disk->reservation_count == 0)
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            else
+                --disk->reservation_count;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
 private:
     DiskS3Ptr disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
+};
+
+/// Runs tasks asynchronously using global thread pool.
+class AsyncExecutor : public Executor
+{
+public:
+    explicit AsyncExecutor() = default;
+
+    std::future<void> execute(std::function<void()> task) override
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+
+        GlobalThreadPool::instance().scheduleOrThrowOnError(
+            [promise, task]()
+            {
+                try
+                {
+                    task();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Failed to run async task");
+
+                    try
+                    {
+                        promise->set_exception(std::current_exception());
+                    } catch (...) { }
+                }
+            });
+
+        return promise->get_future();
+    }
 };
 
 
@@ -426,7 +483,8 @@ DiskS3::DiskS3(
     size_t min_upload_part_size_,
     size_t min_multi_part_upload_size_,
     size_t min_bytes_for_seek_)
-    : name(std::move(name_))
+    : IDisk(std::make_unique<AsyncExecutor>())
+    , name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
@@ -686,32 +744,6 @@ void DiskS3::createFile(const String & path)
 void DiskS3::setReadOnly(const String & path)
 {
     Poco::File(metadata_path + path).setReadOnly(true);
-}
-
-DiskS3Reservation::~DiskS3Reservation()
-{
-    try
-    {
-        std::lock_guard lock(disk->reservation_mutex);
-        if (disk->reserved_bytes < size)
-        {
-            disk->reserved_bytes = 0;
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
-        }
-        else
-        {
-            disk->reserved_bytes -= size;
-        }
-
-        if (disk->reservation_count == 0)
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
-        else
-            --disk->reservation_count;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 }

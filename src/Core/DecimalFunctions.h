@@ -42,7 +42,7 @@ inline auto scaleMultiplier(UInt32 scale)
 
 
 /** Components of DecimalX value:
- * whole - represents whole part of decimal, can be negatve or positive.
+ * whole - represents whole part of decimal, can be negative or positive.
  * fractional - for fractional part of decimal, always positive.
  */
 template <typename T>
