@@ -189,7 +189,7 @@ public:
 };
 
 /// When the 2nd function argument is a NULL value.
-template <class ConcreteAction, bool HasNullMap>
+template <class ConcreteAction>
 struct Null
 {
     using ResultType = typename ConcreteAction::ResultType;
@@ -201,20 +201,25 @@ struct Null
     {
         const size_t size = offsets.size();
 
+        if (!null_map_data)
+        {
+            result.resize_fill(size);
+            return;
+        }
+
         result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
-            const size_t array_size = offsets[i] - current_offset;
             ResultType current = 0;
+            const size_t array_size = offsets[i] - current_offset;
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if constexpr (HasNullMap)
-                    if (!(*null_map_data)[current_offset + j])
-                        continue;
+                if (!(*null_map_data)[current_offset + j])
+                    continue;
 
                 ConcreteAction::apply(current, j);
 
@@ -233,6 +238,7 @@ struct String
 {
 private:
     using Offset = ColumnString::Offset;
+    using ArrayOffset = ColumnArray::Offset;
     using ResultType = typename ConcreteAction::ResultType;
 
     template <bool IsConst, bool HasNullMapData, bool HasNullMapItem>
@@ -241,23 +247,23 @@ private:
         const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets,
         const ColumnString::Chars & item_values,
-        const std::conditional_t<IsConst, Offset, ColumnString::Offsets> & item_offsets,
+        std::conditional_t<IsConst, Offset, const ColumnString::Offsets &> item_offsets,
         PaddedPODArray<ResultType> & result,
-        [[maybe_unused]] const NullMap * null_map_data,
-        [[maybe_unused]] const NullMap * null_map_item)
+        [[maybe_unused]] const NullMap * data_map,
+        [[maybe_unused]] const NullMap * item_map)
     {
         const size_t size = offsets.size();
 
         result.resize(size);
 
-        ColumnArray::Offset current_offset = 0;
+        ArrayOffset current_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
-            const ColumnArray::Offset array_size = offsets[i] - current_offset;
+            const ArrayOffset array_size = offsets[i] - current_offset;
 
-            [[maybe_unused]] size_t value_pos = 0;
-            [[maybe_unused]] size_t value_size = 0;
+            [[maybe_unused]] Offset value_pos = 0;
+            [[maybe_unused]] Offset value_size = 0;
 
             if constexpr (!IsConst) // workaround because ?: ternary operator is not constexpr
             {
@@ -269,16 +275,16 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                const Offset string_pos = current_offset == 0 && j == 0
+                const ArrayOffset string_pos = current_offset + j == 0
                     ? 0
                     : string_offsets[current_offset + j - 1];
 
-                const Offset string_size = string_offsets[current_offset + j] - string_pos - 1;
+                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos - IsConst * 1;
 
                 if constexpr (IsConst)
                 {
                     if constexpr (HasNullMapData)
-                        if ((*null_map_data)[current_offset + j])
+                        if ((*data_map)[current_offset + j])
                             continue;
 
                     if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
@@ -286,10 +292,15 @@ private:
                 }
                 else if constexpr (HasNullMapData)
                 {
-                    if constexpr (!HasNullMapItem)
-                        continue;
+                    if ((*data_map)[current_offset + j])
+                    {
+                        if constexpr (!HasNullMapItem)
+                            continue;
 
-                    if (!(*null_map_data)[current_offset + j] || !(*null_map_item)[i])
+                        if (!(*item_map)[i])
+                            continue;
+                    }
+                    else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
                 }
                 else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
@@ -310,7 +321,7 @@ private:
     static inline void invokeCheckNullMaps(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
-        const std::conditional_t<IsConst, Offset, ColumnString::Offsets> & item_offsets,
+        std::conditional_t<IsConst, Offset, const ColumnString::Offsets&> item_offsets,
         PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map)
     {
         if (data_map && item_map)
@@ -628,18 +639,10 @@ private:
         const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-        {
-            if (null_map_data)
-                Impl::Null<ConcreteAction, true>::process(
-                    col_array->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
-            else
-                Impl::Null<ConcreteAction, false>::process(
-                    col_array->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
-        }
+            Impl::Null<ConcreteAction>::process(
+                col_array->getOffsets(),
+                col_res->getData(),
+                null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(item_arg))
             Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 col_nested->getData(),
@@ -771,18 +774,10 @@ private:
         const IColumn * item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-        {
-            if (null_map_data)
-                Impl::Null<ConcreteAction, true>::process(
-                    col_array->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
-            else
-                Impl::Null<ConcreteAction, false>::process(
-                    col_array->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
-        }
+            Impl::Null<ConcreteAction>::process(
+                col_array->getOffsets(),
+                col_res->getData(),
+                null_map_data);
         else if (const auto *const item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {
             const ColumnString * item_const_string =
@@ -928,16 +923,10 @@ private:
 
         if (item_arg.onlyNull())
         {
-            if (null_map_data)
-                Impl::Null<ConcreteAction, true>::process(
-                    col->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
-            else
-                Impl::Null<ConcreteAction, false>::process(
-                    col->getOffsets(),
-                    col_res->getData(),
-                    null_map_data);
+            Impl::Null<ConcreteAction>::process(
+                col->getOffsets(),
+                col_res->getData(),
+                null_map_data);
         }
         else if (isColumnConst(item_arg))
             Impl::Main<ConcreteAction, true>::vector(
