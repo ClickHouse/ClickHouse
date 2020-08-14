@@ -24,7 +24,7 @@ class Literal : public INode
         };
 
         static PtrTo<Literal> createNull(antlr4::tree::TerminalNode * literal);
-        static PtrTo<NumberLiteral> createNumber(antlr4::tree::TerminalNode * literal);
+        static PtrTo<NumberLiteral> createNumber(antlr4::tree::TerminalNode * literal, bool minus = false);
         static PtrTo<StringLiteral> createString(antlr4::tree::TerminalNode * literal);
 
         ASTPtr convertToOld() const override;
@@ -37,10 +37,10 @@ class Literal : public INode
         Literal(LiteralType type, antlr4::tree::TerminalNode * literal);
 
         template <typename T>
-        std::optional<T> asNumber() const
+        std::optional<T> asNumber(bool minus) const
         {
             T number;
-            std::stringstream ss(token->getSymbol()->getText());
+            std::stringstream ss(String(minus ? "-" : "+") + token->getSymbol()->getText());
             ss >> number;
             if (ss.fail())
                 return {};
@@ -62,13 +62,16 @@ class Literal : public INode
 class NumberLiteral : public Literal
 {
     public:
-        explicit NumberLiteral(antlr4::tree::TerminalNode * literal) : Literal(LiteralType::NUMBER, literal) {}
+        explicit NumberLiteral(antlr4::tree::TerminalNode * literal, bool minus_) : Literal(LiteralType::NUMBER, literal), minus(minus_) {}
 
         template <typename T>
-        T as() const
+        std::optional<T> as() const
         {
-            return asNumber<T>();
+            return asNumber<T>(minus);
         }
+
+    private:
+        const bool minus;
 };
 
 class StringLiteral : public Literal

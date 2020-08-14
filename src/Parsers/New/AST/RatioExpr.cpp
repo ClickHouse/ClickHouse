@@ -25,8 +25,10 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitRatioExpr(ClickHouseParser::RatioExprContext *ctx)
 {
     /// TODO: not complete!
-    if (ctx->SLASH()) return std::make_shared<RatioExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)), Literal::createNumber(ctx->NUMBER_LITERAL(1)));
-    else return std::make_shared<RatioExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)));
+    if (ctx->SLASH())
+        return std::make_shared<RatioExpr>(Literal::createNumber(ctx->INTEGER_LITERAL(0)), Literal::createNumber(ctx->INTEGER_LITERAL(1)));
+    else
+        return std::make_shared<RatioExpr>(Literal::createNumber(ctx->INTEGER_LITERAL(0)));
 }
 
 }

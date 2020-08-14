@@ -32,8 +32,9 @@ charset_25 = list(chain(range(121, 122), range(89, 90)))
 charset_26 = list(chain(range(122, 123), range(90, 91)))
 charset_27 = list(chain(range(97, 123), range(65, 91)))
 charset_28 = list(chain(range(48, 58)))
-charset_29 = list(chain(*multirange_diff(printable_unicode_ranges, [(92, 93),(92, 93)])))
-charset_30 = list(chain(range(32, 33), range(11, 12), range(12, 13), range(9, 10), range(13, 14), range(10, 11)))
+charset_29 = list(chain(range(48, 58), range(97, 103), range(65, 71)))
+charset_30 = list(chain(*multirange_diff(printable_unicode_ranges, [(92, 93),(92, 93)])))
+charset_31 = list(chain(range(32, 33), range(11, 12), range(12, 13), range(9, 10), range(13, 14), range(10, 11)))
 
 
 class ClickHouseUnlexer(Grammarinator):
@@ -549,6 +550,27 @@ class ClickHouseUnlexer(Grammarinator):
     IN.min_depth = 1
 
     @depthcontrol
+    def INF(self):
+        current = self.create_node(UnlexerRule(name='INF'))
+        choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_15', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_15', choice)] = self.unlexer.weights.get(('alt_15', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.I()
+            current += self.unlexer.N()
+            current += self.unlexer.F()
+        elif choice == 1:
+            current += self.unlexer.I()
+            current += self.unlexer.N()
+            current += self.unlexer.F()
+            current += self.unlexer.I()
+            current += self.unlexer.N()
+            current += self.unlexer.I()
+            current += self.unlexer.T()
+            current += self.unlexer.Y()
+        return current
+    INF.min_depth = 1
+
+    @depthcontrol
     def INNER(self):
         current = self.create_node(UnlexerRule(name='INNER'))
         current += self.unlexer.I()
@@ -727,6 +749,15 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.H()
         return current
     MONTH.min_depth = 1
+
+    @depthcontrol
+    def NAN_SQL(self):
+        current = self.create_node(UnlexerRule(name='NAN_SQL'))
+        current += self.unlexer.N()
+        current += self.unlexer.A()
+        current += self.unlexer.N()
+        return current
+    NAN_SQL.min_depth = 1
 
     @depthcontrol
     def NOT(self):
@@ -1145,35 +1176,108 @@ class ClickHouseUnlexer(Grammarinator):
     @depthcontrol
     def IDENTIFIER(self):
         current = self.create_node(UnlexerRule(name='IDENTIFIER'))
-        choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_15', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_15', choice)] = self.unlexer.weights.get(('alt_15', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_18', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_18', choice)] = self.unlexer.weights.get(('alt_18', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.unlexer.LETTER()
         elif choice == 1:
             current += self.unlexer.UNDERSCORE()
         if self.unlexer.max_depth >= 1:
             for _ in self.zero_or_more():
-                choice = self.choice([0 if [1, 1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_19', i), 1) for i, w in enumerate([1, 1, 1])])
-                self.unlexer.weights[('alt_19', choice)] = self.unlexer.weights.get(('alt_19', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [1, 1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_22', i), 1) for i, w in enumerate([1, 1, 1])])
+                self.unlexer.weights[('alt_22', choice)] = self.unlexer.weights.get(('alt_22', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += self.unlexer.LETTER()
                 elif choice == 1:
                     current += self.unlexer.UNDERSCORE()
                 elif choice == 2:
-                    current += self.unlexer.DIGIT()
+                    current += self.unlexer.DEC_DIGIT()
 
         return current
     IDENTIFIER.min_depth = 1
 
     @depthcontrol
-    def NUMBER_LITERAL(self):
-        current = self.create_node(UnlexerRule(name='NUMBER_LITERAL'))
-        if self.unlexer.max_depth >= 0:
-            for _ in self.one_or_more():
-                current += self.unlexer.DIGIT()
+    def FLOATING_LITERAL(self):
+        current = self.create_node(UnlexerRule(name='FLOATING_LITERAL'))
+        choice = self.choice([0 if [2, 2][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_26', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_26', choice)] = self.unlexer.weights.get(('alt_26', choice), 1) * self.unlexer.cooldown
+        if choice == 0:
+            current += self.unlexer.HEXADECIMAL_LITERAL()
+            current += self.unlexer.DOT()
+            if self.unlexer.max_depth >= 1:
+                for _ in self.zero_or_more():
+                    current += self.unlexer.HEX_DIGIT()
+
+            if self.unlexer.max_depth >= 1:
+                for _ in self.zero_or_one():
+                    choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_31', i), 1) for i, w in enumerate([1, 1])])
+                    self.unlexer.weights[('alt_31', choice)] = self.unlexer.weights.get(('alt_31', choice), 1) * self.unlexer.cooldown
+                    if choice == 0:
+                        current += self.unlexer.P()
+                    elif choice == 1:
+                        current += self.unlexer.E()
+                    if self.unlexer.max_depth >= 1:
+                        for _ in self.zero_or_one():
+                            choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_35', i), 1) for i, w in enumerate([1, 1])])
+                            self.unlexer.weights[('alt_35', choice)] = self.unlexer.weights.get(('alt_35', choice), 1) * self.unlexer.cooldown
+                            if choice == 0:
+                                current += self.unlexer.PLUS()
+                            elif choice == 1:
+                                current += self.unlexer.DASH()
+
+                    if self.unlexer.max_depth >= 0:
+                        for _ in self.one_or_more():
+                            current += self.unlexer.DEC_DIGIT()
+
+
+        elif choice == 1:
+            current += self.unlexer.INTEGER_LITERAL()
+            current += self.unlexer.DOT()
+            if self.unlexer.max_depth >= 1:
+                for _ in self.zero_or_more():
+                    current += self.unlexer.DEC_DIGIT()
+
+            if self.unlexer.max_depth >= 1:
+                for _ in self.zero_or_one():
+                    current += self.unlexer.E()
+                    if self.unlexer.max_depth >= 1:
+                        for _ in self.zero_or_one():
+                            choice = self.choice([0 if [1, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_41', i), 1) for i, w in enumerate([1, 1])])
+                            self.unlexer.weights[('alt_41', choice)] = self.unlexer.weights.get(('alt_41', choice), 1) * self.unlexer.cooldown
+                            if choice == 0:
+                                current += self.unlexer.PLUS()
+                            elif choice == 1:
+                                current += self.unlexer.DASH()
+
+                    if self.unlexer.max_depth >= 0:
+                        for _ in self.one_or_more():
+                            current += self.unlexer.DEC_DIGIT()
+
 
         return current
-    NUMBER_LITERAL.min_depth = 1
+    FLOATING_LITERAL.min_depth = 2
+
+    @depthcontrol
+    def HEXADECIMAL_LITERAL(self):
+        current = self.create_node(UnlexerRule(name='HEXADECIMAL_LITERAL'))
+        current += self.create_node(UnlexerRule(src='0'))
+        current += self.unlexer.X()
+        if self.unlexer.max_depth >= 0:
+            for _ in self.one_or_more():
+                current += self.unlexer.HEX_DIGIT()
+
+        return current
+    HEXADECIMAL_LITERAL.min_depth = 1
+
+    @depthcontrol
+    def INTEGER_LITERAL(self):
+        current = self.create_node(UnlexerRule(name='INTEGER_LITERAL'))
+        if self.unlexer.max_depth >= 0:
+            for _ in self.one_or_more():
+                current += self.unlexer.DEC_DIGIT()
+
+        return current
+    INTEGER_LITERAL.min_depth = 1
 
     @depthcontrol
     def STRING_LITERAL(self):
@@ -1181,8 +1285,8 @@ class ClickHouseUnlexer(Grammarinator):
         current += self.unlexer.QUOTE_SINGLE()
         if self.unlexer.max_depth >= 0:
             for _ in self.zero_or_more():
-                choice = self.choice([0 if [0, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_24', i), 1) for i, w in enumerate([1, 1])])
-                self.unlexer.weights[('alt_24', choice)] = self.unlexer.weights.get(('alt_24', choice), 1) * self.unlexer.cooldown
+                choice = self.choice([0 if [0, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_46', i), 1) for i, w in enumerate([1, 1])])
+                self.unlexer.weights[('alt_46', choice)] = self.unlexer.weights.get(('alt_46', choice), 1) * self.unlexer.cooldown
                 if choice == 0:
                     current += UnlexerRule(src=self.char_from_list(charset_0))
                 elif choice == 1:
@@ -1383,11 +1487,18 @@ class ClickHouseUnlexer(Grammarinator):
     LETTER.min_depth = 0
 
     @depthcontrol
-    def DIGIT(self):
-        current = self.create_node(UnlexerRule(name='DIGIT'))
+    def DEC_DIGIT(self):
+        current = self.create_node(UnlexerRule(name='DEC_DIGIT'))
         current += self.create_node(UnlexerRule(src=self.char_from_list(charset_28)))
         return current
-    DIGIT.min_depth = 0
+    DEC_DIGIT.min_depth = 0
+
+    @depthcontrol
+    def HEX_DIGIT(self):
+        current = self.create_node(UnlexerRule(name='HEX_DIGIT'))
+        current += self.create_node(UnlexerRule(src=self.char_from_list(charset_29)))
+        return current
+    HEX_DIGIT.min_depth = 0
 
     @depthcontrol
     def ARROW(self):
@@ -1511,8 +1622,8 @@ class ClickHouseUnlexer(Grammarinator):
     @depthcontrol
     def NOT_EQ(self):
         current = self.create_node(UnlexerRule(name='NOT_EQ'))
-        choice = self.choice([0 if [0, 0][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_44', i), 1) for i, w in enumerate([1, 1])])
-        self.unlexer.weights[('alt_44', choice)] = self.unlexer.weights.get(('alt_44', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [0, 0][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_66', i), 1) for i, w in enumerate([1, 1])])
+        self.unlexer.weights[('alt_66', choice)] = self.unlexer.weights.get(('alt_66', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.create_node(UnlexerRule(src='!='))
         elif choice == 1:
@@ -1584,15 +1695,15 @@ class ClickHouseUnlexer(Grammarinator):
     UNDERSCORE.min_depth = 0
 
     @depthcontrol
-    def LINE_COMMENT(self):
-        current = self.create_node(UnlexerRule(name='LINE_COMMENT'))
+    def SINGLE_LINE_COMMENT(self):
+        current = self.create_node(UnlexerRule(name='SINGLE_LINE_COMMENT'))
         current += self.create_node(UnlexerRule(src='--'))
         if self.unlexer.max_depth >= 0:
             for _ in self.zero_or_more():
-                current += UnlexerRule(src=self.char_from_list(charset_29))
+                current += UnlexerRule(src=self.char_from_list(charset_30))
 
-        choice = self.choice([0 if [0, 0, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_60', i), 1) for i, w in enumerate([1, 1, 1])])
-        self.unlexer.weights[('alt_60', choice)] = self.unlexer.weights.get(('alt_60', choice), 1) * self.unlexer.cooldown
+        choice = self.choice([0 if [0, 0, 1][i] > self.unlexer.max_depth else w * self.unlexer.weights.get(('alt_82', i), 1) for i, w in enumerate([1, 1, 1])])
+        self.unlexer.weights[('alt_82', choice)] = self.unlexer.weights.get(('alt_82', choice), 1) * self.unlexer.cooldown
         if choice == 0:
             current += self.create_node(UnlexerRule(src='\n'))
         elif choice == 1:
@@ -1600,12 +1711,24 @@ class ClickHouseUnlexer(Grammarinator):
         elif choice == 2:
             current += self.unlexer.EOF()
         return current
-    LINE_COMMENT.min_depth = 0
+    SINGLE_LINE_COMMENT.min_depth = 0
+
+    @depthcontrol
+    def MULTI_LINE_COMMENT(self):
+        current = self.create_node(UnlexerRule(name='MULTI_LINE_COMMENT'))
+        current += self.create_node(UnlexerRule(src='/*'))
+        if self.unlexer.max_depth >= 0:
+            for _ in self.zero_or_more():
+                current += UnlexerRule(src=self.any_char())
+
+        current += self.create_node(UnlexerRule(src='*/'))
+        return current
+    MULTI_LINE_COMMENT.min_depth = 0
 
     @depthcontrol
     def WHITESPACE(self):
         current = self.create_node(UnlexerRule(name='WHITESPACE'))
-        current += self.create_node(UnlexerRule(src=self.char_from_list(charset_30)))
+        current += self.create_node(UnlexerRule(src=self.char_from_list(charset_31)))
         return current
     WHITESPACE.min_depth = 0
 

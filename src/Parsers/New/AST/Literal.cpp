@@ -15,9 +15,9 @@ PtrTo<Literal> Literal::createNull(antlr4::tree::TerminalNode * literal)
 }
 
 // static
-PtrTo<NumberLiteral> Literal::createNumber(antlr4::tree::TerminalNode * literal)
+PtrTo<NumberLiteral> Literal::createNumber(antlr4::tree::TerminalNode * literal, bool minus)
 {
-    return std::make_shared<NumberLiteral>(literal);
+    return std::make_shared<NumberLiteral>(literal, minus);
 }
 
 // static
@@ -39,10 +39,15 @@ ASTPtr Literal::convertToOld() const
             case LiteralType::NULL_LITERAL:
                 return Field(Null());
             case LiteralType::NUMBER:
-                if (auto value = asNumber<Float64>()) return Field(*value);
-                if (auto value = asNumber<UInt64>()) return Field(*value);
-                if (auto value = asNumber<Int64>()) return Field(*value);
+            {
+                const auto * number = static_cast<const NumberLiteral*>(this);
+
+                if (auto value = number->as<Int64>()) return Field(*value);
+                if (auto value = number->as<UInt64>()) return Field(*value);
+                if (auto value = number->as<Float64>()) return Field(*value);
+
                 return Field();
+            }
             case LiteralType::STRING:
                 return *asString<std::string>();
         }
@@ -60,8 +65,16 @@ antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *c
 {
     if (ctx->NULL_SQL())
         return AST::Literal::createNull(ctx->NULL_SQL());
-    if (ctx->NUMBER_LITERAL())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->NUMBER_LITERAL()));
+    if (ctx->FLOATING_LITERAL())
+        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH()));
+    if (ctx->HEXADECIMAL_LITERAL())
+        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH()));
+    if (ctx->INTEGER_LITERAL())
+        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH()));
+    if (ctx->INF())
+        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->INF(), !!ctx->DASH()));
+    if (ctx->NAN_SQL())
+        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->NAN_SQL()));
     if (ctx->STRING_LITERAL())
         return std::static_pointer_cast<AST::Literal>(AST::Literal::createString(ctx->STRING_LITERAL()));
     __builtin_unreachable();

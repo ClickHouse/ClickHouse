@@ -78,7 +78,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprComplex(ClickHouseParser::Col
 
 antlrcpp::Any ParseTreeVisitor::visitEnumValue(ClickHouseParser::EnumValueContext *ctx)
 {
-    return std::make_shared<EnumValue>(Literal::createString(ctx->STRING_LITERAL()), Literal::createNumber(ctx->NUMBER_LITERAL()));
+    return std::make_shared<EnumValue>(Literal::createString(ctx->STRING_LITERAL()), Literal::createNumber(ctx->INTEGER_LITERAL()));
 }
 
 }

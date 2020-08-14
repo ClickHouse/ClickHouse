@@ -24,8 +24,10 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitLimitExpr(ClickHouseParser::LimitExprContext *ctx)
 {
-    if (ctx->OFFSET()) return std::make_shared<LimitExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)), Literal::createNumber(ctx->NUMBER_LITERAL(1)));
-    else return std::make_shared<LimitExpr>(Literal::createNumber(ctx->NUMBER_LITERAL(0)));
+    if (ctx->OFFSET())
+        return std::make_shared<LimitExpr>(Literal::createNumber(ctx->INTEGER_LITERAL(0)), Literal::createNumber(ctx->INTEGER_LITERAL(1)));
+    else
+        return std::make_shared<LimitExpr>(Literal::createNumber(ctx->INTEGER_LITERAL(0)));
 }
 
 }

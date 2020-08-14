@@ -139,10 +139,10 @@ joinConstraintClause
     | USING columnExprList
     ;
 
-limitExpr: NUMBER_LITERAL ((COMMA | OFFSET) NUMBER_LITERAL)?;
+limitExpr: INTEGER_LITERAL ((COMMA | OFFSET) INTEGER_LITERAL)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
 orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
-ratioExpr: NUMBER_LITERAL (SLASH NUMBER_LITERAL); // TODO: not complete!
+ratioExpr: INTEGER_LITERAL (SLASH INTEGER_LITERAL); // TODO: not complete!
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE literal;
 
@@ -181,7 +181,7 @@ columnExpr
     | columnIdentifier                                                               # ColumnExprIdentifier
     | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
-    | columnExpr DOT NUMBER_LITERAL                                                  # ColumnExprTupleAccess
+    | columnExpr DOT INTEGER_LITERAL                                                 # ColumnExprTupleAccess
     | unaryOp columnExpr                                                             # ColumnExprUnaryOp
     | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
     | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp // TODO: don't forget `IN subquery`
@@ -221,8 +221,12 @@ databaseIdentifier: identifier;
 
 // Basics
 
-literal : NUMBER_LITERAL | STRING_LITERAL | NULL_SQL; // TODO: don't forget literal functions, like hostname(), toTypeName(), etc.
-keyword  // except NULL_SQL, SELECT
+literal
+    : (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL)
+    | STRING_LITERAL
+    | NULL_SQL
+    ; // TODO: don't forget literal functions, like hostname(), toTypeName(), etc.
+keyword  // except NULL_SQL, SELECT, INF, NAN
     : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER | COLLATE | CREATE
     | CROSS | DAY | DATABASE | DEFAULT | DELETE | DESCENDING | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL
     | FIRST | FORMAT | FROM | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
@@ -251,4 +255,4 @@ binaryOp
     | NOT? LIKE
     | GLOBAL? NOT? IN
     ;
-enumValue: STRING_LITERAL EQ_SINGLE NUMBER_LITERAL;
+enumValue: STRING_LITERAL EQ_SINGLE INTEGER_LITERAL;

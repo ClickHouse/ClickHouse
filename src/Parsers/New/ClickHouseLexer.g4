@@ -49,6 +49,7 @@ HAVING: H A V I N G;
 HOUR: H O U R;
 IF: I F;
 IN: I N;
+INF: I N F | I N F I N I T Y;
 INNER: I N N E R;
 INSERT: I N S E R T;
 INTERVAL: I N T E R V A L;
@@ -65,6 +66,7 @@ LOCAL: L O C A L;
 MATERIALIZED: M A T E R I A L I Z E D;
 MINUTE: M I N U T E;
 MONTH: M O N T H;
+NAN_SQL: N A N; // conflicts with macro NAN
 NOT: N O T;
 NULL_SQL: N U L L; // conflicts with macro NULL
 NULLS: N U L L S;
@@ -105,9 +107,13 @@ YEAR: Y E A R;
 
 // Tokens
 
-IDENTIFIER: (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DIGIT)*;
-// TODO: DECIMAL_LITERAL
-NUMBER_LITERAL: DIGIT+; // Unsigned natural integer with meaningless leading zeroes. TODO: don't forget exponential repr.
+IDENTIFIER: (LETTER | UNDERSCORE) (LETTER | UNDERSCORE | DEC_DIGIT)*;
+FLOATING_LITERAL
+    : HEXADECIMAL_LITERAL DOT HEX_DIGIT* ((P | E) (PLUS | DASH)? DEC_DIGIT+)?
+    | INTEGER_LITERAL DOT DEC_DIGIT* (E (PLUS | DASH)? DEC_DIGIT+)?
+    ;
+HEXADECIMAL_LITERAL: '0' X HEX_DIGIT+;
+INTEGER_LITERAL: DEC_DIGIT+;
 STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) )* QUOTE_SINGLE; // It's important that quote-symbol is a single character.
 
 // Alphabet and allowed symbols
@@ -140,7 +146,8 @@ fragment Y: [yY];
 fragment Z: [zZ];
 
 fragment LETTER: [a-zA-Z];
-fragment DIGIT: [0-9];
+fragment DEC_DIGIT: [0-9];
+fragment HEX_DIGIT: [0-9a-fA-F];
 
 ARROW: '->';
 ASTERISK: '*';
@@ -172,5 +179,6 @@ UNDERSCORE: '_';
 
 // Comments and whitespace
 
-LINE_COMMENT: '--' ~('\n'|'\r')* ('\n' | '\r' | EOF) -> skip;
+SINGLE_LINE_COMMENT: '--' ~('\n'|'\r')* ('\n' | '\r' | EOF) -> skip;
+MULTI_LINE_COMMENT: '/*' .*? '*/' -> skip;
 WHITESPACE: [ \u000B\u000C\t\r\n] -> skip;
