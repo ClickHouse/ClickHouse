@@ -74,7 +74,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const DataTypePtr & result_type = block.getByPosition(result).type;
 
@@ -114,7 +114,7 @@ public:
 
             /// Protection from possible overflow.
             if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+                throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             auto result_column = result_type->createColumn();
 
@@ -177,7 +177,7 @@ public:
 
                 /// Protection from possible overflow.
                 if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+                    throw Exception("Too large offset: " + toString(offset) + " in function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
                 Int64 src_idx = row + offset;
 

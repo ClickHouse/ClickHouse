@@ -25,16 +25,15 @@ class StorageStripeLog final : public ext::shared_ptr_helper<StorageStripeLog>, 
 public:
     String getName() const override { return "StripeLog"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -42,7 +41,7 @@ public:
 
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder&) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
 protected:
     StorageStripeLog(
@@ -69,7 +68,7 @@ private:
     FileChecker file_checker;
     mutable std::shared_mutex rwlock;
 
-    Poco::Logger * log;
+    Logger * log;
 };
 
 }

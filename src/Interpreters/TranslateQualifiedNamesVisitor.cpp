@@ -37,10 +37,9 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
 
     const String & short_name = identifier.shortName();
-    const auto & columns = tables[table_pos].columns;
-    for (const auto & column : columns)
+    const Names & column_names = tables[table_pos].columns;
+    for (const auto & known_name : column_names)
     {
-        const String & known_name = column.name;
         if (short_name == known_name)
             return false;
         if (nested1 && *nested1 == known_name)
@@ -49,10 +48,9 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
             return false;
     }
 
-    const auto & hidden_columns = tables[table_pos].hidden_columns;
-    for (const auto & column : hidden_columns)
+    const Names & hidden_names = tables[table_pos].hidden_columns;
+    for (const auto & known_name : hidden_names)
     {
-        const String & known_name = column.name;
         if (short_name == known_name)
             return false;
         if (nested1 && *nested1 == known_name)
@@ -61,7 +59,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
             return false;
     }
 
-    return !columns.empty();
+    return !column_names.empty();
 }
 
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
@@ -232,11 +230,11 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
-                for (const auto & column : table.columns)
+                for (const auto & column_name : table.columns)
                 {
-                    if (first_table || !data.join_using_columns.count(column.name))
+                    if (first_table || !data.join_using_columns.count(column_name))
                     {
-                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk));
+                        addIdentifier(node.children, table.table, column_name, AsteriskSemantic::getAliases(*asterisk));
                     }
                 }
 
@@ -248,11 +246,11 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
-                for (const auto & column : table.columns)
+                for (const auto & column_name : table.columns)
                 {
-                    if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                    if (asterisk_pattern->isColumnMatching(column_name) && (first_table || !data.join_using_columns.count(column_name)))
                     {
-                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*asterisk_pattern));
+                        addIdentifier(node.children, table.table, column_name, AsteriskSemantic::getAliases(*asterisk_pattern));
                     }
                 }
 
@@ -267,9 +265,9 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             {
                 if (ident_db_and_name.satisfies(table.table, true))
                 {
-                    for (const auto & column : table.columns)
+                    for (const auto & column_name : table.columns)
                     {
-                        addIdentifier(node.children, table.table, column.name, AsteriskSemantic::getAliases(*qualified_asterisk));
+                        addIdentifier(node.children, table.table, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
                     }
                     break;
                 }

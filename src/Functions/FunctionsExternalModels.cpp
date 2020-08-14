@@ -4,6 +4,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <string>
@@ -69,7 +71,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const auto * name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
     if (!name_col)
@@ -98,7 +100,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
                 null_map = col_nullable->getNullMapColumnPtr();
             else
             {
-                auto mut_null_map = IColumn::mutate(std::move(null_map));
+                auto mut_null_map = (*std::move(null_map)).mutate();
 
                 NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mut_null_map).getData();
                 const NullMap & src_null_map = col_nullable->getNullMapColumn().getData();

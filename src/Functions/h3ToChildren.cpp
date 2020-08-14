@@ -1,30 +1,23 @@
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
-#include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#include "config_functions.h"
+#if USE_H3
+#    include <Columns/ColumnArray.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <Common/typeid_cast.h>
+#    include <ext/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
-static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
+#    include <h3api.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
-
 class FunctionH3ToChildren : public IFunction
 {
 public:
@@ -54,7 +47,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
         const auto * col_resolution = block.getByPosition(arguments[1]).column.get();
@@ -72,16 +65,7 @@ public:
             const UInt64 parent_hindex = col_hindex->getUInt(row);
             const UInt8 child_resolution = col_resolution->getUInt(row);
 
-            if (child_resolution > MAX_H3_RES)
-                throw Exception("The argument 'resolution' (" + toString(child_resolution) + ") of function " + getName()
-                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-            const size_t vec_size = maxH3ToChildrenSize(parent_hindex, child_resolution);
-            if (vec_size > MAX_ARRAY_SIZE)
-                throw Exception("The result of function" + getName()
-                    + " (array of " + toString(vec_size) + " elements) will be too large with resolution argument = "
-                    + toString(child_resolution), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
-
+            const auto vec_size = maxH3ToChildrenSize(parent_hindex, child_resolution);
             hindex_vec.resize(vec_size);
             h3ToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
@@ -108,3 +92,4 @@ void registerFunctionH3ToChildren(FunctionFactory & factory)
 }
 
 }
+#endif

@@ -2,55 +2,68 @@
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/AccessControlManager.h>
-#include <boost/container/flat_set.hpp>
+#include <boost/container/flat_map.hpp>
 
 
 namespace DB
 {
 namespace
 {
-    void collectRoles(EnabledRolesInfo & roles_info,
-                      boost::container::flat_set<UUID> & skip_ids,
+    struct CollectedRoleInfo
+    {
+        RolePtr role;
+        bool is_current_role = false;
+        bool with_admin_option = false;
+    };
+
+
+    void collectRoles(boost::container::flat_map<UUID, CollectedRoleInfo> & collected_roles,
                       const std::function<RolePtr(const UUID &)> & get_role_function,
                       const UUID & role_id,
                       bool is_current_role,
                       bool with_admin_option)
     {
-        if (roles_info.enabled_roles.count(role_id))
+        auto it = collected_roles.find(role_id);
+        if (it != collected_roles.end())
         {
-            if (is_current_role)
-                roles_info.current_roles.emplace(role_id);
-            if (with_admin_option)
-                roles_info.enabled_roles_with_admin_option.emplace(role_id);
+            it->second.is_current_role |= is_current_role;
+            it->second.with_admin_option |= with_admin_option;
             return;
         }
-
-        if (skip_ids.count(role_id))
-            return;
 
         auto role = get_role_function(role_id);
+        collected_roles[role_id] = CollectedRoleInfo{role, is_current_role, with_admin_option};
 
         if (!role)
-        {
-            skip_ids.emplace(role_id);
             return;
+
+        for (const auto & granted_role : role->granted_roles)
+            collectRoles(collected_roles, get_role_function, granted_role, false, false);
+
+        for (const auto & granted_role : role->granted_roles_with_admin_option)
+            collectRoles(collected_roles, get_role_function, granted_role, false, true);
+    }
+
+
+    std::shared_ptr<EnabledRolesInfo> collectInfoForRoles(const boost::container::flat_map<UUID, CollectedRoleInfo> & roles)
+    {
+        auto new_info = std::make_shared<EnabledRolesInfo>();
+        for (const auto & [role_id, collect_info] : roles)
+        {
+            const auto & role = collect_info.role;
+            if (!role)
+                continue;
+            if (collect_info.is_current_role)
+                new_info->current_roles.emplace_back(role_id);
+            new_info->enabled_roles.emplace_back(role_id);
+            if (collect_info.with_admin_option)
+                new_info->enabled_roles_with_admin_option.emplace_back(role_id);
+            new_info->names_of_roles[role_id] = role->getName();
+            new_info->access.merge(role->access);
+            new_info->access_with_grant_option.merge(role->access_with_grant_option);
+            new_info->settings_from_enabled_roles.merge(role->settings);
         }
-
-        roles_info.enabled_roles.emplace(role_id);
-        if (is_current_role)
-            roles_info.current_roles.emplace(role_id);
-        if (with_admin_option)
-            roles_info.enabled_roles_with_admin_option.emplace(role_id);
-
-        roles_info.names_of_roles[role_id] = role->getName();
-        roles_info.access.makeUnion(role->access);
-        roles_info.settings_from_enabled_roles.merge(role->settings);
-
-        for (const auto & granted_role : role->granted_roles.roles)
-            collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, false);
-
-        for (const auto & granted_role : role->granted_roles.roles_with_admin_option)
-            collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, true);
+        return new_info;
     }
 }
 
@@ -62,8 +75,8 @@ RoleCache::RoleCache(const AccessControlManager & manager_)
 RoleCache::~RoleCache() = default;
 
 
-std::shared_ptr<const EnabledRoles>
-RoleCache::getEnabledRoles(const boost::container::flat_set<UUID> & roles, const boost::container::flat_set<UUID> & roles_with_admin_option)
+std::shared_ptr<const EnabledRoles> RoleCache::getEnabledRoles(
+    const std::vector<UUID> & roles, const std::vector<UUID> & roles_with_admin_option)
 {
     std::lock_guard lock{mutex};
 
@@ -80,13 +93,13 @@ RoleCache::getEnabledRoles(const boost::container::flat_set<UUID> & roles, const
     }
 
     auto res = std::shared_ptr<EnabledRoles>(new EnabledRoles(params));
-    collectEnabledRoles(*res);
+    collectRolesInfoFor(*res);
     enabled_roles.emplace(std::move(params), res);
     return res;
 }
 
 
-void RoleCache::collectEnabledRoles()
+void RoleCache::collectRolesInfo()
 {
     /// `mutex` is already locked.
 
@@ -97,29 +110,28 @@ void RoleCache::collectEnabledRoles()
             i = enabled_roles.erase(i);
         else
         {
-            collectEnabledRoles(*elem);
+            collectRolesInfoFor(*elem);
             ++i;
         }
     }
 }
 
 
-void RoleCache::collectEnabledRoles(EnabledRoles & enabled)
+void RoleCache::collectRolesInfoFor(EnabledRoles & enabled)
 {
     /// `mutex` is already locked.
 
-    /// Collect enabled roles. That includes the current roles, the roles granted to the current roles, and so on.
-    auto new_info = std::make_shared<EnabledRolesInfo>();
-    boost::container::flat_set<UUID> skip_ids;
+    /// Collect roles in use. That includes the current roles, the roles granted to the current roles, and so on.
+    boost::container::flat_map<UUID, CollectedRoleInfo> collected_roles;
     auto get_role_function = [this](const UUID & id) { return getRole(id); };
     for (const auto & current_role : enabled.params.current_roles)
-        collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);
+        collectRoles(collected_roles, get_role_function, current_role, true, false);
 
     for (const auto & current_role : enabled.params.current_roles_with_admin_option)
-        collectRoles(*new_info, skip_ids, get_role_function, current_role, true, true);
+        collectRoles(collected_roles, get_role_function, current_role, true, true);
 
     /// Collect data from the collected roles.
-    enabled.setRolesInfo(new_info);
+    enabled.setRolesInfo(collectInfoForRoles(collected_roles));
 }
 
 
@@ -162,7 +174,7 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
         return;
     role_from_cache->first = changed_role;
     cache.update(role_id, role_from_cache);
-    collectEnabledRoles();
+    collectRolesInfo();
 }
 
 
@@ -170,7 +182,7 @@ void RoleCache::roleRemoved(const UUID & role_id)
 {
     std::lock_guard lock{mutex};
     cache.remove(role_id);
-    collectEnabledRoles();
+    collectRolesInfo();
 }
 
 }

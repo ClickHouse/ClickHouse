@@ -29,7 +29,7 @@
 namespace Poco { class TaskManager; }
 
 
-/// \brief Base class for applications that can run as daemons.
+/// \brief Base class for applications that can run as deamons.
 ///
 /// \code
 /// # Some possible command line options:
@@ -59,7 +59,7 @@ public:
     void reloadConfiguration();
 
     /// Определяет параметр командной строки
-    void defineOptions(Poco::Util::OptionSet & new_options) override;
+    void defineOptions(Poco::Util::OptionSet & _options) override;
 
     /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
     void exitOnTaskError();
@@ -190,10 +190,6 @@ protected:
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
-
-    String build_id_info;
-
-    std::vector<int> handled_signals;
 };
 
 

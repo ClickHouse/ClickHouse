@@ -2,13 +2,10 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
-#include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
-
-using Scalars = std::map<String, Block>;
 
 namespace ClusterProxy
 {
@@ -39,7 +36,7 @@ public:
         const String & query, const ASTPtr & query_ast,
         const Context & context, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
-        Pipes & pipes) override;
+        Pipes & res) override;
 
 private:
     const Block header;

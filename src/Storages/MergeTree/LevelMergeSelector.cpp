@@ -89,7 +89,7 @@ void selectWithinPartition(
             if (range_size <= max_total_size_to_merge)
                 estimator.consider(parts.begin() + range_begin, parts.begin() + range_end, range_size);
 
-            break;    /// Minimum level is enough.
+            break;    /// Minumum level is enough.
         }
 
         if (range_begin == 0)

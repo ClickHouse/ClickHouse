@@ -1,3 +1,0 @@
-<test>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(number % 1.1)</query>
-</test>

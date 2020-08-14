@@ -35,9 +35,8 @@ class ASTDictionaryLayout : public IAST
 public:
     /// flat, cache, hashed, etc.
     String layout_type;
-    /// parameters (size_in_cells, ...)
-    /// ASTExpressionList -> ASTPair -> (ASTLiteral key, ASTLiteral value).
-    ASTExpressionList * parameters;
+    /// optional parameter (size_in_cells)
+    std::optional<KeyValue> parameter;
     /// has brackets after layout type
     bool has_brackets = true;
 
@@ -83,19 +82,19 @@ class ASTDictionary : public IAST
 {
 public:
     /// Dictionary keys -- one or more
-    ASTExpressionList * primary_key = nullptr;
+    ASTExpressionList * primary_key;
     /// Dictionary external source, doesn't have own AST, because
     /// source parameters absolutely different for different sources
-    ASTFunctionWithKeyValueArguments * source = nullptr;
+    ASTFunctionWithKeyValueArguments * source;
 
     /// Lifetime of dictionary (required part)
-    ASTDictionaryLifetime * lifetime = nullptr;
+    ASTDictionaryLifetime * lifetime;
     /// Layout of dictionary (required part)
-    ASTDictionaryLayout * layout = nullptr;
+    ASTDictionaryLayout * layout;
     /// Range for dictionary (only for range-hashed dictionaries)
-    ASTDictionaryRange * range = nullptr;
+    ASTDictionaryRange * range;
     /// Settings for dictionary (optionally)
-    ASTDictionarySettings * dict_settings = nullptr;
+    ASTDictionarySettings * dict_settings;
 
     String getID(char) const override { return "Dictionary definition"; }
 

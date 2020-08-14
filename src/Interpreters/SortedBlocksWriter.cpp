@@ -3,7 +3,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 namespace DB
 {
@@ -136,25 +136,18 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     return flushToFile(path, sample_block, sorted_input, codec);
 }
 
-SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
+SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
 {
-    SortedFiles files;
-    BlocksList blocks;
-
     /// wait other flushes if any
     {
         std::unique_lock lock{insert_mutex};
-
-        files.swap(sorted_files);
-        blocks.swap(inserted_blocks.blocks);
-        inserted_blocks.clear();
-
         flush_condvar.wait(lock, [&]{ return !flush_inflight; });
     }
 
     /// flush not flushed
-    if (!blocks.empty())
-        files.emplace_back(flush(blocks));
+    if (!inserted_blocks.empty())
+        sorted_files.emplace_back(flush(inserted_blocks.blocks));
+    inserted_blocks.clear();
 
     BlockInputStreams inputs;
     inputs.reserve(num_files_for_merge);
@@ -162,15 +155,15 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
     /// Merge by parts to save memory. It's possible to exchange disk I/O and memory by num_files_for_merge.
     {
         SortedFiles new_files;
-        new_files.reserve(files.size() / num_files_for_merge + 1);
+        new_files.reserve(sorted_files.size() / num_files_for_merge + 1);
 
-        while (files.size() > num_files_for_merge)
+        while (sorted_files.size() > num_files_for_merge)
         {
-            for (const auto & file : files)
+            for (const auto & file : sorted_files)
             {
                 inputs.emplace_back(streamFromFile(file));
 
-                if (inputs.size() == num_files_for_merge || &file == &files.back())
+                if (inputs.size() == num_files_for_merge || &file == &sorted_files.back())
                 {
                     MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
                     new_files.emplace_back(flushToFile(getPath(), sample_block, sorted_input, codec));
@@ -178,22 +171,19 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                 }
             }
 
-            files.clear();
-            files.swap(new_files);
+            sorted_files.clear();
+            sorted_files.swap(new_files);
         }
 
-        for (const auto & file : files)
+        for (const auto & file : sorted_files)
             inputs.emplace_back(streamFromFile(file));
     }
 
-    return PremergedFiles{std::move(files), std::move(inputs)};
-}
+    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
 
-SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
-{
-    PremergedFiles files = premerge();
-    MergingSortedBlockInputStream sorted_input(files.streams, sort_description, rows_in_block);
-    return flushToManyFiles(getPath(), sample_block, sorted_input, codec, callback);
+    SortedFiles out = flushToManyFiles(getPath(), sample_block, sorted_input, codec, callback);
+    sorted_files.clear();
+    return out; /// There're also inserted_blocks counters as indirect output
 }
 
 BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
@@ -203,90 +193,7 @@ BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) 
 
 String SortedBlocksWriter::getPath() const
 {
-    return volume->getDisk()->getPath();
-}
-
-
-Block SortedBlocksBuffer::exchange(Block && block)
-{
-    static constexpr const float reserve_coef = 1.2;
-
-    Blocks out_blocks;
-    Block empty_out = block.cloneEmpty();
-
-    {
-        std::lock_guard lock(mutex);
-
-        if (block)
-        {
-            current_bytes += block.bytes();
-            buffer.emplace_back(std::move(block));
-
-            /// Saved. Return empty block with same structure.
-            if (current_bytes < max_bytes)
-                return empty_out;
-        }
-
-        /// Not saved. Return buffered.
-        out_blocks.swap(buffer);
-        buffer.reserve(out_blocks.size() * reserve_coef);
-        current_bytes = 0;
-    }
-
-    if (size_t size = out_blocks.size())
-    {
-        if (size == 1)
-            return out_blocks[0];
-        return mergeBlocks(std::move(out_blocks));
-    }
-
-    return {};
-}
-
-Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
-{
-    size_t num_rows = 0;
-
-    { /// Merge sort blocks
-        BlockInputStreams inputs;
-        inputs.reserve(blocks.size());
-
-        for (auto & block : blocks)
-        {
-            num_rows += block.rows();
-            inputs.emplace_back(std::make_shared<OneBlockInputStream>(block));
-        }
-
-        Blocks tmp_blocks;
-        MergingSortedBlockInputStream stream(inputs, sort_description, num_rows);
-        while (const auto & block = stream.read())
-            tmp_blocks.emplace_back(block);
-
-        blocks.swap(tmp_blocks);
-    }
-
-    if (blocks.size() == 1)
-        return blocks[0];
-
-    Block out = blocks[0].cloneEmpty();
-
-    { /// Concatenate blocks
-        MutableColumns columns = out.mutateColumns();
-
-        for (size_t i = 0; i < columns.size(); ++i)
-        {
-            columns[i]->reserve(num_rows);
-            for (const auto & block : blocks)
-            {
-                const auto & tmp_column = *block.getByPosition(i).column;
-                columns[i]->insertRangeFrom(tmp_column, 0, block.rows());
-            }
-        }
-
-        out.setColumns(std::move(columns));
-    }
-
-    return out;
+    return volume->getNextDisk()->getPath();
 }
 
 }

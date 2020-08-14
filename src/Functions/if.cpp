@@ -196,7 +196,7 @@ private:
         Block & block,
         const ColumnNumbers & arguments,
         size_t result,
-        const ColVecT0 * col_left) const
+        const ColVecT0 * col_left)
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -225,7 +225,7 @@ private:
         Block & block,
         const ColumnNumbers & arguments,
         size_t result,
-        const ColumnConst * col_left) const
+        const ColumnConst * col_left)
     {
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -255,7 +255,7 @@ private:
         [[maybe_unused]] const ColumnNumbers & arguments,
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnArray * col_left_array,
-        [[maybe_unused]] size_t input_rows_count) const
+        [[maybe_unused]] size_t input_rows_count)
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
@@ -311,7 +311,7 @@ private:
         [[maybe_unused]] const ColumnNumbers & arguments,
         [[maybe_unused]] size_t result,
         [[maybe_unused]] const ColumnConst * col_left_const_array,
-        [[maybe_unused]] size_t input_rows_count) const
+        [[maybe_unused]] size_t input_rows_count)
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
@@ -362,7 +362,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeTyped(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeTyped(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
         using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
@@ -544,7 +544,7 @@ private:
         return false;
     }
 
-    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -667,7 +667,7 @@ private:
         block.getByPosition(result).column = std::move(result_column);
     }
 
-    bool executeForConstAndNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
+    bool executeForConstAndNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->onlyNull();
@@ -757,12 +757,11 @@ private:
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        auto materialized = materializeColumnIfConst(column);
+        if (isColumnNullable(*column))
+            return column;
 
-        if (isColumnNullable(*materialized))
-            return materialized;
-
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
+        return ColumnNullable::create(
+            materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
     }
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
@@ -773,7 +772,7 @@ private:
         return column;
     }
 
-    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
@@ -881,7 +880,7 @@ private:
                 if (isColumnNullable(*arg_else.column))
                 {
                     auto arg_else_column = arg_else.column;
-                    auto result_column = IColumn::mutate(std::move(arg_else_column));
+                    auto result_column = (*std::move(arg_else_column)).mutate();
                     assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -923,7 +922,7 @@ private:
                 if (isColumnNullable(*arg_then.column))
                 {
                     auto arg_then_column = arg_then.column;
-                    auto result_column = IColumn::mutate(std::move(arg_then_column));
+                    auto result_column = (*std::move(arg_then_column)).mutate();
                     assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -978,7 +977,7 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         if (executeForConstAndNullableCondition(block, arguments, result, input_rows_count)
             || executeForNullThenElse(block, arguments, result, input_rows_count)

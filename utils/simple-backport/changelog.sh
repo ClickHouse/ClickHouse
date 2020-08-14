@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
 from="$1"
 to="$2"
 log_command=(git log "$from..$to" --first-parent)
@@ -21,17 +19,14 @@ fi
 # NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
-find_prs=(sed -n "s/^.*merg[eding]*.*#\([[:digit:]]\+\).*$/\1/Ip;
+find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
                   s/^.*(#\([[:digit:]]\+\))$/\1/p;
-                  s/^.*back[- ]*port[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip;
-                  s/^.*cherry[- ]*pick[ed of]*.*#\([[:digit:]]\+\).*$/\1/Ip")
+                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
 
-# awk is to filter out small task numbers from different task tracker, which are
-# referenced by documentation commits like '* DOCSUP-824: query log (#115)'.
-"${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq | awk '$0 > 1000 { print $0 }' > "changelog-prs.txt"
+"${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq > "changelog-prs.txt"
 
 echo "$(wc -l < "changelog-prs.txt") PRs added between $from and $to."
-if [ $(wc -l < "changelog-prs.txt") -eq 0 ] ; then exit 0 ; fi
 
 function github_download()
 {
@@ -66,11 +61,7 @@ do
 
     # Filter out PRs by bots.
     user_login=$(jq -r .user.login "$file")
-    
-    filter_bot=$(echo "$user_login" | grep -q "\[bot\]$" && echo "Skip." || echo "Ok." ||:)
-    filter_robot=$(echo "$user_login" | grep -q "robot-clickhouse" && echo "Skip." || echo "Ok." ||:)
-
-    if [ "Skip." == "$filter_robot" ] || [ "Skip." == "$filter_bot" ]
+    if echo "$user_login" | grep "\[bot\]$" > /dev/null
     then
         continue
     fi
@@ -91,5 +82,5 @@ done
 
 echo "### ClickHouse release $to FIXME as compared to $from
 " > changelog.md
-"$script_dir/format-changelog.py" changelog-prs-filtered.txt >> changelog.md
+./format-changelog.py changelog-prs-filtered.txt >> changelog.md
 cat changelog.md

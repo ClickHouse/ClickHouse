@@ -1,7 +1,3 @@
-if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
-endif ()
-
 # 'clickhouse' binary is a multi purpose tool,
 # that contain multiple execution modes (client, server, etc.)
 # each of them is built and linked as a separate library, defined below.
@@ -17,12 +13,6 @@ option (ENABLE_CLICKHOUSE_COPIER "Enable clickhouse-copier" ${ENABLE_CLICKHOUSE_
 option (ENABLE_CLICKHOUSE_FORMAT "Enable clickhouse-format" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Enable clickhouse-obfuscator" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "Enable clickhouse-odbc-bridge" ${ENABLE_CLICKHOUSE_ALL})
-
-if (CLICKHOUSE_SPLIT_BINARY)
-    option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_INSTALL "Enable clickhouse-install" ${ENABLE_CLICKHOUSE_ALL})
-endif ()
 
 if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED 1)
@@ -90,7 +80,6 @@ add_subdirectory (compressor)
 add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (obfuscator)
-add_subdirectory (install)
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
@@ -148,9 +137,6 @@ else ()
     endif ()
     if (ENABLE_CLICKHOUSE_OBFUSCATOR)
         clickhouse_target_link_split_lib(clickhouse obfuscator)
-    endif ()
-    if (ENABLE_CLICKHOUSE_INSTALL)
-        clickhouse_target_link_split_lib(clickhouse install)
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
@@ -212,8 +198,12 @@ else ()
     endif()
 endif ()
 
+if (TARGET clickhouse-server AND TARGET copy-headers)
+    add_dependencies(clickhouse-server copy-headers)
+endif ()
+
 if (ENABLE_TESTS AND USE_GTEST)
-    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_libcommon unit_tests_dbms)
-    add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
+    set (CLICKHOUSE_ALL_TESTS_TARGETS local_date_time_comparison unit_tests_libcommon unit_tests_dbms hashing_write_buffer hashing_read_buffer in_join_subqueries_preprocessor expression_analyzer)
+    add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_ALL_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()

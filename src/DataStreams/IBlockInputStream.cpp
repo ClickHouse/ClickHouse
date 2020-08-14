@@ -9,8 +9,6 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
-    extern const Event SelectedRows;
-    extern const Event SelectedBytes;
 }
 
 
@@ -265,9 +263,6 @@ void IBlockInputStream::progressImpl(const Progress & value)
         if (quota && limits.mode == LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
-
-    ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);
-    ProfileEvents::increment(ProfileEvents::SelectedBytes, value.read_bytes);
 }
 
 
