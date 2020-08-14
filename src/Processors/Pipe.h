@@ -13,8 +13,8 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 using OutputPortRawPtrs = std::vector<OutputPort *>;
 
-/// Pipes is a set of processors which represents the part of pipeline.
-/// Pipes contains a list of output ports, with specified port for totals and specified port for extremes.
+/// Pipe is a set of processors which represents the part of pipeline.
+/// Pipe contains a list of output ports, with specified port for totals and specified port for extremes.
 /// All output ports have same header.
 /// All other ports are connected, all connections are inside processors set.
 class Pipe
