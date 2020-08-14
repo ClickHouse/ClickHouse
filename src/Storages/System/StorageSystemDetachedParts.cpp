@@ -30,7 +30,7 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe read(
+Pipe StorageSystemDetachedParts::read(
     const Names & /* column_names */,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
