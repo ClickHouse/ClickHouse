@@ -20,15 +20,17 @@ endif()
 
 if(NOT USE_INTERNAL_PROTOBUF_LIBRARY)
     find_package(Protobuf)
-    if (NOT Protobuf_LIBRARY OR NOT Protobuf_INCLUDE_DIR)
+    if (Protobuf_LIBRARY AND Protobuf_INCLUDE_DIR AND Protobuf_PROTOC_EXECUTABLE)
+        set(EXTERNAL_PROTOBUF_LIBRARY_FOUND 1)
+        set(USE_PROTOBUF 1)
+    else()
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system protobuf")
+        set(EXTERNAL_PROTOBUF_LIBRARY_FOUND 0)
     endif()
 endif()
 
-if (Protobuf_LIBRARY AND Protobuf_INCLUDE_DIR)
-    set(USE_PROTOBUF 1)
-elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
-    set(Protobuf_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/protobuf/src)
+if (NOT EXTERNAL_PROTOBUF_LIBRARY_FOUND AND NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
+    set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
 
     set(USE_PROTOBUF 1)
     set(USE_INTERNAL_PROTOBUF_LIBRARY 1)
@@ -43,13 +45,13 @@ if(OS_FREEBSD AND SANITIZE STREQUAL "address")
     # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
     # #include <sanitizer/asan_interface.h>
     if(LLVM_INCLUDE_DIRS)
-        set(Protobuf_INCLUDE_DIR ${Protobuf_INCLUDE_DIR} ${LLVM_INCLUDE_DIRS})
+        set(Protobuf_INCLUDE_DIR "${Protobuf_INCLUDE_DIR}" ${LLVM_INCLUDE_DIRS})
     else()
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use protobuf on FreeBSD with address sanitizer without LLVM")
         set(USE_PROTOBUF 0)
     endif()
 endif()
 
-include (${ClickHouse_SOURCE_DIR}/cmake/protobuf_generate_cpp.cmake)
+include ("${ClickHouse_SOURCE_DIR}/cmake/protobuf_generate_cpp.cmake")
 
 message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY} : ${Protobuf_PROTOC_EXECUTABLE}")
