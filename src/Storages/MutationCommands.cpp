@@ -148,7 +148,7 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
 
 bool MutationCommands::isPartitionAffected(const String & partition_id, const MergeTreeData & storage, const Context & context) const
 {
-    for (const auto command : *this)
+    for (const auto & command : *this)
     {
         if (!command.partition)
             return true;
