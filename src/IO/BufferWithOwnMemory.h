@@ -174,7 +174,6 @@ public:
 private:
     void nextImpl() override final
     {
-        std::cout << "nextImpl" << std::endl;
         const size_t prev_size = memory.size();
         memory.resize(2 * prev_size);
         Base::set(memory.data() + prev_size, memory.size() - prev_size);
