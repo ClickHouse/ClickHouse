@@ -76,6 +76,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "small_jbod_with_external",
@@ -85,6 +86,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -94,6 +96,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -103,6 +106,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 0,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -112,6 +116,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -121,6 +126,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "jbods_with_external",
@@ -130,6 +136,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "jbods_with_external",
@@ -139,6 +146,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -148,6 +156,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
+            "allow_merges": 1,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -157,6 +166,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
+            "allow_merges": 1,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -166,6 +176,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -175,6 +186,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "special_warning_policy",
@@ -184,6 +196,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "special_warning_policy",
@@ -193,6 +206,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "special_warning_policy",
@@ -202,6 +216,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
         {
             "policy_name": "special_warning_policy",
@@ -211,6 +226,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
+            "allow_merges": 1,
         },
     ]
 
