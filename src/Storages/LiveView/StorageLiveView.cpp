@@ -528,7 +528,7 @@ void StorageLiveView::refresh(const Context & context)
     }
 }
 
-Pipes StorageLiveView::read(
+Pipe StorageLiveView::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
@@ -537,7 +537,6 @@ Pipes StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    Pipes pipes;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -545,9 +544,8 @@ Pipes StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
-        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+        return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
     }
-    return pipes;
 }
 
 BlockInputStreams StorageLiveView::watch(
