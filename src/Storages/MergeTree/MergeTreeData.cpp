@@ -1259,7 +1259,8 @@ void MergeTreeData::dropAllData()
         }
         catch (const Poco::FileNotFoundException &)
         {
-            /// If the file is already deleted, do nothing.
+            /// If the file is already deleted, log the error message and do nothing.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
