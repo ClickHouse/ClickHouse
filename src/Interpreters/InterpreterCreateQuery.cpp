@@ -142,10 +142,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if (create.storage->engine->name == "Atomic")
     {
-        if (!context.getSettingsRef().allow_experimental_database_atomic && !internal)
-            throw Exception("Atomic is an experimental database engine. "
-                            "Enable allow_experimental_database_atomic to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception("UUID must be specified for ATTACH", ErrorCodes::INCORRECT_QUERY);
         else if (create.uuid == UUIDHelpers::Nil)
