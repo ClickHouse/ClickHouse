@@ -5,7 +5,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
 }
 

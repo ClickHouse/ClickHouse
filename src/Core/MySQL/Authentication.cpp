@@ -147,7 +147,7 @@ void Sha256Password::authenticate(
 
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
-        auth_response = response.value;
+        auth_response.emplace(response.value);
         LOG_TRACE(log, "Authentication method mismatch.");
     }
     else
@@ -180,7 +180,7 @@ void Sha256Password::authenticate(
 
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
-        auth_response = response.value;
+        auth_response.emplace(response.value);
     }
     else
     {
