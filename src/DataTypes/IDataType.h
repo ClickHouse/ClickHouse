@@ -528,6 +528,8 @@ struct WhichDataType
     bool isNullable() const { return idx == TypeIndex::Nullable; }
     bool isFunction() const { return idx == TypeIndex::Function; }
     bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+
+    bool IsBigIntOrDeimal() const { return isInt128() || isbInt256() || isbUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
