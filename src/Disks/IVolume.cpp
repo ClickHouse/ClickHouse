@@ -9,7 +9,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int INCONSISTENT_RESERVATIONS;
     extern const int NO_RESERVATIONS_PROVIDED;
