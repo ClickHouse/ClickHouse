@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cassert>
 #include <type_traits>
-#include <common/defines.h>
+#include <common/likely.h>
 
 
 /** Returns log2 of number, rounded down.
