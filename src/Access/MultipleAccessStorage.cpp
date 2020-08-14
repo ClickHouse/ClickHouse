@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 
 
@@ -155,7 +156,8 @@ UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool repl
     IAccessStorage * nested_storage_for_insertion = nullptr;
     for (const auto & nested_storage : nested_storages)
     {
-        if (nested_storage->canInsert(entity))
+        if (nested_storage->canInsert(entity) ||
+            nested_storage->find(entity->getType(), entity->getName()))
         {
             nested_storage_for_insertion = nested_storage.get();
             break;
@@ -180,7 +182,31 @@ void MultipleAccessStorage::removeImpl(const UUID & id)
 
 void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
 {
-    getStorage(id).update(id, update_func);
+    auto & storage_for_updating = getStorage(id);
+
+    /// If the updating involves renaming check that the renamed entity will be accessible by name.
+    if ((nested_storages.size() > 1) && (nested_storages.front().get() != &storage_for_updating))
+    {
+        auto old_entity = storage_for_updating.read(id);
+        auto new_entity = update_func(old_entity);
+        if (new_entity->getName() != old_entity->getName())
+        {
+            for (const auto & nested_storage : nested_storages)
+            {
+                if (nested_storage.get() == &storage_for_updating)
+                    break;
+                if (nested_storage->find(new_entity->getType(), new_entity->getName()))
+                {
+                    throw Exception(
+                        old_entity->outputTypeAndName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
+                            + new_entity->outputTypeAndName() + " already exists in " + nested_storage->getStorageName(),
+                        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                }
+            }
+        }
+    }
+
+    storage_for_updating.update(id, update_func);
 }
 
 
