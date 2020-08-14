@@ -35,30 +35,34 @@ using NullMap = PaddedPODArray<UInt8>;
 struct HasAction
 {
     using ResultType = UInt8;
-    static constexpr bool apply(size_t, ResultType & current) noexcept { current = 1; return false; }
+    static constexpr const bool resume_execution = false;
+    static constexpr void apply(ResultType& current, size_t) noexcept { current = 1; }
 };
 
+/// The index is returned starting from 1.
 struct IndexOfAction
 {
     using ResultType = UInt64;
-    /// The index is returned starting from 1.
-    static constexpr bool apply(size_t j, ResultType & current) noexcept { current = j + 1; return false; }
+    static constexpr const bool resume_execution = false;
+    static constexpr void apply(ResultType& current, size_t j) noexcept { current = j + 1; }
 };
 
 struct CountEqualAction
 {
     using ResultType = UInt64;
-    static constexpr bool apply(size_t, ResultType & current) noexcept { ++current; return true; }
+    static constexpr const bool resume_execution = true;
+    static constexpr void apply(ResultType & current, size_t) noexcept { ++current; }
 };
 
-/// Impls -- how to perform the search depending on the arguments data types.
-
+/// How to perform the search depending on the arguments data types.
+namespace Impl
+{
 template <
     class ConcreteAction,
     bool RightArgIsConstant = false,
     class IntegralInitial = UInt64,
     class IntegralResult = UInt64>
-struct ArrayIndexMainImpl
+struct Main
 {
 private:
     using Initial = IntegralInitial;
@@ -73,17 +77,18 @@ private:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
-    static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
     {
         return left == right[i];
     }
 
-    static bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
         return left[i] == right;
     }
 
-    static bool compare(const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
+    static constexpr bool compare(
+            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
     {
         return left[i] == right[j];
     }
@@ -100,9 +105,15 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
+    template <class T>
+    static constexpr bool compare(const ColumnVector<T>& left, const IColumn& right, size_t i, size_t j)
+    {
+        return 0 == left.compareAtOther(i, RightArgIsConstant ? 0 : j, right, 1);
+    }
+
 #pragma GCC diagnostic pop
 
-    static inline bool hasNull(const NullMap * const null_map, size_t i) { return (*null_map)[i]; }
+    static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
     template <size_t Case, class Data, class Target>
     static void process(
@@ -145,7 +156,9 @@ private:
                 else if (!compare(data, target, current_offset + j, i))
                         continue;
 
-                if (!ConcreteAction::apply(j, current))
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
                     break;
             }
 
@@ -176,15 +189,15 @@ public:
 };
 
 /// When the 2nd function argument is a NULL value.
-template <class ConcreteAction>
-struct ArrayIndexNullImpl
+template <class ConcreteAction, bool HasNullMap>
+struct Null
 {
     using ResultType = typename ConcreteAction::ResultType;
 
     static void process(
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<ResultType> & result,
-        const NullMap * null_map_data)
+        [[maybe_unused]] const NullMap * null_map_data)
     {
         const size_t size = offsets.size();
 
@@ -198,9 +211,16 @@ struct ArrayIndexNullImpl
             ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
-                if (null_map_data && (*null_map_data)[current_offset + j])
-                    if (!ConcreteAction::apply(j, current))
-                        break;
+            {
+                if constexpr (HasNullMap)
+                    if (!(*null_map_data)[current_offset + j])
+                        continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr(!ConcreteAction::resume_execution)
+                    break;
+            }
 
             result[i] = current;
             current_offset = offsets[i];
@@ -209,100 +229,120 @@ struct ArrayIndexNullImpl
 };
 
 template <class ConcreteAction>
-struct ArrayIndexStringImpl
+struct String
 {
-    static void vector_const(
-        const ColumnString::Chars & data,
-        const ColumnArray::Offsets & offsets,
-        const ColumnString::Offsets & string_offsets,
-        const ColumnString::Chars & value,
-        ColumnString::Offset value_size,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const NullMap * null_map_data)
-    {
-        const auto size = offsets.size();
-        result.resize(size);
+private:
+    using Offset = ColumnString::Offset;
+    using ResultType = typename ConcreteAction::ResultType;
 
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            const auto array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                ColumnArray::Offset string_pos = current_offset == 0 && j == 0
-                    ? 0
-                    : string_offsets[current_offset + j - 1];
-
-                ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos - 1;
-
-                if (null_map_data && (*null_map_data)[current_offset + j])
-                {
-                }
-                else if (memequalSmallAllowOverflow15(value.data(), value_size, &data[string_pos], string_size))
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
-                }
-            }
-
-            result[i] = current;
-            current_offset = offsets[i];
-        }
-    }
-
-    static void vectorVector(
+    template <bool IsConst, bool HasNullMapData, bool HasNullMapItem>
+    static void processImpl(
         const ColumnString::Chars & data,
         const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets,
         const ColumnString::Chars & item_values,
-        const ColumnString::Offsets & item_offsets,
-        PaddedPODArray<typename ConcreteAction::ResultType> & result,
-        const NullMap * null_map_data,
-        const NullMap * null_map_item)
+        const std::conditional_t<IsConst, Offset, ColumnString::Offsets> & item_offsets,
+        PaddedPODArray<ResultType> & result,
+        [[maybe_unused]] const NullMap * null_map_data,
+        [[maybe_unused]] const NullMap * null_map_item)
     {
-        const auto size = offsets.size();
+        const size_t size = offsets.size();
+
         result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
+
         for (size_t i = 0; i < size; ++i)
         {
-            const auto array_size = offsets[i] - current_offset;
-            typename ConcreteAction::ResultType current = 0;
-            const auto value_pos = 0 == i ? 0 : item_offsets[i - 1];
-            const auto value_size = item_offsets[i] - value_pos;
+            const ColumnArray::Offset array_size = offsets[i] - current_offset;
+
+            [[maybe_unused]] size_t value_pos = 0;
+            [[maybe_unused]] size_t value_size = 0;
+
+            if constexpr (!IsConst) // workaround because ?: ternary operator is not constexpr
+            {
+                if (0 != i) value_pos = item_offsets[i - 1];
+                value_size = item_offsets[i] - value_pos;
+            }
+
+            ResultType current = 0;
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                ColumnArray::Offset string_pos = current_offset == 0 && j == 0
+                const Offset string_pos = current_offset == 0 && j == 0
                     ? 0
                     : string_offsets[current_offset + j - 1];
 
-                ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
+                const Offset string_size = string_offsets[current_offset + j] - string_pos - 1;
 
-                bool hit = false;
-
-                if (null_map_data && (*null_map_data)[current_offset + j])
+                if constexpr (IsConst)
                 {
-                    if (null_map_item && (*null_map_item)[i])
-                        hit = true;
-                }
-                else if (memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
-                    hit = true;
+                    if constexpr (HasNullMapData)
+                        if ((*null_map_data)[current_offset + j])
+                            continue;
 
-                if (hit)
-                {
-                    if (!ConcreteAction::apply(j, current))
-                        break;
+                    if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
+                        continue;
                 }
+                else if constexpr (HasNullMapData)
+                {
+                    if constexpr (!HasNullMapItem)
+                        continue;
+
+                    if (!(*null_map_data)[current_offset + j] || !(*null_map_item)[i])
+                        continue;
+                }
+                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
             }
 
             result[i] = current;
             current_offset = offsets[i];
         }
     }
+
+    template <bool IsConst>
+    static inline void invokeCheckNullMaps(
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
+        const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
+        const std::conditional_t<IsConst, Offset, ColumnString::Offsets> & item_offsets,
+        PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map)
+    {
+        if (data_map && item_map)
+            processImpl<IsConst, true, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+        else if (data_map)
+            processImpl<IsConst, true, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+        else if (item_map)
+            processImpl<IsConst, false, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+        else
+            processImpl<IsConst, false, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+    }
+
+public:
+    static inline void process(
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
+        const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
+        Offset item_offsets, PaddedPODArray<ResultType> & result,
+        const NullMap * data_map, const NullMap * item_map)
+    {
+        invokeCheckNullMaps<true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+    }
+
+    static inline void process(
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
+        const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
+        const ColumnString::Offsets & item_offsets, PaddedPODArray<ResultType> & result,
+        const NullMap * data_map, const NullMap * item_map)
+    {
+        invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+    }
 };
+}
 
 static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
 {
@@ -588,12 +628,20 @@ private:
         const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-            ArrayIndexNullImpl<ConcreteAction>::process(
-                col_array->getOffsets(),
-                col_res->getData(),
-                null_map_data);
+        {
+            if (null_map_data)
+                Impl::Null<ConcreteAction, true>::process(
+                    col_array->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+            else
+                Impl::Null<ConcreteAction, false>::process(
+                    col_array->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+        }
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(item_arg))
-            ArrayIndexMainImpl<ConcreteAction, true, Initial, Resulting>::vector(
+            Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 col_nested->getData(),
                 col_array->getOffsets(),
                 item_arg_const->template getValue<Resulting>(),
@@ -601,7 +649,7 @@ private:
                 null_map_data,
                 nullptr);
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(item_arg))
-            ArrayIndexMainImpl<ConcreteAction, false, Initial, Resulting>::vector(
+            Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 col_nested->getData(),
                 col_array->getOffsets(),
                 item_arg_vector->getData(),
@@ -692,7 +740,7 @@ private:
             }
         }
 
-        ArrayIndexMainImpl<ConcreteAction, true>::vector(
+        Impl::Main<ConcreteAction, true>::vector(
             col_lc->getIndexes(),
             col_array->getOffsets(),
             index,
@@ -723,10 +771,18 @@ private:
         const IColumn * item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
-            ArrayIndexNullImpl<ConcreteAction>::process(
-                col_array->getOffsets(),
-                col_res->getData(),
-                null_map_data);
+        {
+            if (null_map_data)
+                Impl::Null<ConcreteAction, true>::process(
+                    col_array->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+            else
+                Impl::Null<ConcreteAction, false>::process(
+                    col_array->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+        }
         else if (const auto *const item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {
             const ColumnString * item_const_string =
@@ -736,23 +792,25 @@ private:
                 checkAndGetColumn<ColumnFixedString>(&item_arg_const->getDataColumn());
 
             if (item_const_string)
-                ArrayIndexStringImpl<ConcreteAction>::vector_const(
+                Impl::String<ConcreteAction>::process(
                     col_nested->getChars(),
                     col_array->getOffsets(),
                     col_nested->getOffsets(),
                     item_const_string->getChars(),
                     item_const_string->getDataAt(0).size,
                     col_res->getData(),
-                    null_map_data);
+                    null_map_data,
+                    null_map_item);
             else if (item_const_fixedstring)
-                ArrayIndexStringImpl<ConcreteAction>::vector_const(
+                Impl::String<ConcreteAction>::process(
                     col_nested->getChars(),
                     col_array->getOffsets(),
                     col_nested->getOffsets(),
                     item_const_fixedstring->getChars(),
                     item_const_fixedstring->getN(),
                     col_res->getData(),
-                    null_map_data);
+                    null_map_data,
+                    null_map_item);
             else
                 throw Exception(
                     "Logical error: ColumnConst contains not String nor FixedString column",
@@ -760,7 +818,7 @@ private:
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
         {
-            ArrayIndexStringImpl<ConcreteAction>::vectorVector(
+            Impl::String<ConcreteAction>::process(
                 col_nested->getChars(),
                 col_array->getOffsets(),
                 col_nested->getOffsets(),
@@ -796,11 +854,13 @@ private:
 
             for (size_t i = 0, size = arr.size(); i < size; ++i)
             {
-                if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                {
-                    if (!ConcreteAction::apply(i, current))
-                        break;
-                }
+                if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                    continue;
+
+                ConcreteAction::apply(current, i);
+
+                if constexpr(!ConcreteAction::resume_execution)
+                    break;
             }
 
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
@@ -812,13 +872,10 @@ private:
             const NullMap * null_map = nullptr;
 
             if (arguments.size() > 2)
-            {
-                const auto & col = block.getByPosition(arguments[3]).column;
-                if (col)
+                if (const auto & col = block.getByPosition(arguments[3]).column; col)
                     null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
-            }
 
-            const auto size = item_arg->size();
+            const size_t size = item_arg->size();
             auto col_res = ResultColumnType::create(size);
 
             auto & data = col_res->getData();
@@ -828,23 +885,24 @@ private:
                 const auto & value = (*item_arg)[row];
 
                 data[row] = 0;
+
                 for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
                 {
-                    bool hit = false;
-
                     if (arr[i].isNull())
                     {
-                        if (null_map && (*null_map)[row])
-                            hit = true;
-                    }
-                    else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                        hit = true;
+                        if (!null_map)
+                            continue;
 
-                    if (hit)
-                    {
-                        if (!ConcreteAction::apply(i, data[row]))
-                            break;
+                        if (!(*null_map)[row])
+                            continue;
                     }
+                    else if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                        continue;
+
+                    ConcreteAction::apply(data[row], i);
+
+                    if constexpr (!ConcreteAction::resume_execution)
+                        break;
                 }
             }
 
@@ -869,12 +927,20 @@ private:
         auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         if (item_arg.onlyNull())
-            ArrayIndexNullImpl<ConcreteAction>::process(
-                col->getOffsets(),
-                col_res->getData(),
-                null_map_data);
-        else if (isColumnConst(item_arg)) // note that col_nested is not LC as this case is already processed
-            ArrayIndexMainImpl<ConcreteAction, true>::vector(
+        {
+            if (null_map_data)
+                Impl::Null<ConcreteAction, true>::process(
+                    col->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+            else
+                Impl::Null<ConcreteAction, false>::process(
+                    col->getOffsets(),
+                    col_res->getData(),
+                    null_map_data);
+        }
+        else if (isColumnConst(item_arg))
+            Impl::Main<ConcreteAction, true>::vector(
                 col_nested,
                 col->getOffsets(),
                 typeid_cast<const ColumnConst &>(item_arg).getDataColumn(),
@@ -883,27 +949,10 @@ private:
                 nullptr);
         else
         {
-            /// Possible case similar to LowCardinality one, where two integral ColumnVectors of different
-            /// types are compared, so we have to cast the right column if needed.
-
-            const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(
-                    block.getByPosition(arguments[0]).type.get());
-
-            // e.g. LC(Vector(U))
-            const DataTypePtr right_type = block.getByPosition(arguments[1]).type;
-
-            // e.g. Vector(T)
-            const DataTypePtr left_lc_inner_type = recursiveRemoveLowCardinality(array_type->getNestedType());
-            //e.g. Vector(U)
-            const DataTypePtr right_lc_inner_type = recursiveRemoveLowCardinality(right_type);
-
-            const ColumnPtr right_casted = !left_lc_inner_type->equals(*right_lc_inner_type.get())
-                ? castColumn(block.getByPosition(arguments[1]), left_lc_inner_type)
-                : item_arg.convertToFullColumnIfLowCardinality();
-
+            const auto right_casted = item_arg.convertToFullColumnIfLowCardinality();
             const auto left_casted = col_nested.convertToFullColumnIfLowCardinality();
 
-            ArrayIndexMainImpl<ConcreteAction>::vector(
+            Impl::Main<ConcreteAction>::vector(
                 *left_casted.get(),
                 col->getOffsets(),
                 *right_casted.get(),
