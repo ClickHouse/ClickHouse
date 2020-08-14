@@ -43,7 +43,9 @@ elseif(NOT MISSING_INTERNAL_ORC_LIBRARY AND ARROW_LIBRARY AND SNAPPY_LIBRARY) # 
     set(USE_ORC 1)
     set(USE_INTERNAL_ORC_LIBRARY 1)
 else()
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't enable ORC support - missing dependencies")
+    message (${RECONFIGURE_MESSAGE_LEVEL}
+             "Can't enable ORC support - missing dependencies. Missing internal orc=${MISSING_INTERNAL_ORC_LIBRARY}. "
+             "arrow=${ARROW_LIBRARY} snappy=${SNAPPY_LIBRARY}")
     set(USE_INTERNAL_ORC_LIBRARY 0)
 endif()
 
