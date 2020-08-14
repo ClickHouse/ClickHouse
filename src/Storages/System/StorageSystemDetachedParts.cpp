@@ -30,7 +30,7 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipes StorageSystemDetachedParts::read(
+Pipe read(
     const Names & /* column_names */,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -66,9 +66,7 @@ Pipes StorageSystemDetachedParts::read(
     UInt64 num_rows = new_columns.at(0)->size();
     Chunk chunk(std::move(new_columns), num_rows);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(block), std::move(chunk)));
-    return pipes;
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(block), std::move(chunk)));
 }
 
 }

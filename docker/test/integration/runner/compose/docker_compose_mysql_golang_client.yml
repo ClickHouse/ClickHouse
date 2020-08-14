@@ -1,8 +1,6 @@
 version: '2.3'
 services:
   golang1:
-    build:
-      context: ./
-      network: host
+    image: yandex/clickhouse-mysql-golang-client:${DOCKER_MYSQL_GOLANG_CLIENT_TAG}
     # to keep container running
     command: sleep infinity
