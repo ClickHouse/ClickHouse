@@ -89,7 +89,7 @@ class ClickHouseCluster:
     these directories will contain logs, database files, docker-compose config, ClickHouse configs etc.
     """
 
-    def __init__(self, base_path, name=None, base_config_dir=None, config_dir=None, server_bin_path=None, client_bin_path=None,
+    def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
                  odbc_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
         for param in os.environ.keys():
             print "ENV %40s %s" % (param,os.environ[param])
@@ -97,8 +97,6 @@ class ClickHouseCluster:
         self.name = name if name is not None else ''
 
         self.base_config_dir = base_config_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR',
-                                                                   '/etc/clickhouse-server/')
-        self.config_dir = config_dir or os.environ.get('CLICKHOUSE_TESTS_CONFIG_DIR',
                                                                    '/etc/clickhouse-server/')
         self.server_bin_path = p.realpath(
             server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
@@ -159,7 +157,7 @@ class ClickHouseCluster:
 
         self.docker_client = None
         self.is_up = False
-        print "CLUSTER INIT base_config_dir:{} config_dir:{}".format(self.base_config_dir, self.config_dir)
+        print "CLUSTER INIT base_config_dir:{}".format(self.base_config_dir)
 
     def get_client_cmd(self):
         cmd = self.client_bin_path
@@ -167,7 +165,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, base_config_dir=None, config_dir=None, main_configs=None, user_configs=None, dictionaries = None, macros=None,
+    def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries = None, macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -177,7 +175,6 @@ class ClickHouseCluster:
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
-        config_dir - a directory with config files which content will be copied to /etc/clickhouse-server/ directory
         base_config_dir - a directory with config.xml and users.xml files which will be copied to /etc/clickhouse-server/ directory
         main_configs - a list of config files that will be added to config.d/ directory
         user_configs - a list of config files that will be added to users.d/ directory
@@ -192,8 +189,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, base_config_dir if base_config_dir else self.base_config_dir,
-            config_dir if config_dir else self.config_dir, main_configs or [], user_configs or [], dictionaries or [],
-            macros or {}, with_zookeeper,
+            main_configs or [], user_configs or [], dictionaries or [], macros or {}, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             self.server_bin_path, self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
@@ -765,7 +761,7 @@ services:
 class ClickHouseInstance:
 
     def __init__(
-            self, cluster, base_path, name, base_config_dir, config_dir, custom_main_configs, custom_user_configs, custom_dictionaries,
+            self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs, custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
@@ -780,7 +776,6 @@ class ClickHouseInstance:
 
         self.tmpfs = tmpfs or []
         self.base_config_dir = p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
-        self.config_dir = p.abspath(p.join(base_path, config_dir)) if config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
@@ -1126,10 +1121,6 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        # print "Copy config dir {} to {}".format(self.config_dir, instance_config_dir)
-        # if self.config_dir:
-        #     distutils.dir_util.copy_tree(self.config_dir, instance_config_dir)
-
         # Copy config.d configs
         print "Copy custom test config files {} to {}".format(self.custom_main_config_paths, self.config_d_dir)
         for path in self.custom_main_config_paths:
@@ -1139,8 +1130,6 @@ class ClickHouseInstance:
         for path in self.custom_user_config_paths:
             shutil.copy(path, users_d_dir)
 
-
-        self.config_dir
         # Copy dictionaries configs to configs/dictionaries
         for path in self.custom_dictionaries_paths:
             shutil.copy(path, dictionaries_dir)
