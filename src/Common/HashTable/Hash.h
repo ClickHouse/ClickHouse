@@ -206,6 +206,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
+    __builtin_unreachable();
 }
 
 template <typename T, typename Enable = void>
@@ -262,6 +263,7 @@ inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
+    __builtin_unreachable();
 }
 
 #define DEFINE_HASH(T) \
@@ -365,5 +367,6 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
             return intHash32<salt>(key);
+        __builtin_unreachable();
     }
 };

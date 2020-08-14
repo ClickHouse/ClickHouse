@@ -40,20 +40,16 @@ namespace common
     template <>
     inline bool addOverflow(bInt256 x, bInt256 y, bInt256 & res)
     {
-        static const bInt256 max_int256 = (bInt256(1) << 255) + ((bInt256(1) << 255) - 1);
-        static const bInt256 min_int256 = -max_int256;
-
         res = x + y;
-        return (y > 0 && x > max_int256 - y) || (y < 0 && x < min_int256 - y);
+        return (y > 0 && x > std::numeric_limits<bInt256>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<bInt256>::min() - y);
     }
 
     template <>
     inline bool addOverflow(bUInt256 x, bUInt256 y, bUInt256 & res)
     {
-        static const bUInt256 max_uint256 = (bUInt256(1) << 255) + ((bUInt256(1) << 255) - 1);
-
         res = x + y;
-        return x > max_uint256 - y;
+        return x > std::numeric_limits<bUInt256>::max() - y;
     }
 
     template <typename T>
@@ -92,11 +88,9 @@ namespace common
     template <>
     inline bool subOverflow(bInt256 x, bInt256 y, bInt256 & res)
     {
-        static const bInt256 max_int256 = (bInt256(1) << 255) + ((bInt256(1) << 255) - 1);
-        static const bInt256 min_int256 = -max_int256;
-
         res = x - y;
-        return (y < 0 && x > max_int256 + y) || (y > 0 && x < min_int256 + y);
+        return (y < 0 && x > std::numeric_limits<bInt256>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<bInt256>::min() + y);
     }
 
     template <>
