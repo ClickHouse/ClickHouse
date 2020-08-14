@@ -159,18 +159,25 @@ protected:
     Memory<> & memory;
 public:
 
-    BufferWithOutsideMemory(Memory<> & memory_)
+    explicit BufferWithOutsideMemory(Memory<> & memory_)
         : Base(nullptr, 0), memory(memory_)
     {
         Base::set(memory.data(), memory.size());
         Base::padded = false;
     }
+
+    size_t getActualSize()
+    {
+        return Base::count();
+    }
+
 private:
     void nextImpl() override final
     {
+        std::cout << "nextImpl" << std::endl;
         const size_t prev_size = memory.size();
         memory.resize(2 * prev_size);
-        Base::set(memory.data(), memory.size());
+        Base::set(memory.data() + prev_size, memory.size() - prev_size);
     }
 };
 
