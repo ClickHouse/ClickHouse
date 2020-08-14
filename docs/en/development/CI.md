@@ -63,7 +63,7 @@ This check means that the CI system started to process the pull request. When it
 
 ### Style check
 
-Performs some simple regex-based checks of code style, using the `utils/check-style/check-style` binary.
+Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
 If it fails, fix the style errors following the [code style guide](style.md).
 
 #### Report details
