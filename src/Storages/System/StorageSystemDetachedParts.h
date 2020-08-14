@@ -22,7 +22,7 @@ public:
 protected:
     explicit StorageSystemDetachedParts(const StorageID & table_id_);
 
-    Pipes read(
+    Pipe read(
             const Names & /* column_names */,
             const StorageMetadataPtr & metadata_snapshot,
             const SelectQueryInfo & query_info,

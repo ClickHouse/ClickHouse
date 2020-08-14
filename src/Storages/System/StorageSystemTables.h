@@ -18,7 +18,7 @@ class StorageSystemTables final : public ext::shared_ptr_helper<StorageSystemTab
 public:
     std::string getName() const override { return "SystemTables"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_*/,
         const SelectQueryInfo & query_info,

@@ -113,18 +113,10 @@ Pipe createRemoteSourcePipe(
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info));
 
     if (add_totals)
-    {
-        auto totals_source = std::make_shared<RemoteTotalsSource>(query_executor);
-        pipe.setTotalsPort(&totals_source->getPort());
-        pipe.addProcessors({std::move(totals_source)});
-    }
+        pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
 
     if (add_extremes)
-    {
-        auto extremes_source = std::make_shared<RemoteExtremesSource>(query_executor);
-        pipe.setExtremesPort(&extremes_source->getPort());
-        pipe.addProcessors({std::move(extremes_source)});
-    }
+        pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
 
     return pipe;
 }

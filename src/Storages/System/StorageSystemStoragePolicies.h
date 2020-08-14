@@ -20,7 +20,7 @@ class StorageSystemStoragePolicies final : public ext::shared_ptr_helper<Storage
 public:
     std::string getName() const override { return "SystemStoragePolicies"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
