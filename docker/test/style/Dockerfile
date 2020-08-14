@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-style-test .
+# docker build -t yandex/clickhouse-style-test . 
 FROM ubuntu:20.04
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes shellcheck libxml2-utils git
