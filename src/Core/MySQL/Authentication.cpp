@@ -197,7 +197,7 @@ void Sha256Password::authenticate(
     if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
     {
         LOG_TRACE(log, "Received nonempty password.");
-        auto * ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
+        const auto * ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
         unsigned char plaintext[RSA_size(&private_key)];
         int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
