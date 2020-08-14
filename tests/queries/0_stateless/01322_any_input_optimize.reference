@@ -14,3 +14,5 @@ WITH any(number * 3) AS x\nSELECT x\nFROM numbers(1, 2)
 3
 SELECT \n    anyLast(number * 3) AS x,\n    x\nFROM numbers(1, 2)
 6	6
+arrayJoin
+0	[]
