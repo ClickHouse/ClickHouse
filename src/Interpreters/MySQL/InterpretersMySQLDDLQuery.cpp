@@ -351,7 +351,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
         column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
         column_declaration->children.emplace_back(column_declaration->type);
         column_declaration->children.emplace_back(column_declaration->default_expression);
-        return std::move(column_declaration);
+        return column_declaration;
     };
 
     /// Add _sign and _version column.
