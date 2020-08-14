@@ -9,7 +9,6 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Path.h>
-#include <Common/ShellCommand.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Processors/Pipe.h>
@@ -85,7 +84,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     return [query](std::ostream & os) { os << "query=" << query; };
 }
 
-Pipes StorageXDBC::read(
+Pipe StorageXDBC::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
