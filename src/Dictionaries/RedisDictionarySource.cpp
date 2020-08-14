@@ -154,6 +154,9 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
+        if (!client->isConnected())
+            client->connect(host, port);
+
         RedisCommand command_for_keys("KEYS");
         command_for_keys << "*";
 
@@ -191,6 +194,7 @@ namespace DB
                         primary_with_secondary.addRedisType(key);
                     }
                 }
+
                 if (primary_with_secondary.size() > 1)
                     hkeys.add(std::move(primary_with_secondary));
             }
@@ -204,6 +208,9 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
+        if (!client->isConnected())
+            client->connect(host, port);
+
         if (storage_type != RedisStorageType::SIMPLE)
             throw Exception{"Cannot use loadIds with \'simple\' storage type", ErrorCodes::UNSUPPORTED_METHOD};
 
