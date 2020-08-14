@@ -48,6 +48,13 @@ struct UInt128
     bool inline operator>  (const UInt128 rhs) const { return tuple() > rhs.tuple(); }
     bool inline operator>= (const UInt128 rhs) const { return tuple() >= rhs.tuple(); }
 
+    bool inline operator == (const Int128 rhs) const { return *this == UInt128(rhs, rhs >> 64) && rhs >= 0; }
+    bool inline operator != (const Int128 rhs) const { return *this != UInt128(rhs, rhs >> 64) || rhs < 0; }
+    bool inline operator >= (const Int128 rhs) const { return *this >= UInt128(rhs, rhs >> 64) || rhs < 0; }
+    bool inline operator >  (const Int128 rhs) const { return *this >  UInt128(rhs, rhs >> 64) || rhs < 0; }
+    bool inline operator <= (const Int128 rhs) const { return *this <= UInt128(rhs, rhs >> 64) && rhs >= 0; }
+    bool inline operator <  (const Int128 rhs) const { return *this <  UInt128(rhs, rhs >> 64) && rhs >= 0; }
+
     template <typename T> bool inline operator== (const T rhs) const { return *this == UInt128(rhs); }
     template <typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(rhs); }
     template <typename T> bool inline operator>= (const T rhs) const { return *this >= UInt128(rhs); }
@@ -70,12 +77,12 @@ struct UInt128
     UInt128 & operator= (const UInt64 rhs) { low = rhs; high = 0; return *this; }
 };
 
-template <typename T> bool inline operator== (T a, const UInt128 b) { return UInt128(a) == b; }
-template <typename T> bool inline operator!= (T a, const UInt128 b) { return UInt128(a) != b; }
-template <typename T> bool inline operator>= (T a, const UInt128 b) { return UInt128(a) >= b; }
-template <typename T> bool inline operator>  (T a, const UInt128 b) { return UInt128(a) > b; }
-template <typename T> bool inline operator<= (T a, const UInt128 b) { return UInt128(a) <= b; }
-template <typename T> bool inline operator<  (T a, const UInt128 b) { return UInt128(a) < b; }
+template <typename T> bool inline operator == (T a, const UInt128 b) { return b == a; }
+template <typename T> bool inline operator != (T a, const UInt128 b) { return b != a; }
+template <typename T> bool inline operator >= (T a, const UInt128 b) { return b <= a; }
+template <typename T> bool inline operator >  (T a, const UInt128 b) { return b < a; }
+template <typename T> bool inline operator <= (T a, const UInt128 b) { return b >= a; }
+template <typename T> bool inline operator <  (T a, const UInt128 b) { return b > a; }
 
 template <> inline constexpr bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static constexpr const char * get() { return "UInt128"; } };
