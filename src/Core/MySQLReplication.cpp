@@ -59,7 +59,7 @@ namespace MySQLReplication
         out << "Binlog Version: " << this->binlog_version << std::endl;
         out << "Server Version: " << this->server_version << std::endl;
         out << "Create Timestamp: " << this->create_timestamp << std::endl;
-        out << "Event Header Len: " << this->event_header_length << std::endl;
+        out << "Event Header Len: " << std::to_string(this->event_header_length) << std::endl;
     }
 
     /// https://dev.mysql.com/doc/internals/en/rotate-event.html
@@ -119,7 +119,7 @@ namespace MySQLReplication
         header.dump(out);
         out << "Thread ID: " << this->thread_id << std::endl;
         out << "Execution Time: " << this->exec_time << std::endl;
-        out << "Schema Len: " << this->schema_len << std::endl;
+        out << "Schema Len: " << std::to_string(this->schema_len) << std::endl;
         out << "Error Code: " << this->error_code << std::endl;
         out << "Status Len: " << this->status_len << std::endl;
         out << "Schema: " << this->schema << std::endl;
@@ -239,14 +239,14 @@ namespace MySQLReplication
         header.dump(out);
         out << "Table ID: " << this->table_id << std::endl;
         out << "Flags: " << this->flags << std::endl;
-        out << "Schema Len: " << this->schema_len << std::endl;
+        out << "Schema Len: " << std::to_string(this->schema_len) << std::endl;
         out << "Schema: " << this->schema << std::endl;
-        out << "Table Len: " << this->table_len << std::endl;
+        out << "Table Len: " << std::to_string(this->table_len) << std::endl;
         out << "Table: " << this->table << std::endl;
         out << "Column Count: " << this->column_count << std::endl;
         for (auto i = 0U; i < column_count; i++)
         {
-            out << "Column Type [" << i << "]: " << column_type[i] << ", Meta: " << column_meta[i] << std::endl;
+            out << "Column Type [" << i << "]: " << std::to_string(column_type[i]) << ", Meta: " << column_meta[i] << std::endl;
         }
         out << "Null Bitmap: " << this->null_bitmap << std::endl;
     }
