@@ -287,9 +287,6 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    void enableQuota() { has_quota = true; }
-    bool hasQuota() const { return has_quota; }
-
     /// Step of QueryPlan from which processor was created.
     void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
     {
@@ -309,8 +306,6 @@ private:
     std::string processor_description;
 
     size_t stream_number = NO_STREAM;
-
-    bool has_quota = false;
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;

@@ -1,6 +1,7 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/NullSink.h>
+#include <Processors/ResizeProcessor.h>
 
 namespace DB
 {
@@ -111,15 +112,27 @@ void synchronizePorts(OutputPort *& pipe_port, OutputPort * source_port, const B
 void DelayedSource::work()
 {
     auto pipe = creator();
+    const auto & header = main->getHeader();
 
-    main_output = &pipe.getPort();
+    if (pipe.empty())
+    {
+        auto source = std::make_shared<NullSource>(header);
+        main_output = &source->getPort();
+        processors.emplace_back(std::move(source));
+        return;
+    }
+
+    if (pipe.numOutputPorts() > 1)
+        pipe.addTransform(std::make_shared<ResizeProcessor>(header, pipe.numOutputPorts(), 1));
+
+    main_output = pipe.getOutputPort(0);
     totals_output = pipe.getTotalsPort();
     extremes_output = pipe.getExtremesPort();
 
-    processors = std::move(pipe).detachProcessors();
+    processors = Pipe::detachProcessors(std::move(pipe));
 
-    synchronizePorts(totals_output, totals, main->getHeader(), processors);
-    synchronizePorts(extremes_output, extremes, main->getHeader(), processors);
+    synchronizePorts(totals_output, totals, header, processors);
+    synchronizePorts(extremes_output, extremes, header, processors);
 }
 
 Processors DelayedSource::expandPipeline()
@@ -144,12 +157,11 @@ Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_c
 {
     auto source = std::make_shared<DelayedSource>(header, std::move(processors_creator), add_totals_port, add_extremes_port);
 
-    Pipe pipe(&source->getPort());
-    pipe.setTotalsPort(source->getTotalsPort());
-    pipe.setExtremesPort(source->getExtremesPort());
+    auto * main = &source->getPort();
+    auto * totals = source->getTotalsPort();
+    auto * extremes = source->getExtremesPort();
 
-    pipe.addProcessors({std::move(source)});
-    return pipe;
+    return Pipe(std::move(source), main, totals, extremes);
 }
 
 }
