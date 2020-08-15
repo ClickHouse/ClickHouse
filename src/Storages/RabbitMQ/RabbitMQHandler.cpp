@@ -20,18 +20,16 @@ RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
 ///Method that is called when the connection ends up in an error state.
 void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message)
 {
-    connection_running.store(false);
     LOG_ERROR(log, "Library error report: {}", message);
-
+    connection_running.store(false);
     if (connection)
         connection->close();
 }
 
 void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 {
-    connection_running.store(true);
     LOG_TRACE(log, "Connection is ready");
-
+    connection_running.store(true);
     loop_state.store(Loop::RUN);
 }
 

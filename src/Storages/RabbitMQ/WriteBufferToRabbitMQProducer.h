@@ -25,7 +25,8 @@ public:
             const String & exchange_name_,
             const AMQP::ExchangeType exchange_type_,
             const size_t channel_id_,
-            const bool use_tx_,
+            const String channel_base_,
+            const bool use_txn_,
             const bool persistent_,
             Poco::Logger * log_,
             std::optional<char> delimiter,
@@ -55,8 +56,9 @@ private:
     const Names routing_keys;
     const String exchange_name;
     AMQP::ExchangeType exchange_type;
-    const String channel_id;
-    const bool use_tx;
+    const String channel_id_base;
+    const String channel_base;
+    const bool use_txn;
     const bool persistent;
 
     AMQP::Table key_arguments;
@@ -67,12 +69,14 @@ private:
     std::unique_ptr<AMQP::TcpConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
 
+    String channel_id;
     ConcurrentBoundedQueue<std::pair<UInt64, String>> payloads, returned;
     UInt64 delivery_tag = 0;
     std::atomic<bool> wait_all = true;
     std::atomic<UInt64> wait_num = 0;
     UInt64 payload_counter = 0;
     std::map<UInt64, std::pair<UInt64, String>> delivery_record;
+    UInt64 channel_id_counter = 0;
 
     Poco::Logger * log;
     const std::optional<char> delim;

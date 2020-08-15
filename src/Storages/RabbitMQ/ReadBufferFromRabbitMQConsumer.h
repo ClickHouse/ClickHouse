@@ -27,7 +27,8 @@ public:
             ChannelPtr setup_channel_,
             HandlerPtr event_handler_,
             const String & exchange_name_,
-            size_t channel_id_,
+            size_t channel_id_base_,
+            const String & channel_base_,
             const String & queue_base_,
             Poco::Logger * log_,
             char row_delimiter_,
@@ -38,53 +39,65 @@ public:
 
     ~ReadBufferFromRabbitMQConsumer() override;
 
-    struct MessageData
+    struct AckTracker
     {
         UInt64 delivery_tag;
+        String channel_id;
+
+        AckTracker() : delivery_tag(0), channel_id("") {}
+        AckTracker(UInt64 tag, String id) : delivery_tag(tag), channel_id(id) {}
+    };
+
+    struct MessageData
+    {
         String message;
         bool redelivered;
+        AckTracker track;
     };
 
     void allowNext() { allowed = true; } // Allow to read next message.
     bool channelUsable() { return !channel_error.load(); }
     void restoreChannel(ChannelPtr new_channel);
-    void updateNextDeliveryTag(UInt64 delivery_tag) { last_inserted_delivery_tag = delivery_tag; }
-    void ackMessages();
 
-    auto getConsumerTag() const { return consumer_tag; }
-    auto getDeliveryTag() const { return current.delivery_tag; }
+    void ackMessages();
+    void updateAckTracker(AckTracker record);
+
+    auto getChannelID() const { return current.track.channel_id; }
+    auto getDeliveryTag() const { return current.track.delivery_tag; }
     auto getRedelivered() const { return current.redelivered; }
 
 private:
+    bool nextImpl() override;
+
+    void bindQueue(size_t queue_id);
+    void subscribe();
+    void iterateEventLoop();
+
     ChannelPtr consumer_channel;
     ChannelPtr setup_channel;
     HandlerPtr event_handler;
 
     const String exchange_name;
-    const size_t channel_id;
+    const String channel_base;
+    const size_t channel_id_base;
     const String queue_base;
     const bool hash_exchange;
     const size_t num_queues;
+    const String deadletter_exchange;
 
     Poco::Logger * log;
     char row_delimiter;
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    const String deadletter_exchange;
-    std::atomic<bool> channel_error = false;
-
-    String consumer_tag;
-    ConcurrentBoundedQueue<MessageData> received;
-    UInt64 last_inserted_delivery_tag = 0, prev_tag = 0;
-    MessageData current;
+    String channel_id;
+    std::atomic<bool> channel_error = true;
     std::vector<String> queues;
+    ConcurrentBoundedQueue<MessageData> received;
+    MessageData current;
 
-    bool nextImpl() override;
-
-    void bindQueue(size_t queue_id);
-    void subscribe();
-    void iterateEventLoop();
+    AckTracker last_inserted_record;
+    UInt64 prev_tag = 0, channel_id_counter = 0;
 };
 
 }
