@@ -24,7 +24,8 @@ public:
         const std::string & path_to_settings,
         const std::string & config_prefix,
         const Block & sample_block_,
-        const Context & context);
+        const Context & context,
+        const std::string & default_database);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
