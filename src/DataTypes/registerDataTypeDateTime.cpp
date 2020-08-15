@@ -102,9 +102,4 @@ void registerDataTypeDateTime(DataTypeFactory & factory)
     factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
 }
 
-void registerDataTypeDateTime64(DataTypeFactory & /*factory*/)
-{
-//    factory.registerDataType("DateTime64", create64, DataTypeFactory::CaseInsensitive);
-}
-
 }
