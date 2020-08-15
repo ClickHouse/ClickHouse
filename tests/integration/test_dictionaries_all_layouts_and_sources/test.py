@@ -134,8 +134,8 @@ DICTIONARIES = []
 
 # Key-value dictionaries with only one possible field for key
 SOURCES_KV = [
-    SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
-    SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
+    SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "clickhouse", storage_type="simple"),
+    SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "clickhouse", storage_type="hash_map"),
 ]
 
 DICTIONARIES_KV = []
