@@ -54,7 +54,8 @@ RUN apt-get --allow-unauthenticated update -y \
             alien \
             cmake \
             gdb  \
-            moreutils
+            moreutils \
+            pigz
 
 
 # This symlink required by gcc to find lld compiler
