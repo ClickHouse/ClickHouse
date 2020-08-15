@@ -63,6 +63,8 @@ namespace
 {
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+
+const UInt64 DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION = 2;
 }
 
 namespace DB
@@ -440,7 +442,12 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     if (settings.distributed_group_by_no_merge)
-        return QueryProcessingStage::Complete;
+    {
+        if (settings.distributed_group_by_no_merge == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
+            return QueryProcessingStage::WithMergeableStateAfterAggregation;
+        else
+            return QueryProcessingStage::Complete;
+    }
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
