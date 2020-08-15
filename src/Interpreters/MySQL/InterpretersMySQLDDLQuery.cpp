@@ -344,14 +344,14 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     const auto & create_materialized_column_declaration = [&](const String & name, const String & type, const auto & default_value)
     {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+        auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = name;
         column_declaration->type = makeASTFunction(type);
         column_declaration->default_specifier = "MATERIALIZED";
         column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
         column_declaration->children.emplace_back(column_declaration->type);
         column_declaration->children.emplace_back(column_declaration->default_expression);
-        return std::move(column_declaration);
+        return column_declaration;
     };
 
     /// Add _sign and _version column.
