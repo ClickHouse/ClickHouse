@@ -32,6 +32,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToDate>();
     factory.registerFunction<FunctionToDateTime>();
+    factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();

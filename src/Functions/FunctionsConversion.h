@@ -968,6 +968,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
 struct NameToDateTime { static constexpr auto name = "toDateTime"; };
+struct NameToDateTime32 { static constexpr auto name = "toDateTime32"; };
 struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
 struct NameToString { static constexpr auto name = "toString"; };
 struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
@@ -1027,6 +1028,14 @@ public:
         {
             mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
         }
+
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> && std::is_same_v<Name, NameToDateTime>)
+        {
+            /// toDateTime(value, scale:Integer)
+            if ((arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3)
+                mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+        }
+
         // toString(DateTime or DateTime64, [timezone: String])
         if ((std::is_same_v<Name, NameToString> && arguments.size() > 0 && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
             // toUnixTimestamp(value[, timezone : String])
@@ -1074,6 +1083,17 @@ public:
             {
                 timezone_arg_position += 1;
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
+            }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> && std::is_same_v<Name, NameToDateTime>)
+            {
+                /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
+                if ((arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3)
+                {
+                    timezone_arg_position += 1;
+                    scale = static_cast<UInt32>(arguments[1].column->get64(0));
+                    return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+                }
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
@@ -1178,6 +1198,18 @@ private:
 
             return true;
         };
+
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> && std::is_same_v<Name, NameToDateTime>)
+        {
+            /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
+            if ((arguments.size() == 2 && isUnsignedInteger(block.getByPosition(arguments[1]).type)) || arguments.size() == 3)
+            {
+                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
+                    throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                return;
+            }
+        }
 
         bool done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call);
         if (!done)
@@ -1607,6 +1639,7 @@ using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumb
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
 using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
+using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, UnknownMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;

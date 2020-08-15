@@ -38,6 +38,7 @@ SRCS(
     getMostSubtype.cpp
     IDataType.cpp
     NestedUtils.cpp
+    registerDataTypeDateTime.cpp
 
 )
 
