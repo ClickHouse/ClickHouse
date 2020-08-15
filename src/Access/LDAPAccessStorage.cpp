@@ -1,5 +1,6 @@
 #include <Access/LDAPAccessStorage.h>
 #include <Access/User.h>
+#include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -29,13 +30,16 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         throw Exception("Missing 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
     const auto ldap_server_cfg = config.getString("server");
-    const auto user_template_cfg = (has_user_template ? config.getString("user_template") : "default");
+    String user_template_cfg;
 
     if (ldap_server_cfg.empty())
         throw Exception("Empty 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
+    if (has_user_template)
+        user_template_cfg = config.getString("user_template");
+
     if (user_template_cfg.empty())
-        throw Exception("Empty 'user_template' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
+        user_template_cfg = "default";
 
     ldap_server = ldap_server_cfg;
     user_template = user_template_cfg;
@@ -77,10 +81,16 @@ std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & 
         // Entity doesn't exist. We are going to create one.
 
         // Retrieve the template first.
-        const auto user_tmp = top_enclosing_storage->read<User>(user_template);
-        if (!user_tmp)
+        std::shared_ptr<const User> user_tmp;
+        try
         {
-            LOG_WARNING(getLogger(), "Unable to retrieve user template '{}': user does not exist in access storage '{}'.", user_template, top_enclosing_storage->getStorageName());
+            user_tmp = top_enclosing_storage->read<User>(user_template);
+            if (!user_tmp)
+                throw Exception("Retrieved user is empty", IAccessEntity::TypeInfo::get(IAccessEntity::Type::USER).not_found_error_code);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger(), "Unable to retrieve user template '" + user_template + "' from access storage '" + top_enclosing_storage->getStorageName() + "'");
             return {};
         }
 

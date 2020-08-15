@@ -151,10 +151,10 @@ void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguratio
 }
 
 
-void AccessControlManager::setLDAPConfig(const Poco::Util::AbstractConfiguration & users_config)
+void AccessControlManager::setLDAPConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto & ldap_access_storage = dynamic_cast<LDAPAccessStorage &>(getStorageByIndex(LDAP_ACCESS_STORAGE_INDEX));
-    ldap_access_storage.setConfiguration(users_config, this);
+    ldap_access_storage.setConfiguration(config, this);
 }
 
 
