@@ -17,6 +17,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_detach_1 SELECT number,
 $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_detach_1 SELECT number, number + 10, number from numbers(10, 40)"
 
 for i in $(seq $REPLICAS); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_detach_$i"
     $CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_alter_detach_$i"
 done
 
