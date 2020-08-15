@@ -483,23 +483,27 @@ class SourceRedis(ExternalSource):
             name, internal_hostname, internal_port, docker_hostname, docker_port, user, password
         )
         self.storage_type = storage_type
+        self.db_index = 1
 
     def get_source_str(self, table_name):
         return '''
             <redis>
                 <host>{host}</host>
                 <port>{port}</port>
-                <db_index>0</db_index>
+                <password>{password}</password>
+                <db_index>{db_index}</db_index>
                 <storage_type>{storage_type}</storage_type>
             </redis>
         '''.format(
             host=self.docker_hostname,
             port=self.docker_port,
+            password=self.password,
             storage_type=self.storage_type,  # simple or hash_map
+            db_index=self.db_index,
         )
 
     def prepare(self, structure, table_name, cluster):
-        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port)
+        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port, db=self.db_index, password=self.password or None)
         self.prepared = True
         self.ordered_names = structure.get_ordered_names()
 
@@ -524,7 +528,6 @@ class SourceRedis(ExternalSource):
         ):
             return True
         return False
-
 
 class SourceAerospike(ExternalSource):
     def __init__(self, name, internal_hostname, internal_port,
