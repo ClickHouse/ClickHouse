@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static const auto QUEUE_SIZE = 50000;
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
@@ -51,7 +56,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
     consumer_channel->onReady([&]()
     {
-        channel_id = channel_base + "_" + std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++);
+        channel_id = std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++) + "_" + channel_base;
         LOG_TRACE(log, "Channel {} is created", channel_id);
 
         consumer_channel->onError([&](const char * message)
@@ -142,7 +147,10 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
                 if (row_delimiter != '\0')
                     message_received += row_delimiter;
 
-                received.push({message_received, redelivered, AckTracker(delivery_tag, channel_id)});
+                if (message.hasMessageID())
+                    received.push({message_received, message.messageID(), redelivered, AckTracker(delivery_tag, channel_id)});
+                else
+                    received.push({message_received, "", redelivered, AckTracker(delivery_tag, channel_id)});
             }
         })
         .onError([&](const char * message)
@@ -195,7 +203,11 @@ void ReadBufferFromRabbitMQConsumer::restoreChannel(ChannelPtr new_channel)
     consumer_channel = std::move(new_channel);
     consumer_channel->onReady([&]()
     {
-        channel_id = channel_base + "_" + std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++);
+        /* First number indicates current consumer buffer; second number indicates serial number of created channel for current buffer,
+         * i.e. if channel fails - another one is created and its serial number is incremented; channel_base is to guarantee that
+         * channel_id is unique for each table.
+         */
+        channel_id = std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++) + "_" + channel_base;
         LOG_TRACE(log, "Channel {} is created", channel_id);
 
         consumer_channel->onError([&](const char * message)

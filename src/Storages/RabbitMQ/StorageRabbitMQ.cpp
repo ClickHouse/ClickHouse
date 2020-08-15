@@ -69,6 +69,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & exchange_name_,
         const String & format_name_,
         char row_delimiter_,
+        const String & schema_name_,
         const String & exchange_type_,
         size_t num_consumers_,
         size_t num_queues_,
@@ -83,6 +84,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , exchange_name(exchange_name_)
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
+        , schema_name(global_context.getMacros()->expand(schema_name_))
         , num_consumers(num_consumers_)
         , num_queues(num_queues_)
         , use_transactional_channel(use_transactional_channel_)
@@ -785,12 +787,28 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        String exchange_type = rabbitmq_settings.rabbitmq_exchange_type.value;
+        String schema = rabbitmq_settings.rabbitmq_schema.value;
         if (args_count >= 6)
         {
             engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
             const auto * ast = engine_args[5]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
+                schema = safeGet<String>(ast->value);
+            }
+            else
+            {
+                throw Exception("Format schema must be a string", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
+        String exchange_type = rabbitmq_settings.rabbitmq_exchange_type.value;
+        if (args_count >= 7)
+        {
+            engine_args[6] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[6], args.local_context);
+
+            const auto * ast = engine_args[6]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 exchange_type = safeGet<String>(ast->value);
@@ -802,9 +820,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
-        if (args_count >= 7)
+        if (args_count >= 8)
         {
-            const auto * ast = engine_args[6]->as<ASTLiteral>();
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -816,9 +834,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         UInt64 num_queues = rabbitmq_settings.rabbitmq_num_queues;
-        if (args_count >= 8)
+        if (args_count >= 9)
         {
-            const auto * ast = engine_args[7]->as<ASTLiteral>();
+            const auto * ast = engine_args[8]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -830,9 +848,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         bool use_transactional_channel = static_cast<bool>(rabbitmq_settings.rabbitmq_transactional_channel);
-        if (args_count >= 9)
+        if (args_count >= 10)
         {
-            const auto * ast = engine_args[8]->as<ASTLiteral>();
+            const auto * ast = engine_args[9]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 use_transactional_channel = static_cast<bool>(safeGet<UInt64>(ast->value));
@@ -844,18 +862,6 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         String queue_base = rabbitmq_settings.rabbitmq_queue_base.value;
-        if (args_count >= 10)
-        {
-            engine_args[9] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[9], args.local_context);
-
-            const auto * ast = engine_args[9]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                queue_base = safeGet<String>(ast->value);
-            }
-        }
-
-        String deadletter_exchange = rabbitmq_settings.rabbitmq_deadletter_exchange.value;
         if (args_count >= 11)
         {
             engine_args[10] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[10], args.local_context);
@@ -863,14 +869,26 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             const auto * ast = engine_args[10]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
+                queue_base = safeGet<String>(ast->value);
+            }
+        }
+
+        String deadletter_exchange = rabbitmq_settings.rabbitmq_deadletter_exchange.value;
+        if (args_count >= 12)
+        {
+            engine_args[11] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[11], args.local_context);
+
+            const auto * ast = engine_args[11]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
                 deadletter_exchange = safeGet<String>(ast->value);
             }
         }
 
         bool persistent = static_cast<bool>(rabbitmq_settings.rabbitmq_persistent_mode);
-        if (args_count >= 12)
+        if (args_count >= 13)
         {
-            const auto * ast = engine_args[11]->as<ASTLiteral>();
+            const auto * ast = engine_args[12]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 persistent = static_cast<bool>(safeGet<UInt64>(ast->value));
@@ -883,7 +901,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
-                host_port, routing_keys, exchange, format, row_delimiter, exchange_type, num_consumers,
+                host_port, routing_keys, exchange, format, row_delimiter, schema, exchange_type, num_consumers,
                 num_queues, use_transactional_channel, queue_base, deadletter_exchange, persistent);
     };
 
@@ -898,7 +916,8 @@ NamesAndTypesList StorageRabbitMQ::getVirtuals() const
             {"_exchange_name", std::make_shared<DataTypeString>()},
             {"_channel_id", std::make_shared<DataTypeString>()},
             {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
-            {"_redelivered", std::make_shared<DataTypeUInt8>()}
+            {"_redelivered", std::make_shared<DataTypeUInt8>()},
+            {"_message_id", std::make_shared<DataTypeString>()}
     };
 }
 

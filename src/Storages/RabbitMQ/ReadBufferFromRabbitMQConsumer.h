@@ -51,6 +51,7 @@ public:
     struct MessageData
     {
         String message;
+        String message_id;
         bool redelivered;
         AckTracker track;
     };
@@ -65,6 +66,7 @@ public:
     auto getChannelID() const { return current.track.channel_id; }
     auto getDeliveryTag() const { return current.track.delivery_tag; }
     auto getRedelivered() const { return current.redelivered; }
+    auto getMessageID() const { return current.message_id; }
 
 private:
     bool nextImpl() override;

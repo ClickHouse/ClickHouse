@@ -16,13 +16,19 @@ from helpers.network import PartitionManager
 import json
 import subprocess
 
+import avro.schema
+from confluent.schemaregistry.client import CachedSchemaRegistryClient
+from confluent.schemaregistry.serializers.MessageSerializer import MessageSerializer
 from google.protobuf.internal.encoder import _VarintBytes
+
+import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 config_dir='configs',
                                 main_configs=['configs/rabbitmq.xml','configs/log_conf.xml'],
-                                with_rabbitmq=True)
+                                with_rabbitmq=True,
+                                clickhouse_path_dir='clickhouse_path')
 rabbitmq_id = ''
 
 
@@ -317,6 +323,57 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
 
 
 @pytest.mark.timeout(180)
+def test_rabbitmq_protobuf(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value String)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'pb',
+                     rabbitmq_format = 'Protobuf',
+                     rabbitmq_schema = 'rabbitmq.proto:KeyValuePair';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    data = ''
+    for i in range(0, 20):
+        msg = rabbitmq_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    channel.basic_publish(exchange='pb', routing_key='', body=data)
+    data = ''
+    for i in range(20, 21):
+        msg = rabbitmq_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    channel.basic_publish(exchange='pb', routing_key='', body=data)
+    data = ''
+    for i in range(21, 50):
+        msg = rabbitmq_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    channel.basic_publish(exchange='pb', routing_key='', body=data)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq')
+        if rabbitmq_check_result(result):
+            break
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -451,6 +508,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         DROP TABLE test.view2;
     ''')
 
+    connection.close()
     rabbitmq_check_result(result1, True)
     rabbitmq_check_result(result2, True)
 
@@ -1440,7 +1498,7 @@ def test_rabbitmq_virtual_columns(rabbitmq_cluster):
     connection.close()
 
     result = instance.query('''
-        SELECT key, value, _exchange_name, SUBSTRING(_channel_id, 34, 3), _delivery_tag, _redelivered
+        SELECT key, value, _exchange_name, SUBSTRING(_channel_id, 1, 3), _delivery_tag, _redelivered
         FROM test.view ORDER BY key
     ''')
 
@@ -1505,7 +1563,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
 
     connection.close()
 
-    result = instance.query("SELECT key, value, exchange_name, SUBSTRING(channel_id, 34, 3), delivery_tag, redelivered FROM test.view ORDER BY delivery_tag")
+    result = instance.query("SELECT key, value, exchange_name, SUBSTRING(channel_id, 1, 3), delivery_tag, redelivered FROM test.view ORDER BY delivery_tag")
     expected = '''\
 0	0	virtuals_mv	1_0	1	0
 1	1	virtuals_mv	1_0	2	0
@@ -1769,7 +1827,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
 
 @pytest.mark.timeout(420)
-def test_rabbitmq_consumer_restore_failed_connection_without_losses(rabbitmq_cluster):
+def test_rabbitmq_consumer_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -1901,71 +1959,72 @@ def test_rabbitmq_producer_restore_failed_connection_without_losses(rabbitmq_clu
 
 
 @pytest.mark.timeout(420)
-def test_rabbitmq_virtual_columns_2(rabbitmq_cluster):
+def test_rabbitmq_consumer_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     instance.query('''
-        DROP TABLE IF EXISTS test.destination;
-        CREATE TABLE test.destination(key UInt64, value UInt64,
-            exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8) ENGINE = MergeTree()
-        ORDER BY key;
+        CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'consumer_reconnect',
+                     rabbitmq_num_consumers = 10,
+                     rabbitmq_num_queues = 2,
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
     ''')
 
-    table_num = 3
-    for table_id in range(table_num):
-        print("Setting up table {}".format(table_id))
-        instance.query('''
-            DROP TABLE IF EXISTS test.virtuals_{0};
-            DROP TABLE IF EXISTS test.virtuals_{0}_mv;
-            CREATE TABLE test.virtuals_{0} (key UInt64, value UInt64)
-                ENGINE = RabbitMQ
-                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                         rabbitmq_exchange_name = 'virtuals_2',
-                         rabbitmq_num_queues = 2,
-                         rabbitmq_num_consumers = 2,
-                         rabbitmq_format = 'JSONEachRow',
-                         rabbitmq_row_delimiter = '\\n';
-            CREATE MATERIALIZED VIEW test.many_consumers_{0}_mv TO test.destination AS
-        SELECT *, _exchange_name as exchange_name, _channel_id as channel_id, _delivery_tag as delivery_tag, _redelivered as redelivered
-            FROM test.virtuals_{0};
-        '''.format(table_id))
+    i = 0
+    messages_num = 150000
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
-
-    message_num = 10
-    i = 0
     messages = []
-    for _ in range(message_num):
+    for _ in range(messages_num):
         messages.append(json.dumps({'key': i, 'value': i}))
         i += 1
+    for i in range(messages_num):
+        channel.basic_publish(exchange='consumer_reconnect', routing_key='', body=messages[i],
+                properties=pika.BasicProperties(delivery_mode = 2, message_id=str(i)))
+    connection.close()
 
-    for i in range(message_num):
-        channel.basic_publish(exchange='virtuals_2', routing_key='', body=messages[i],
-                    properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)))
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consumer_reconnect;
+    ''')
 
-    #kill_rabbitmq();
-    #time.sleep(2);
-    #revive_rabbitmq();
+    while int(instance.query('SELECT count() FROM test.view')) == 0:
+        time.sleep(0.1)
+
+    kill_rabbitmq();
+    time.sleep(8);
+    revive_rabbitmq();
+
+    while int(instance.query('SELECT count() FROM test.view')) == 0:
+        time.sleep(0.1)
+
+    kill_rabbitmq();
+    time.sleep(2);
+    revive_rabbitmq();
 
     while True:
-        result = instance.query('SELECT count(DISTINCT concat([channel_id], [toString(delivery_tag)])) FROM test.destination')
-        print instance.query('''
-                SELECT DISTINCT concat([channel_id], [toString(delivery_tag)])
-                FROM (SELECT channel_id AS id, delivery_tag AS tag FROM test.destination GROUP BY id ORDER BY tag)''')
+        result = instance.query('SELECT count(DISTINCT key) FROM test.view')
         time.sleep(1)
-        if int(result) == message_num * table_num:
+        if int(result) == messages_num:
             break
-
-    connection.close()
 
     instance.query('''
         DROP TABLE IF EXISTS test.consumer;
         DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.rabbitmq_virtuals_mv
+        DROP TABLE IF EXISTS test.consumer_reconnect;
     ''')
 
-    assert int(result) == message_num * table_num
+    assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
 if __name__ == '__main__':
