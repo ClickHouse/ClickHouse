@@ -28,7 +28,7 @@ groupArraySample(max_size, seed)(x)
 
 Type: [Array](../../data-types/array.md).
 
-**Example**
+**Examples**
 
 Consider table `colors`:
 
