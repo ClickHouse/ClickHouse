@@ -17,6 +17,11 @@
 #include <IO/WriteHelpers.h>
 
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 namespace DB
 {
 
@@ -250,3 +255,8 @@ public:
 
 
 }
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+

@@ -16,7 +16,7 @@ public:
 
     void checkTableCanBeDropped() const override;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

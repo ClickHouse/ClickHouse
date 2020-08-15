@@ -48,7 +48,6 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
-using Pipes = std::vector<Pipe>;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
@@ -134,8 +133,6 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-public:
-
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
@@ -181,7 +178,7 @@ private:
     /// Multiversion storage metadata. Allows to read/write storage metadata
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
-private:
+
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
@@ -274,17 +271,14 @@ public:
       * changed during lifetime of the returned pipeline, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual Pipes read(
+    virtual Pipe read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/)
-    {
-        throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+        unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -353,10 +347,11 @@ public:
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
       */
-    virtual Pipes alterPartition(const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
-    {
-        throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    virtual Pipe alterPartition(
+        const ASTPtr & /* query */,
+        const StorageMetadataPtr & /* metadata_snapshot */,
+        const PartitionCommands & /* commands */,
+        const Context & /* context */);
 
     /// Checks that partition commands can be applied to storage.
     virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;

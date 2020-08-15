@@ -246,8 +246,8 @@ class Cluster(object):
                     assert os.path.exists(self.clickhouse_binary_path)
 
             os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
-            os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(os.path.dirname(self.clickhouse_binary_path),
-                                                                               "clickhouse-odbc-bridge")
+            os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
+                os.path.dirname(self.clickhouse_binary_path), "clickhouse-odbc-bridge")
             os.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
 
             with Given("docker-compose"):
@@ -258,7 +258,9 @@ class Cluster(object):
                 cmd = self.command(None, f'{self.docker_compose} up -d --no-recreate 2>&1 | tee')
 
         with Then("check there are no unhealthy containers"):
-            assert "is unhealthy" not in cmd.output, error()
+            if "is unhealthy" in cmd.output:
+                self.command(None, f'{self.docker_compose} logs | tee')
+                fail("found unhealthy containers")
 
         with Then("wait all nodes report healhy"):
             for name in self.nodes["clickhouse"]:
