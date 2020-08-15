@@ -1200,7 +1200,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
-PartitionCommandsResultInfo  StorageMergeTree::attachPartition(
+PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const ASTPtr & partition, bool attach_part, const Context & context)
 {
     PartitionCommandsResultInfo results;
