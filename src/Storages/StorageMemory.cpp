@@ -106,7 +106,7 @@ StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription col
 }
 
 
-Pipes StorageMemory::read(
+Pipe StorageMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -142,7 +142,7 @@ Pipes StorageMemory::read(
         pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this, metadata_snapshot));
     }
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
