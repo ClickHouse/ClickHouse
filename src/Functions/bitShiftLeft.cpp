@@ -16,7 +16,7 @@ struct BitShiftLeftImpl
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         using CastB = std::conditional_t<std::is_same_v<B, UInt8>, uint8_t, B>;
 

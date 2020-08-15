@@ -47,10 +47,12 @@ template <typename TInt, typename TUInt>
 constexpr bool is_any_int_vs_uint
     = is_integer_v<TInt> && is_integer_v<TUInt> && is_signed_v<TInt> && is_unsigned_v<TUInt>;
 
-
 // Case 2a. Are params IntXX and UIntYY and sizeof(IntXX) >= sizeof(UIntYY) (in such case will use accurate compare)
 template <typename TInt, typename TUInt>
 constexpr bool is_le_int_vs_uint = is_any_int_vs_uint<TInt, TUInt> && (sizeof(TInt) <= sizeof(TUInt));
+
+static_assert(is_le_int_vs_uint<Int128, DB::UInt128>);
+static_assert(is_le_int_vs_uint<Int128, bUInt256>);
 
 template <typename TInt, typename TUInt>
 using bool_if_le_int_vs_uint_t = std::enable_if_t<is_le_int_vs_uint<TInt, TUInt>, bool>;

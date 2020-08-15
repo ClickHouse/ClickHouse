@@ -150,15 +150,16 @@ struct ConvertImpl
                 }
                 else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
                 {
-                    if constexpr (std::is_same_v<FromFieldType, UInt8>)
-                        vec_to[i] = static_cast<ToFieldType>(static_cast<UInt16>(vec_from[i]));
-                    else if constexpr (std::is_same_v<ToFieldType, UInt8>)
-                        vec_to[i] = static_cast<UInt16>(vec_from[i]);
-                    else if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
-                        throw Exception("Conversion between UUID and big ints is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                    using CastFrom = std::conditional_t<std::is_same_v<FromFieldType, UInt8>, uint8_t, FromFieldType>;
+                    using CastTo = std::conditional_t<std::is_same_v<ToFieldType, UInt8>, uint8_t, ToFieldType>;
+
+                    if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
+                        throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
-                        vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                        vec_to[i] = static_cast<CastTo>(static_cast<CastFrom>(vec_from[i]));
                 }
+                else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
+                    vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
             }
@@ -1187,6 +1188,25 @@ private:
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(block.getByPosition(arguments[0]).type.get());
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count, dt64->getScale());
+            }
+            else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+            {
+                using LeftT = typename LeftDataType::FieldType;
+                using RightT = typename RightDataType::FieldType;
+
+                static constexpr bool bad_left =
+                    IsDecimalNumber<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
+                static constexpr bool bad_right =
+                    IsDecimalNumber<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+
+                /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
+                if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
+                              (bad_right && std::is_same_v<LeftDataType, DataTypeUUID>))
+                {
+                    throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
+                }
+                else
+                    ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count);
             }
             else
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count);

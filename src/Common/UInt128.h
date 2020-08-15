@@ -30,7 +30,19 @@ struct UInt128
 
     UInt128() = default;
     explicit UInt128(const UInt64 low_, const UInt64 high_) : low(low_), high(high_) {}
+
+    /// We need Int128 to UInt128 conversion or AccurateComparison will call greaterOp<Int128, UInt64> instead of greaterOp<Int128, UInt128>
+    explicit UInt128(const Int128 rhs) : low(rhs), high(rhs >> 64) {}
+    explicit UInt128(const Int64 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int32 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int16 rhs) : low(rhs), high() {}
+    explicit UInt128(const Int8 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt8 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt16 rhs) : low(rhs), high() {}
+    explicit UInt128(const UInt32 rhs) : low(rhs), high() {}
     explicit UInt128(const UInt64 rhs) : low(rhs), high() {}
+    explicit UInt128(const Float32 rhs) : low(rhs), high() {}
+    explicit UInt128(const Float64 rhs) : low(rhs), high() {}
 
     auto tuple() const { return std::tie(high, low); }
 

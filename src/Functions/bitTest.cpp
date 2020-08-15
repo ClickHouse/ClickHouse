@@ -17,7 +17,7 @@ struct BitTestImpl
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
-    NO_SANITIZE_UNDEFINED static inline Result apply(A a, B b)
+    NO_SANITIZE_UNDEFINED static inline Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<B>)
             throw Exception("bitTest is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
