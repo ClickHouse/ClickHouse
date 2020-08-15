@@ -17,7 +17,9 @@ SRCS(
     ExternalTable.cpp
     Field.cpp
     iostream_debug_helpers.cpp
+    MySQLClient.cpp
     MySQLProtocol.cpp
+    MySQLReplication.cpp
     NamesAndTypes.cpp
     PostgreSQLProtocol.cpp
     Settings.cpp

@@ -378,7 +378,7 @@ private:
 };
 
 
-Pipes StorageFile::read(
+Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -419,7 +419,7 @@ Pipes StorageFile::read(
         pipes.emplace_back(std::make_shared<StorageFileSource>(
                 this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns().getDefaults()));
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
