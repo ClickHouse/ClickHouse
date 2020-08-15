@@ -1290,6 +1290,47 @@ Possible values:
 
 Default value: 0.
 
+## distributed\_group\_by\_no\_merge {#distributed-group-by-no-merge}
+
+Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
+
+Possible values:
+
+-   0 — Disabled (final query processing is done on the initiator node).
+-   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data).
+-   2 - Same as 1 but apply `ORDER BY` and `LIMIT` on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+**Example**
+
+```sql
+SELECT *
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY dummy
+LIMIT 1
+SETTINGS distributed_group_by_no_merge = 1
+FORMAT PrettyCompactMonoBlock
+
+┌─dummy─┐
+│     0 │
+│     0 │
+└───────┘
+```
+
+```sql
+SELECT *
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY dummy
+LIMIT 1
+SETTINGS distributed_group_by_no_merge = 2
+FORMAT PrettyCompactMonoBlock
+
+┌─dummy─┐
+│     0 │
+└───────┘
+```
+
+Default value: 0
+
 ## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
