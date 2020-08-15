@@ -26,14 +26,12 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
-#include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 
 #include <cmath>
 #include <ctime>
-#include <iomanip>
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -730,8 +728,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (metadata_snapshot->hasSortingKey())
         {
-            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), metadata_snapshot->getSortingKey().expression);
-            pipe.addSimpleTransform(std::move(expr));
+            pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
+            });
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -800,7 +800,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
+    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    pipeline.addTransform(std::move(merged_transform));
     pipeline.setMaxThreads(1);
     BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
