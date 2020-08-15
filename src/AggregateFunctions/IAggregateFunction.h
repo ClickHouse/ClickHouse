@@ -316,6 +316,82 @@ public:
     {
         return alignof(Data);
     }
+
+    void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const Derived & func = *static_cast<const Derived *>(this);
+
+        /// If the function is complex or too large, use more generic algorithm.
+
+        if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
+        {
+            IAggregateFunctionHelper<Derived>::addBatchLookupTable8(batch_size, map, place_offset, init, key, columns, arena);
+            return;
+        }
+
+        /// Will use UNROLL_COUNT number of lookup tables.
+
+        static constexpr size_t UNROLL_COUNT = 4;
+
+        std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
+        bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
+
+        size_t i = 0;
+
+        /// Aggregate data into different lookup tables.
+
+        size_t batch_size_unrolled = batch_size / UNROLL_COUNT * UNROLL_COUNT;
+        for (; i < batch_size_unrolled; i += UNROLL_COUNT)
+        {
+            for (size_t j = 0; j < UNROLL_COUNT; ++j)
+            {
+                size_t idx = j * 256 + key[i + j];
+                if (unlikely(!has_data[idx]))
+                {
+                    new (&places[idx]) Data;
+                    has_data[idx] = true;
+                }
+                func.add(reinterpret_cast<char *>(&places[idx]), columns, i + j, nullptr);
+            }
+        }
+
+        /// Merge data from every lookup table to the final destination.
+
+        for (size_t k = 0; k < 256; ++k)
+        {
+            for (size_t j = 0; j < UNROLL_COUNT; ++j)
+            {
+                size_t idx = j * 256 + k;
+                if (has_data[idx])
+                {
+                    AggregateDataPtr & place = map[k];
+                    if (unlikely(!place))
+                        init(place);
+
+                    func.merge(place + place_offset, reinterpret_cast<const char *>(&places[idx]), nullptr);
+                }
+            }
+        }
+
+        /// Process tails and add directly to the final destination.
+
+        for (; i < batch_size; ++i)
+        {
+            size_t k = key[i];
+            AggregateDataPtr & place = map[k];
+            if (unlikely(!place))
+                init(place);
+
+            func.add(place + place_offset, columns, i, nullptr);
+        }
+    }
 };
 
 
