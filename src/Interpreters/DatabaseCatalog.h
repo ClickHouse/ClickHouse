@@ -35,7 +35,7 @@ using Dependencies = std::vector<StorageID>;
 /// Allows executing DDL query only in one thread.
 /// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
 /// when counter is 0 erases element in the destructor.
-/// If the element already exists in the map, waits, when ddl query will be finished in other thread.
+/// If the element already exists in the map, waits when ddl query will be finished in other thread.
 class DDLGuard
 {
 public:
@@ -235,7 +235,7 @@ private:
     /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
-    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
+    /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
     using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
