@@ -11,8 +11,8 @@ services:
     healthcheck:
       test: echo stat | nc localhost 2181
       interval: 3s
-      timeout: 2s
-      retries: 5
+      timeout: 10s
+      retries: 60
       start_period: 2s
     security_opt:
       - label:disable
