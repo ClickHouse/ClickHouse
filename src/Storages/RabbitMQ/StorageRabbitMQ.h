@@ -9,8 +9,10 @@
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
+#include <random>
 
 
 namespace DB
@@ -111,6 +113,7 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
+    String unique_strbase;
     String sharding_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag;
     size_t producer_id = 0, consumer_id = 0;
@@ -135,6 +138,15 @@ private:
     void pingConnection() { connection->heartbeat(); }
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+
+    String getRandomName()
+    {
+        std::uniform_int_distribution<int> distribution('a', 'z');
+        String random_str(32, ' ');
+        for (auto & c : random_str)
+            c = distribution(thread_local_rng);
+        return random_str;
+    }
 };
 
 }
