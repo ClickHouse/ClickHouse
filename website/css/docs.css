@@ -38,10 +38,6 @@ summary {
     margin-left: .5rem;
 }
 
-body[data-spy] #content {
-    overflow-x: scroll;
-}
-
 #content table {
     border: 1px solid #dee2e6;
     width: 100%;
@@ -68,14 +64,19 @@ body[data-spy] #content {
 }
 
 #content code {
-    color: #111;
+    color: #000;
     background: #eee;
+    padding: 0.125rem 0.25rem;
 }
 
+#content code.syntax {
+    padding: 0;
+}
 
 #content pre {
     background: #efefef;
     padding: 1rem;
+    line-height: 1.25;
 }
 
 #docsearch-input:focus, #docsearch-input:active {
@@ -195,7 +196,13 @@ body[data-spy] #content {
         border: 1px solid #444451;
     }
 
-    #content code, #content pre, .blog .tag, .blog .dropdown-menu {
+    #content code {
+        background: #444;
+        color: #eee;
+        padding: 0.125rem 0.25rem;
+    }
+
+    #content pre, .blog .tag, .blog .dropdown-menu {
         background: #444;
         color: #eee;
     }

@@ -223,9 +223,9 @@ void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & co
         return;
 
     Settings settings;
-    for (const auto & setting : settings)
+    for (const auto & setting : settings.all())
     {
-        std::string name = setting.getName().toString();
+        const auto & name = setting.getName();
         if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
@@ -468,6 +468,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     {
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
+
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         Poco::File(path + "metadata_dropped/").createDirectories();
     }
@@ -570,6 +573,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (users_config_path != config_path)
         checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
 
+    if (config().has("custom_settings_prefixes"))
+        global_context->getAccessControlManager().setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+
     auto users_config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
         include_from_path,
@@ -649,6 +655,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
+
+    /// Check sanity of MergeTreeSettings on server startup
+    global_context->getMergeTreeSettings().sanityCheck(settings);
 
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);

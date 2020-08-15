@@ -571,7 +571,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-Формировать блоки указанного размера, при вставке в таблицу.
+Формировать блоки указанного размера (в количестве строк), при вставке в таблицу.
 Эта настройка действует только в тех случаях, когда сервер сам формирует такие блоки.
 Например, при INSERT-е через HTTP интерфейс, сервер парсит формат данных, и формирует блоки указанного размера.
 А при использовании clickhouse-client, клиент сам парсит данные, и настройка max\_insert\_block\_size на сервере не влияет на размер вставляемых блоков.
@@ -908,6 +908,105 @@ load_balancing = first_or_random
 
 Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
 
+## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
+
+При выводе данных в формате [JSON](../../interfaces/formats.md#json) включает отображение значений `+nan`, `-nan`, `+inf`, `-inf`.
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Рассмотрим следующую таблицу `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+Когда `output_format_json_quote_denormals = 0`, следующий запрос возвращает значения `null`.
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+Если `output_format_json_quote_denormals = 1`, то запрос вернет:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
@@ -1227,7 +1326,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1250,9 +1349,9 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow_introspection_functions}
+## allow_introspection_functions {#settings-allow_introspection_functions}
 
 Enables of disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
 
@@ -1266,9 +1365,9 @@ Default value: 0.
 **See Also**
 
 -   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
--   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
-## background\_pool\_size {#background_pool_size}
+## background_pool_size {#background_pool_size}
 
 Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пулл, тем ниже нагрузка на CPU и диск, при этом фоновые процессы замедляются, что может повлиять на скорость выполнения запроса.
 
@@ -1452,7 +1551,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 
-Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create/view.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
 
 Допустимые значения:
 
@@ -1467,7 +1566,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
 
-Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create/view.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
 
 Допустимые значения:
 
@@ -1479,6 +1578,21 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 **См. также:**
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+
+## optimize_read_in_order {#optimize_read_in_order}
+
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) при работе с таблицами семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `1`.
+
+**См. также**
+
+-   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
 
 ## mutations_sync {#mutations_sync}
 
@@ -1496,5 +1610,6 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
 -   [Мутации](../../sql-reference/statements/alter.md#mutations)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

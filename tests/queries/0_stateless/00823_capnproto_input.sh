@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 #create the schema file
 echo "
@@ -35,7 +35,7 @@ struct CapnProto
     nestedone @2 : NestedOne;
     nestedtwo @3 : NestedTwo;
     nestedthree @4 : NestedNestedTwo;
-}" > ${CLICKHOUSE_TMP}/test.capnp
+}" > "${CLICKHOUSE_TMP}"/test.capnp
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS capnproto_input"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE capnproto_input
@@ -56,4 +56,4 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM capnproto_input"
 $CLICKHOUSE_CLIENT -q "DROP TABLE capnproto_input"
 
 # remove the schema file
-rm ${CLICKHOUSE_TMP}/test.capnp
+rm "${CLICKHOUSE_TMP}"/test.capnp
