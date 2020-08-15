@@ -425,8 +425,12 @@ include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/stats.cmake)
 
+set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
+
 find_contrib_lib(farmhash)
+
+set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
