@@ -532,8 +532,8 @@ public:
     std::shared_ptr<MetricLog> getMetricLog();
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
 
-    /// Returns an object used to log operations with parts if it possible.
-    /// Provide table name to make required checks.
+    /// Returns an object used to log opertaions with parts if it possible.
+    /// Provide table name to make required cheks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;

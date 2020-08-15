@@ -63,8 +63,10 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
                 prefix_description,
                 max_block_size, limit_for_merging);
 
-        pipeline.addTransform(std::move(transform));
+        pipeline.addPipe({ std::move(transform) });
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 
     if (need_finish_sorting)
     {

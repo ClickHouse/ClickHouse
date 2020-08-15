@@ -69,9 +69,6 @@ summary {
     padding: 0.125rem 0.25rem;
 }
 
-#content code.syntax {
-    padding: 0;
-}
 
 #content pre {
     background: #efefef;

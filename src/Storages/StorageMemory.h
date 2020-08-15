@@ -28,7 +28,7 @@ public:
 
     size_t getSize() const { return data.size(); }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

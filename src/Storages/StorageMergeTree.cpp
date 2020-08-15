@@ -172,7 +172,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-Pipe StorageMergeTree::read(
+Pipes StorageMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -1054,7 +1054,7 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-Pipe StorageMergeTree::alterPartition(
+Pipes StorageMergeTree::alterPartition(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
@@ -1137,7 +1137,7 @@ Pipe StorageMergeTree::alterPartition(
     if (query_context.getSettingsRef().alter_partition_verbose_result)
         return convertCommandsResultToSource(result);
 
-    return {};
+    return { };
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)

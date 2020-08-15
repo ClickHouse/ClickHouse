@@ -1,0 +1,8 @@
+version: '2.2'
+services:
+  java:
+    build:
+      context: ./
+      network: host
+    # to keep container running
+    command: sleep infinity

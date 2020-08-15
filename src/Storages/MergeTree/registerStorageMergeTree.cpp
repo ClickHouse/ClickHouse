@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -440,7 +441,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             replica_name = "{replica}";     /// TODO maybe use hostname if {replica} is not defined?
         }
         else
-            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::LOGICAL_ERROR);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -550,7 +551,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
-        /// If primary key explicitly defined, than get it from AST
+        /// If primary key explicitely defined, than get it from AST
         if (args.storage_def->primary_key)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
@@ -625,7 +626,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
-        /// But it's not explicitly defined, so we evaluate definition to
+        /// But it's not explicitely defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
 

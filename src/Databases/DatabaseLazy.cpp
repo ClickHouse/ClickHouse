@@ -36,8 +36,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(
     Context & context,
-    bool /* has_force_restore_data_flag */,
-    bool /*force_attach*/)
+    bool /* has_force_restore_data_flag */)
 {
     iterateMetadataFiles(context, [this](const String & file_name)
     {

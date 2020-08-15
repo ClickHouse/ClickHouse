@@ -354,7 +354,7 @@ protected:
 
 /// Parses complete dictionary create query. Uses ParserDictionary and
 /// ParserDictionaryAttributeDeclaration. Produces ASTCreateQuery.
-/// CREATE DICTIONARY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
+/// CREATE DICTIONAY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
 class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:

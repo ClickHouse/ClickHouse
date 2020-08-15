@@ -34,7 +34,7 @@ public:
     template <typename EntityClassT>
     std::vector<UUID> findAll() const { return findAll(EntityClassT::TYPE); }
 
-    /// Searches for an entity with specified type and name. Returns std::nullopt if not found.
+    /// Searchs for an entity with specified type and name. Returns std::nullopt if not found.
     std::optional<UUID> find(EntityType type, const String & name) const;
 
     template <typename EntityClassT>
@@ -45,7 +45,7 @@ public:
     template <typename EntityClassT>
     std::vector<UUID> find(const Strings & names) const { return find(EntityClassT::TYPE, names); }
 
-    /// Searches for an entity with specified name and type. Throws an exception if not found.
+    /// Searchs for an entity with specified name and type. Throws an exception if not found.
     UUID getID(EntityType type, const String & name) const;
 
     template <typename EntityClassT>

@@ -121,7 +121,7 @@ private:
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
-        /// Also we can jump over mutation when we download mutated part from other replica.
+        /// Also we can jump over mutation when we dowload mutated part from other replica.
         bool is_done = false;
 
         String latest_failed_part;
@@ -359,7 +359,7 @@ public:
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
 
-    /// Checks that part is already in virtual parts
+    /// Cheks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.

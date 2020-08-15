@@ -148,7 +148,7 @@ public:
 
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
-            throw Exception("Array column size mismatch (internal logical error)" +
+            throw Exception("Arrary column size mismatch (internal logical error)" +
                             std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size()),
                             ErrorCodes::LOGICAL_ERROR);
         }

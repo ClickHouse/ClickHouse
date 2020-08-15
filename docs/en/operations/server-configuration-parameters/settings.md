@@ -399,7 +399,7 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 ```
 ## max\_server\_memory\_usage {#max_server_memory_usage}
 
-Limits total RAM usage by the ClickHouse server.
+Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
 
 Possible values:
 

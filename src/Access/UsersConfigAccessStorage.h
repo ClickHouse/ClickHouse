@@ -20,7 +20,6 @@ class UsersConfigAccessStorage : public IAccessStorage
 public:
     UsersConfigAccessStorage();
 
-    void setCheckSettingNameFunction(const std::function<void(const std::string_view &)> & check_setting_name_function_);
     void setConfiguration(const Poco::Util::AbstractConfiguration & config);
 
 private:
@@ -39,6 +38,5 @@ private:
     bool hasSubscriptionImpl(EntityType type) const override;
 
     MemoryAccessStorage memory_storage;
-    std::function<void(const std::string_view &)> check_setting_name_function;
 };
 }

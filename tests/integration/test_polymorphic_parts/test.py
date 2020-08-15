@@ -29,7 +29,7 @@ def insert_random_data(table, node, size):
         str(get_random_array()))) +
     ')' for i in range(size)
     ]
-
+    
     node.query("INSERT INTO {} VALUES {}".format(table, ','.join(data)))
 
 def create_tables(name, nodes, node_settings, shard):
@@ -40,7 +40,7 @@ def create_tables(name, nodes, node_settings, shard):
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}')
         PARTITION BY toYYYYMM(date)
         ORDER BY id
-        SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes},
+        SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes}, 
         min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part},
         in_memory_parts_enable_wal = 1
         '''.format(name=name, shard=shard, repl=i, **settings))
@@ -84,7 +84,7 @@ def start_cluster():
 
         create_tables('polymorphic_table', [node1, node2], [settings_default, settings_default], "shard1")
         create_tables('compact_parts_only', [node1, node2], [settings_compact_only, settings_compact_only], "shard1")
-        create_tables('non_adaptive_table', [node1, node2], [settings_not_adaptive, settings_not_adaptive], "shard1")
+        create_tables('non_adaptive_table', [node1, node2], [settings_not_adaptive, settings_default], "shard1")
         create_tables('polymorphic_table_compact', [node3, node4], [settings_compact, settings_wide], "shard2")
         create_tables('polymorphic_table_wide', [node3, node4], [settings_wide, settings_compact], "shard2")
         create_tables_old_format('polymorphic_table', [node5, node6], "shard3")
@@ -184,6 +184,7 @@ def test_compact_parts_only(start_cluster):
     assert TSV(node2.query("SELECT part_type, count() FROM system.parts " \
         "WHERE table = 'compact_parts_only' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
 
+
 # Check that follower replicas create parts of the same type, which leader has chosen at merge.
 @pytest.mark.parametrize(
     ('table', 'part_type'),
@@ -267,7 +268,7 @@ def test_polymorphic_parts_diff_versions(start_cluster_diff_versions):
 
 @pytest.mark.skip(reason="compatability is temporary broken")
 def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
-    # Replication doesn't work on old version if part is created in compact format, because
+    # Replication doesn't work on old version if part is created in compact format, because 
     #  this version doesn't know anything about it. It's considered to be ok.
 
     node_old = node7
@@ -464,8 +465,8 @@ def test_in_memory_alters(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query('''
-        CREATE TABLE index_compact(a UInt32, s String)
-        ENGINE = MergeTree ORDER BY a
+        CREATE TABLE index_compact(a UInt32, s String) 
+        ENGINE = MergeTree ORDER BY a 
         SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100''')
 
     node1.query("INSERT INTO index_compact SELECT number, toString(number) FROM numbers(100)")

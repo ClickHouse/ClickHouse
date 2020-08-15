@@ -12,14 +12,10 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace DB::GatherUtils
 {
-
-inline constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
-
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
@@ -677,10 +673,6 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             if (size >= 0)
             {
                 auto length = static_cast<size_t>(size);
-                if (length > MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                        length, MAX_ARRAY_SIZE);
-
                 if (array_size <= length)
                 {
                     writeSlice(array_source.getWhole(), sink);
@@ -693,10 +685,6 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             else
             {
                 auto length = static_cast<size_t>(-size);
-                if (length > MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                        length, MAX_ARRAY_SIZE);
-
                 if (array_size <= length)
                 {
                     for (size_t i = array_size; i < length; ++i)
@@ -726,10 +714,6 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         if (size >= 0)
         {
             auto length = static_cast<size_t>(size);
-            if (length > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                    length, MAX_ARRAY_SIZE);
-
             if (array_size <= length)
             {
                 writeSlice(array_source.getWhole(), sink);
@@ -742,10 +726,6 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         else
         {
             auto length = static_cast<size_t>(-size);
-            if (length > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
-                    length, MAX_ARRAY_SIZE);
-
             if (array_size <= length)
             {
                 for (size_t i = array_size; i < length; ++i)

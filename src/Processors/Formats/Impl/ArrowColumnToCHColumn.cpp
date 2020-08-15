@@ -50,7 +50,7 @@ namespace DB
             {arrow::Type::STRING, "String"},
             {arrow::Type::BINARY, "String"},
 
-            // TODO: add other types that are convertible to internal ones:
+            // TODO: add other types that are convertable to internal ones:
             // 0. ENUM?
             // 1. UUID -> String
             // 2. JSON -> String

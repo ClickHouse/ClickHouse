@@ -365,24 +365,18 @@ namespace
 
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
-                                                     const String & path_to_constraints,
-                                                     const std::function<void(const std::string_view &)> & check_setting_name_function)
+                                                     const String & path_to_constraints)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(path_to_constraints, keys);
-
         for (const String & setting_name : keys)
         {
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
-
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
-
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
@@ -396,14 +390,12 @@ namespace
             }
             profile_elements.push_back(std::move(profile_element));
         }
-
         return profile_elements;
     }
 
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
-        const String & profile_name,
-        const std::function<void(const std::string_view &)> & check_setting_name_function)
+        const String & profile_name)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -425,14 +417,11 @@ namespace
 
             if (key == "constraints" || key.starts_with("constraints["))
             {
-                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key, check_setting_name_function));
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
                 continue;
             }
 
             const auto & setting_name = key;
-            if (check_setting_name_function)
-                check_setting_name_function(setting_name);
-
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
             profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
@@ -443,10 +432,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseSettingsProfiles(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::function<void(const std::string_view &)> & check_setting_name_function,
-        Poco::Logger * log)
+    std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
@@ -455,7 +441,7 @@ namespace
         {
             try
             {
-                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+                profiles.push_back(parseSettingsProfile(config, profile_name));
             }
             catch (...)
             {
@@ -472,13 +458,6 @@ UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml
 }
 
 
-void UsersConfigAccessStorage::setCheckSettingNameFunction(
-    const std::function<void(const std::string_view &)> & check_setting_name_function_)
-{
-    check_setting_name_function = check_setting_name_function_;
-}
-
-
 void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
@@ -488,7 +467,7 @@ void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfig
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function, getLogger()))
+    for (const auto & entity : parseSettingsProfiles(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }

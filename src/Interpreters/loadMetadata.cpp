@@ -38,7 +38,6 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
-    interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
     interpreter.execute();
 }
@@ -71,16 +70,8 @@ static void loadDatabase(
         database_attach_query = "CREATE DATABASE " + backQuoteIfNeed(database);
     }
 
-    try
-    {
-        executeCreateQuery(database_attach_query, context, database,
-            database_metadata_file, force_restore_data);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("while loading database {} from path {}", backQuote(database), database_path));
-        throw;
-    }
+    executeCreateQuery(database_attach_query, context, database,
+                       database_metadata_file, force_restore_data);
 }
 
 
@@ -89,8 +80,6 @@ static void loadDatabase(
 
 void loadMetadata(Context & context, const String & default_database_name)
 {
-    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
-
     String path = context.getPath() + "metadata";
 
     /** There may exist 'force_restore_data' file, that means,
@@ -117,22 +106,6 @@ void loadMetadata(Context & context, const String & default_database_name)
                 if (db_name != SYSTEM_DATABASE)
                     databases.emplace(unescapeForFileName(db_name), path + "/" + db_name);
             }
-
-            /// Temporary fails may be left from previous server runs.
-            if (endsWith(it.name(), ".tmp"))
-            {
-                LOG_WARNING(log, "Removing temporary file {}", it->path());
-                try
-                {
-                    it->remove();
-                }
-                catch (...)
-                {
-                    /// It does not prevent server to startup.
-                    tryLogCurrentException(log);
-                }
-            }
-
             continue;
         }
 
