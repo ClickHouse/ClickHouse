@@ -1548,7 +1548,7 @@ Default value: `Empty`.
 
 ## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
 
-Allows using fields not found in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When field is not found in schema, uses default value instead of error.
+Enables using fields that are not specified in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When a field is not found in the schema, ClickHouse substitutes default value instead of throwing an exception.
 
 Possible values:
 
