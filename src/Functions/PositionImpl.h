@@ -243,7 +243,7 @@ struct PositionImpl
         UInt64 start_pos,
         UInt64 & res)
     {
-        auto start = std::max(start_pos, 1ul);
+        auto start = std::max(start_pos, UInt64(1));
 
         if (needle.size() == 0)
         {
@@ -311,7 +311,7 @@ struct PositionImpl
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), 1ul) : 1ul;
+            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
 
             if (start > haystack_size + 1)
             {
@@ -371,7 +371,7 @@ struct PositionImpl
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), 1ul) : 1ul;
+            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
 
             if (start > haystack.size() + 1)
             {
