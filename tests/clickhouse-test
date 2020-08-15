@@ -282,6 +282,10 @@ def run_tests_array(all_tests_with_params):
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
 
+                            if os.path.isfile(stdout_file):
+                                print(", result:\n")
+                                print(open(stdout_file).read())
+
                         elif stderr:
                             failures += 1
                             failures_chain += 1
