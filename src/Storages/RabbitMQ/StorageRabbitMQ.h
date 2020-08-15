@@ -55,6 +55,7 @@ public:
 
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
+    const auto & getSchemaName() const { return schema_name; }
 
     const String getExchange() const { return exchange_name; }
     bool checkBridge() const { return !exchange_removed.load(); }
@@ -74,6 +75,7 @@ protected:
             const String & exchange_name_,
             const String & format_name_,
             char row_delimiter_,
+            const String & schema_name_,
             const String & exchange_type_,
             size_t num_consumers_,
             size_t num_queues_,
@@ -92,6 +94,7 @@ private:
 
     const String format_name;
     char row_delimiter;
+    const String schema_name;
     size_t num_consumers;
     size_t num_created_consumers = 0;
     bool hash_exchange;

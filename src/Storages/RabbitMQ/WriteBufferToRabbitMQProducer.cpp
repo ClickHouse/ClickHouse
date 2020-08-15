@@ -186,7 +186,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
 
     producer_channel->onReady([&]()
     {
-        channel_id = channel_base + "_" +  channel_id_base + std::to_string(channel_id_counter++);
+        channel_id = channel_id_base + std::to_string(channel_id_counter++) + "_" + channel_base;
         LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
 
         if (use_txn)

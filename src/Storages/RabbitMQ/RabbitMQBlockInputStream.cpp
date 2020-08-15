@@ -22,8 +22,10 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
         , column_names(columns)
         , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
         , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-                    {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered"}, storage.getVirtuals(), storage.getStorageID()))
+                    {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id"}, storage.getVirtuals(), storage.getStorageID()))
 {
+    if (!storage.getSchemaName().empty())
+        context.setSetting("format_schema", storage.getSchemaName());
 }
 
 
@@ -131,6 +133,7 @@ Block RabbitMQBlockInputStream::readImpl()
             auto channel_id = buffer->getChannelID();
             auto delivery_tag = buffer->getDeliveryTag();
             auto redelivered = buffer->getRedelivered();
+            auto message_id = buffer->getMessageID();
 
             buffer->updateAckTracker({delivery_tag, channel_id});
 
@@ -140,6 +143,7 @@ Block RabbitMQBlockInputStream::readImpl()
                 virtual_columns[1]->insert(channel_id);
                 virtual_columns[2]->insert(delivery_tag);
                 virtual_columns[3]->insert(redelivered);
+                virtual_columns[4]->insert(message_id);
             }
 
             total_rows = total_rows + new_rows;
