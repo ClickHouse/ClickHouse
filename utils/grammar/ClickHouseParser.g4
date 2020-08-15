@@ -49,7 +49,7 @@ select_query_main
     select_groupby_step? select_having_step?
     select_orderby_step?
     select_limitby_step? select_limit_step?
-    select_settings_step?
+    settings_step?
  ;
 
 select_with_step
@@ -122,7 +122,7 @@ select_limitby_step
  : K_LIMIT NUMERIC_LITERAL K_BY not_empty_expression_list
  ;
 
-select_settings_step
+settings_step
  : K_SETTINGS assignment_list
  ;
 
@@ -143,7 +143,12 @@ create_query
  :  ( K_CREATE | K_ATTACH ) K_TEMPORARY?
             ( K_DATABASE ( K_IF K_NOT K_EXISTS ) ? database_name
             | K_TABLE ( K_IF K_NOT K_EXISTS ) ? full_table_name ( K_ON K_CLUSTER cluster_name ) ?
-               ( LPAREN column_declaration_list RPAREN engine ( K_AS select_query ) ? // если VIEW - то есть и колонки и select.
+               ( LPAREN column_declaration_list RPAREN engine ( K_AS select_query ) ?
+                    K_ORDER K_BY LPAREN order_by_expression_list RPAREN
+                    (K_PARTITION K_BY partitionExpr=expr)?
+                    (K_SAMPLE K_BY sampleExpr=expr)?
+                    table_ttl_list?
+                    settings_step?
                | engine K_AS (  select_query
                              |  full_table_name engine? // wtf
                              )
@@ -185,7 +190,7 @@ clickhouse_type
     | T_AGGREGATE_FUNCTION LPAREN function_name ( COMMA clickhouse_type ) * RPAREN
     | T_ARRAY LPAREN clickhouse_type RPAREN
     | T_TUPLE LPAREN clickhouse_type ( COMMA clickhouse_type ) * RPAREN
-    | T_NULLABLE LPAREN clickhouse_type LPAREN
+    | T_NULLABLE LPAREN clickhouse_type RPAREN
     ;
 
 simple_type
@@ -315,6 +320,14 @@ order_by_element
  : expression_with_optional_alias ( K_DESC | K_DESCENDING | K_ASC | K_ASCENDING ) ? ( K_NULLS ( K_FIRST | K_LAST ) ) ? ( K_COLLATE STRING_LITERAL ) ?
  ;
 
+table_ttl_list
+ :  K_TTL table_ttl_declaration ( COMMA table_ttl_declaration ) *
+ ;
+
+table_ttl_declaration
+ :  ttlExpr=expr (K_DELETE | K_TO K_DISK diskVal=STRING_LITERAL | K_TO K_VOLUME volumeVal=STRING_LITERAL)?
+ ;
+
 nested_table
  :   identifier LPAREN name_type_pair_list RPAREN
  ;
@@ -336,10 +349,7 @@ column_declaration_list
  ;
 
 column_declaration
- : column_name
-      ( ( K_DEFAULT | K_MATERIALIZED | K_ALIAS ) expr
-      | column_type
-      )
+ : column_name column_type (( K_DEFAULT | K_MATERIALIZED | K_ALIAS ) expr)? (K_CODEC(expr))? (K_TTL ttlExpr=expr)?
  ;
 
 column_name
@@ -581,4 +591,3 @@ err
      throw new RuntimeException("UNEXPECTED_CHAR=" + $UNEXPECTED_CHAR.text);
    }
  ;
-

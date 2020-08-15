@@ -1,4 +1,6 @@
-#if !defined(ARCADIA_BUILD)
+#include <Functions/abtesting.h>
+
+#if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
 #include <sstream>
@@ -9,7 +11,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/abtesting.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 
@@ -246,14 +247,14 @@ public:
         if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get()))
         {
             if (!col_const_arr)
-                throw Exception("Thrid argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             Array src_arr = col_const_arr->getValue<Array>();
 
             for (size_t i = 0; i < src_arr.size(); ++i)
             {
                 if (src_arr[i].getType() != Field::Types::String)
-                    throw Exception("Thrid argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception("Third argument for function " + getName() + " must be Array of constant strings", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 variant_names.push_back(src_arr[i].get<const String &>());
             }
         }
@@ -275,7 +276,7 @@ public:
         }
 
         if (variant_names.size() != xs.size() || xs.size() != ys.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doen't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments doesn't match: variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
 
         if (variant_names.size() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of arguments must be larger than 1. variant_names: {}, xs: {}, ys: {}", variant_names.size(), xs.size(), ys.size());
@@ -300,6 +301,19 @@ public:
 void registerFunctionBayesAB(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBayesAB>();
+}
+
+}
+
+#else
+
+namespace DB
+{
+
+class FunctionFactory;
+
+void registerFunctionBayesAB(FunctionFactory & /* factory */)
+{
 }
 
 }

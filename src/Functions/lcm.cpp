@@ -1,6 +1,28 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+
 #include <numeric>
+#include <limits>
+#include <type_traits>
+
+
+namespace
+{
+
+template <typename T>
+constexpr T abs(T value) noexcept
+{
+    if constexpr (std::is_signed_v<T>)
+    {
+        if (value >= 0 || value == std::numeric_limits<T>::min())
+            return value;
+        return -value;
+    }
+    else
+        return value;
+}
+
+}
 
 
 namespace DB
@@ -18,9 +40,22 @@ struct LCMImpl
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
-        return std::lcm(
-            typename NumberTraits::ToInteger<Result>::Type(a),
-            typename NumberTraits::ToInteger<Result>::Type(b));
+
+        /** It's tempting to use std::lcm function.
+          * But it has undefined behaviour on overflow.
+          * And assert in debug build.
+          * We need some well defined behaviour instead
+          * (example: throw an exception or overflow in implementation specific way).
+          */
+
+        using Int = typename NumberTraits::ToInteger<Result>::Type;
+        using Unsigned = std::make_unsigned_t<Int>;
+
+        Unsigned val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
+        Unsigned val2 = abs<Int>(b);
+
+        /// Overflow in implementation specific way.
+        return Result(val1 * val2);
     }
 
 #if USE_EMBEDDED_COMPILER

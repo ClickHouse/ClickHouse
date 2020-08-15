@@ -20,7 +20,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -115,7 +114,7 @@ void LocalServer::tryInitPath()
         if (path.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot work with emtpy storage path that is explicitly specified"
+                "Cannot work with empty storage path that is explicitly specified"
                 " by the --path option. Please check the program options and"
                 " correct the --path.");
         }
@@ -248,12 +247,15 @@ try
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
-    if (!context->getPath().empty())
+    String path = context->getPath();
+    if (!path.empty())
     {
         /// Lock path directory before read
         status.emplace(context->getPath() + "status", StatusFile::write_full_info);
 
-        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
+        LOG_DEBUG(log, "Loading metadata from {}", path);
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
         loadMetadataSystem(*context);
         attachSystemTables(*context);
         loadMetadata(*context);
