@@ -1,6 +1,4 @@
 #include <Access/IAccessStorage.h>
-#include <Access/User.h>
-#include <Access/Role.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -39,110 +37,71 @@ namespace
     }
 
 
-    template <typename Func, typename ResultType = std::result_of_t<Func()>>
-    ResultType doTry(const Func & func)
+    template <typename Func>
+    bool tryCall(const Func & function)
     {
         try
         {
-            return func();
+            function();
+            return true;
         }
-        catch (Exception &)
+        catch (...)
         {
-            return {};
+            return false;
         }
     }
 
 
-    template <bool ignore_errors, typename T, typename ApplyFunc, typename GetNameFunc = std::nullptr_t,
-              typename ResultTypeOfApplyFunc = std::result_of_t<ApplyFunc(T)>,
-              typename ResultType = std::conditional_t<std::is_same_v<ResultTypeOfApplyFunc, void>, void, std::vector<ResultTypeOfApplyFunc>>>
-    ResultType applyToMultipleEntities(
-        const std::vector<T> & multiple_entities,
-        const ApplyFunc & apply_function,
-        const char * error_message_format [[maybe_unused]] = nullptr,
-        const GetNameFunc & get_name_function [[maybe_unused]] = nullptr)
+    class ErrorsTracker
     {
-        std::optional<Exception> exception;
-        std::vector<bool> success;
+    public:
+        explicit ErrorsTracker(size_t count_) { succeed.reserve(count_); }
 
-        auto helper = [&](const auto & apply_and_store_result_function)
+        template <typename Func>
+        bool tryCall(const Func & func)
         {
-            for (size_t i = 0; i != multiple_entities.size(); ++i)
+            try
             {
-                try
-                {
-                    apply_and_store_result_function(multiple_entities[i]);
-                    if constexpr (!ignore_errors)
-                        success[i] = true;
-                }
-                catch (Exception & e)
-                {
-                    if (!ignore_errors && !exception)
-                        exception.emplace(e);
-                }
-                catch (Poco::Exception & e)
-                {
-                    if (!ignore_errors && !exception)
-                        exception.emplace(Exception::CreateFromPocoTag{}, e);
-                }
-                catch (std::exception & e)
-                {
-                    if (!ignore_errors && !exception)
-                        exception.emplace(Exception::CreateFromSTDTag{}, e);
-                }
+                func();
             }
-        };
-
-        if constexpr (std::is_same_v<ResultType, void>)
-        {
-            if (multiple_entities.empty())
-                return;
-
-            if (multiple_entities.size() == 1)
+            catch (Exception & e)
             {
-                apply_function(multiple_entities.front());
-                return;
+                if (!exception)
+                    exception.emplace(e);
+                succeed.push_back(false);
+                return false;
             }
-
-            if constexpr (!ignore_errors)
-                success.resize(multiple_entities.size(), false);
-
-            helper(apply_function);
-
-            if (ignore_errors || !exception)
-                return;
-        }
-        else
-        {
-            ResultType result;
-            if (multiple_entities.empty())
-                return result;
-
-            if (multiple_entities.size() == 1)
+            catch (Poco::Exception & e)
             {
-                result.emplace_back(apply_function(multiple_entities.front()));
-                return result;
+                if (!exception)
+                    exception.emplace(Exception::CreateFromPocoTag{}, e);
+                succeed.push_back(false);
+                return false;
             }
-
-            result.reserve(multiple_entities.size());
-            if constexpr (!ignore_errors)
-                success.resize(multiple_entities.size(), false);
-
-            helper([&](const T & entity) { result.emplace_back(apply_function(entity)); });
-
-            if (ignore_errors || !exception)
-                return result;
+            catch (std::exception & e)
+            {
+                if (!exception)
+                    exception.emplace(Exception::CreateFromSTDTag{}, e);
+                succeed.push_back(false);
+                return false;
+            }
+            succeed.push_back(true);
+            return true;
         }
 
-        if constexpr (!ignore_errors)
+        bool errors() const { return exception.has_value(); }
+
+        void showErrors(const char * format, const std::function<String(size_t)> & get_name_function)
         {
+            if (!exception)
+                return;
+
             Strings succeeded_names_list;
             Strings failed_names_list;
-            for (size_t i = 0; i != multiple_entities.size(); ++i)
+            for (size_t i = 0; i != succeed.size(); ++i)
             {
-                const auto & entity = multiple_entities[i];
-                String name = get_name_function(entity);
-                if (success[i])
+                String name = get_name_function(i);
+                if (succeed[i])
                     succeeded_names_list.emplace_back(name);
                 else
                     failed_names_list.emplace_back(name);
@@ -152,14 +111,17 @@ namespace
             if (succeeded_names.empty())
                 succeeded_names = "none";
 
-            String error_message = error_message_format;
+            String error_message = format;
             boost::replace_all(error_message, "{succeeded_names}", succeeded_names);
             boost::replace_all(error_message, "{failed_names}", failed_names);
             exception->addMessage(error_message);
             exception->rethrow();
         }
-        __builtin_unreachable();
-    }
+
+    private:
+        std::vector<bool> succeed;
+        std::optional<Exception> exception;
+    };
 }
 
 
@@ -216,7 +178,11 @@ bool IAccessStorage::exists(const UUID & id) const
 
 AccessEntityPtr IAccessStorage::tryReadBase(const UUID & id) const
 {
-    return doTry([&] { return readImpl(id); });
+    AccessEntityPtr entity;
+    auto func = [&] { entity = readImpl(id); };
+    if (!tryCall(func))
+        return nullptr;
+    return entity;
 }
 
 
@@ -228,7 +194,11 @@ String IAccessStorage::readName(const UUID & id) const
 
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
-    return doTry([&] { return std::optional<String>{readNameImpl(id)}; });
+    String name;
+    auto func = [&] { name = readNameImpl(id); };
+    if (!tryCall(func))
+        return {};
+    return name;
 }
 
 
@@ -240,41 +210,77 @@ UUID IAccessStorage::insert(const AccessEntityPtr & entity)
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities)
 {
-    return applyToMultipleEntities</* ignore_errors = */ false>(
-        multiple_entities,
-        [this](const AccessEntityPtr & entity) { return insertImpl(entity, /* replace_if_exists = */ false); },
-        "Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}",
-        [](const AccessEntityPtr & entity) { return entity->outputTypeAndName(); });
+    ErrorsTracker tracker(multiple_entities.size());
+
+    std::vector<UUID> ids;
+    for (const auto & entity : multiple_entities)
+    {
+        UUID id;
+        auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ false); };
+        if (tracker.tryCall(func))
+            ids.push_back(id);
+    }
+
+    if (tracker.errors())
+    {
+        auto get_name_function = [&](size_t i) { return multiple_entities[i]->outputTypeAndName(); };
+        tracker.showErrors("Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}", get_name_function);
+    }
+
+    return ids;
 }
 
 
 std::optional<UUID> IAccessStorage::tryInsert(const AccessEntityPtr & entity)
 {
-    return doTry([&] { return std::optional<UUID>{insertImpl(entity, false)}; });
+    UUID id;
+    auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ false); };
+    if (!tryCall(func))
+        return {};
+    return id;
 }
 
 
 std::vector<UUID> IAccessStorage::tryInsert(const std::vector<AccessEntityPtr> & multiple_entities)
 {
-    return applyToMultipleEntities</* ignore_errors = */ true>(
-        multiple_entities,
-        [this](const AccessEntityPtr & entity) { return insertImpl(entity, /* replace_if_exists = */ false); });
+    std::vector<UUID> ids;
+    for (const auto & entity : multiple_entities)
+    {
+        UUID id;
+        auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ false); };
+        if (tryCall(func))
+            ids.push_back(id);
+    }
+    return ids;
 }
 
 
 UUID IAccessStorage::insertOrReplace(const AccessEntityPtr & entity)
 {
-    return insertImpl(entity, true);
+    return insertImpl(entity, /* replace_if_exists = */ true);
 }
 
 
 std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities)
 {
-    return applyToMultipleEntities</* ignore_errors = */ false>(
-        multiple_entities,
-        [this](const AccessEntityPtr & entity) { return insertImpl(entity, /* replace_if_exists = */ true); },
-        "Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}",
-        [](const AccessEntityPtr & entity) -> String { return entity->outputTypeAndName(); });
+    ErrorsTracker tracker(multiple_entities.size());
+
+    std::vector<UUID> ids;
+    for (const auto & entity : multiple_entities)
+    {
+        UUID id;
+        auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ true); };
+        if (tracker.tryCall(func))
+            ids.push_back(id);
+    }
+
+    if (tracker.errors())
+    {
+        auto get_name_function = [&](size_t i) { return multiple_entities[i]->outputTypeAndName(); };
+        tracker.showErrors("Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}", get_name_function);
+    }
+
+    return ids;
 }
 
 
@@ -286,25 +292,39 @@ void IAccessStorage::remove(const UUID & id)
 
 void IAccessStorage::remove(const std::vector<UUID> & ids)
 {
-    applyToMultipleEntities</* ignore_errors = */ false>(
-        ids,
-        [this](const UUID & id) { removeImpl(id); },
-        "Couldn't remove {failed_names}. Successfully removed: {succeeded_names}",
-        [this](const UUID & id) { return outputTypeAndNameOrID(*this, id); });
+    ErrorsTracker tracker(ids.size());
+
+    for (const auto & id : ids)
+    {
+        auto func = [&] { removeImpl(id); };
+        tracker.tryCall(func);
+    }
+
+    if (tracker.errors())
+    {
+        auto get_name_function = [&](size_t i) { return outputTypeAndNameOrID(*this, ids[i]); };
+        tracker.showErrors("Couldn't remove {failed_names}. Successfully removed: {succeeded_names}", get_name_function);
+    }
 }
 
 
 bool IAccessStorage::tryRemove(const UUID & id)
 {
-    return doTry([&] { removeImpl(id); return true; });
+    auto func = [&] { removeImpl(id); };
+    return tryCall(func);
 }
 
 
 std::vector<UUID> IAccessStorage::tryRemove(const std::vector<UUID> & ids)
 {
-    return applyToMultipleEntities</* ignore_errors = */ true>(
-        ids,
-        [this](const UUID & id) { removeImpl(id); return id; });
+    std::vector<UUID> removed_ids;
+    for (const auto & id : ids)
+    {
+        auto func = [&] { removeImpl(id); };
+        if (tryCall(func))
+            removed_ids.push_back(id);
+    }
+    return removed_ids;
 }
 
 
@@ -316,25 +336,39 @@ void IAccessStorage::update(const UUID & id, const UpdateFunc & update_func)
 
 void IAccessStorage::update(const std::vector<UUID> & ids, const UpdateFunc & update_func)
 {
-    applyToMultipleEntities</* ignore_errors = */ false>(
-        ids,
-        [this, &update_func](const UUID & id) { updateImpl(id, update_func); },
-        "Couldn't update {failed_names}. Successfully updated: {succeeded_names}",
-        [this](const UUID & id) { return outputTypeAndNameOrID(*this, id); });
+    ErrorsTracker tracker(ids.size());
+
+    for (const auto & id : ids)
+    {
+        auto func = [&] { updateImpl(id, update_func); };
+        tracker.tryCall(func);
+    }
+
+    if (tracker.errors())
+    {
+        auto get_name_function = [&](size_t i) { return outputTypeAndNameOrID(*this, ids[i]); };
+        tracker.showErrors("Couldn't update {failed_names}. Successfully updated: {succeeded_names}", get_name_function);
+    }
 }
 
 
 bool IAccessStorage::tryUpdate(const UUID & id, const UpdateFunc & update_func)
 {
-    return doTry([&] { updateImpl(id, update_func); return true; });
+    auto func = [&] { updateImpl(id, update_func); };
+    return tryCall(func);
 }
 
 
 std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const UpdateFunc & update_func)
 {
-    return applyToMultipleEntities</* ignore_errors = */ true>(
-        ids,
-        [this, &update_func](const UUID & id) { updateImpl(id, update_func); return id; });
+    std::vector<UUID> updated_ids;
+    for (const auto & id : ids)
+    {
+        auto func = [&] { updateImpl(id, update_func); };
+        if (tryCall(func))
+            updated_ids.push_back(id);
+    }
+    return updated_ids;
 }
 
 

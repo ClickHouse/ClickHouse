@@ -7,11 +7,19 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
-            .preserves_distinct_columns = false
+        {
+            .preserves_distinct_columns = false,
+            .returns_single_stream = true,
+            .preserves_number_of_streams = false,
+            .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = false,
+        }
     };
 }
 
@@ -36,7 +44,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
 {
     if (!memory_efficient_aggregation)
     {
-        /// We union several sources into one, parallelizing the work.
+        /// We union several sources into one, paralleling the work.
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
@@ -51,16 +59,13 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
                                  ? static_cast<size_t>(memory_efficient_merge_threads)
                                  : static_cast<size_t>(max_threads);
 
-        auto pipe = createMergingAggregatedMemoryEfficientPipe(
-                pipeline.getHeader(),
-                params,
-                pipeline.getNumStreams(),
-                num_merge_threads);
-
-        pipeline.addPipe(std::move(pipe));
+        pipeline.addMergingAggregatedMemoryEfficientTransform(params, num_merge_threads);
     }
+}
 
-    pipeline.enableQuotaForCurrentStreams();
+void MergingAggregatedStep::describeActions(FormatSettings & settings) const
+{
+    return params->params.explain(settings.out, settings.offset);
 }
 
 }

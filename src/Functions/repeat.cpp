@@ -28,6 +28,14 @@ struct RepeatImpl
                 ErrorCodes::TOO_LARGE_STRING_SIZE);
     }
 
+    static inline void checkStringSize(UInt64 size)
+    {
+        static constexpr UInt64 max_string_size = 1 << 30;
+        if (size > max_string_size)
+            throw Exception("Too large string size (" + std::to_string(size) + ") in function repeat, maximum is: " + std::to_string(max_string_size),
+                ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
+
     static void vectorStrConstRepeat(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -41,7 +49,10 @@ struct RepeatImpl
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
-            data_size += (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;   /// Note that accessing -1th element is valid for PaddedPODArray.
+            /// Note that accessing -1th element is valid for PaddedPODArray.
+            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;
+            checkStringSize(repeated_size);
+            data_size += repeated_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
@@ -63,7 +74,9 @@ struct RepeatImpl
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            data_size += (offsets[i] - offsets[i - 1] - 1) * col_num[i] + 1;
+            size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * col_num[i] + 1;
+            checkStringSize(repeated_size);
+            data_size += repeated_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
@@ -89,7 +102,9 @@ struct RepeatImpl
         UInt64 col_size = col_num.size();
         for (UInt64 i = 0; i < col_size; ++i)
         {
-            data_size += str_size * col_num[i] + 1;
+            size_t repeated_size = str_size * col_num[i] + 1;
+            checkStringSize(repeated_size);
+            data_size += repeated_size;
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
@@ -147,7 +162,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const auto & strcolumn = block.getByPosition(arguments[0]).column;
         const auto & numcolumn = block.getByPosition(arguments[1]).column;

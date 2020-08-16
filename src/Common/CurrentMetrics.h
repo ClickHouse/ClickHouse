@@ -52,7 +52,7 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
-    /// For lifetime of object, add amout for specified metric. Then subtract.
+    /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {
     private:

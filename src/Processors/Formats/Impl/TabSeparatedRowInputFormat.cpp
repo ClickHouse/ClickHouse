@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/TabSeparatedRawRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -139,16 +140,24 @@ void TabSeparatedRowInputFormat::readPrefix()
         if (format_settings.with_names_use_header)
         {
             String column_name;
-            do
+            for (;;)
             {
                 readEscapedString(column_name, in);
-                addInputColumn(column_name);
+                if (!checkChar('\t', in))
+                {
+                    /// Check last column for \r before adding it, otherwise an error will be:
+                    ///     "Unknown field found in TSV header"
+                    checkForCarriageReturn(in);
+                    addInputColumn(column_name);
+                    break;
+                }
+                else
+                    addInputColumn(column_name);
             }
-            while (checkChar('\t', in));
+
 
             if (!in.eof())
             {
-                checkForCarriageReturn(in);
                 assertChar('\n', in);
             }
         }
@@ -357,6 +366,18 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, false, false, settings);
+        });
+    }
+
+    for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
+    {
+        factory.registerInputFormatProcessor(name, [](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<TabSeparatedRawRowInputFormat>(sample, buf, params, false, false, settings);
         });
     }
 

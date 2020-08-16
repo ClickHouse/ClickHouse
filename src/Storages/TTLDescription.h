@@ -43,7 +43,7 @@ struct TTLDescription
     ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
 
-    /// Expresion actions evaluated from AST
+    /// Expression actions evaluated from AST
     ExpressionActionsPtr expression;
 
     /// Result column of this TTL expression
@@ -101,6 +101,10 @@ struct TTLTableDescription
 
     /// Moving data TTL (to other disks or volumes)
     TTLDescriptions move_ttl;
+
+    TTLTableDescription() = default;
+    TTLTableDescription(const TTLTableDescription & other);
+    TTLTableDescription & operator=(const TTLTableDescription & other);
 
     static TTLTableDescription getTTLForTableFromAST(
         const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context, const KeyDescription & primary_key);

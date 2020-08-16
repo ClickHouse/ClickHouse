@@ -26,12 +26,11 @@ struct DivideIntegralByConstantImpl
 
     static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
-        if (unlikely(b == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
+        /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
+        /// And signed integer overflow is well defined in C++20.
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
@@ -39,7 +38,19 @@ struct DivideIntegralByConstantImpl
             return;
         }
 
+        /// Division with too large divisor.
+        if (unlikely(b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        {
+            for (size_t i = 0; i < size; ++i)
+                c_pos[i] = 0;
+            return;
+        }
+
 #pragma GCC diagnostic pop
+
+        if (unlikely(static_cast<A>(b) == 0))
+            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         libdivide::divider<A> divider(b);
 
