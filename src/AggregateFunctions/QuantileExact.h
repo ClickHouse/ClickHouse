@@ -250,15 +250,16 @@ struct QuantileExactLow : public QuantileExact<Value>
             size_t n = level < 1 ? level * array.size() : (array.size() - 1);
             // if level is 0.5 then compute the "low" median of the sorted array
             // by the method of rounding.
-            if (level == 0.5) {
+            if (level == 0.5)
+            {
                 auto s = array.size();
                 if (s % 2 == 1)
                 {
-                    return array[static_cast<size_t>(floor(s/2))];
+                    return array[static_cast<size_t>(floor(s / 2))];
                 }
                 else
                 {
-                    return array[static_cast<size_t>((floor(s/2))-1)];
+                    return array[static_cast<size_t>((floor(s / 2)) - 1)];
                 }
             }
             // else quantile is the nth index of the sorted array obtained by multiplying
@@ -281,15 +282,16 @@ struct QuantileExactLow : public QuantileExact<Value>
                 size_t n = level < 1 ? level * array.size() : (array.size() - 1);
                 // if level is 0.5 then compute the "low" median of the sorted array
                 // by the method of rounding.
-                if (level == 0.5) {
+                if (level == 0.5)
+                {
                     auto s = array.size();
                     if (s % 2 == 1)
                     {
-                        result[indices[i]] = array[static_cast<size_t>(floor(s/2))];
+                        result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
                     }
                     else
                     {
-                        result[indices[i]] = array[static_cast<size_t>(floor((s/2)-1))];
+                        result[indices[i]] = array[static_cast<size_t>(floor((s / 2) - 1))];
                     }
                 }
                 // else quantile is the nth index of the sorted array obtained by multiplying
@@ -322,9 +324,10 @@ struct QuantileExactHigh : public QuantileExact<Value>
             size_t n = level < 1 ? level * array.size() : (array.size() - 1);
             // if level is 0.5 then compute the "high" median of the sorted array
             // by the method of rounding.
-            if (level == 0.5){
+            if (level == 0.5)
+            {
                 auto s = array.size();
-                return array[static_cast<size_t>(floor(s/ 2))];
+                return array[static_cast<size_t>(floor(s / 2))];
             }
             // else quantile is the nth index of the sorted array obtained by multiplying
             // level and size of array. Example if level = 0.1 and size of array is 10.
@@ -345,9 +348,10 @@ struct QuantileExactHigh : public QuantileExact<Value>
                 size_t n = level < 1 ? level * array.size() : (array.size() - 1);
                 // if level is 0.5 then compute the "high" median of the sorted array
                 // by the method of rounding.
-                if (level == 0.5) {
+                if (level == 0.5)
+                {
                     auto s = array.size();
-                    result[indices[i]] = array[static_cast<size_t>(floor(s/2))];
+                    result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
                 }
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10.
