@@ -31,7 +31,7 @@ enum class ExtractAllGroupsResultKind
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
- * Depending on `Impl::Kind`, result is either grouped by grop id (Horizontal) or in order of appearance (Vertical):
+ * Depending on `Impl::Kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
  *
  *  SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
  * =>
@@ -69,7 +69,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
@@ -82,7 +82,8 @@ public:
             throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         using StringPiece = typename Regexps::Regexp::StringPieceType;
-        const auto & regexp = Regexps::get<false, false>(needle)->getRE2();
+        auto holder = Regexps::get<false, false>(needle);
+        const auto & regexp = holder->getRE2();
 
         if (!regexp)
             throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);

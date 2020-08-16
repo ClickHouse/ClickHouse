@@ -143,7 +143,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).publish(to);
     }
@@ -395,7 +395,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).publish(to);
     }

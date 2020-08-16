@@ -223,9 +223,9 @@ void checkForUserSettingsAtTopLevel(const Poco::Util::AbstractConfiguration & co
         return;
 
     Settings settings;
-    for (const auto & setting : settings)
+    for (const auto & setting : settings.all())
     {
-        std::string name = setting.getName().toString();
+        const auto & name = setting.getName();
         if (config.has(name))
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
@@ -295,7 +295,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     /** Context contains all that query execution is dependent:
-      *  settings, available functions, data types, aggregate functions, databases...
+      *  settings, available functions, data types, aggregate functions, databases, ...
       */
     auto shared_context = Context::createShared();
     auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
@@ -378,7 +378,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
-    StatusFile status{path + "status"};
+    StatusFile status{path + "status", StatusFile::write_full_info};
 
     SCOPE_EXIT({
         /** Ask to cancel background jobs all table engines,
@@ -431,6 +431,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
+    /// Initialize global thread pool
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     /// Storage with temporary data for processing of heavy queries.
     {
@@ -466,6 +468,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     {
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
+
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         Poco::File(path + "metadata_dropped/").createDirectories();
     }
@@ -541,6 +546,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+            global_context->setExternalAuthenticatorsConfig(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -566,6 +572,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (users_config_path != config_path)
         checkForUsersNotInMainConfig(config(), config_path, users_config_path, log);
+
+    if (config().has("custom_settings_prefixes"))
+        global_context->getAccessControlManager().setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
     auto users_config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
@@ -638,6 +647,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
+    /// Check sanity of MergeTreeSettings on server startup
+    global_context->getMergeTreeSettings().sanityCheck(settings);
+
     /// Limit on total memory usage
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
 
@@ -647,12 +659,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to {}", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+            " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
     }
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+            " because the system has low amount of memory. The amount was"
+            " calculated as {} available"
+            " * {:.2f} max_server_memory_usage_to_ram_ratio",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
     }
 
     total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
@@ -769,7 +791,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
     {
-        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_priority' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
             " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep {}'."
             " Note that it will not work on 'nosuid' mounted filesystems.",
@@ -849,7 +871,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         };
 
         /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
+        AsynchronousMetrics async_metrics(*global_context,
+            config().getUInt("asynchronous_metrics_update_period_s", 60));
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)

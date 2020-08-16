@@ -10,6 +10,7 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+/// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
 public:
@@ -28,6 +29,9 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings &) const override;
+    void describePipeline(FormatSettings & settings) const override;
+
 private:
     Aggregator::Params params;
     bool final;
@@ -39,6 +43,13 @@ private:
 
     InputOrderInfoPtr group_by_info;
     SortDescription group_by_sort_description;
+
+    Processors aggregating_in_order;
+    Processors aggregating_sorted;
+    Processors finalizing;
+
+    Processors aggregating;
+
 };
 
 }

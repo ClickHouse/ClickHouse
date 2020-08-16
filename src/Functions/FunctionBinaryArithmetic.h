@@ -349,7 +349,7 @@ struct DecimalBinaryOperation
     }
 
 private:
-    /// there's implicit type convertion here
+    /// there's implicit type conversion here
     static NativeResultType apply(NativeResultType a, NativeResultType b)
     {
         if constexpr (can_overflow && _check_overflow)
@@ -506,10 +506,11 @@ public:
         /// greatest(Date, Date) -> Date
         Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastBaseImpl<T0, T1>> || std::is_same_v<Op, GreatestBaseImpl<T0, T1>>),
             LeftDataType>,
-        /// Date % Int32 -> int32
+        /// Date % Int32 -> Int32
+        /// Date % Float -> Float64
         Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
-            Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeInt32>>>>;
+            Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
 };
 
 
@@ -862,7 +863,7 @@ public:
         return type_res;
     }
 
-    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
 
@@ -940,7 +941,7 @@ public:
     }
 
     template <typename A, typename B>
-    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right)
+    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -1073,7 +1074,7 @@ public:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
@@ -1096,8 +1097,10 @@ public:
             return;
         }
 
-        auto * left_generic = block.getByPosition(arguments[0]).type.get();
-        auto * right_generic = block.getByPosition(arguments[1]).type.get();
+        const auto & left_argument = block.getByPosition(arguments[0]);
+        const auto & right_argument = block.getByPosition(arguments[1]);
+        auto * left_generic = left_argument.type.get();
+        auto * right_generic = right_argument.type.get();
         bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
@@ -1112,8 +1115,17 @@ public:
             else
                 return executeNumeric(block, arguments, result, left, right);
         });
+
         if (!valid)
-            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
+        {
+            // This is a logical error, because the types should have been checked
+            // by getReturnTypeImpl().
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Arguments of '{}' have incorrect data types: '{}' of type '{}',"
+                " '{}' of type '{}'", getName(),
+                left_argument.name, left_argument.type->getName(),
+                right_argument.name, right_argument.type->getName());
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

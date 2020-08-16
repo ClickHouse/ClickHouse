@@ -28,6 +28,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_in("IN");
     ParserKeyword s_not("NOT");
     ParserKeyword s_like("LIKE");
+    ParserKeyword s_ilike("ILIKE");
     ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
@@ -53,8 +54,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (s_not.ignore(pos, expected))
             query->not_like = true;
 
-        if (s_like.ignore(pos, expected))
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
         {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
             if (!like_p.parse(pos, like, expected))
                 return false;
         }
@@ -98,8 +102,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (s_not.ignore(pos, expected))
             query->not_like = true;
 
-        if (s_like.ignore(pos, expected))
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
         {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
             if (!like_p.parse(pos, like, expected))
                 return false;
         }
@@ -119,6 +126,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     tryGetIdentifierNameInto(database, query->from);
+
     if (like)
         query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
 

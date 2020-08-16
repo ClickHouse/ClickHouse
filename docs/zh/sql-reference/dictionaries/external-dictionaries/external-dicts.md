@@ -19,7 +19,7 @@ ClickHouse:
 
 字典可以在服务器启动或首次使用时加载，具体取决于 [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 设置。
 
-该 [字典](../../../operations/system-tables.md#system_tables-dictionaries) 系统表包含有关在服务器上配置的字典的信息。 对于每个字典，你可以在那里找到:
+该 [字典](../../../operations/system-tables/dictionaries.md#system_tables-dictionaries) 系统表包含有关在服务器上配置的字典的信息。 对于每个字典，你可以在那里找到:
 
 -   字典的状态。
 -   配置参数。

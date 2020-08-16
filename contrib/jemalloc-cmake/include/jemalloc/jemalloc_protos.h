@@ -1,3 +1,13 @@
+// OSX does not have this for system alloc functions, so you will get
+// "exception specification in declaration" error.
+#if defined(__APPLE__) || defined(__FreeBSD__)
+# undef JEMALLOC_NOTHROW
+# define JEMALLOC_NOTHROW
+
+# undef JEMALLOC_CXX_THROW
+# define JEMALLOC_CXX_THROW
+#endif
+
 /*
  * The je_ prefix on the following public symbol declarations is an artifact
  * of namespace management, and should be omitted in application code unless

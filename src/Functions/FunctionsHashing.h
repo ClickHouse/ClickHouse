@@ -40,6 +40,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TargetSpecific.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
 
@@ -347,7 +349,7 @@ struct MurmurHash3Impl128
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
-///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
+///  but obtain the same result as it is done in signed integers with two's complement arithmetic.
 struct JavaHashImpl
 {
     static constexpr auto name = "javaHash";
@@ -482,7 +484,7 @@ struct ImplXxHash32
     static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
-      *  non-reproducable from outside of CH.
+      *  non-reproducible from outside of CH.
       *
       *  Proper way of combining several input is to use streaming mode of hash function
       *  https://github.com/Cyan4973/xxHash/issues/114#issuecomment-334908566
@@ -505,7 +507,7 @@ struct ImplXxHash64
 
     /*
        With current implementation with more than 1 arguments it will give the results
-       non-reproducable from outside of CH. (see comment on ImplXxHash32).
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
      */
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
@@ -531,7 +533,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -540,7 +542,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -565,6 +567,22 @@ public:
 
             block.getByPosition(result).column = std::move(col_to);
         }
+        else if (
+            const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+        {
+            auto col_to = ColumnFixedString::create(Impl::length);
+            const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
+            const auto size = col_from_fix->size();
+            auto & chars_to = col_to->getChars();
+            const auto length = col_from_fix->getN();
+            chars_to.resize(size * Impl::length);
+            for (size_t i = 0; i < size; ++i)
+            {
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+            }
+            block.getByPosition(result).column = std::move(col_to);
+        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + getName(),
@@ -573,18 +591,19 @@ public:
 };
 
 
+DECLARE_MULTITARGET_CODE(
+
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -625,7 +644,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
         WhichDataType which(from_type);
@@ -646,19 +665,52 @@ public:
     }
 };
 
+) // DECLARE_MULTITARGET_CODE
+
+template <typename Impl, typename Name>
+class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
+{
+public:
+    explicit FunctionIntHash(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::AVX512F,
+            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionIntHash>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
+
+DECLARE_MULTITARGET_CODE(
 
 template <typename Impl>
 class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType, bool first>
-    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
@@ -713,7 +765,7 @@ private:
     }
 
     template <bool first>
-    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
@@ -727,7 +779,7 @@ private:
     }
 
     template <bool first>
-    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
@@ -790,7 +842,7 @@ private:
     }
 
     template <bool first>
-    void executeArray(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeArray(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
@@ -840,7 +892,7 @@ private:
     }
 
     template <bool first>
-    void executeAny(const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to)
+    void executeAny(const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
 
@@ -865,7 +917,7 @@ private:
             executeGeneric<first>(icolumn, vec_to);
     }
 
-    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
+    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -913,7 +965,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -937,6 +989,39 @@ public:
 
         block.getByPosition(result).column = std::move(col_to);
     }
+};
+
+) // DECLARE_MULTITARGET_CODE
+
+template <typename Impl>
+class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl>
+{
+public:
+    explicit FunctionAnyHash(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionAnyHash<Impl>>();
+
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionAnyHash<Impl>>();
+        selector.registerImplementation<TargetArch::AVX512F,
+            TargetSpecific::AVX512F::FunctionAnyHash<Impl>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionAnyHash>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 
@@ -1048,7 +1133,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 

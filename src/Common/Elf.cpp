@@ -2,6 +2,7 @@
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>
+#include <common/unaligned.h>
 
 #include <string.h>
 
@@ -135,7 +136,7 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 
     while (nhdr_pos < nhdr_end)
     {
-        const ElfNhdr & nhdr = *reinterpret_cast<const ElfNhdr *>(nhdr_pos);
+        ElfNhdr nhdr = unalignedLoad<ElfNhdr>(nhdr_pos);
 
         nhdr_pos += sizeof(ElfNhdr) + nhdr.n_namesz;
         if (nhdr.n_type == NT_GNU_BUILD_ID)

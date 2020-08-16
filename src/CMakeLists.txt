@@ -73,6 +73,10 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (USE_AMQPCPP)
+    add_headers_and_sources(dbms Storages/RabbitMQ)
+endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
@@ -136,12 +140,15 @@ endmacro()
 
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_core Core)
+add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_databases Databases)
+add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
+add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
@@ -262,6 +269,9 @@ if (USE_RDKAFKA)
     endif()
 endif()
 
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PUBLIC amqp-cpp)
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -278,6 +288,7 @@ dbms_target_link_libraries (
         clickhouse_parsers
         lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         ${MYSQLXX_LIBRARY}
@@ -324,7 +335,7 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif ()
 
 if (USE_LDAP)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIR})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIRS})
     dbms_target_link_libraries (PRIVATE ${OPENLDAP_LIBRARIES})
 endif ()
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
@@ -362,7 +373,14 @@ endif()
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
-target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
+if (USE_MSGPACK)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
+endif()
+
+if (USE_ORC)
+    dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
+endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

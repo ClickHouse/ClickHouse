@@ -1,6 +1,7 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
     ConnectionParameters.cpp
+    QueryFuzzer.cpp
     Suggest.cpp
 )
 
@@ -16,7 +17,6 @@ set (CLICKHOUSE_CLIENT_LINK
 )
 
 # Always use internal readpassphrase
-add_subdirectory(readpassphrase)
 list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 clickhouse_program_add(client)

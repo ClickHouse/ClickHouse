@@ -1,15 +1,20 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -298,7 +303,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 
     addNodesToCastResult(result_type, expression, null_as_default);
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression, literals.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(expression, literals.getNamesAndTypesList());
     result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
 }

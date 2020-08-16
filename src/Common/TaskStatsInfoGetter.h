@@ -18,7 +18,7 @@ public:
 
     void getStat(::taskstats & out_stats, pid_t tid) const;
 
-    /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
+    /// Whether the current process has permissions (sudo or cap_net_admin capabilities) to get taskstats info
     static bool checkPermissions();
 
 #if defined(OS_LINUX)

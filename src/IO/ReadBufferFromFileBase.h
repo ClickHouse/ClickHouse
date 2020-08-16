@@ -17,7 +17,6 @@ class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>
 public:
     ReadBufferFromFileBase();
     ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
-    ReadBufferFromFileBase(ReadBufferFromFileBase &&) = default;
     ~ReadBufferFromFileBase() override;
     virtual std::string getFileName() const = 0;
 

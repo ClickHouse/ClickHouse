@@ -1,4 +1,4 @@
-set send_logs_level = 'none';
+set send_logs_level = 'fatal';
 
 drop table if exists ttl;
 

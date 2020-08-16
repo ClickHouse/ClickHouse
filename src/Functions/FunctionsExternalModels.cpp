@@ -4,8 +4,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <string>
@@ -71,7 +69,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     const auto * name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
     if (!name_col)
