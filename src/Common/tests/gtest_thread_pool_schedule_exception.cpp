@@ -1,7 +1,6 @@
 #include <iostream>
 #include <stdexcept>
 #include <Common/ThreadPool.h>
-#include <Poco/Event.h>
 
 #include <gtest/gtest.h>
 
