@@ -27,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_MUTATION_COMMAND;
@@ -92,8 +93,11 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
 
         case MutationCommand::DELETE:
         {
-            auto predicate_ast = command.predicate->clone();
-            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
+            if (command.predicate)
+            {
+                auto predicate_ast = command.predicate->clone();
+                FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
+            }
 
             return finder_data.nondeterministic_function_name;
         }
@@ -105,7 +109,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
     return {};
 }
 
-ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, const Context & context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
     /// The result can differ from the number of affected rows (e.g. if there is an UPDATE command that
@@ -123,7 +127,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
     std::vector<ASTPtr> conditions;
     for (const MutationCommand & command : commands)
     {
-        ASTPtr condition = command.getPartitionAndPredicate();
+        ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context);
         if (condition)
             conditions.emplace_back(std::move(condition));
     }
@@ -165,8 +169,9 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
 
 }
 
+
 bool isStorageTouchedByMutations(
-    StoragePtr storage,
+    const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     Context context_copy)
@@ -180,6 +185,9 @@ bool isStorageTouchedByMutations(
     {
         if (!command.predicate) /// The command touches all rows.
             return true;
+
+        if (command.partition && !storage_from_merge_tree_data_part)
+            throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
 
         if (command.partition && storage_from_merge_tree_data_part)
         {
@@ -197,7 +205,7 @@ bool isStorageTouchedByMutations(
     context_copy.setSetting("max_streams_to_max_threads_ratio", 1);
     context_copy.setSetting("max_threads", 1);
 
-    ASTPtr select_query = prepareQueryAffectedAST(commands);
+    ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
     /// Interpreter must be alive, when we use result of execute() method.
     /// For some reason it may copy context and and give it into ExpressionBlockInputStream
@@ -214,8 +222,44 @@ bool isStorageTouchedByMutations(
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
-
 }
+
+
+ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
+    const MutationCommand & command,
+    const StoragePtr & storage,
+    const Context & context
+)
+{
+    ASTPtr result;
+    if (command.partition)
+    {
+        String partition_id;
+
+        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        if (storage_merge_tree)
+            partition_id = storage_merge_tree->getPartitionIDFromQuery(command.partition, context);
+        else if (storage_from_merge_tree_data_part)
+            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(command.partition, context);
+        else
+            throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
+
+        result = makeASTFunction("equals",
+                    std::make_shared<ASTIdentifier>("_partition_id"),
+                    std::make_shared<ASTLiteral>(partition_id)
+        );
+    }
+    if (command.predicate)
+    {
+        if (!result)
+            result = command.predicate->clone();
+        else
+            result = makeASTFunction("and", std::move(result), command.predicate->clone());
+    }
+    return result;
+}
+
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
@@ -361,7 +405,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto negated_predicate = makeASTFunction("isZeroOrNull", command.getPartitionAndPredicate());
+            auto negated_predicate = makeASTFunction("isZeroOrNull", getPartitionAndPredicateExpressionForMutationCommand(command));
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
@@ -399,7 +443,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
-                        command.getPartitionAndPredicate(),
+                        getPartitionAndPredicateExpressionForMutationCommand(command),
                         makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
@@ -603,7 +647,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns);
+        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns, storage, metadata_snapshot);
         if (context.hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context.getQueryContext().addScalar(it.first, it.second);
@@ -773,7 +817,7 @@ size_t MutationsInterpreter::evaluateCommandsSize()
         if (unlikely(!command.predicate && !command.partition)) /// The command touches all rows.
             return mutation_ast->size();
 
-    return std::max(prepareQueryAffectedAST(commands)->size(), mutation_ast->size());
+    return std::max(prepareQueryAffectedAST(commands, storage, context)->size(), mutation_ast->size());
 }
 
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
@@ -792,6 +836,11 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     }
 
     return sort_description;
+}
+
+ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const
+{
+    return DB::getPartitionAndPredicateExpressionForMutationCommand(command, storage, context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
