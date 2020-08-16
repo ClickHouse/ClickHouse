@@ -665,6 +665,28 @@ namespace
         if (try_num == num_tries)
         {
             fmt::print("Cannot start server. You can execute {} without --daemon option to run manually.\n", command);
+
+            fs::path log_path;
+
+            {
+                ConfigProcessor processor(config.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+                if (configuration->has("logger.log"))
+                    log_path = fs::path(configuration->getString("logger.log")).remove_filename();
+            }
+
+            if (log_path.empty())
+            {
+                fmt::print("Cannot obtain path to logs (logger.log) from config file {}.\n", config.string());
+            }
+            else
+            {
+                fs::path stderr_path = log_path;
+                stderr_path.replace_filename("stderr.log");
+                fmt::print("Look for logs at {} and for {}.\n", log_path.string(), stderr_path.string());
+            }
+
             return 3;
         }
 
