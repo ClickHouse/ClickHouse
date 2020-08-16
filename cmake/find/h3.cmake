@@ -6,7 +6,8 @@ if(NOT ENABLE_H3)
     return()
 endif()
 
-option(USE_INTERNAL_H3_LIBRARY "Set to FALSE to use system h3 library instead of bundled" ${NOT_UNBUNDLED})
+option(USE_INTERNAL_H3_LIBRARY "Set to FALSE to use system h3 library instead of bundled"
+       ON) # we are not aware of any distribution that provides h3 package
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib/include/h3Index.h")
     if(USE_INTERNAL_H3_LIBRARY)
