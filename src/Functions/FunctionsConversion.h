@@ -196,12 +196,45 @@ struct ToDateTransform32Or64
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
+        return (from < 0xFFFF)
+            ? from
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
-/** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
-  * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
+template <typename FromType, typename ToType>
+struct ToDateTransform32Or64Signed
+{
+    static constexpr auto name = "toDate";
+
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
+        if (from < 0)
+            return 0;
+        return (from < 0xFFFF)
+            ? from
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
+    }
+};
+
+template <typename FromType, typename ToType>
+struct ToDateTransform8Or16Signed
+{
+    static constexpr auto name = "toDate";
+
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        if (from < 0)
+            return 0;
+        return from;
+    }
+};
+
+/** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
+  * Float32, Float64) to Date. If the number is negative, saturate it to unix epoch time. If the
+  * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
+  * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
   * It's a bit illogical, as we actually have two functions in one.
   * But allows to support frequent case,
   *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
@@ -211,14 +244,75 @@ template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64<Int32, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64<Int64, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64<Float32, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64<Float64, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16>> {};
+
+
+template <typename FromType, typename ToType>
+struct ToDateTimeTransform64
+{
+    static constexpr auto name = "toDateTime";
+
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        return std::min(time_t(from), time_t(0xFFFFFFFF));
+    }
+};
+
+template <typename FromType, typename ToType>
+struct ToDateTimeTransformSigned
+{
+    static constexpr auto name = "toDateTime";
+
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        if (from < 0)
+            return 0;
+        return from;
+    }
+};
+
+template <typename FromType, typename ToType>
+struct ToDateTimeTransform64Signed
+{
+    static constexpr auto name = "toDateTime";
+
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        if (from < 0)
+            return 0;
+        return std::min(time_t(from), time_t(0xFFFFFFFF));
+    }
+};
+
+/** Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32,
+  * Float64) to DateTime. If the number is negative, saturate it to unix epoch time. If the number
+  * exceeds UInt32, saturate to MAX_UINT32.
+  */
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime, ToDateTimeTransformSigned<Int8, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime, ToDateTimeTransformSigned<Int16, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime, ToDateTimeTransformSigned<Int32, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime, ToDateTimeTransform64Signed<Int64, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime, ToDateTimeTransform64<UInt64, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime, ToDateTimeTransform64Signed<Float32, UInt32>> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32>> {};
 
 
 /** Conversion of Date or DateTime to DateTime64: add zero sub-second part.
@@ -378,7 +472,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
                 data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + vec_from.getScale() + 1));
             else
-                data_to.resize(size * 3);   /// Arbitary
+                data_to.resize(size * 3);   /// Arbitrary
 
             offsets_to.resize(size);
 
@@ -579,7 +673,7 @@ struct ConvertThroughParsing
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
         {
             const auto result_type = removeNullable(block.getByPosition(result).type);
-            // Time zone is already figured out during result type resultion, no need to do it here.
+            // Time zone is already figured out during result type resolution, no need to do it here.
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
             else
@@ -967,7 +1061,7 @@ public:
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
                 return createDecimal<DataTypeDecimal>(38, scale);
 
-            throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
         else
         {
@@ -1211,7 +1305,7 @@ public:
                     res = createDecimal<DataTypeDecimal>(38, scale);
 
                 if (!res)
-                    throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
             }
             else
                 res = std::make_shared<ToDataType>();
@@ -1380,7 +1474,7 @@ struct ToNumberMonotonicity
             return {};
         }
 
-        /// Size of type is shrinked.
+        /// Size of type is shrunk.
         if (size_of_from > size_of_to)
         {
             /// Function cannot be monotonic on unbounded ranges.
@@ -1409,6 +1503,39 @@ struct ToNumberMonotonicity
         }
 
         __builtin_unreachable();
+    }
+};
+
+struct ToDateMonotonicity
+{
+    static bool has() { return true; }
+
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    {
+        auto which = WhichDataType(type);
+        if (which.isDateOrDateTime() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
+            return {true, true, true};
+        else if (
+            (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
+            || (which.isInt() && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
+            || (which.isFloat() && ((left.isNull() || left.get<Float64>() < 0xFFFF) && (right.isNull() || right.get<Float64>() >= 0xFFFF)))
+            || !type.isValueRepresentedByNumber())
+            return {};
+        else
+            return {true, true, true};
+    }
+};
+
+struct ToDateTimeMonotonicity
+{
+    static bool has() { return true; }
+
+    static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
+    {
+        if (type.isValueRepresentedByNumber())
+            return {true, true, true};
+        else
+            return {};
     }
 };
 
@@ -1478,8 +1605,8 @@ using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMono
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
-using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToNumberMonotonicity<UInt16>>;
-using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToNumberMonotonicity<UInt32>>;
+using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, UnknownMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;

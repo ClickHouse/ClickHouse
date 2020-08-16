@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -16,13 +17,16 @@ SRCS(
     ExternalTable.cpp
     Field.cpp
     iostream_debug_helpers.cpp
+    MySQLClient.cpp
     MySQLProtocol.cpp
-    PostgreSQLProtocol.cpp
+    MySQLReplication.cpp
     NamesAndTypes.cpp
+    PostgreSQLProtocol.cpp
     Settings.cpp
     SettingsEnums.cpp
     SettingsFields.cpp
     SortDescription.cpp
+
 )
 
 END()

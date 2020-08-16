@@ -15,7 +15,6 @@ namespace DB
 class ASTAlterCommand;
 
 class Pipe;
-using Pipes = std::vector<Pipe>;
 
 struct PartitionCommand
 {
@@ -89,8 +88,10 @@ struct PartitionCommandResultInfo
     String part_name;
     /// Part name in /detached directory, filled in ATTACH
     String old_part_name;
-    /// Path to backup directory, filled in FREEZE
+    /// Absolute path to backup directory, filled in FREEZE
     String backup_path;
+    /// Absolute path part backup, filled in FREEZE
+    String part_backup_path;
     /// Name of the backup (specified by user or increment value), filled in
     /// FREEZE
     String backup_name;
@@ -102,6 +103,6 @@ using PartitionCommandsResultInfo = std::vector<PartitionCommandResultInfo>;
 /// used to print info to the user. Tries to create narrowest table for given
 /// results. For example, if all commands were FREEZE commands, than
 /// old_part_name column will be absent.
-Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
+Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result);
 
 }

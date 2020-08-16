@@ -169,7 +169,7 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
 
-    for (auto setting : *kafka_settings)
+    for (const auto & setting : *kafka_settings)
     {
         const auto & name = setting.getName();
         if (name.find("kafka_") == std::string::npos)
@@ -197,7 +197,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 }
 
 
-Pipes StorageKafka::read(
+Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /* query_info */,
@@ -226,7 +226,7 @@ Pipes StorageKafka::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

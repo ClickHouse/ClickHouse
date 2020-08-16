@@ -31,7 +31,7 @@ template <> inline Int64 scaleMultiplier<Int64>(UInt32 scale) { return common::e
 template <> inline Int128 scaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
 
 /** Components of DecimalX value:
- * whole - represents whole part of decimal, can be negatve or positive.
+ * whole - represents whole part of decimal, can be negative or positive.
  * fractional - for fractional part of decimal, always positive.
  */
 template <typename T>
