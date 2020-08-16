@@ -406,7 +406,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         }
 
         /// It maybe already removed from zk, but local in-memory mutations
-        /// state was not update.
+        /// state was not updated.
         if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id))
         {
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
