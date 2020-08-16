@@ -309,7 +309,8 @@ void forkAndWatch(Poco::Logger * log)
         else
             LOG_FATAL(log, "Child process was not exited normally by unknown reason.");
 
-        LOG_INFO(log, "Will restart.");
+        exit(status);
+        // LOG_INFO(log, "Will restart.");
     }
 }
 
@@ -317,7 +318,9 @@ void forkAndWatch(Poco::Logger * log)
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
-    forkAndWatch(log);
+
+    if (!isInteractive())
+        forkAndWatch(log);
 
     UseSSL use_ssl;
 
