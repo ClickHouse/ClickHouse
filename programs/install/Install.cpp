@@ -630,6 +630,12 @@ namespace
             fs::create_directories(pid_path);
             /// All users are allowed to read pid file (for clickhouse status command).
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
+            {
+                std::string command = fmt::format("chown --recursive {} '{}'", user, pid_path);
+                fmt::print(" {}\n", command);
+                executeScript(command);
+            }
         }
 
         std::string command = fmt::format("{} --config-file {} --pid-file {} --daemon",
