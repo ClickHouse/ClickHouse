@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Field.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/PacketsReplication.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -13,6 +13,7 @@
 
 namespace DB
 {
+
 namespace MySQLReplication
 {
     static const int EVENT_VERSION_V4 = 4;
@@ -465,7 +466,7 @@ namespace MySQLReplication
         void updateLogName(String binlog) { binlog_name = std::move(binlog); }
     };
 
-    class IFlavor : public MySQLProtocol::ReadPacket
+    class IFlavor : public MySQLProtocol::IMySQLReadPacket
     {
     public:
         virtual String getName() const = 0;
