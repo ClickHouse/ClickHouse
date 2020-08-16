@@ -101,6 +101,8 @@ RUN apt update && \
             libsnappy-dev \
             libparquet-dev \
             libthrift-dev \
+            libutf8proc-dev \
+            libbz2-dev \
             libavro-dev \
             libfarmhash-dev \
             libmysqlclient-dev \
