@@ -291,7 +291,8 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     Block result = granule->block;
     actions->execute(result);
 
-    auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
+    auto column
+        = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
 
     const NullMap * null_map = nullptr;
