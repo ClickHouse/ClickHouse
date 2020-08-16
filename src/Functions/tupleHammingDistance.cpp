@@ -20,7 +20,7 @@ struct TupleHammingDistanceImpl
 {
     using ResultType = UInt8;
 
-    static void NO_INLINE vector_vector(
+    static void NO_INLINE vectorVector(
         const PaddedPODArray<A> & a1,
         const PaddedPODArray<A> & b1,
         const PaddedPODArray<B> & a2,
@@ -33,7 +33,7 @@ struct TupleHammingDistanceImpl
     }
 
     static void NO_INLINE
-    vector_constant(const PaddedPODArray<A> & a1, const PaddedPODArray<A> & b1, UInt64 a2, UInt64 b2, PaddedPODArray<ResultType> & c)
+    vectorConstant(const PaddedPODArray<A> & a1, const PaddedPODArray<A> & b1, UInt64 a2, UInt64 b2, PaddedPODArray<ResultType> & c)
     {
         size_t size = a1.size();
         for (size_t i = 0; i < size; ++i)
@@ -41,14 +41,14 @@ struct TupleHammingDistanceImpl
     }
 
     static void NO_INLINE
-    constant_vector(UInt64 a1, UInt64 b1, const PaddedPODArray<B> & a2, const PaddedPODArray<B> & b2, PaddedPODArray<ResultType> & c)
+    constantVector(UInt64 a1, UInt64 b1, const PaddedPODArray<B> & a2, const PaddedPODArray<B> & b2, PaddedPODArray<ResultType> & c)
     {
         size_t size = a2.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = apply(a1, a2[i]) + apply(b1, b2[i]);
     }
 
-    static ResultType constant_constant(UInt64 a1, UInt64 b1, UInt64 a2, UInt64 b2) { return apply(a1, a2) + apply(b1, b2); }
+    static ResultType constantConstant(UInt64 a1, UInt64 b1, UInt64 a2, UInt64 b2) { return apply(a1, a2) + apply(b1, b2); }
 
 private:
     static inline UInt8 apply(UInt64 a, UInt64 b) { return a != b; }
@@ -112,7 +112,8 @@ public:
             throw Exception(
                 "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",
                 ErrorCodes::ILLEGAL_COLUMN);
-        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right) {
+        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right)
+        {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
@@ -137,7 +138,7 @@ public:
                     cols1[1]->get(0, b1);
                     cols2[0]->get(0, a2);
                     cols2[1]->get(0, b2);
-                    auto res = OpImpl::constant_constant(a1.get<UInt64>(), b1.get<UInt64>(), a2.get<UInt64>(), b2.get<UInt64>());
+                    auto res = OpImpl::constantConstant(a1.get<UInt64>(), b1.get<UInt64>(), a2.get<UInt64>(), b2.get<UInt64>());
                     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(const_col_left->size(), toField(res));
                     return true;
                 }
@@ -159,7 +160,7 @@ public:
                     auto col_r1 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(0));
                     auto col_r2 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(1));
                     if (col_r1 && col_r2)
-                        OpImpl::constant_vector(a1.get<UInt64>(), b1.get<UInt64>(), col_r1->getData(), col_r2->getData(), vec_res);
+                        OpImpl::constantVector(a1.get<UInt64>(), b1.get<UInt64>(), col_r1->getData(), col_r2->getData(), vec_res);
                     else
                         return false;
                 }
@@ -179,7 +180,7 @@ public:
                         Field a2, b2;
                         const_cols[0]->get(0, a2);
                         const_cols[1]->get(0, b2);
-                        OpImpl::vector_constant(col_l1->getData(), col_l2->getData(), a2.get<UInt64>(), a2.get<UInt64>(), vec_res);
+                        OpImpl::vectorConstant(col_l1->getData(), col_l2->getData(), a2.get<UInt64>(), a2.get<UInt64>(), vec_res);
                     }
                     // non-constant tuple - non-constant tuple
                     else if (const ColumnTuple * col_right = typeid_cast<const ColumnTuple *>(arg2.column.get()))
@@ -187,7 +188,7 @@ public:
                         auto col_r1 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(0));
                         auto col_r2 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(1));
                         if (col_r1 && col_r2)
-                            OpImpl::vector_vector(col_l1->getData(), col_l2->getData(), col_r1->getData(), col_r2->getData(), vec_res);
+                            OpImpl::vectorVector(col_l1->getData(), col_l2->getData(), col_r1->getData(), col_r2->getData(), vec_res);
                         else
                             return false;
                     }
