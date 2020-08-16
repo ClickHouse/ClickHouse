@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -16,8 +17,8 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
-    ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
+    ASTDictionary.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
@@ -43,6 +44,7 @@ SRCS(
     ASTSampleRatio.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
+    ASTSetQuery.cpp
     ASTSetRoleQuery.cpp
     ASTSettingsProfileElement.cpp
     ASTShowAccessEntitiesQuery.cpp
@@ -60,11 +62,25 @@ SRCS(
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
     formatAST.cpp
+    formatSettingName.cpp
     IAST.cpp
     iostream_debug_helpers.cpp
     IParserBase.cpp
     Lexer.cpp
     makeASTForLogicalFunction.cpp
+    MySQL/ASTAlterCommand.cpp
+    MySQL/ASTAlterQuery.cpp
+    MySQL/ASTCreateDefines.cpp
+    MySQL/ASTCreateQuery.cpp
+    MySQL/ASTDeclareColumn.cpp
+    MySQL/ASTDeclareConstraint.cpp
+    MySQL/ASTDeclareIndex.cpp
+    MySQL/ASTDeclareOption.cpp
+    MySQL/ASTDeclarePartition.cpp
+    MySQL/ASTDeclarePartitionOptions.cpp
+    MySQL/ASTDeclareReference.cpp
+    MySQL/ASTDeclareSubPartition.cpp
+    MySQL/ASTDeclareTableOptions.cpp
     parseDatabaseAndTableName.cpp
     parseIdentifierOrStringLiteral.cpp
     parseIntervalKind.cpp
@@ -78,13 +94,14 @@ SRCS(
     ParserCreateRowPolicyQuery.cpp
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
-    ParserDescribeTableQuery.cpp
     ParserDataType.cpp
-    ParserDictionary.cpp
+    ParserDescribeTableQuery.cpp
     ParserDictionaryAttributeDeclaration.cpp
+    ParserDictionary.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
+    ParserExternalDDLQuery.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp
@@ -115,8 +132,9 @@ SRCS(
     ParserWatchQuery.cpp
     parseUserName.cpp
     queryToString.cpp
-    TokenIterator.cpp
     QueryWithOutputSettingsPushDownVisitor.cpp
+    TokenIterator.cpp
+
 )
 
 END()

@@ -28,7 +28,7 @@ ClickHouse-specific aggregate functions:
 -   [argMin](../../../sql-reference/aggregate-functions/reference/argmin.md)
 -   [argMax](../../../sql-reference/aggregate-functions/reference/argmax.md)
 -   [avgWeighted](../../../sql-reference/aggregate-functions/reference/avgweighted.md)
--   [topK](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
+-   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 -   [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [groupArray](../../../sql-reference/aggregate-functions/reference/grouparray.md)
 -   [groupUniqArray](../../../sql-reference/aggregate-functions/reference/groupuniqarray.md)

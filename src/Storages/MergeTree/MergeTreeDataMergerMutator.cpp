@@ -26,14 +26,12 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
-#include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 
 #include <cmath>
 #include <ctime>
-#include <iomanip>
 #include <numeric>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -508,7 +506,7 @@ public:
   * - time elapsed for current merge.
   */
 
-/// Auxilliary struct that for each merge stage stores its current progress.
+/// Auxiliary struct that for each merge stage stores its current progress.
 /// A stage is: the horizontal stage + a stage for each gathered column (if we are doing a
 /// Vertical merge) or a mutation of a single part. During a single stage all rows are read.
 struct MergeStageProgress
@@ -730,8 +728,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (metadata_snapshot->hasSortingKey())
         {
-            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), metadata_snapshot->getSortingKey().expression);
-            pipe.addSimpleTransform(std::move(expr));
+            pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
+            });
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -800,7 +800,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(pipes), std::move(merged_transform)));
+    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    pipeline.addTransform(std::move(merged_transform));
     pipeline.setMaxThreads(1);
     BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
@@ -1030,7 +1031,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             commands_for_part.emplace_back(command);
     }
 
-    if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(storage_from_source_part, metadata_snapshot, commands_for_part, context_for_reading))
+    if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+        storage_from_source_part, metadata_snapshot, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info, metadata_snapshot);
@@ -1042,7 +1044,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     BlockInputStreamPtr in = nullptr;
     Block updated_header;
-    std::optional<MutationsInterpreter> interpreter;
+    std::unique_ptr<MutationsInterpreter> interpreter;
 
     const auto data_settings = data.getSettings();
     MutationCommands for_interpreter;
@@ -1057,7 +1059,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (!for_interpreter.empty())
     {
-        interpreter.emplace(storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
+        interpreter = std::make_unique<MutationsInterpreter>(
+            storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
         in = interpreter->execute();
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));

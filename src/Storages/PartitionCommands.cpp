@@ -135,7 +135,7 @@ std::string PartitionCommand::typeToString() const
     __builtin_unreachable();
 }
 
-Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
+Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_result)
 {
     Block header {
          ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "command_type"),
@@ -153,6 +153,8 @@ Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands
 
         if (!command_result.backup_path.empty() && !header.has("backup_path"))
             header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "backup_path"));
+        if (!command_result.backup_path.empty() && !header.has("part_backup_path"))
+            header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "part_backup_path"));
     }
 
     MutableColumns res_columns = header.cloneEmptyColumns();
@@ -177,14 +179,15 @@ Pipes convertCommandsResultToSource(const PartitionCommandsResultInfo & commands
             size_t pos = header.getPositionByName("backup_path");
             res_columns[pos]->insert(command_result.backup_path);
         }
+        if (header.has("part_backup_path"))
+        {
+            size_t pos = header.getPositionByName("part_backup_path");
+            res_columns[pos]->insert(command_result.part_backup_path);
+        }
     }
 
     Chunk chunk(std::move(res_columns), commands_result.size());
-
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
-    Pipes result;
-    result.emplace_back(std::move(pipe));
-    return result;
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
 }
 
 }

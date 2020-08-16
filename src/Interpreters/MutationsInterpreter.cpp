@@ -108,7 +108,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
+    /// The result can differ from the number of affected rows (e.g. if there is an UPDATE command that
     /// changes how many rows satisfy the predicates of the subsequent commands).
     /// But we can be sure that if count = 0, then no rows will be touched.
 
@@ -480,7 +480,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     /// We care about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
-    /// The same about colums, that are needed for calculation of TTL expressions.
+    /// The same about columns, that are needed for calculation of TTL expressions.
     if (!dependencies.empty())
     {
         NameSet changed_columns;

@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
 }
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
@@ -110,6 +111,10 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
 bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_element, const std::vector<ASTs> & tables_predicates)
 {
     bool is_rewrite_tables = false;
+
+    if (tables_element.size() != tables_predicates.size())
+        throw Exception("Unexpected elements count in predicate push down: `set enable_optimize_predicate_expression = 0` to disable",
+                        ErrorCodes::LOGICAL_ERROR);
 
     for (size_t index = tables_element.size(); index > 0; --index)
     {

@@ -19,7 +19,7 @@
 </yandex>
 ```
 
-Аналогичный [DDL-запрос](../../statements/create.md#create-dictionary-query):
+Аналогичный [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
