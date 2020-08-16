@@ -158,6 +158,8 @@ TESTS_TO_SKIP=(
     01280_ssd_complex_key_dictionary
     00652_replicated_mutations_zookeeper
     01411_bayesian_ab_testing
+    01238_http_memory_tracking              # max_memory_usage_for_user can interfere another queries running concurrently
+    01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
 )
 
 clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip ${TESTS_TO_SKIP[*]} 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt

@@ -586,15 +586,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
-    /// Context object that we pass to function should live during query.
-    const Context & function_context = data.context.hasQueryContext()
-        ? data.context.getQueryContext()
-        : data.context;
-
     FunctionOverloadResolverPtr function_builder;
     try
     {
-        function_builder = FunctionFactory::instance().get(node.name, function_context);
+        function_builder = FunctionFactory::instance().get(node.name, data.context);
     }
     catch (DB::Exception & e)
     {
