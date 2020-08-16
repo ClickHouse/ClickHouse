@@ -37,16 +37,12 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 void registerFunctionsUnixTimestamp64(FunctionFactory & factory);
-<<<<<<< HEAD
 void registerFunctionBitHammingDistance(FunctionFactory & factory);
 void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
-=======
 #if !defined(ARCADIA_BUILD)
 void registerFunctionBayesAB(FunctionFactory &);
 #endif
->>>>>>> 0d5da3e1f1b430571bb27396d1e11f7bff8d8530
-
 
 void registerFunctions()
 {
@@ -94,6 +90,7 @@ void registerFunctions()
 #if !defined(ARCADIA_BUILD)
     registerFunctionBayesAB(factory);
 #endif
+
 }
 
 }

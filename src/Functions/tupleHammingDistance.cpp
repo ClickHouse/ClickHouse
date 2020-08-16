@@ -100,7 +100,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[1]);

@@ -46,7 +46,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         using ResultType = typename Impl::ResultType;
