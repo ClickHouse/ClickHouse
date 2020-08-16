@@ -632,7 +632,7 @@ namespace
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
 
             {
-                std::string command = fmt::format("chown --recursive {} '{}'", user, pid_path);
+                std::string command = fmt::format("chown --recursive {} '{}'", user, pid_path.string());
                 fmt::print(" {}\n", command);
                 executeScript(command);
             }
