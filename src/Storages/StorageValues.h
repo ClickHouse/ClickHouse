@@ -15,8 +15,9 @@ class StorageValues final : public ext::shared_ptr_helper<StorageValues>, public
 public:
     std::string getName() const override { return "Values"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,

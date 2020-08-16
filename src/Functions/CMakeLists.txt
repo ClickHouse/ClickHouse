@@ -89,11 +89,18 @@ endif()
 target_link_libraries(clickhouse_functions PRIVATE hyperscan)
 
 if(USE_SIMDJSON)
-    target_link_libraries(clickhouse_functions PRIVATE ${SIMDJSON_LIBRARY})
+    target_link_libraries(clickhouse_functions PRIVATE simdjson)
 endif()
 
 if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+option(ENABLE_MULTITARGET_CODE "" ON)
+if (ENABLE_MULTITARGET_CODE)
+    add_definitions(-DENABLE_MULTITARGET_CODE=1)
+else()
+    add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
 add_subdirectory(GatherUtils)
@@ -104,3 +111,7 @@ target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_url)
 
 add_subdirectory(array)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)
+
+if (USE_STATS)
+    target_link_libraries(clickhouse_functions PRIVATE stats)
+endif()

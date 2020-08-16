@@ -1,5 +1,3 @@
-include(ExternalProject)
-
 set (CMAKE_CXX_STANDARD 17)
 
 # === thrift
@@ -77,14 +75,9 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
 
 
 # === flatbuffers
-
-##############################################################
-# fbs - Step 1: build flatbuffers lib and flatc compiler
-##############################################################
 set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
 set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
 set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
-set(FLATBUFFERS_COMPILER "$<TARGET_FILE:flatc>")
 
 # set flatbuffers CMake options
 if (${USE_STATIC_LIBRARIES})
@@ -94,57 +87,11 @@ else ()
     set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
     set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
 endif ()
-set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "Build flatbuffers compiler")
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
 
 add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 
-###################################
-# fbs - Step 2: compile *.fbs files
-###################################
-set(ARROW_IPC_SRC_DIR ${ARROW_SRC_DIR}/arrow/ipc)
-set(ARROW_FORMAT_SRC_DIR ${ARROW_SRC_DIR}/../../format)
-
-set(ARROW_GENERATED_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/arrow_gen_headers)
-set(FLATBUFFERS_COMPILED_OUT_DIR ${ARROW_GENERATED_INCLUDE_DIR}/arrow/ipc)
-
-set(FBS_OUTPUT_FILES
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/File_generated.h"
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/Message_generated.h"
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/feather_generated.h"
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/Schema_generated.h"
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/SparseTensor_generated.h"
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/Tensor_generated.h")
-
-set(FBS_SRC
-        ${ARROW_FORMAT_SRC_DIR}/Message.fbs
-        ${ARROW_FORMAT_SRC_DIR}/File.fbs
-        ${ARROW_FORMAT_SRC_DIR}/Schema.fbs
-        ${ARROW_FORMAT_SRC_DIR}/Tensor.fbs
-        ${ARROW_FORMAT_SRC_DIR}/SparseTensor.fbs
-        ${ARROW_IPC_SRC_DIR}/feather.fbs)
-
-foreach (FIL ${FBS_SRC})
-    get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
-    list(APPEND ABS_FBS_SRC ${ABS_FIL})
-endforeach ()
-
-message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}, FLATBUFFERS_COMPILER: ${FLATBUFFERS_COMPILER}")
-message(STATUS "FLATBUFFERS_COMPILED_OUT_DIR: ${FLATBUFFERS_COMPILED_OUT_DIR}")
-message(STATUS "flatc: ${FLATBUFFERS_COMPILER} -c -o ${FLATBUFFERS_COMPILED_OUT_DIR}/ ${ABS_FBS_SRC}")
-
-add_custom_command(OUTPUT ${FBS_OUTPUT_FILES}
-        COMMAND ${FLATBUFFERS_COMPILER}
-        -c
-        -o
-        ${FLATBUFFERS_COMPILED_OUT_DIR}/
-        ${ABS_FBS_SRC}
-        DEPENDS flatc ${ABS_FBS_SRC}
-        COMMENT "Running flatc compiler on ${ABS_FBS_SRC}"
-        VERBATIM)
-
-add_custom_target(metadata_fbs DEPENDS ${FBS_OUTPUT_FILES})
-add_dependencies(metadata_fbs flatc)
+message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}")
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -203,6 +150,7 @@ configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_SOURCE_DIR}
 set(ARROW_SRCS
         ${LIBRARY_DIR}/array.cc
         ${LIBRARY_DIR}/buffer.cc
+        ${LIBRARY_DIR}/device.cc
         ${LIBRARY_DIR}/builder.cc
         ${LIBRARY_DIR}/compare.cc
         ${LIBRARY_DIR}/extension_type.cc
@@ -219,6 +167,11 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/type.cc
         ${LIBRARY_DIR}/visitor.cc
 
+        ${LIBRARY_DIR}/tensor/coo_converter.cc
+        ${LIBRARY_DIR}/tensor/csc_converter.cc
+        ${LIBRARY_DIR}/tensor/csf_converter.cc
+        ${LIBRARY_DIR}/tensor/csr_converter.cc
+
         ${LIBRARY_DIR}/array/builder_adaptive.cc
         ${LIBRARY_DIR}/array/builder_base.cc
         ${LIBRARY_DIR}/array/builder_binary.cc
@@ -230,6 +183,7 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/array/concatenate.cc
         ${LIBRARY_DIR}/array/dict_internal.cc
         ${LIBRARY_DIR}/array/diff.cc
+        ${LIBRARY_DIR}/array/validate.cc
 
         ${LIBRARY_DIR}/csv/converter.cc
         ${LIBRARY_DIR}/csv/chunker.cc
@@ -237,6 +191,7 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/csv/options.cc
         ${LIBRARY_DIR}/csv/parser.cc
         ${LIBRARY_DIR}/csv/reader.cc
+        ${LIBRARY_DIR}/csv/column_decoder.cc
 
         ${LIBRARY_DIR}/ipc/dictionary.cc
         ${LIBRARY_DIR}/ipc/feather.cc
@@ -251,7 +206,6 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/io/file.cc
         ${LIBRARY_DIR}/io/interfaces.cc
         ${LIBRARY_DIR}/io/memory.cc
-        ${LIBRARY_DIR}/io/readahead.cc
         ${LIBRARY_DIR}/io/slow.cc
 
         ${LIBRARY_DIR}/util/basic_decimal.cc
@@ -274,6 +228,12 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/thread_pool.cc
         ${LIBRARY_DIR}/util/trie.cc
         ${LIBRARY_DIR}/util/utf8.cc
+        ${LIBRARY_DIR}/util/future.cc
+        ${LIBRARY_DIR}/util/formatting.cc
+        ${LIBRARY_DIR}/util/parsing.cc
+        ${LIBRARY_DIR}/util/time.cc
+        ${LIBRARY_DIR}/util/delimiting.cc
+        ${LIBRARY_DIR}/util/iterator.cc
 
         ${LIBRARY_DIR}/vendored/base64.cpp
         ${ORC_SRCS}
@@ -321,7 +281,7 @@ endif ()
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 
 # Arrow dependencies
-add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY} metadata_fbs)
+add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY})
 
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY} boost::filesystem)
 
@@ -352,17 +312,18 @@ target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_D
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_GENERATED_INCLUDE_DIR})
 
 # === parquet
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
+set(GEN_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/generated)
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
         ${LIBRARY_DIR}/arrow/reader.cc
         ${LIBRARY_DIR}/arrow/reader_internal.cc
         ${LIBRARY_DIR}/arrow/schema.cc
         ${LIBRARY_DIR}/arrow/writer.cc
+        ${LIBRARY_DIR}/arrow/path_internal.cc
         ${LIBRARY_DIR}/bloom_filter.cc
         ${LIBRARY_DIR}/column_reader.cc
         ${LIBRARY_DIR}/column_scanner.cc
@@ -379,16 +340,19 @@ set(PARQUET_SRCS
         ${LIBRARY_DIR}/schema.cc
         ${LIBRARY_DIR}/statistics.cc
         ${LIBRARY_DIR}/types.cc
+        ${LIBRARY_DIR}/encryption.cc
+        ${LIBRARY_DIR}/encryption_internal.cc
+        ${LIBRARY_DIR}/internal_file_decryptor.cc
+        ${LIBRARY_DIR}/internal_file_encryptor.cc
+
+        ${GEN_LIBRARY_DIR}/parquet_constants.cpp
+        ${GEN_LIBRARY_DIR}/parquet_types.cpp
         )
 #list(TRANSFORM PARQUET_SRCS PREPEND ${LIBRARY_DIR}/) # cmake 3.12
-list(APPEND PARQUET_SRCS
-        ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_constants.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_types.cpp
-        )
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
-target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
+target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src PRIVATE ${OPENSSL_INCLUDE_DIR})
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
-target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex)
+target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex ${OPENSSL_LIBRARIES})
 
 if (SANITIZE STREQUAL "undefined")
     target_compile_options(${PARQUET_LIBRARY} PRIVATE -fno-sanitize=undefined)

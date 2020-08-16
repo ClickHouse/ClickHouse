@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
-#include <Poco/AutoPtr.h>
+#include <Common/SettingsChanges.h>
 #include <boost/container/flat_set.hpp>
 #include <memory>
 
@@ -21,6 +21,7 @@ namespace Poco
 namespace DB
 {
 class ContextAccess;
+struct ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
@@ -36,6 +37,7 @@ class EnabledSettings;
 class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
+class ExternalAuthenticators;
 struct Settings;
 
 
@@ -47,8 +49,16 @@ public:
     ~AccessControlManager();
 
     void setLocalDirectory(const String & directory);
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
     void setUsersConfig(const Poco::Util::AbstractConfiguration & users_config);
     void setDefaultProfileName(const String & default_profile_name);
+
+    /// Sets prefixes which should be used for custom settings.
+    /// This function also enables custom prefixes to be used.
+    void setCustomSettingsPrefixes(const Strings & prefixes);
+    void setCustomSettingsPrefixes(const String & comma_separated_prefixes);
+    bool isSettingNameAllowed(const std::string_view & name) const;
+    void checkSettingNameIsAllowed(const std::string_view & name) const;
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
@@ -57,6 +67,8 @@ public:
         const Settings & settings,
         const String & current_database,
         const ClientInfo & client_info) const;
+
+    std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
         const boost::container::flat_set<UUID> & current_roles,
@@ -82,13 +94,17 @@ public:
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
 
-private:
-    class ContextAccessCache;
+    const ExternalAuthenticators & getExternalAuthenticators() const;
+
+private: class ContextAccessCache;
+    class CustomSettingsPrefixes;
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
     std::unique_ptr<RowPolicyCache> row_policy_cache;
     std::unique_ptr<QuotaCache> quota_cache;
     std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
+    std::unique_ptr<ExternalAuthenticators> external_authenticators;
+    std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
 };
 
 }

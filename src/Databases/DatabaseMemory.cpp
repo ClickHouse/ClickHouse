@@ -58,7 +58,7 @@ void DatabaseMemory::dropTable(
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = database_name;
+    create_query->database = getDatabaseName();
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
     return create_query;

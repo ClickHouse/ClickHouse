@@ -28,7 +28,7 @@ namespace ErrorCodes
 /// If all rows had NULL, the behaviour is determined by "result_is_nullable" template parameter.
 ///  true - return NULL; false - return value from empty aggregation state of nested function.
 
-/// When serialize_flag is set to true, the flag about presense of values is serialized
+/// When serialize_flag is set to true, the flag about presence of values is serialized
 ///  regardless to the "result_is_nullable" even if it's unneeded - for protocol compatibility.
 
 template <bool result_is_nullable, bool serialize_flag, typename Derived>
@@ -150,14 +150,14 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
         if constexpr (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 to_concrete.getNullMapData().push_back(0);
             }
             else
@@ -167,7 +167,7 @@ public:
         }
         else
         {
-            nested_function->insertResultInto(nestedPlace(place), to);
+            nested_function->insertResultInto(nestedPlace(place), to, arena);
         }
     }
 

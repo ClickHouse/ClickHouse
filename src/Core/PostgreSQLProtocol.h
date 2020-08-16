@@ -233,6 +233,10 @@ public:
     /** Size of the message in bytes including message length part (4 bytes) */
     virtual Int32 size() const = 0;
 
+    ISerializable() = default;
+
+    ISerializable(const ISerializable &) = default;
+
     virtual ~ISerializable() = default;
 };
 

@@ -55,6 +55,14 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ParserKeyword("PRECISION").ignore(pos))
             type_name_suffix = "PRECISION";
     }
+    else if (type_name_upper.find("INT") != std::string::npos)
+    {
+        /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
+        if (ParserKeyword("SIGNED").ignore(pos))
+            type_name_suffix = "SIGNED";
+        else if (ParserKeyword("UNSIGNED").ignore(pos))
+            type_name_suffix = "UNSIGNED";
+    }
 
     if (!type_name_suffix.empty())
         type_name = type_name_upper + " " + type_name_suffix;

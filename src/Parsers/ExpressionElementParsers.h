@@ -301,6 +301,16 @@ protected:
 };
 
 
+/** MySQL-style global variable: @@var
+  */
+class ParserMySQLGlobalVariable : public IParserBase
+{
+protected:
+    const char * getName() const override { return "MySQL-style global variable"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase
@@ -340,7 +350,7 @@ protected:
 };
 
 /** Parser for function with arguments like KEY VALUE (space separated)
-  * no commas alowed, just space-separated pairs.
+  * no commas allowed, just space-separated pairs.
   */
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {

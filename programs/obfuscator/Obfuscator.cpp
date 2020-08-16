@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
@@ -31,7 +30,6 @@
 #include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
-#include <optional>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
