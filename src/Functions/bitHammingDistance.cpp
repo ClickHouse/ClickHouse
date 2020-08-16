@@ -19,21 +19,21 @@ struct BitHammingDistanceImpl
 {
     using ResultType = UInt8;
 
-    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vectorVector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = apply(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vectorConstant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = apply(a[i], b);
     }
 
-    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE constantVector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = b.size();
         for (size_t i = 0; i < size; ++i)
@@ -95,9 +95,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
-        auto * left_generic = block.getByPosition(arguments[0]).type.get();
-        auto * right_generic = block.getByPosition(arguments[1]).type.get();
-        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right) {
+        const auto * left_generic = block.getByPosition(arguments[0]).type.get();
+        const auto * right_generic = block.getByPosition(arguments[1]).type.get();
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
+        {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
@@ -108,8 +109,8 @@ public:
 
             using OpImpl = BitHammingDistanceImpl<T0, T1>;
 
-            auto col_left_raw = block.getByPosition(arguments[0]).column.get();
-            auto col_right_raw = block.getByPosition(arguments[1]).column.get();
+            const auto col_left_raw = block.getByPosition(arguments[0]).column.get();
+            const auto col_right_raw = block.getByPosition(arguments[1]).column.get();
 
             typename ColVecResult::MutablePtr col_res = nullptr;
             col_res = ColVecResult::create();
@@ -122,7 +123,7 @@ public:
                 if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                 {
                     // constant integer - non-constant integer
-                    OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
+                    OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
                 }
                 else
                     return false;
@@ -131,10 +132,10 @@ public:
             {
                 if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                     // non-constant integer - non-constant integer
-                    OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+                    OpImpl::vectorVector(col_left->getData(), col_right->getData(), vec_res);
                 else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
                     // non-constant integer - constant integer
-                    OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
+                    OpImpl::vectorConstant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
                 else
                     return false;
             }
