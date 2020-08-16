@@ -192,6 +192,8 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id_info;
+
+    std::vector<int> handled_signals;
 };
 
 

@@ -318,10 +318,10 @@ create view right_query_log as select *
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
-        query_duration_ms from left_query_log
+        query_duration_ms, memory_usage from left_query_log
     union all
     select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
-        query_duration_ms from right_query_log
+        query_duration_ms, memory_usage from right_query_log
     ;
 
 -- This is a single source of truth on all metrics we have for query runs. The
@@ -345,10 +345,11 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                             arrayMap(x->toFloat64(x), ProfileEvents.Values))]
                     ),
                     arrayReduce('sumMapState', [(
-                        ['client_time', 'server_time'],
+                        ['client_time', 'server_time', 'memory_usage'],
                         arrayMap(x->if(x != 0., x, -0.), [
                             toFloat64(query_runs.time),
-                            toFloat64(query_duration_ms / 1000.)]))])
+                            toFloat64(query_duration_ms / 1000.),
+                            toFloat64(memory_usage)]))])
                 ]
             )) as metrics_tuple).1 metric_names,
         metrics_tuple.2 metric_values
