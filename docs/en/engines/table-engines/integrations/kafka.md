@@ -1,5 +1,5 @@
 ---
-toc_priority: 32
+toc_priority: 5
 toc_title: Kafka
 ---
 

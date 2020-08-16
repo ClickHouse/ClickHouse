@@ -22,6 +22,8 @@ PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_
 
 void PeekableReadBuffer::reset()
 {
+    checkStateCorrect();
+
     peeked_size = 0;
     checkpoint = nullptr;
     checkpoint_in_own_memory = false;
@@ -31,6 +33,8 @@ void PeekableReadBuffer::reset()
 
     Buffer & sub_working = sub_buf.buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
+
+    checkStateCorrect();
 }
 
 bool PeekableReadBuffer::peekNext()
@@ -150,7 +154,7 @@ bool PeekableReadBuffer::nextImpl()
     /// Switch to reading from sub_buf (or just update it if already switched)
     Buffer & sub_working = sub_buf.buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
-    working_buffer_offset = sub_buf.offset();
+    nextimpl_working_buffer_offset = sub_buf.offset();
 
     checkStateCorrect();
     return res;
@@ -159,7 +163,6 @@ bool PeekableReadBuffer::nextImpl()
 
 void PeekableReadBuffer::checkStateCorrect() const
 {
-#ifndef NDEBUG
     if (checkpoint)
     {
         if (checkpointInOwnMemory())
@@ -190,7 +193,6 @@ void PeekableReadBuffer::checkStateCorrect() const
         throw DB::Exception("Pos in empty own buffer", ErrorCodes::LOGICAL_ERROR);
     if (unread_limit < memory.size())
         throw DB::Exception("Size limit exceed", ErrorCodes::LOGICAL_ERROR);
-#endif
 }
 
 void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
@@ -245,11 +247,10 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
 
 void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
 {
-#ifndef NDEBUG
     if (!checkpoint)
         throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
     checkStateCorrect();
-#endif
+
     if (!checkpointInOwnMemory() || currentlyReadFromOwnMemory())
         return;     /// is't already continuous
 

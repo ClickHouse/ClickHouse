@@ -3,7 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS preferred_block_size_bytes"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE preferred_block_size_bytes (p Date, s String) ENGINE = MergeTree PARTITION BY p ORDER BY p SETTINGS index_granularity=1, index_granularity_bytes=0"
@@ -35,16 +35,16 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS nullable_prewhere"
 
 # Depend on 00282_merging test
 
-pushd `dirname $0` > /dev/null
-SCRIPTPATH=`pwd`
+pushd "$(dirname "$0")" > /dev/null
+SCRIPTPATH=$(pwd)
 popd > /dev/null
 #SCRIPTDIR=`dirname "$SCRIPTPATH"`
 SCRIPTDIR=$SCRIPTPATH
 
-cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=10 --merge_tree_uniform_read_distribution=1 -n 2>&1 > ${CLICKHOUSE_TMP}/preferred_block_size_bytes.stdout
-cmp "$SCRIPTDIR"/00282_merging.reference ${CLICKHOUSE_TMP}/preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
+cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=10 --merge_tree_uniform_read_distribution=1 -n > "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout 2>&1
+cmp "$SCRIPTDIR"/00282_merging.reference "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
 
-cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=20 --merge_tree_uniform_read_distribution=0 -n 2>&1 > ${CLICKHOUSE_TMP}/preferred_block_size_bytes.stdout
-cmp "$SCRIPTDIR"/00282_merging.reference ${CLICKHOUSE_TMP}/preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
+cat "$SCRIPTDIR"/00282_merging.sql | $CLICKHOUSE_CLIENT --preferred_block_size_bytes=20 --merge_tree_uniform_read_distribution=0 -n > "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout 2>&1
+cmp "$SCRIPTDIR"/00282_merging.reference "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout && echo PASSED || echo FAILED
 
-rm ${CLICKHOUSE_TMP}/preferred_block_size_bytes.stdout
+rm "${CLICKHOUSE_TMP}"/preferred_block_size_bytes.stdout

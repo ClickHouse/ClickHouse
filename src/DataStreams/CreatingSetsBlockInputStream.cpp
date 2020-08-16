@@ -101,7 +101,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
     BlockOutputStreamPtr table_out;
     if (subquery.table)
-        table_out = subquery.table->write({}, context);
+        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), context);
 
     bool done_with_set = !subquery.set;
     bool done_with_join = !subquery.join;

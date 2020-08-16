@@ -12,6 +12,8 @@
 #include <Columns/ColumnArray.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
@@ -565,7 +567,7 @@ private:
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
-    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
+    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -594,7 +596,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped)
+    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped) const
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -620,7 +622,7 @@ private:
     }
 
     template <typename T0>
-    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped)
+    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
     {
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
@@ -666,7 +668,7 @@ private:
         return false;
     }
 
-    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
     {
         TypeIndex left_number = col_left.type->getTypeId();
         TypeIndex right_number = col_right.type->getTypeId();
@@ -689,7 +691,7 @@ private:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
+    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -815,7 +817,7 @@ private:
 
     bool executeWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count)
+        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
     {
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
@@ -859,7 +861,7 @@ private:
     }
 
     void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
-                          size_t input_rows_count)
+                          size_t input_rows_count) const
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -883,11 +885,18 @@ private:
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
             throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
 
+        auto & res = block.getByPosition(result);
+        if (res.type->onlyNull())
+        {
+            res.column = res.type->createColumnConstWithDefaultValue(input_rows_count);
+            return;
+        }
+
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
-        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
+        const auto * x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
+        const auto * y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
 
         Columns x_columns;
         Columns y_columns;
@@ -916,7 +925,7 @@ private:
 
     void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                               const ColumnsWithTypeAndName & y, size_t tuple_size,
-                              size_t input_rows_count);
+                              size_t input_rows_count) const;
 
     void executeTupleEqualityImpl(
         std::shared_ptr<IFunctionOverloadResolver> func_compare,
@@ -926,10 +935,12 @@ private:
         const ColumnsWithTypeAndName & x,
         const ColumnsWithTypeAndName & y,
         size_t tuple_size,
-        size_t input_rows_count)
+        size_t input_rows_count) const
     {
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+
+        ColumnsWithTypeAndName convolution_types(tuple_size);
 
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
@@ -938,9 +949,10 @@ private:
             tmp_block.insert(y[i]);
 
             auto impl = func_compare->build({x[i], y[i]});
+            convolution_types[i].type = impl->getReturnType();
 
             /// Comparison of the elements.
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
+            tmp_block.insert({ nullptr, impl->getReturnType(), "" });
             impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
         }
 
@@ -952,14 +964,13 @@ private:
         }
 
         /// Logical convolution.
-        tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
         ColumnNumbers convolution_args(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        ColumnsWithTypeAndName convolution_types(convolution_args.size(), { nullptr, std::make_shared<DataTypeUInt8>(), "" });
         auto impl = func_convolution->build(convolution_types);
+        tmp_block.insert({ nullptr, impl->getReturnType(), "" });
 
         impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
@@ -976,57 +987,79 @@ private:
         const ColumnsWithTypeAndName & x,
         const ColumnsWithTypeAndName & y,
         size_t tuple_size,
-        size_t input_rows_count)
+        size_t input_rows_count) const
     {
-        ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
-                                           { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
-
-        auto func_and_adaptor = func_and->build(bin_args);
-        auto func_or_adaptor = func_or->build(bin_args);
-
         Block tmp_block;
 
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
+        /// (x[i], y[i], x[i] < y[i], x[i] == y[i])
         for (size_t i = 0; i < tuple_size; ++i)
         {
             tmp_block.insert(x[i]);
             tmp_block.insert(y[i]);
 
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
+            tmp_block.insert(ColumnWithTypeAndName()); // pos == i * 4 + 2
 
             if (i + 1 != tuple_size)
             {
                 auto impl_head = func_compare_head->build({x[i], y[i]});
+                tmp_block.getByPosition(i * 4 + 2).type = impl_head->getReturnType();
                 impl_head->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
-                tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
+                tmp_block.insert(ColumnWithTypeAndName()); // i * 4 + 3
 
                 auto impl_equals = func_equals->build({x[i], y[i]});
+                tmp_block.getByPosition(i * 4 + 3).type = impl_equals->getReturnType();
                 impl_equals->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
             {
                 auto impl_tail = func_compare_tail->build({x[i], y[i]});
+                tmp_block.getByPosition(i * 4 + 2).type = impl_tail->getReturnType();
                 impl_tail->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
             }
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
+        /// Last column contains intermediate result.
+        /// Code is generally equivalent to:
+        ///   res = `x < y`[tuple_size - 1];
+        ///   for (int i = tuple_size - 2; i >= 0; --i)
+        ///       res = (res && `x == y`[i]) || `x < y`[i];
         size_t i = tuple_size - 1;
         while (i > 0)
         {
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
-            tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
+
+            size_t and_lhs_pos = tmp_block.columns() - 1; // res
+            size_t and_rhs_pos = i * 4 + 3; // `x == y`[i]
+            tmp_block.insert(ColumnWithTypeAndName());
+
+            ColumnsWithTypeAndName and_args = {{ nullptr, tmp_block.getByPosition(and_lhs_pos).type, "" },
+                                               { nullptr, tmp_block.getByPosition(and_rhs_pos).type, "" }};
+
+            auto func_and_adaptor = func_and->build(and_args);
+            tmp_block.getByPosition(tmp_block.columns() - 1).type = func_and_adaptor->getReturnType();
+            func_and_adaptor->execute(tmp_block, {and_lhs_pos, and_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
+
+            size_t or_lhs_pos = tmp_block.columns() - 1; // (res && `x == y`[i])
+            size_t or_rhs_pos = i * 4 + 2; // `x < y`[i]
+            tmp_block.insert(ColumnWithTypeAndName());
+
+            ColumnsWithTypeAndName or_args = {{ nullptr, tmp_block.getByPosition(or_lhs_pos).type, "" },
+                                              { nullptr, tmp_block.getByPosition(or_rhs_pos).type, "" }};
+
+            auto func_or_adaptor = func_or->build(or_args);
+            tmp_block.getByPosition(tmp_block.columns() - 1).type = func_or_adaptor->getReturnType();
+            func_or_adaptor->execute(tmp_block, {or_lhs_pos, or_rhs_pos}, tmp_block.columns() - 1, input_rows_count);
+
         }
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
     }
 
-    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
+    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
     {
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
@@ -1054,7 +1087,7 @@ private:
         }
     }
 
-    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
+    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
 
@@ -1084,7 +1117,7 @@ public:
         bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
         bool has_date = left.isDate() || right.isDate();
 
-        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
+        if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
             || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
@@ -1109,19 +1142,31 @@ public:
             auto adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(
                 FunctionComparison<Op, Name>::create(context)));
 
+            bool has_nullable = false;
+            bool has_null = false;
+
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                adaptor.build(args);
+                auto element_type = adaptor.build(args)->getReturnType();
+                has_nullable = has_nullable || element_type->isNullable();
+                has_null = has_null || element_type->onlyNull();
             }
+
+            /// If any element comparison is nullable, return type will also be nullable.
+            /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
+            if (has_null)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            if (has_nullable)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
 
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
@@ -1135,7 +1180,7 @@ public:
         /// NOTE: Nullable types are special case.
         /// (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
         /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are sometimes equal sometimes not).
-        if (left_type->equals(*right_type) && !left_type->isNullable() && col_left_untyped == col_right_untyped)
+        if (left_type->equals(*right_type) && !left_type->isNullable() && !isTuple(left_type) && col_left_untyped == col_right_untyped)
         {
             /// Always true: =, <=, >=
             if constexpr (std::is_same_v<Op<int, int>, EqualsOp<int, int>>

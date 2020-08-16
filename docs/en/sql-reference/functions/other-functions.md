@@ -783,7 +783,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Parameters:**
+**Parameters**
 
 -   `value` — Any value.
 
@@ -793,9 +793,13 @@ blockSerializedSize(value[, value[, ...]])
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT blockSerializedSize(maxState(1)) as x
 ```
+
+Result:
 
 ``` text
 ┌─x─┐
@@ -1050,11 +1054,110 @@ Result:
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
-## runningAccumulate {#function-runningaccumulate}
+## runningAccumulate {#runningaccumulate}
 
-Takes the states of the aggregate function and returns a column with values, are the result of the accumulation of these states for a set of block lines, from the first to the current line.
-For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
-So, result of function depends on partition of data to blocks and on order of data in block.
+Accumulates states of an aggregate function for each row of a data block.
+
+!!! warning "Warning"
+    The state is reset for each new data block.
+
+**Syntax**
+
+``` sql
+runningAccumulate(agg_state[, grouping]);
+```
+
+**Parameters**
+
+-   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
+
+**Returned value**
+
+-   Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
+
+Type depends on the aggregate function used.
+
+**Examples**
+
+Consider how you can use `runningAccumulate` to find the cumulative sum of numbers without and with grouping.
+
+Query:
+
+``` sql
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+```
+
+Result:
+
+``` text
+┌─k─┬─res─┐
+│ 0 │   0 │
+│ 1 │   1 │
+│ 2 │   3 │
+│ 3 │   6 │
+│ 4 │  10 │
+│ 5 │  15 │
+│ 6 │  21 │
+│ 7 │  28 │
+│ 8 │  36 │
+│ 9 │  45 │
+└───┴─────┘
+```
+
+The subquery generates `sumState` for every number from `0` to `9`. `sumState` returns the state of the [sum](../../sql-reference/aggregate-functions/reference/sum.md) function that contains the sum of a single number.
+
+The whole query does the following:
+
+1.  For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
+2.  For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
+3.  For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
+4.  The actions are repeated until the block ends.
+
+The following example shows the `groupping` parameter usage:
+
+Query:
+
+``` sql
+SELECT
+    grouping,
+    item,
+    runningAccumulate(state, grouping) AS res
+FROM
+(
+    SELECT
+        toInt8(number / 4) AS grouping,
+        number AS item,
+        sumState(number) AS state
+    FROM numbers(15)
+    GROUP BY item
+    ORDER BY item ASC
+);
+```
+
+Result:
+
+``` text
+┌─grouping─┬─item─┬─res─┐
+│        0 │    0 │   0 │
+│        0 │    1 │   1 │
+│        0 │    2 │   3 │
+│        0 │    3 │   6 │
+│        1 │    4 │   4 │
+│        1 │    5 │   9 │
+│        1 │    6 │  15 │
+│        1 │    7 │  22 │
+│        2 │    8 │   8 │
+│        2 │    9 │  17 │
+│        2 │   10 │  27 │
+│        2 │   11 │  38 │
+│        3 │   12 │  12 │
+│        3 │   13 │  25 │
+│        3 │   14 │  39 │
+└──────────┴──────┴─────┘
+```
+
+As you can see, `runningAccumulate` merges states for each group of rows separately.
 
 ## joinGet {#joinget}
 
@@ -1246,5 +1349,81 @@ len: 30
 
 -   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
+
+## randomFixedString {#randomfixedstring}
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomFixedString(length);
+```
+
+**Parameters**
+
+-   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   String filled with random bytes.
+
+Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+```
+
+Result:
+
+```text
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+
+```
+
+
+## randomStringUTF8 {#randomstringutf8}
+
+Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
+
+**Syntax**
+
+``` sql
+randomStringUTF8(length);
+```
+
+**Parameters**
+
+-   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   UTF-8 random string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql 
+SELECT randomStringUTF8(13)
+```
+
+Result:
+
+```text 
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
+└──────────────────────┘
+
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

@@ -12,6 +12,20 @@ foreach(policy
     endif()
 endforeach()
 
+# set default policy
+foreach(default_policy_var_name
+        # make option() honor normal variables for BUILD_SHARED_LIBS:
+        # - re2
+        # - snappy
+        CMAKE_POLICY_DEFAULT_CMP0077
+        # Google Test from sources uses too old cmake, 2.6.x, and CMP0022 should
+        # set, to avoid using deprecated LINK_INTERFACE_LIBRARIES(_<CONFIG>)? over
+        # INTERFACE_LINK_LIBRARIES.
+        CMAKE_POLICY_DEFAULT_CMP0022
+    )
+    set(${default_policy_var_name} NEW)
+endforeach()
+
 project(ClickHouse)
 
 include (cmake/arch.cmake)
@@ -128,6 +142,27 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+
+    if (ARCH_AMD64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+    elseif (ARCH_AARCH64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
+    endif ()
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
+endif ()
+
+if (OS_DARWIN)
+    set(WHOLE_ARCHIVE -all_load)
+    set(NO_WHOLE_ARCHIVE -noall_load)
+else ()
+    set(WHOLE_ARCHIVE --whole-archive)
+    set(NO_WHOLE_ARCHIVE --no-whole-archive)
+endif ()
+
 option (ADD_GDB_INDEX_FOR_GOLD "Set to add .gdb-index to resulting binaries for gold linker. NOOP if lld is used." 0)
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     if (LINKER_NAME STREQUAL "lld")
@@ -162,10 +197,7 @@ if(NOT DISABLE_CPU_OPTIMIZE)
     include(cmake/cpu_features.cmake)
 endif()
 
-if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
-    option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
-endif()
-
+option(ARCH_NATIVE "Enable -march=native compiler flag" 0)
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
@@ -273,7 +305,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
@@ -289,8 +321,9 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 if (MAKE_STATIC_LIBRARIES)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    if (OS_LINUX)
+    if (OS_LINUX AND NOT ARCH_ARM)
         # Slightly more efficient code can be generated
+        # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
@@ -335,12 +368,12 @@ include (cmake/find/icu.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
-include (cmake/find/termcap.cmake)
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
+include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/opencl.cmake)
@@ -361,6 +394,8 @@ include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
+include (cmake/find/sentry.cmake)
+include (cmake/find/stats.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -374,10 +409,6 @@ endif ()
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
-
-if (OS_LINUX AND NOT ENABLE_JEMALLOC)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
-endif ()
 
 if (USE_OPENCL)
     if (OS_DARWIN)
@@ -393,6 +424,10 @@ if (TARGET global-group)
 endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+if (NOT ENABLE_JEMALLOC)
+    message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
+endif ()
 
 macro (add_executable target)
     # invoke built-in add_executable
@@ -418,3 +453,5 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/print_include_directories.cmake)
+
+include (cmake/sanitize_target_link_libraries.cmake)

@@ -23,15 +23,15 @@ namespace
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
-    using DataType = MovingSumData<T>;
-    using Function = MovingImpl<T, LimitNumberOfElements, DataType>;
+    using Data = MovingSumData<std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>>;
+    using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
 template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
-    using DataType = MovingAvgData<T>;
-    using Function = MovingImpl<T, LimitNumberOfElements, DataType>;
+    using Data = MovingAvgData<std::conditional_t<IsDecimalNumber<T>, Decimal128, Float64>>;
+    using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
 template <typename T, typename LimitNumberOfElements> using MovingSumTemplate = typename MovingSum<T, LimitNumberOfElements>::Function;
@@ -71,11 +71,11 @@ AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, con
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-               throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
+               throw Exception("Parameter for aggregate function " + name + " should be positive integer", ErrorCodes::BAD_ARGUMENTS);
 
         if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
             (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
-            throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Parameter for aggregate function " + name + " should be positive integer", ErrorCodes::BAD_ARGUMENTS);
 
         limit_size = true;
         max_elems = parameters[0].get<UInt64>();
@@ -95,8 +95,10 @@ AggregateFunctionPtr createAggregateFunctionMoving(const std::string & name, con
 
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupArrayMovingSum", createAggregateFunctionMoving<MovingSumTemplate>);
-    factory.registerFunction("groupArrayMovingAvg", createAggregateFunctionMoving<MovingAvgTemplate>);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("groupArrayMovingSum", { createAggregateFunctionMoving<MovingSumTemplate>, properties });
+    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, properties });
 }
 
 }

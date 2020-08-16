@@ -1,4 +1,5 @@
 ---
+title: How do I export data from ClickHouse to a file?
 toc_hidden: true
 toc_priority: 10
 ---
@@ -29,7 +30,7 @@ See [File](../../engines/table-engines/special/file.md) table engine.
 
 ## Using Command-Line Redirection {#using-command-line-redirection}
 
-``` sql
+``` bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 

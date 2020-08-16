@@ -214,17 +214,18 @@ void TCPHandler::runImpl()
                 if (&context != &query_context.value())
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
+                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
                 state.need_receive_data_for_input = true;
 
                 /// Send ColumnsDescription for input storage.
                 if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
                 {
-                    sendTableColumns(input_storage->getColumns());
+                    sendTableColumns(metadata_snapshot->getColumns());
                 }
 
                 /// Send block to the client - input storage structure.
-                state.input_header = input_storage->getSampleBlock();
+                state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
             });
 
@@ -312,6 +313,18 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
+// Server should die on std logic errors in debug, like with assert()
+// or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
+// tests.
+#ifndef NDEBUG
+        catch (const std::logic_error & e)
+        {
+            state.io.onException();
+            exception.emplace(Exception::CreateFromSTDTag{}, e);
+            sendException(*exception, send_exception_with_stack_trace);
+            std::abort();
+        }
+#endif
         catch (const std::exception & e)
         {
             state.io.onException();
@@ -475,7 +488,10 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
             if (!table_id.empty())
-                sendTableColumns(DatabaseCatalog::instance().getTable(table_id, *query_context)->getColumns());
+            {
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, *query_context);
+                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+            }
         }
     }
 
@@ -864,10 +880,10 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                      : SettingsBinaryFormat::OLD;
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
     Settings passed_settings;
-    passed_settings.deserialize(*in, settings_format);
+    passed_settings.read(*in, settings_format);
     auto settings_changes = passed_settings.changes();
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -909,9 +925,9 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_client_info.read(*in, client_revision);
 
     Settings skip_settings;
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                      : SettingsBinaryFormat::OLD;
-    skip_settings.deserialize(*in, settings_format);
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
+    skip_settings.read(*in, settings_format);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
@@ -953,8 +969,9 @@ bool TCPHandler::receiveData(bool scalar)
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 /// The data will be written directly to the table.
-                state.io.out = storage->write(ASTPtr(), *query_context);
+                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
             }
             if (state.need_receive_data_for_input)
                 state.block_for_input = block;

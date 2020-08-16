@@ -7,7 +7,7 @@ toc_title: StripeLog
 
 # Stripelog {#stripelog}
 
-Bu motor günlük motor ailesine aittir. Günlük motorlarının ortak özelliklerini ve farklılıklarını görün [Log Engine Ailesi](log-family.md) Makale.
+Bu motor günlük motor ailesine aittir. Günlük motorlarının ortak özelliklerini ve farklılıklarını görün [Log Engine Ailesi](index.md) Makale.
 
 Az miktarda veri içeren (1 milyondan az satır) birçok tablo yazmanız gerektiğinde, bu altyapıyı senaryolarda kullanın.
 

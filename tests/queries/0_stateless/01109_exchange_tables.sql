@@ -1,5 +1,4 @@
 DROP DATABASE IF EXISTS test_01109;
-SET allow_experimental_database_atomic=1;
 CREATE DATABASE test_01109 ENGINE=Atomic;
 
 USE test_01109;
