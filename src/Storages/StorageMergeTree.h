@@ -37,7 +37,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -61,7 +61,7 @@ public:
         bool deduplicate,
         const Context & context) override;
 
-    Pipes alterPartition(
+    Pipe alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,
@@ -127,6 +127,8 @@ private:
       * Returns true if merge is finished successfully.
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
+
+    ActionLock stopMergesAndWait();
 
     BackgroundProcessingPoolTaskResult movePartsTask();
 

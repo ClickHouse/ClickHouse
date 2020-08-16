@@ -34,7 +34,7 @@ protected:
     bool finished = false;
     bool finalized = false;
 
-    /// Flush data on each consumed chunk. This is intented for interactive applications to output data as soon as it's ready.
+    /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
@@ -87,6 +87,8 @@ private:
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;
+
+    bool prefix_written = false;
 };
 }
 

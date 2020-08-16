@@ -97,7 +97,7 @@ void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
             " is greater or equals to the value of 'background_pool_size'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_mutation,
+            number_of_free_entries_in_pool_to_lower_max_size_of_merge,
             query_settings.background_pool_size);
     }
 }
