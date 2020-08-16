@@ -150,7 +150,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                     break;
 
             if (*it)
-                break;            
+                break;
 
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
