@@ -786,7 +786,7 @@ Upd. Готово.
 Павел Круглов, ВШЭ и Яндекс.
 Есть pull request. Готово.
 
-### 8.17. ClickHouse как MySQL реплика {#clickhouse-kak-mysql-replika}
+### 8.17. + ClickHouse как MySQL реплика {#clickhouse-kak-mysql-replika}
 
 Задачу делает BohuTANG.
 
