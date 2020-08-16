@@ -637,7 +637,7 @@ Upd. Готово (все директории кроме contrib).
 Требует 7.26. Коллеги начали делать, есть результат.
 Upd. В Аркадии частично работает небольшая часть тестов. И этого достаточно.
 
-### 7.29. Опции clickhouse install, stop, start вместо postinst, init.d, systemd скриптов {#optsii-clickhouse-install-stop-start-vmesto-postinst-init-d-systemd-skriptov}
+### 7.29. + Опции clickhouse install, stop, start вместо postinst, init.d, systemd скриптов {#optsii-clickhouse-install-stop-start-vmesto-postinst-init-d-systemd-skriptov}
 
 Низкий приоритет.
 
