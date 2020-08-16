@@ -34,7 +34,7 @@ String getExceptionMessage(
 
 template <typename T, ArgumentKind Kind>
 std::conditional_t<Kind == ArgumentKind::Optional, std::optional<T>, T>
-getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name, const std::string context_data_type_name)
+getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name [[maybe_unused]], const std::string context_data_type_name)
 {
     using NearestResultType = NearestFieldType<T>;
     const auto field_type = Field::TypeToEnum<NearestResultType>::value;
@@ -56,7 +56,7 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() == 0)
+    if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeDateTime>();
 
     const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "DateTime");
@@ -75,7 +75,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
 static DataTypePtr create32(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() == 0)
+    if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeDateTime>();
 
     if (arguments->children.size() != 1)
@@ -88,20 +88,16 @@ static DataTypePtr create32(const ASTPtr & arguments)
 
 static DataTypePtr create64(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() == 0)
+    if (!arguments || arguments->children.empty())
         return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
     if (arguments->children.size() > 2)
         throw Exception("DateTime64 data type can optionally have two argument - scale and time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "DateTime64");
+    const auto scale = getArgument<UInt64, ArgumentKind::Mandatory>(arguments, 0, "scale", "DateTime64");
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, !!scale, "timezone", "DateTime64");
 
-    if (!scale && !timezone)
-        throw Exception(getExceptionMessage(" has wrong type: ", 0, "scale", "DateTime", Field::Types::Which::UInt64),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return std::make_shared<DataTypeDateTime64>(scale.value_or(DataTypeDateTime64::default_scale), timezone.value_or(String{}));
+    return std::make_shared<DataTypeDateTime64>(scale, timezone.value_or(String{}));
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
