@@ -524,6 +524,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     {
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
+
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         Poco::File(path + "metadata_dropped/").createDirectories();
     }

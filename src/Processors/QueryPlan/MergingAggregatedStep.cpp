@@ -59,16 +59,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
                                  ? static_cast<size_t>(memory_efficient_merge_threads)
                                  : static_cast<size_t>(max_threads);
 
-        auto pipe = createMergingAggregatedMemoryEfficientPipe(
-                pipeline.getHeader(),
-                params,
-                pipeline.getNumStreams(),
-                num_merge_threads);
-
-        pipeline.addPipe(std::move(pipe));
+        pipeline.addMergingAggregatedMemoryEfficientTransform(params, num_merge_threads);
     }
-
-    pipeline.enableQuotaForCurrentStreams();
 }
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
