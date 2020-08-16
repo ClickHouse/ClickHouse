@@ -62,8 +62,6 @@ struct MutationCommand
 
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
-
-    ASTPtr getPartitionAndPredicate() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
