@@ -81,7 +81,7 @@ class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
 private:
     Operators_t operators;
-    Operators_t skip_operators = { (const char *[]){ { nullptr } } };
+    Operators_t skip_operators = { (const char *[]){ nullptr } };
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
 
