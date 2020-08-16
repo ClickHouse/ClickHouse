@@ -621,6 +621,16 @@ namespace
                 fs::remove(pid_file);
             }
         }
+        else
+        {
+            /// Create a directory for pid file.
+            /// It's created by "install" but we also support cases when ClickHouse is already installed different way.
+            fs::path pid_path = pid_file;
+            pid_path.remove_filename();
+            fs::create_directories(pid_path);
+            /// All users are allowed to read pid file (for clickhouse status command).
+            fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+        }
 
         std::string command = fmt::format("{} --config-file {} --pid-file {} --daemon",
             executable.string(), config.string(), pid_file.string());
