@@ -418,7 +418,12 @@ include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
+
+if(NOT USE_INTERNAL_PARQUET_LIBRARY)
+    set (ENABLE_ORC OFF CACHE INTERNAL "")
+endif()
 include (cmake/find/orc.cmake)
+
 include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
