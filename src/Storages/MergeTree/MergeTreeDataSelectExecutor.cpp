@@ -606,11 +606,14 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
                 if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
                 {
                     /// Fail fast if estimated number of rows to read exceeds the limit
-                    size_t total_rows_estimate = total_rows.fetch_add(ranges.getRowsCount());
+                    auto current_rows_estimate = ranges.getRowsCount();
+                    size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
+                    size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
                     if (total_rows_estimate > settings.max_rows_to_read)
                         throw Exception(
-                            "Limit for rows exceeded, max rows: " + formatReadableQuantity(settings.max_rows_to_read)
-                            + ", current rows: " + formatReadableQuantity(total_rows_estimate),
+                            "Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: "
+                            + formatReadableQuantity(settings.max_rows_to_read)
+                            + ", estimated rows to read (at least): " + formatReadableQuantity(total_rows_estimate),
                             ErrorCodes::TOO_MANY_ROWS);
                 }
 
