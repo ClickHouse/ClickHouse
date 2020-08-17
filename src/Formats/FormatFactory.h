@@ -210,5 +210,6 @@ void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorLineAsString(FormatFactory & factory);
 
 }

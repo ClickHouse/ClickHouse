@@ -365,6 +365,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
     registerInputFormatProcessorJSONAsString(*this);
+    registerInputFormatProcessorLineAsString(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
     registerFileSegmentationEngineCSV(*this);
