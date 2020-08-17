@@ -637,7 +637,7 @@ Upd. Готово (все директории кроме contrib).
 Требует 7.26. Коллеги начали делать, есть результат.
 Upd. В Аркадии частично работает небольшая часть тестов. И этого достаточно.
 
-### 7.29. Опции clickhouse install, stop, start вместо postinst, init.d, systemd скриптов {#optsii-clickhouse-install-stop-start-vmesto-postinst-init-d-systemd-skriptov}
+### 7.29. + Опции clickhouse install, stop, start вместо postinst, init.d, systemd скриптов {#optsii-clickhouse-install-stop-start-vmesto-postinst-init-d-systemd-skriptov}
 
 Низкий приоритет.
 
@@ -786,7 +786,7 @@ Upd. Готово.
 Павел Круглов, ВШЭ и Яндекс.
 Есть pull request. Готово.
 
-### 8.17. ClickHouse как MySQL реплика {#clickhouse-kak-mysql-replika}
+### 8.17. + ClickHouse как MySQL реплика {#clickhouse-kak-mysql-replika}
 
 Задачу делает BohuTANG.
 
@@ -1447,11 +1447,11 @@ Upd. Возможно будет отложено на следующий год
 Василий Морозов, Арслан Гумеров, Альберт Кидрачев, ВШЭ.
 В прошлом году задачу начинал делать другой человек, но не добился достаточного прогресса.
 
-+ 1.  Оптимизация top sort.
+\+ 1.  Оптимизация top sort.
 
 В ClickHouse используется неоптимальный вариант top sort. Суть его в том, что из каждого блока достаётся top N записей, а затем, все блоки мержатся. Но доставание top N записей у каждого следующего блока бессмысленно, если мы знаем, что из них в глобальный top N войдёт меньше. Конечно нужно реализовать вариацию на тему priority queue (heap) с быстрым пропуском целых блоков, если ни одна строка не попадёт в накопленный top.
 
-+ 2.  Рекурсивный вариант сортировки по кортежам.
+\+ 2.  Рекурсивный вариант сортировки по кортежам.
 
 Для сортировки по кортежам используется обычная сортировка с компаратором, который в цикле по элементам кортежа делает виртуальные вызовы `IColumn::compareAt`. Это неоптимально - как из-за короткого цикла по неизвестному в compile-time количеству элементов, так и из-за виртуальных вызовов. Чтобы обойтись без виртуальных вызовов, есть метод `IColumn::getPermutation`. Он используется в случае сортировки по одному столбцу. Есть вариант, что в случае сортировки по кортежу, что-то похожее тоже можно применить… например, сделать метод `updatePermutation`, принимающий аргументы offset и limit, и допереставляющий перестановку в диапазоне значений, в которых предыдущий столбец имел равные значения.
 
@@ -1583,8 +1583,8 @@ Upd. Готово.
 
 После 10.14.
 
-[\#7237](https://github.com/ClickHouse/ClickHouse/issues/7237)
-[\#2655](https://github.com/ClickHouse/ClickHouse/issues/2655)
+[#7237](https://github.com/ClickHouse/ClickHouse/issues/7237)
+[#2655](https://github.com/ClickHouse/ClickHouse/issues/2655)
 
 ### 22.23. Правильная обработка Nullable в функциях, которые кидают исключение на default значении: modulo, intDiv {#pravilnaia-obrabotka-nullable-v-funktsiiakh-kotorye-kidaiut-iskliuchenie-na-default-znachenii-modulo-intdiv}
 
@@ -1598,7 +1598,7 @@ Upd. Готово.
 
 ### 22.26. Плохая производительность quantileTDigest {#plokhaia-proizvoditelnost-quantiletdigest}
 
-[\#2668](https://github.com/ClickHouse/ClickHouse/issues/2668)
+[#2668](https://github.com/ClickHouse/ClickHouse/issues/2668)
 
 Алексей Миловидов или будет переназначено.
 

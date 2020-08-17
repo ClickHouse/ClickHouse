@@ -356,7 +356,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
-    /// Check that the process' user id matches the owner of the data.
+    /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
     if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
@@ -468,6 +468,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     {
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
+
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         Poco::File(path + "metadata_dropped/").createDirectories();
     }

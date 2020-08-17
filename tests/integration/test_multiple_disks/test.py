@@ -531,7 +531,6 @@ def test_start_stop_moves(start_cluster, name, engine):
         assert used_disks[0] == 'jbod1'
 
         node1.query("SYSTEM START MOVES {}".format(name))
-        node1.query("SYSTEM START MERGES {}".format(name))
 
         # wait sometime until background backoff finishes
         retry = 30
@@ -540,6 +539,8 @@ def test_start_stop_moves(start_cluster, name, engine):
             time.sleep(1)
             used_disks = get_used_disks_for_table(node1, name)
             i += 1
+
+        node1.query("SYSTEM START MERGES {}".format(name))
 
         assert sum(1 for x in used_disks if x == 'jbod1') <= 2
 

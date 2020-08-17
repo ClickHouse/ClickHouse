@@ -1,7 +1,11 @@
 #include <string>
 
-#include <Core/MySQLClient.h>
-#include <Core/MySQLProtocol.h>
+#include <Core/MySQL/MySQLClient.h>
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQL/PacketsReplication.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -11,15 +15,19 @@ int main(int argc, char ** argv)
 {
     using namespace DB;
     using namespace MySQLProtocol;
+    using namespace MySQLProtocol::Generic;
     using namespace MySQLProtocol::Authentication;
+    using namespace MySQLProtocol::ConnectionPhase;
+    using namespace MySQLProtocol::ProtocolText;
 
 
+    uint8_t sequence_id = 1;
     String user = "default";
     String password = "123";
     String database;
 
     UInt8 charset_utf8 = 33;
-    UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
+    UInt32 max_packet_size = MAX_PACKET_LENGTH;
     String mysql_native_password = "mysql_native_password";
 
     UInt32 server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
@@ -34,13 +42,13 @@ int main(int argc, char ** argv)
         std::string s0;
         WriteBufferFromString out0(s0);
 
-        Handshake server_handshake(server_capability_flags, -1, "ClickHouse", "mysql_native_password", "aaaaaaaaaaaaaaaaaaaaa");
-        server_handshake.writePayloadImpl(out0);
+        Handshake server_handshake(server_capability_flags, -1, "ClickHouse", "mysql_native_password", "aaaaaaaaaaaaaaaaaaaaa", CharacterSet::utf8_general_ci);
+        server_handshake.writePayload(out0, sequence_id);
 
         /// 1.2 Client reads the greeting
         ReadBufferFromString in0(s0);
         Handshake client_handshake;
-        client_handshake.readPayloadImpl(in0);
+        client_handshake.readPayload(in0, sequence_id);
 
         /// Check packet
         ASSERT(server_handshake.capability_flags == client_handshake.capability_flags)
@@ -59,12 +67,12 @@ int main(int argc, char ** argv)
         String auth_plugin_data = native41.getAuthPluginData();
         HandshakeResponse client_handshake_response(
             client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
-        client_handshake_response.writePayloadImpl(out1);
+        client_handshake_response.writePayload(out1, sequence_id);
 
         /// 2.2 Server reads the response
         ReadBufferFromString in1(s1);
         HandshakeResponse server_handshake_response;
-        server_handshake_response.readPayloadImpl(in1);
+        server_handshake_response.readPayload(in1, sequence_id);
 
         /// Check
         ASSERT(server_handshake_response.capability_flags == client_handshake_response.capability_flags)
@@ -80,13 +88,13 @@ int main(int argc, char ** argv)
         // 1. Server writes packet
         std::string s0;
         WriteBufferFromString out0(s0);
-        OK_Packet server(0x00, server_capability_flags, 0, 0, 0, "", "");
-        server.writePayloadImpl(out0);
+        OKPacket server(0x00, server_capability_flags, 0, 0, 0, "", "");
+        server.writePayload(out0, sequence_id);
 
         // 2. Client reads packet
         ReadBufferFromString in0(s0);
-        PacketResponse client(server_capability_flags);
-        client.readPayloadImpl(in0);
+        ResponsePacket client(server_capability_flags);
+        client.readPayload(in0, sequence_id);
 
         // Check
         ASSERT(client.getType() == PACKET_OK)
@@ -100,13 +108,13 @@ int main(int argc, char ** argv)
         // 1. Server writes packet
         std::string s0;
         WriteBufferFromString out0(s0);
-        ERR_Packet server(123, "12345", "This is the error message");
-        server.writePayloadImpl(out0);
+        ERRPacket server(123, "12345", "This is the error message");
+        server.writePayload(out0, sequence_id);
 
         // 2. Client reads packet
         ReadBufferFromString in0(s0);
-        PacketResponse client(server_capability_flags);
-        client.readPayloadImpl(in0);
+        ResponsePacket client(server_capability_flags);
+        client.readPayload(in0, sequence_id);
 
         // Check
         ASSERT(client.getType() == PACKET_ERR)
@@ -121,13 +129,13 @@ int main(int argc, char ** argv)
         // 1. Server writes packet
         std::string s0;
         WriteBufferFromString out0(s0);
-        EOF_Packet server(1, 1);
-        server.writePayloadImpl(out0);
+        EOFPacket server(1, 1);
+        server.writePayload(out0, sequence_id);
 
         // 2. Client reads packet
         ReadBufferFromString in0(s0);
-        PacketResponse client(server_capability_flags);
-        client.readPayloadImpl(in0);
+        ResponsePacket client(server_capability_flags);
+        client.readPayload(in0, sequence_id);
 
         // Check
         ASSERT(client.getType() == PACKET_EOF)
@@ -142,12 +150,12 @@ int main(int argc, char ** argv)
         std::string s0;
         WriteBufferFromString out0(s0);
         ColumnDefinition server("schema", "tbl", "org_tbl", "name", "org_name", 33, 0x00, MYSQL_TYPE_STRING, 0x00, 0x00);
-        server.writePayloadImpl(out0);
+        server.writePayload(out0, sequence_id);
 
         // 2. Client reads packet
         ReadBufferFromString in0(s0);
         ColumnDefinition client;
-        client.readPayloadImpl(in0);
+        client.readPayload(in0, sequence_id);
 
         // Check
         ASSERT(client.column_type == server.column_type)
