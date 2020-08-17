@@ -706,12 +706,71 @@ namespace MySQLReplication
         }
     }
 
+    void GTIDEvent::parseImpl(ReadBuffer & payload)
+    {
+        /// We only care uuid:seq_no parts assigned to GTID_NEXT.
+        payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
+        payload.readStrict(reinterpret_cast<char *>(gtid.uuid), 16);
+        payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
+
+        /// Skip others.
+        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+    }
+
+    void GTIDEvent::dump(std::ostream & out) const
+    {
+        String dst36;
+        dst36.resize(36);
+        formatUUID(gtid.uuid, reinterpret_cast<UInt8 *>(dst36.data()));
+        auto gtid_next = dst36 + ":" + std::to_string(gtid.seq_no);
+
+        header.dump(out);
+        out << "GTID Next: " << gtid_next << std::endl;
+    }
+
     void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }
 
     void DryRunEvent::dump(std::ostream & out) const
     {
         header.dump(out);
         out << "[DryRun Event]" << std::endl;
+    }
+
+    /// Update binlog name/position/gtid based on the event type.
+    void Position::update(BinlogEventPtr event)
+    {
+        switch (event->header.type)
+        {
+            case FORMAT_DESCRIPTION_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case ROTATE_EVENT: {
+                auto rotate = std::static_pointer_cast<RotateEvent>(event);
+                binlog_name = rotate->next_binlog;
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case QUERY_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case XID_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case GTID_EVENT: {
+                auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
+                binlog_pos = event->header.log_pos;
+                gtid_sets.update(gtid_event->gtid);
+                break;
+            }
+            default: {
+                /// DryRun event.
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+        }
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
@@ -736,17 +795,14 @@ namespace MySQLReplication
                 event = std::make_shared<FormatDescriptionEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
             case ROTATE_EVENT: {
                 event = std::make_shared<RotateEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-
-                auto rotate = std::static_pointer_cast<RotateEvent>(event);
-                position.updateLogPos(event->header.log_pos);
-                position.updateLogName(rotate->next_binlog);
+                position.update(event);
                 break;
             }
             case QUERY_EVENT: {
@@ -763,16 +819,15 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        position.updateLogPos(event->header.log_pos);
+                        position.update(event);
                 }
-
                 break;
             }
             case XID_EVENT: {
                 event = std::make_shared<XIDEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
             case TABLE_MAP_EVENT: {
@@ -815,11 +870,18 @@ namespace MySQLReplication
                 event->parseEvent(payload);
                 break;
             }
+            case GTID_EVENT: {
+                event = std::make_shared<GTIDEvent>();
+                event->parseHeader(payload);
+                event->parseEvent(payload);
+                position.update(event);
+                break;
+            }
             default: {
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
         }
