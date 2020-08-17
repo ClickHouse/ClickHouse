@@ -1,46 +1,52 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:19.10
 
-RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN \
+    apt update && \
+    apt install ca-certificates lsb-release wget gnupg apt-transport-https --yes --no-install-recommends --verbose-versions  && \
+    wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" && \
+    echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-10 main" >> /etc/apt/sources.list && \
+    wget "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" && \
+    apt install "./apache-arrow-archive-keyring-latest-${CODENAME}.deb" --yes --no-install-recommends --verbose-versions && \
+    rm -v "./apache-arrow-archive-keyring-latest-${CODENAME}.deb"
 
 # initial packages
-RUN apt-get --allow-unauthenticated update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get --allow-unauthenticated install --yes --no-install-recommends \
+RUN apt update && \
+    apt install --no-install-recommends \
             bash \
             fakeroot \
             ccache \
             curl \
             software-properties-common \
-            gnupg \
-            apt-transport-https \
-            ca-certificates
+            --yes
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb
-RUN chmod +x dpkg-deb
-RUN cp dpkg-deb /usr/bin
+RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb && \
+    chmod +x dpkg-deb && \
+    cp dpkg-deb /usr/bin
 
 
-# Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
-RUN apt-get --allow-unauthenticated update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get --allow-unauthenticated install --yes --no-install-recommends \
+# Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
+RUN apt update && \
+    apt install --no-install-recommends \
             gcc-9 \
             g++-9 \
             llvm-10 \
+            llvm-10-dev \
+            llvm-9-dev \
             clang-10 \
             lld-10 \
             clang-tidy-10 \
             clang-9 \
             lld-9 \
             clang-tidy-9 \
+            libssl-dev \
             libicu-dev \
-            libreadline-dev \
             gperf \
             ninja-build \
             perl \
@@ -59,9 +65,8 @@ RUN apt-get --allow-unauthenticated update -y \
             zlib1g-dev \
             liblz4-dev \
             libdouble-conversion-dev \
+            libxml2-dev \
             librdkafka-dev \
-            libpoconetssl62 \
-            libpoco-dev \
             libgoogle-perftools-dev \
             libzstd-dev \
             libltdl-dev \
@@ -85,8 +90,21 @@ RUN apt-get --allow-unauthenticated update -y \
             libcctz-dev \
             libldap2-dev \
             libsasl2-dev \
+            libgsasl7-dev \
             heimdal-multidev \
-            libhyperscan-dev
+            libhyperscan-dev \
+            libbrotli-dev \
+            protobuf-compiler \
+            libprotoc-dev \
+            libgrpc++-dev \
+            rapidjson-dev \
+            libsnappy-dev \
+            libparquet-dev \
+            libthrift-dev \
+            libavro-dev \
+            libfarmhash-dev \
+            libmysqlclient-dev \
+            --yes
 
 
 # This symlink required by gcc to find lld compiler
