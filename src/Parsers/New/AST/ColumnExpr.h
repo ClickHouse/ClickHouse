@@ -10,11 +10,12 @@ class ColumnExpr : public INode
 {
     public:
         static PtrTo<ColumnExpr> createAlias(PtrTo<ColumnExpr> expr, PtrTo<Identifier> alias);
-        static PtrTo<ColumnExpr> createAsterisk();
+        static PtrTo<ColumnExpr> createAsterisk(PtrTo<TableIdentifier> identifier, bool single_column);
         static PtrTo<ColumnExpr> createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnExprList> args);
         static PtrTo<ColumnExpr> createIdentifier(PtrTo<ColumnIdentifier> identifier);
         static PtrTo<ColumnExpr> createLambda(PtrTo<List<Identifier, ','>> params, PtrTo<ColumnExpr> expr);
         static PtrTo<ColumnExpr> createLiteral(PtrTo<Literal> literal);
+        static PtrTo<ColumnExpr> createSubquery(PtrTo<SelectUnionQuery> query, bool scalar);
 
         ASTPtr convertToOld() const override;
 
@@ -39,6 +40,9 @@ class ColumnExpr : public INode
 
             // LITERAL
             LITERAL = 0,
+
+            // SUBQUERY
+            SUBQUERY = 0,
         };
         enum class ExprType
         {
@@ -48,9 +52,11 @@ class ColumnExpr : public INode
             IDENTIFIER,
             LAMBDA,
             LITERAL,
+            SUBQUERY,
         };
 
         const ExprType expr_type;
+        bool expect_single_column = false;
 
         ColumnExpr(ExprType type, PtrList exprs);
 

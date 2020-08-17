@@ -162,16 +162,25 @@ valueExpr
 // Columns
 
 columnTypeExpr
-    : identifier                                                       # ColumnTypeExprSimple
-    | identifier LPAREN columnParamList RPAREN                         # ColumnTypeExprParam
-    | identifier LPAREN enumValue (COMMA enumValue)* RPAREN            # ColumnTypeExprEnum
-    | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN  # ColumnTypeExprComplex
+    : identifier                                                       # ColumnTypeExprSimple   // UInt64
+    | identifier LPAREN columnParamList RPAREN                         # ColumnTypeExprParam    // FixedString(N)
+    | identifier LPAREN enumValue (COMMA enumValue)* RPAREN            # ColumnTypeExprEnum     // Enum
+    | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN  # ColumnTypeExprComplex  // Array, Tuple
+    // TODO: NestedColumn
     ;
-columnExprList: columnExpr (COMMA columnExpr)*;
+columnExprList: columnsExpr (COMMA columnsExpr)*;
+columnsExpr
+    : (tableIdentifier DOT)? ASTERISK  # ColumnsExprAsterisk
+    | LPAREN selectUnionStmt RPAREN    # ColumnsExprSubquery
+    // NOTE: asterisk and subquery goes before |columnExpr| so that we can mark them as multi-column expressions.
+    | columnExpr                       # ColumnsExprColumn
+    ;
 columnExpr
     : literal                                                                        # ColumnExprLiteral
-    | ASTERISK                                                                       # ColumnExprAsterisk // TODO: don't forget qualified asterisk
-    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple // or a single expression in parens
+    | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk // single-column only
+    | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery // single-column only
+    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens   // single-column only
+    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
     | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
     | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
     // TODO: | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                       # ColumnExprCast
@@ -184,7 +193,7 @@ columnExpr
     | columnExpr DOT INTEGER_LITERAL                                                 # ColumnExprTupleAccess
     | unaryOp columnExpr                                                             # ColumnExprUnaryOp
     | columnExpr IS NOT? NULL_SQL                                                    # ColumnExprIsNull
-    | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp // TODO: don't forget `IN subquery`
+    | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
     | columnExpr AS identifier                                                       # ColumnExprAlias
@@ -198,7 +207,7 @@ columnLambdaExpr:
     )
     ARROW columnExpr
     ;
-columnIdentifier: (tableIdentifier DOT)? identifier; // TODO: don't forget compound identifier.
+columnIdentifier: (tableIdentifier DOT)? identifier (DOT identifier)?;
 
 // Tables
 
@@ -206,7 +215,7 @@ tableExpr
     : tableIdentifier                                       # TableExprIdentifier
     | identifier LPAREN tableArgList? RPAREN                # TableExprFunction
     | LPAREN selectUnionStmt RPAREN                         # TableExprSubquery
-    | tableExpr AS identifier                               # TableExprAlias
+    | tableExpr AS? identifier                               # TableExprAlias
     ;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
@@ -226,13 +235,13 @@ literal
     | STRING_LITERAL
     | NULL_SQL
     ; // TODO: don't forget literal functions, like hostname(), toTypeName(), etc.
-keyword  // except NULL_SQL, SELECT, INF, NAN
+keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
     : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER | COLLATE | CREATE
     | CROSS | DAY | DATABASE | DEFAULT | DELETE | DESCENDING | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL
-    | FIRST | FORMAT | FROM | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
+    | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
     | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OR | ORDER | OUTER | OUTFILE
     | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | TABLE | TEMPORARY | THEN | TOTALS
-    | TRAILING | TRIM | TO | TTL | UNION | USING | VALUES | VOLUME | WEEK | WHEN | WHERE | WITH | YEAR
+    | TRAILING | TRIM | TO | TTL | UNION | VALUES | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

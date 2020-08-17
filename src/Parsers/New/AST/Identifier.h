@@ -17,8 +17,8 @@ class Identifier : public INode
 
         virtual String getQualifiedName() const { return name; };
 
-    private:
-        const String name;
+    protected:
+        mutable String name; // protected and non-const because identifiers may become `column.nested` from `table.column`
 
         String dumpInfo() const override { return getQualifiedName(); }
 };
@@ -35,24 +35,27 @@ class TableIdentifier : public Identifier
         TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Identifier> name);
 
         auto getDatabase() const { return db; }
+        void makeCompound() const;
 
         String getQualifiedName() const override { return (db ? db->getQualifiedName() + "." : String()) + getName(); }
 
     private:
-        PtrTo<DatabaseIdentifier> db;
+        mutable PtrTo<DatabaseIdentifier> db;
 };
 
 class ColumnIdentifier : public Identifier
 {
     public:
-        ColumnIdentifier(PtrTo<TableIdentifier> table, PtrTo<Identifier> name);
+        ColumnIdentifier(PtrTo<TableIdentifier> table, PtrTo<Identifier> name, PtrTo<Identifier> nested);
 
         auto getTable() const { return table; }
+        void makeCompound() const;
 
         String getQualifiedName() const override { return (table ? table->getQualifiedName() + "." : String()) + getName(); }
 
     private:
-        PtrTo<TableIdentifier> table;
+        mutable PtrTo<TableIdentifier> table;
+        mutable PtrTo<Identifier> nested;
 };
 
 }

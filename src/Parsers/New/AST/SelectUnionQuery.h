@@ -10,8 +10,12 @@ class SelectUnionQuery : public Query
 {
     public:
         void appendSelect(PtrTo<SelectStmt> stmt);
+        void shouldBeScalar() { is_scalar = true; }
 
         ASTPtr convertToOld() const override;
+
+    private:
+        bool is_scalar = false;
 };
 
 }

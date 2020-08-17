@@ -8,7 +8,7 @@
 namespace DB::AST
 {
 
-Identifier::Identifier(const std::string & name_) : name(name_)
+Identifier::Identifier(const String & name_) : name(name_)
 {
 }
 
@@ -25,8 +25,29 @@ TableIdentifier::TableIdentifier(PtrTo<DatabaseIdentifier> database, PtrTo<Ident
 {
 }
 
-ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifier> name) : Identifier(*name), table(table_)
+void TableIdentifier::makeCompound() const
 {
+    if (db)
+    {
+        name = db->getName();
+        db.reset();
+    }
+}
+
+ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifier> name, PtrTo<Identifier> nested_)
+    : Identifier(name->getName() + (nested_ ? "." + nested_->getName() : String())), table(table_), nested(nested_)
+{
+}
+
+void ColumnIdentifier::makeCompound() const
+{
+    if (table && !nested)
+    {
+        nested = std::make_shared<Identifier>(getName());
+        name = table->getName() + "." + getName();
+        if (table->getDatabase()) table->makeCompound();
+        else table.reset();
+    }
 }
 
 }
@@ -53,7 +74,8 @@ antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnId
 {
     return std::make_shared<ColumnIdentifier>(
         ctx->tableIdentifier() ? ctx->tableIdentifier()->accept(this).as<PtrTo<TableIdentifier>>() : nullptr,
-        ctx->identifier()->accept(this));
+        ctx->identifier(0)->accept(this),
+        ctx->identifier().size() == 2 ? ctx->identifier(1)->accept(this).as<PtrTo<Identifier>>() : nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
