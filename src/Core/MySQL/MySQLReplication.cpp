@@ -773,6 +773,14 @@ namespace MySQLReplication
         }
     }
 
+    void Position::dump(std::ostream & out) const
+    {
+        out << "\n=== Binlog Position ===" << std::endl;
+        out << "Binlog: " << this->binlog_name << std::endl;
+        out << "Position: " << this->binlog_pos << std::endl;
+        out << "GTIDSets: " << this->gtid_sets.toString() << std::endl;
+    }
+
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
         UInt16 header = static_cast<unsigned char>(*payload.position());

@@ -476,6 +476,7 @@ namespace MySQLReplication
         Position() : binlog_pos(0), binlog_name("") { }
         Position(UInt64 binlog_pos_, const String & binlog_name_) : binlog_pos(binlog_pos_), binlog_name(binlog_name_) { }
         void update(BinlogEventPtr event);
+        void dump(std::ostream & out) const;
     };
 
     class IFlavor : public MySQLProtocol::IMySQLReadPacket
