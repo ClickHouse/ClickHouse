@@ -473,9 +473,8 @@ namespace MySQLReplication
         String binlog_name;
         GTIDSets gtid_sets;
 
-        Position() : binlog_pos(0), binlog_name("") { }
-        Position(UInt64 binlog_pos_, const String & binlog_name_) : binlog_pos(binlog_pos_), binlog_name(binlog_name_) { }
         void update(BinlogEventPtr event);
+        void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_);
         void dump(std::ostream & out) const;
     };
 

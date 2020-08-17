@@ -788,6 +788,13 @@ namespace MySQLReplication
         }
     }
 
+    void Position::update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_)
+    {
+        binlog_pos = binlog_pos_;
+        binlog_name = binlog_name_;
+        gtid_sets.parse(gtid_sets_);
+    }
+
     void Position::dump(std::ostream & out) const
     {
         out << "\n=== Binlog Position ===" << std::endl;
