@@ -5,7 +5,7 @@ toc_title: CONSTRAINT
 
 # Манипуляции с ограничениями (constraints) {#manipuliatsii-s-ogranicheniiami-constraints}
 
-Про ограничения подробнее написано [тут](../create/index.md#constraints).
+Про ограничения подробнее написано [тут](../create/table.md#constraints).
 
 Добавить или удалить ограничение можно с помощью запросов
 
