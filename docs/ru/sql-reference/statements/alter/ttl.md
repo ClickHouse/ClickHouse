@@ -5,7 +5,7 @@ toc_title: TTL
 
 #  Манипуляции с TTL таблицы {#manipuliatsii-s-ttl-tablitsy}
 
-Вы можете изменить [TTL для таблицы](../../sql-reference/statements/alter/ttl.md) запросом следующего вида:
+Вы можете изменить [TTL для таблицы](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) запросом следующего вида:
 
 ``` sql
 ALTER TABLE table-name MODIFY TTL ttl-expression
