@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQL/PacketsGeneric.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ size_t RegisterSlave::getPayloadSize() const
 
 void RegisterSlave::writePayloadImpl(WriteBuffer & buffer) const
 {
-    buffer.write(ProtocolText::COM_REGISTER_SLAVE);
+    buffer.write(Generic::COM_REGISTER_SLAVE);
     buffer.write(reinterpret_cast<const char *>(&server_id), 4);
     writeLengthEncodedString(slaves_hostname, buffer);
     writeLengthEncodedString(slaves_users, buffer);
@@ -48,7 +48,7 @@ size_t BinlogDump::getPayloadSize() const
 
 void BinlogDump::writePayloadImpl(WriteBuffer & buffer) const
 {
-    buffer.write(ProtocolText::COM_BINLOG_DUMP);
+    buffer.write(Generic::COM_BINLOG_DUMP);
     buffer.write(reinterpret_cast<const char *>(&binlog_pos), 4);
     buffer.write(reinterpret_cast<const char *>(&flags), 2);
     buffer.write(reinterpret_cast<const char *>(&server_id), 4);
@@ -65,7 +65,7 @@ size_t BinlogDumpGTID::getPayloadSize() const { return 1 + 2 + 4 + 4 + binlog_fi
 
 void BinlogDumpGTID::writePayloadImpl(WriteBuffer & buffer) const
 {
-    buffer.write(ProtocolText::COM_BINLOG_DUMP_GTID);
+    buffer.write(Generic::COM_BINLOG_DUMP_GTID);
     buffer.write(reinterpret_cast<const char *>(&flags), 2);
     buffer.write(reinterpret_cast<const char *>(&server_id), 4);
 
