@@ -6,7 +6,7 @@
 
 Столбцы:
 
--   `partition` ([String](../../sql-reference/data-types/string.md)) – имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../../sql-reference/statements/alter.md#query_language_queries_alter).
+-   `partition` ([String](../../sql-reference/data-types/string.md)) – имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter).
 
     Форматы:
 

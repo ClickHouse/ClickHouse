@@ -249,7 +249,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### ALTER {#grant-alter}
 
-Разрешает выполнять запросы [ALTER](alter.md) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [ALTER](alter/index.md) в соответствии со следующей иерархией привилегий:
 
 - `ALTER`. Уровень: `COLUMN`. 
     - `ALTER TABLE`. Уровень: `GROUP`
