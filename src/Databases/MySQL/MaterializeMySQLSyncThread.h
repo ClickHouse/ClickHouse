@@ -8,7 +8,7 @@
 
 #    include <mutex>
 #    include <Core/BackgroundSchedulePool.h>
-#    include <Core/MySQLClient.h>
+#    include <Core/MySQL/MySQLClient.h>
 #    include <DataStreams/BlockIO.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>

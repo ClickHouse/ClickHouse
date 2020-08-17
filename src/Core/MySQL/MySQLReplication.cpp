@@ -4,6 +4,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <common/DateLUT.h>
 #include <Common/FieldVisitors.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsProtocolText.h>
 
 namespace DB
 {
@@ -15,6 +17,8 @@ namespace ErrorCodes
 namespace MySQLReplication
 {
     using namespace MySQLProtocol;
+    using namespace MySQLProtocol::Generic;
+    using namespace MySQLProtocol::ProtocolText;
 
     /// https://dev.mysql.com/doc/internals/en/binlog-event-header.html
     void EventHeader::parse(ReadBuffer & payload)
@@ -717,8 +721,8 @@ namespace MySQLReplication
             case PACKET_EOF:
                 throw ReplicationError("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
             case PACKET_ERR:
-                ERR_Packet err;
-                err.readPayloadImpl(payload);
+                ERRPacket err;
+                err.readPayloadWithUnpacked(payload);
                 throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the header flag.
