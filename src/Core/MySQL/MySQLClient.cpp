@@ -1,10 +1,19 @@
 #include "MySQLClient.h"
-#include <Core/MySQLReplication.h>
+
+#include <Core/MySQL/Authentication.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsConnection.h>
+#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQL/PacketsReplication.h>
+#include <Core/MySQL/MySQLReplication.h>
 
 namespace DB
 {
+using namespace Generic;
 using namespace Replication;
+using namespace ProtocolText;
 using namespace Authentication;
+using namespace ConnectionPhase;
 
 namespace ErrorCodes
 {
@@ -44,7 +53,7 @@ void MySQLClient::connect()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-    packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
+    packet_endpoint = std::make_shared<PacketEndpoint>(*in, *out, seq);
     handshake();
 }
 
@@ -62,10 +71,10 @@ void MySQLClient::disconnect()
 void MySQLClient::handshake()
 {
     Handshake handshake;
-    packet_sender->receivePacket(handshake);
+    packet_endpoint->receivePacket(handshake);
     if (handshake.auth_plugin_name != mysql_native_password)
     {
-        throw MySQLClientError(
+        throw Exception(
             "Only support " + mysql_native_password + " auth plugin name, but got " + handshake.auth_plugin_name,
             ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
@@ -74,48 +83,48 @@ void MySQLClient::handshake()
     String auth_plugin_data = native41.getAuthPluginData();
 
     HandshakeResponse handshake_response(
-        client_capability_flags, max_packet_size, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
-    packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
+        client_capability_flags, MAX_PACKET_LENGTH, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
+    packet_endpoint->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    PacketResponse packet_response(client_capability_flags, true);
-    packet_sender->receivePacket(packet_response);
-    packet_sender->resetSequenceId();
+    ResponsePacket packet_response(client_capability_flags, true);
+    packet_endpoint->receivePacket(packet_response);
+    packet_endpoint->resetSequenceId();
 
     if (packet_response.getType() == PACKET_ERR)
-        throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     else if (packet_response.getType() == PACKET_AUTH_SWITCH)
-        throw MySQLClientError("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::writeCommand(char command, String query)
 {
     WriteCommand write_command(command, query);
-    packet_sender->sendPacket<WriteCommand>(write_command, true);
+    packet_endpoint->sendPacket<WriteCommand>(write_command, true);
 
-    PacketResponse packet_response(client_capability_flags);
-    packet_sender->receivePacket(packet_response);
+    ResponsePacket packet_response(client_capability_flags);
+    packet_endpoint->receivePacket(packet_response);
     switch (packet_response.getType())
     {
         case PACKET_ERR:
-            throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+            throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         case PACKET_OK:
             break;
         default:
             break;
     }
-    packet_sender->resetSequenceId();
+    packet_endpoint->resetSequenceId();
 }
 
 void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
 {
     RegisterSlave register_slave(slave_id);
-    packet_sender->sendPacket<RegisterSlave>(register_slave, true);
+    packet_endpoint->sendPacket<RegisterSlave>(register_slave, true);
 
-    PacketResponse packet_response(client_capability_flags);
-    packet_sender->receivePacket(packet_response);
-    packet_sender->resetSequenceId();
+    ResponsePacket packet_response(client_capability_flags);
+    packet_endpoint->receivePacket(packet_response);
+    packet_endpoint->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
-        throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::ping()
@@ -141,12 +150,12 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
 
     binlog_pos = binlog_pos < 4 ? 4 : binlog_pos;
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
-    packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
+    packet_endpoint->sendPacket<BinlogDump>(binlog_dump, true);
 }
 
 BinlogEventPtr MySQLClient::readOneBinlogEvent(UInt64 milliseconds)
 {
-    if (packet_sender->tryReceivePacket(replication, milliseconds))
+    if (packet_endpoint->tryReceivePacket(replication, milliseconds))
         return replication.readOneEvent();
 
     return {};

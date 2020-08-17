@@ -153,7 +153,6 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     if (isTableExist(dictionary_name, global_context))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", dict_id.getFullTableName());
 
-
     String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
     String dictionary_metadata_tmp_path = dictionary_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(query);
