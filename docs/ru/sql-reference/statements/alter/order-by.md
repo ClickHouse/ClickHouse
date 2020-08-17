@@ -11,8 +11,8 @@ toc_title: ORDER BY
 MODIFY ORDER BY new_expression
 ```
 
-Работает только для таблиц семейства [`MergeTree`](../../sql-reference/statements/alter.md) (в том числе [реплицированных](../../sql-reference/statements/alter.md)). После выполнения запроса
-[ключ сортировки](../../sql-reference/statements/alter.md) таблицы
+Работает только для таблиц семейства [`MergeTree`](../../../sql-reference/statements/alter/index.md) (в том числе [реплицированных](../../../sql-reference/statements/alter/index.md)). После выполнения запроса
+[ключ сортировки](../../../sql-reference/statements/alter/index.md) таблицы
 заменяется на `new_expression` (выражение или кортеж выражений). Первичный ключ при этом остаётся прежним.
 
 Операция затрагивает только метаданные. Чтобы сохранить свойство упорядоченности кусков данных по ключу

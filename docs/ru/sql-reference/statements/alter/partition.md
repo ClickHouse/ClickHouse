@@ -5,7 +5,7 @@ toc_title: PARTITION
 
 # Манипуляции с партициями и кусками {#alter_manipulations-with-partitions}
 
-Для работы с [партициями](../../sql-reference/statements/alter.md) доступны следующие операции:
+Для работы с [партициями](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) доступны следующие операции:
 
 -   [DETACH PARTITION](#alter_detach-partition) — перенести партицию в директорию `detached`;
 -   [DROP PARTITION](#alter_drop-partition) — удалить партицию;
@@ -37,7 +37,7 @@ ALTER TABLE visits DETACH PARTITION 201901
 
 После того как запрос будет выполнен, вы сможете производить любые операции с данными в директории `detached`. Например, можно удалить их из файловой системы.
 
-Запрос реплицируется — данные будут перенесены в директорию `detached` и забыты на всех репликах. Обратите внимание, запрос может быть отправлен только на реплику-лидер. Чтобы узнать, является ли реплика лидером, выполните запрос `SELECT` к системной таблице [system.replicas](../../operations/system-tables/replicas.md#system_tables-replicas). Либо можно выполнить запрос `DETACH` на всех репликах — тогда на всех репликах, кроме реплики-лидера, запрос вернет ошибку.
+Запрос реплицируется — данные будут перенесены в директорию `detached` и забыты на всех репликах. Обратите внимание, запрос может быть отправлен только на реплику-лидер. Чтобы узнать, является ли реплика лидером, выполните запрос `SELECT` к системной таблице [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas). Либо можно выполнить запрос `DETACH` на всех репликах — тогда на всех репликах, кроме реплики-лидера, запрос вернет ошибку.
 
 ## DROP PARTITION {#alter_drop-partition}
 
@@ -183,7 +183,7 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 Восстановление данных из резервной копии не требует остановки сервера.
 
-Подробнее о резервном копировании и восстановлении данных читайте в разделе [Резервное копирование данных](../../operations/backup.md).
+Подробнее о резервном копировании и восстановлении данных читайте в разделе [Резервное копирование данных](../../../operations/backup.md).
 
 ## FETCH PARTITION {#alter_fetch-partition}
 
@@ -239,10 +239,10 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать:
 
--   Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../../operations/system-tables/parts.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
+-   Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../../../operations/system-tables/parts.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached_parts](../../../operations/system-tables/detached_parts.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Использование кавычек в имени партиций зависит от типа данных столбца, по которому задано партиционирование. Например, для столбца с типом `String` имя партиции необходимо указывать в кавычках (одинарных). Для типов `Date` и `Int*` кавычки указывать не нужно.
 

@@ -20,7 +20,7 @@ ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
 
 ## Описание {#alter-user-dscr}
 
-Для выполнения `ALTER USER` необходима привилегия [ALTER USER](grant.md#grant-access-management).
+Для выполнения `ALTER USER` необходима привилегия [ALTER USER](../grant.md#grant-access-management).
 
 ## Примеры {#alter-user-examples}
 
