@@ -7,8 +7,12 @@ if(NOT ENABLE_ORC)
     return()
 endif()
 
-option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled (experimental set to OFF on your own risk)"
+if (USE_INTERNAL_PARQUET_LIBRARY)
+    option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled (experimental set to OFF on your own risk)"
         ON)
+elseif(USE_INTERNAL_ORC_LIBRARY)
+       message (${RECONFIGURE_MESSAGE_LEVEL} "Currently internal ORC can be build only with bundled Parquet")
+endif()
 
 include(cmake/find/snappy.cmake)
 
