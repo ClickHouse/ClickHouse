@@ -6,6 +6,9 @@
 
 #include <Storages/StorageMaterializeMySQL.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
