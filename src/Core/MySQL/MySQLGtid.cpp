@@ -25,10 +25,10 @@ void GTIDSets::parse(const String gtid_format)
     std::vector<String> gtid_sets;
     boost::split(gtid_sets, gtid_format, boost::is_any_of(","));
 
-    for (size_t i = 0; i < gtid_sets.size(); i++)
+    for (const auto & gset : gtid_sets)
     {
         std::vector<String> server_ids;
-        boost::split(server_ids, gtid_sets[i], [](char c) { return c == ':'; });
+        boost::split(server_ids, gset, [](char c) { return c == ':'; });
 
         GTIDSet set;
         parseUUID(reinterpret_cast<const UInt8 *>(server_ids[0].data()), set.uuid);
@@ -122,11 +122,11 @@ String GTIDSets::toString() const
         formatUUID(set.uuid, reinterpret_cast<UInt8 *>(dst36.data()));
         writeString(dst36, buffer);
 
-        for (size_t k = 0; k < set.intervals.size(); k++)
+        for (const auto & interval : set.intervals)
         {
             buffer.write(':');
-            auto start = set.intervals[k].start;
-            auto end = set.intervals[k].end;
+            auto start = interval.start;
+            auto end = interval.end;
 
             if (end == (start + 1))
             {
@@ -154,18 +154,17 @@ String GTIDSets::toPayload() const
 
     UInt64 sets_size = sets.size();
     buffer.write(reinterpret_cast<const char *>(&sets_size), 8);
-    for (size_t i = 0; i < sets.size(); i++)
-    {
-        GTIDSet set = sets[i];
 
+    for (const auto & set : sets)
+    {
         buffer.write(reinterpret_cast<const char *>(set.uuid), sizeof(set.uuid));
 
         UInt64 intervals_size = set.intervals.size();
         buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);
-        for (size_t k = 0; k < set.intervals.size(); k++)
+        for (const auto & interval : set.intervals)
         {
-            buffer.write(reinterpret_cast<const char *>(&set.intervals[k].start), 8);
-            buffer.write(reinterpret_cast<const char *>(&set.intervals[k].end), 8);
+            buffer.write(reinterpret_cast<const char *>(&interval.start), 8);
+            buffer.write(reinterpret_cast<const char *>(&interval.end), 8);
         }
     }
     return buffer.str();
