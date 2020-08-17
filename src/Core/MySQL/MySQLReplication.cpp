@@ -175,6 +175,12 @@ namespace MySQLReplication
         payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
     }
 
+    /// Types that do not used in the binlog event:
+    /// MYSQL_TYPE_ENUM
+    /// MYSQL_TYPE_SET
+    /// MYSQL_TYPE_TINY_BLOB
+    /// MYSQL_TYPE_MEDIUM_BLOB
+    /// MYSQL_TYPE_LONG_BLOB
     void TableMapEvent::parseMeta(String meta)
     {
         auto pos = 0;
@@ -208,9 +214,6 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATETIME2:
                 case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_JSON:
-                case MYSQL_TYPE_TINY_BLOB:
-                case MYSQL_TYPE_MEDIUM_BLOB:
-                case MYSQL_TYPE_LONG_BLOB:
                 case MYSQL_TYPE_BLOB:
                 case MYSQL_TYPE_GEOMETRY: {
                     column_meta.emplace_back(UInt16(meta[pos]));
@@ -218,18 +221,20 @@ namespace MySQLReplication
                     break;
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
-                case MYSQL_TYPE_ENUM:
-                case MYSQL_TYPE_SET:
                 case MYSQL_TYPE_STRING: {
-                    column_meta.emplace_back((UInt16(meta[pos]) << 8) + UInt16(meta[pos + 1]));
+                    auto b0 = UInt16(meta[pos] << 8);
+                    auto b1 = UInt8(meta[pos + 1]);
+                    column_meta.emplace_back(UInt16(b0 + b1));
                     pos += 2;
                     break;
                 }
 
-                case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_BIT:
+                case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
-                    column_meta.emplace_back(UInt16(meta[pos]) + (UInt16(meta[pos + 1] << 8)));
+                    auto b0 = UInt8(meta[pos]);
+                    auto b1 = UInt16(meta[pos + 1] << 8);
+                    column_meta.emplace_back(UInt16(b0 + b1));
                     pos += 2;
                     break;
                 }
@@ -289,10 +294,15 @@ namespace MySQLReplication
         }
     }
 
+    /// Types that do not used in the binlog event:
+    /// MYSQL_TYPE_ENUM
+    /// MYSQL_TYPE_SET
+    /// MYSQL_TYPE_TINY_BLOB
+    /// MYSQL_TYPE_MEDIUM_BLOB
+    /// MYSQL_TYPE_LONG_BLOB
     void RowsEvent::parseRow(ReadBuffer & payload, Bitmap & bitmap)
     {
         Tuple row;
-        UInt32 field_len = 0;
         UInt32 null_index = 0;
 
         UInt32 re_count = 0;
@@ -307,6 +317,8 @@ namespace MySQLReplication
 
         for (auto i = 0U; i < number_columns; i++)
         {
+            UInt32 field_len = 0;
+
             /// Column not presents.
             if (!bitmap[i])
                 continue;
@@ -323,8 +335,9 @@ namespace MySQLReplication
                 {
                     if (meta >= 256)
                     {
-                        UInt32 byte0 = meta >> 8;
-                        UInt32 byte1 = meta & 0xff;
+                        UInt8 byte0 = meta >> 8;
+                        UInt8 byte1 = meta & 0xff;
+
                         if ((byte0 & 0x30) != 0x30)
                         {
                             field_len = byte1 | (((byte0 & 0x30) ^ 0x30) << 4);
@@ -332,17 +345,8 @@ namespace MySQLReplication
                         }
                         else
                         {
-                            switch (byte0)
-                            {
-                                case MYSQL_TYPE_SET:
-                                case MYSQL_TYPE_ENUM:
-                                case MYSQL_TYPE_STRING:
-                                    field_type = byte0;
-                                    field_len = byte1;
-                                    break;
-                                default:
-                                    throw ReplicationError("ParseRow: Unhandled binlog event", ErrorCodes::UNKNOWN_EXCEPTION);
-                            }
+                            field_len = byte1;
+                            field_type = byte0;
                         }
                     }
                     else
@@ -351,12 +355,6 @@ namespace MySQLReplication
                     }
                 }
 
-                /// Types that do not used in the binlog event:
-                /// MYSQL_TYPE_ENUM
-                /// MYSQL_TYPE_SET
-                /// MYSQL_TYPE_TINY_BLOB
-                /// MYSQL_TYPE_MEDIUM_BLOB
-                /// MYSQL_TYPE_LONG_BLOB
                 switch (field_type)
                 {
                     case MYSQL_TYPE_TINY: {
