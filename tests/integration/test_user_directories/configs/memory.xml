@@ -1,0 +1,8 @@
+<yandex>
+    <user_directories replace="replace">
+        <users_xml>
+            <path>/etc/clickhouse-server/users5.xml</path>
+        </users_xml>
+        <memory/>
+    </user_directories>
+</yandex>
