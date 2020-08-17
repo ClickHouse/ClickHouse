@@ -91,8 +91,8 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
     mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `unsigned_tiny_int` = 2')
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV", "")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -123,8 +123,8 @@ def drop_table_with_materialize_mysql_database(clickhouse_node, mysql_node, serv
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_2\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -147,8 +147,8 @@ def create_table_with_materialize_mysql_database(clickhouse_node, mysql_node, se
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\ntest_table_2\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n6\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -166,8 +166,8 @@ def rename_table_with_materialize_mysql_database(clickhouse_node, mysql_node, se
     mysql_node.query("RENAME TABLE test_database.test_table_2 TO test_database.test_table_1")
     check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -202,8 +202,8 @@ def alter_add_column_with_materialize_mysql_database(clickhouse_node, mysql_node
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2, 3, 4, 5), (6, 7, 8, 9, 10)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\t3\t4\t5\n6\t7\t8\t9\t10\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def alter_drop_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -228,8 +228,8 @@ def alter_drop_column_with_materialize_mysql_database(clickhouse_node, mysql_nod
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1), (2), (3), (4), (5)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -256,8 +256,8 @@ def alter_rename_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\t4\n5\t6\n7\t8\n9\t10\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -288,8 +288,8 @@ def alter_modify_column_with_materialize_mysql_database(clickhouse_node, mysql_n
     mysql_node.query("INSERT INTO test_database.test_table_2 VALUES(1, 2), (3, NULL)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_2 ORDER BY id FORMAT TSV", "1\t2\n3\t\\N\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
 
 
 # TODO: need ClickHouse support ALTER TABLE table_name ADD COLUMN column_name, RENAME COLUMN column_name TO new_column_name;
@@ -319,5 +319,5 @@ def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_no
     mysql_node.query("INSERT INTO test_database.test_table_4 VALUES(1), (2), (3), (4), (5)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_4 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
 
-    mysql_node.query("DROP DATABASE test_database")
     clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
