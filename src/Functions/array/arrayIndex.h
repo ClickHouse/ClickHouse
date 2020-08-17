@@ -947,10 +947,6 @@ private:
             auto left_casted = col_nested.convertToFullColumnIfLowCardinality();
             const bool left_casted_is_nullable = left_casted->isNullable();
 
-            const NullMap * const null_map_left_casted = left_casted_is_nullable
-                ? &checkAndGetColumn<ColumnNullable>(left_casted.get())->getNullMapColumn().getData()
-                : nullptr;
-
             const IColumn* const left_ptr = left_casted_is_nullable
                 ? &checkAndGetColumn<ColumnNullable>(left_casted.get())->getNestedColumn()
                 : left_casted.get();
@@ -962,36 +958,28 @@ private:
                     col->getOffsets(),
                     typeid_cast<const ColumnConst &>(item_arg).getDataColumn(),
                     col_res->getData(), /// TODO This is wrong.
-                    null_map_left_casted,
+                    null_map_data,
                     nullptr);
             }
             else
             {
                 const ColumnPtr right_casted = item_arg.convertToFullColumnIfLowCardinality();
-                const bool right_casted_is_nullable = right_casted->isNullable();
 
-                const NullMap * const null_map_right_casted = right_casted_is_nullable
-                    ? &checkAndGetColumn<ColumnNullable>(right_casted.get())->getNullMapColumn().getData()
-                    : nullptr;
-                const IColumn* const right_ptr = right_casted_is_nullable
-                    ? &checkAndGetColumn<ColumnNullable>(right_casted.get())->getNestedColumn()
-                    : right_casted.get();
-
-                if (left_ptr->isNumeric() && right_ptr->isNumeric())
+                if (left_ptr->isNumeric() && right_casted->isNumeric())
                     // hack to determine ColumnArrays
                     return executeIntegral<INTEGRAL_TPL_PACK>(
                             *left_ptr,
                             col->getOffsets(),
-                            *right_ptr, block, result,
-                            {null_map_left_casted, null_map_right_casted});
+                            *right_casted.get(), block, result,
+                            {null_map_data, null_map_item});
 
                 Impl::Main<ConcreteAction>::vector(
                     *left_casted.get(),
                     col->getOffsets(),
                     *right_casted.get(),
                     col_res->getData(),
-                    null_map_left_casted,
-                    null_map_right_casted);
+                    null_map_data,
+                    null_map_item);
             }
         }
 
