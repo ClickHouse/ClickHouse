@@ -449,7 +449,6 @@ void NO_INLINE Aggregator::executeImpl(
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        //executeImplCase<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
         executeImplBatch(method, state, aggregates_pool, rows, aggregate_instructions);
     else
         executeImplCase<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
@@ -521,6 +520,53 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions) const
 {
+    /// Optimization for special case when there are no aggregate functions.
+    if (params.aggregates_size == 0)
+    {
+        /// For all rows.
+        AggregateDataPtr place = aggregates_pool->alloc(0);
+        for (size_t i = 0; i < rows; ++i)
+            state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+        return;
+    }
+
+    /// Optimization for special case when aggregating by 8bit key.
+    if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    {
+        /// We use another method if there are aggregate functions with -Array combinator.
+        bool has_arrays = false;
+        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        {
+            if (inst->offsets)
+            {
+                has_arrays = true;
+                break;
+            }
+        }
+
+        if (!has_arrays)
+        {
+            for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+            {
+                inst->batch_that->addBatchLookupTable8(
+                    rows,
+                    reinterpret_cast<AggregateDataPtr *>(method.data.data()),
+                    inst->state_offset,
+                    [&](AggregateDataPtr & aggregate_data)
+                    {
+                        aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                        createAggregateStates(aggregate_data);
+                    },
+                    state.getKeyData(),
+                    inst->batch_arguments,
+                    aggregates_pool);
+            }
+            return;
+        }
+    }
+
+    /// Generic case.
+
     PODArray<AggregateDataPtr> places(rows);
 
     /// For all rows.
@@ -596,7 +642,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
 
 
 void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
-                                              AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder)
+    AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder)
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
@@ -765,7 +811,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        const std::string tmp_path = params.tmp_volume->getNextDisk()->getPath();
+
+        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
 
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
@@ -851,9 +898,12 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
         ReadableSize(uncompressed_bytes / elapsed_seconds),
         ReadableSize(compressed_bytes / elapsed_seconds));
 }
+
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
-    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
+    String tmp_path = params.tmp_volume->getDisk()->getPath();
+    return writeToTemporaryFile(data_variants, tmp_path);
 }
 
 

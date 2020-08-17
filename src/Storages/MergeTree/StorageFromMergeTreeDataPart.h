@@ -6,7 +6,6 @@
 #include <Core/Defines.h>
 
 #include <ext/shared_ptr_helper.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
@@ -19,7 +18,7 @@ class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<Storage
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,

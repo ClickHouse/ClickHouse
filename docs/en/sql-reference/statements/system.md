@@ -277,8 +277,4 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
 
-``` sql
-SYSTEM RESTART QUEUES [db.]replicated_merge_tree_family_table_name
-```
-
 [Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

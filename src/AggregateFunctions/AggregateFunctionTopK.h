@@ -64,7 +64,10 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).value.merge(this->data(rhs).value);
+        auto & set = this->data(place).value;
+        if (set.capacity() != reserved)
+            set.resize(reserved);
+        set.merge(this->data(rhs).value);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -197,7 +200,10 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).value.merge(this->data(rhs).value);
+        auto & set = this->data(place).value;
+        if (set.capacity() != reserved)
+            set.resize(reserved);
+        set.merge(this->data(rhs).value);
     }
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override

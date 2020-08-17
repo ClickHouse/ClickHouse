@@ -131,7 +131,8 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
+                String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dict_name);
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(resolved_name);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -359,7 +360,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
     }
 }
 
-/// If ORDER BY has argument x followed by f(x) transfroms it to ORDER BY x.
+/// If ORDER BY has argument x followed by f(x) transforms it to ORDER BY x.
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
 /// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).

@@ -1,7 +1,7 @@
 ---
 toc_priority: 62
-toc_folder_title: hidden
-toc_title: Функции для работы с географическими координатами
+toc_folder_title: Гео-данные
+toc_title: hidden
 ---
 
 

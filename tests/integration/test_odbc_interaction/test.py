@@ -251,8 +251,11 @@ def test_bridge_dies_with_parent(started_cluster):
         clickhouse_pid = node1.get_process_pid("clickhouse server")
         time.sleep(1)
 
-    time.sleep(1) # just for sure, that odbc-bridge caught signal
-    bridge_pid = node1.get_process_pid("odbc-bridge")
+    for i in range(5):
+        time.sleep(1) # just for sure, that odbc-bridge caught signal
+        bridge_pid = node1.get_process_pid("odbc-bridge")
+        if bridge_pid is None:
+            break
 
     if bridge_pid:
         out = node1.exec_in_container(["gdb", "-p", str(bridge_pid), "--ex", "thread apply all bt", "--ex", "q"], privileged=True, user='root')

@@ -20,16 +20,13 @@ namespace ErrorCodes
 
 
 IPolygonDictionary::IPolygonDictionary(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_)
-        : database(database_)
-        , name(name_)
-        , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+        : IDictionaryBase(dict_id_)
         , dict_struct(dict_struct_)
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
@@ -38,21 +35,6 @@ IPolygonDictionary::IPolygonDictionary(
 {
     createAttributes();
     loadData();
-}
-
-const std::string & IPolygonDictionary::getDatabase() const
-{
-    return database;
-}
-
-const std::string & IPolygonDictionary::getName() const
-{
-    return name;
-}
-
-const std::string & IPolygonDictionary::getFullName() const
-{
-    return full_name;
 }
 
 std::string IPolygonDictionary::getTypeName() const
@@ -186,7 +168,9 @@ void IPolygonDictionary::createAttributes()
         appendNullValue(attr.underlying_type, attr.null_value);
 
         if (attr.hierarchical)
-            throw Exception{name + ": hierarchical attributes not supported for dictionary of polygonal type", ErrorCodes::TYPE_MISMATCH};
+            throw Exception{ErrorCodes::TYPE_MISMATCH,
+                            "{}: hierarchical attributes not supported for dictionary of polygonal type",
+                            getDictionaryID().getNameForLogs()};
     }
 }
 
@@ -297,7 +281,7 @@ size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name)
         const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(null_values[ind]); \
 \
@@ -327,7 +311,7 @@ void IPolygonDictionary::getString(
         const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(null_values[ind])};
 
@@ -347,7 +331,7 @@ void IPolygonDictionary::getString(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, \
@@ -379,7 +363,7 @@ void IPolygonDictionary::getString(
         ColumnString * const out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsImpl<String, StringRef>(
             ind,
@@ -397,7 +381,7 @@ void IPolygonDictionary::getString(
         ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -426,7 +410,7 @@ void IPolygonDictionary::getString(
         ColumnString * const out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsImpl<String, StringRef>(
             ind,

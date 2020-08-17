@@ -61,7 +61,7 @@ template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueTyp
   * It is implemented in two steps.
   * At first step, it creates a pattern of zeros, literal characters, whitespaces, etc.
   *  and quickly fills resulting character array (string column) with this pattern.
-  * At second step, it walks across the resulting character array and modifies/replaces specific charaters,
+  * At second step, it walks across the resulting character array and modifies/replaces specific characters,
   *  by calling some functions by pointers and shifting cursor by specified amount.
   *
   * Advantages:
@@ -718,6 +718,7 @@ void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
     factory.registerFunction<FunctionFROM_UNIXTIME>();
+    factory.registerAlias("fromUnixTimestamp", "FROM_UNIXTIME");
 }
 
 }

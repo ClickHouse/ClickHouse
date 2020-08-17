@@ -70,6 +70,7 @@ class QueryThreadLog;
 class PartLog;
 class TextLog;
 class TraceLog;
+class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
 
@@ -101,6 +102,7 @@ struct SystemLogs
     std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
     std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
+    std::shared_ptr<CrashLog> crash_log;                /// Used to log server crashes.
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     /// Metrics from system.asynchronous_metrics.
