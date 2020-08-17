@@ -252,28 +252,28 @@ void FieldVisitorHash::operator() (const DecimalField<Decimal32> & x) const
 {
     UInt8 type = Field::Types::Decimal32;
     hash.update(type);
-    hash.update(x);
+    hash.update(x.getValue().value);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal64> & x) const
 {
     UInt8 type = Field::Types::Decimal64;
     hash.update(type);
-    hash.update(x);
+    hash.update(x.getValue().value);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
 {
     UInt8 type = Field::Types::Decimal128;
     hash.update(type);
-    hash.update(x);
+    hash.update(x.getValue().value);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal256> & x) const
 {
     UInt8 type = Field::Types::Decimal256;
     hash.update(type);
-    hash.update(x);
+    hash.update(x.getValue().value);
 }
 
 void FieldVisitorHash::operator() (const AggregateFunctionStateData & x) const

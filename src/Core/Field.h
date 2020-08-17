@@ -92,6 +92,10 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 template <typename T>
 class DecimalField
 {
@@ -151,6 +155,9 @@ private:
     T dec;
     UInt32 scale;
 };
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
@@ -566,9 +573,6 @@ public:
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
             case Types::Tuple:   return f(field.template get<Tuple>());
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
@@ -577,6 +581,9 @@ public:
             case Types::Int128: return f(field.template get<Int128>());
             case Types::bUInt256: return f(field.template get<bUInt256>());
             case Types::bInt256: return f(field.template get<bInt256>());
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
         }
 
         // GCC 9 complains that control reaches the end, despite that we handle

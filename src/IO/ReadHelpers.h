@@ -359,9 +359,7 @@ end:
                     return ReturnType(false);
             }
             else
-            {
-                x = -x;
-            }
+                x = -res;
         }
     }
 

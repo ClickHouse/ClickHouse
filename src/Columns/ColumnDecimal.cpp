@@ -92,7 +92,7 @@ UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 template <typename T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(data[n]);
+    hash.update(data[n].value);
 }
 
 template <typename T>
