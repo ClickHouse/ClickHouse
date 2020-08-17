@@ -2,6 +2,7 @@
 
 #if USE_SSL
 
+#include <openssl/evp.h>
 #include <openssl/err.h>
 
 #include <string>
@@ -34,7 +35,7 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, const
     return StringRef(folded_key.data(), cipher_key_size);
 }
 
-const EVP_CIPHER * getCipherByName(const StringRef & cipher_name)
+CipherPtr getCipherByName(const StringRef & cipher_name)
 {
     const auto *evp_cipher = EVP_get_cipherbyname(cipher_name.data);
     if (evp_cipher == nullptr)
@@ -48,7 +49,10 @@ const EVP_CIPHER * getCipherByName(const StringRef & cipher_name)
             evp_cipher = EVP_aes_256_cfb128();
     }
 
-    return evp_cipher;
+    // HACK: To speed up context initialization with EVP_EncryptInit_ex (which is called at least once per row)
+    // Apparently cipher from EVP_get_cipherbyname may require additional initialization of context,
+    // while cipher from EVP_CIPHER_fetch causes less operations => faster context initialization.
+    return CipherPtr{EVP_CIPHER_fetch(nullptr, EVP_CIPHER_name(evp_cipher), nullptr), &EVP_CIPHER_free};
 }
 
 }
