@@ -321,7 +321,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (!is_big_int_v<T>)
+        if constexpr (is_POD)
         {
             memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
@@ -370,14 +370,14 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (!is_big_int_v<T>)
+    if constexpr (is_POD)
+    {
         memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+    }
     else
     {
         for (size_t i = 0; i < length; i++)
-        {
             data[old_size + i] = src_vec.data[start + i];
-        }
     }
 }
 
@@ -394,7 +394,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-    if constexpr (!is_big_int_v<T>)
+    if constexpr (is_POD)
     {
         const UInt8 * filt_pos = filt.data();
         const UInt8 * filt_end = filt_pos + size;
@@ -446,8 +446,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
     else
     {
-        auto filt_pos = filt.begin();
-        const auto filt_end = filt.end();
+        const auto * filt_pos = filt.begin();
+        const auto * filt_end = filt.end();
         auto data_pos = data.begin();
 
         while (filt_pos < filt_end)
@@ -527,10 +527,10 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    auto it = res->getData().begin();
+    auto it = res->getData().begin(); // NOLINT
     for (size_t i = 0; i < size; ++i)
     {
-        const auto span_end = res->getData().begin() + offsets[i];
+        const auto span_end = res->getData().begin() + offsets[i]; // NOLINT
         for (; it != span_end; ++it)
             *it = data[i];
     }

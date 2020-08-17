@@ -52,7 +52,7 @@ void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    if constexpr (IsPODValue)
+    if constexpr (is_POD)
     {
         auto * pos = arena.allocContinue(sizeof(T), begin);
         memcpy(pos, &data[n], sizeof(T));
@@ -68,7 +68,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    if constexpr (IsPODValue)
+    if constexpr (is_POD)
     {
         data.push_back(unalignedLoad<T>(pos));
         return pos + sizeof(T);
@@ -86,7 +86,7 @@ UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
     if constexpr (sizeof(T) > sizeof(UInt64))
         throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
     else
-        return static_cast<typename T::NativeType>(data[n]);
+        return static_cast<NativeT>(data[n]);
 }
 
 template <typename T>
@@ -238,7 +238,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (IsPODValue)
+        if constexpr (is_POD)
         {
             memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
@@ -265,7 +265,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 template <typename T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    if constexpr (IsPODValue)
+    if constexpr (is_POD)
     {
         T tmp;
         memcpy(&tmp, src, sizeof(T));
@@ -289,7 +289,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (IsPODValue)
+    if constexpr (is_POD)
         memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
     else
     {

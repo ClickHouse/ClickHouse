@@ -102,8 +102,9 @@ private:
 
 public:
     using ValueType = T;
-    static constexpr bool IsPODValue = !is_big_int_v<typename T::NativeType>;
-    using Container = std::conditional_t<IsPODValue,
+    using NativeT = typename T::NativeType;
+    static constexpr bool is_POD = !is_big_int_v<NativeT>;
+    using Container = std::conditional_t<is_POD,
                                          DecimalPaddedPODArray<T>,
                                          DecimalVector<T>>;
 
@@ -124,21 +125,21 @@ public:
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return true; }
+    bool isFixedAndContiguous() const override { return is_POD; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
     size_t allocatedBytes() const override
     {
-        if constexpr (IsPODValue)
+        if constexpr (is_POD)
             return data.allocated_bytes();
         else
             return data.capacity() * sizeof(data[0]);
     }
     void protect() override
     {
-        if constexpr (IsPODValue)
+        if constexpr (is_POD)
             data.protect();
     }
     void reserve(size_t n) override { data.reserve(n); }
@@ -148,7 +149,7 @@ public:
     void insertDefault() override { data.push_back(T()); }
     virtual void insertManyDefaults(size_t length) override
     {
-        if constexpr (IsPODValue)
+        if constexpr (is_POD)
             data.resize_fill(data.size() + length);
         else
             data.resize(data.size() + length);
@@ -158,7 +159,7 @@ public:
 
     void popBack(size_t n) override
     {
-        if constexpr (IsPODValue)
+        if constexpr (is_POD)
             data.resize_assume_reserved(data.size() - n);
         else
             data.resize(data.size() - n);

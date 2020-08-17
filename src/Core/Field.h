@@ -148,7 +148,7 @@ public:
     }
 
 private:
-    T dec{};
+    T dec;
     UInt32 scale;
 };
 

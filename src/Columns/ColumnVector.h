@@ -106,7 +106,8 @@ private:
 
 public:
     using ValueType = T;
-    using Container = std::conditional_t<!is_big_int_v<ValueType>,
+    static constexpr bool is_POD = !is_big_int_v<T>;
+    using Container = std::conditional_t<is_POD,
                                          PaddedPODArray<ValueType>,
                                          std::vector<ValueType>>;
 
@@ -139,10 +140,10 @@ public:
 
     void insertData(const char * pos, size_t) override
     {
-        if constexpr (is_big_int_v<T>)
-            data.emplace_back(BigInt<T>::deserialize(pos));
-        else
+        if constexpr (is_POD)
             data.emplace_back(unalignedLoad<T>(pos));
+        else
+            data.emplace_back(BigInt<T>::deserialize(pos));
     }
 
     void insertDefault() override
@@ -152,7 +153,7 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        if constexpr (!is_big_int_v<T>)
+        if constexpr (is_POD)
             data.resize_fill(data.size() + length, T());
         else
             data.resize(data.size() + length, T());
@@ -160,7 +161,7 @@ public:
 
     void popBack(size_t n) override
     {
-        if constexpr (!is_big_int_v<T>)
+        if constexpr (is_POD)
             data.resize_assume_reserved(data.size() - n);
         else
             data.resize(data.size() - n);
@@ -183,7 +184,7 @@ public:
 
     size_t allocatedBytes() const override
     {
-        if constexpr (!is_big_int_v<T>)
+        if constexpr (is_POD)
             return data.allocated_bytes();
         else
             return data.capacity() * sizeof(data[0]);
@@ -191,7 +192,7 @@ public:
 
     void protect() override
     {
-        if constexpr (!is_big_int_v<T>)
+        if constexpr (is_POD)
             data.protect();
     }
 
@@ -290,10 +291,8 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-
     bool canBeInsideNullable() const override { return true; }
-
-    bool isFixedAndContiguous() const override { return true; }
+    bool isFixedAndContiguous() const override { return is_POD; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
     StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
 
