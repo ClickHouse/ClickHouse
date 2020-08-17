@@ -1,11 +1,19 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
+#include <cmath>
 
 namespace DB
 {
 
+/// Use wrapper and use lgamma_r version because std::lgamma is not threadsafe.
+static Float64 lgamma_wrapper(Float64 arg)
+{
+    int signp;
+    return ::lgamma_r(arg, &signp);
+}
+
 struct LGammaName { static constexpr auto name = "lgamma"; };
-using FunctionLGamma = FunctionMathUnary<UnaryFunctionPlain<LGammaName, std::lgamma>>;
+using FunctionLGamma = FunctionMathUnary<UnaryFunctionPlain<LGammaName, lgamma_wrapper>>;
 
 void registerFunctionLGamma(FunctionFactory & factory)
 {
