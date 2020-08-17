@@ -33,7 +33,7 @@ public:
     std::vector<GTIDSet> sets;
 
     void parse(const String gtid_format_);
-    void update(const GTID & gtid);
+    void update(const GTID & other);
 
     String toString() const;
     String toPayload() const;
