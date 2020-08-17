@@ -75,14 +75,16 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         const auto & config = context.getConfigRef();
         setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
-        if (!ok) {
+        if (!ok)
+        {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
             verbose = true;
         }
 
         if (verbose)
             response.send() << message.rdbuf();
-        else {
+        else
+        {
             const char * data = "Ok.\n";
             response.sendBuffer(data, strlen(data));
         }
