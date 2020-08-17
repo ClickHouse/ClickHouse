@@ -105,12 +105,6 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
-    template <class T>
-    static constexpr bool compare(const ColumnVector<T>& left, const IColumn& right, size_t i, size_t j)
-    {
-        return 0 == left.compareAtOther(i, RightArgIsConstant ? 0 : j, right, 1);
-    }
-
 #pragma GCC diagnostic pop
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
@@ -223,7 +217,7 @@ struct Null
 
                 ConcreteAction::apply(current, j);
 
-                if constexpr(!ConcreteAction::resume_execution)
+                if constexpr (!ConcreteAction::resume_execution)
                     break;
             }
 
@@ -566,6 +560,7 @@ public:
 private:
     using ResultType = typename ConcreteAction::ResultType;
     using ResultColumnType = ColumnVector<ResultType>;
+    using NullMaps = std::pair<const NullMap *, const NullMap *>;
 
     /**
      * The Array's internal data type may be quite tricky (containing a Nullable type somewhere). To process the
@@ -578,8 +573,7 @@ private:
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    std::pair<const NullMap *, const NullMap *>
-    getNullMaps(const Block & block, const ColumnNumbers & arguments) const noexcept
+    NullMaps getNullMaps(const Block & block, const ColumnNumbers & arguments) const noexcept
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
@@ -604,14 +598,35 @@ private:
     template <class ...Integral>
     bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        return (executeIntegralExpanded<Integral, Integral...>(block, arguments, result) || ...);
+        const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
+                block.getByPosition(arguments[0]).column.get());
+
+        if (!col_array)
+            return false;
+
+        const IColumn* const item_arg = block.getByPosition(arguments[1]).column.get();
+
+        return executeIntegral<Integral...>(
+                col_array->getData(), col_array->getOffsets(),
+                *item_arg, block, result, getNullMaps(block, arguments));
     }
+
+    template <class ...Integral>
+    bool executeIntegral(
+            const IColumn& array_nested, const ColumnArray::Offsets& offsets, const IColumn& arg,
+            Block & block, size_t result, NullMaps maps) const
+    {
+        return (executeIntegralExpanded<Integral, Integral...>(array_nested, offsets, arg, block, result, maps) || ...);
+    }
+
 
     /// Invoke executeIntegralImpl with such parameters: (A, other1), (A, other2), ...
     template <class A, class ...Other>
-    bool executeIntegralExpanded(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeIntegralExpanded(
+            const IColumn& array_nested, const ColumnArray::Offsets& offsets,
+            const IColumn& arg, Block & block, size_t result, NullMaps maps) const
     {
-        return (executeIntegralImpl<A, Other>(block, arguments, result) || ...);
+        return (executeIntegralImpl<A, Other>(array_nested, offsets, arg, block, result, maps) || ...);
     }
 
     /**
@@ -620,41 +635,38 @@ private:
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
     template <class Initial, class Resulting>
-    bool executeIntegralImpl(Block & block, const ColumnNumbers & arguments, size_t result) const
+    bool executeIntegralImpl(
+            const IColumn& array_nested,
+            const ColumnArray::Offsets& offsets,
+            const IColumn& item_arg,
+            Block & block, size_t result, NullMaps maps) const
     {
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
-                block.getByPosition(arguments[0]).column.get());
-
-        if (!col_array)
-            return false;
-
-        const ColumnVector<Initial> * col_nested = checkAndGetColumn<ColumnVector<Initial>>(&col_array->getData());
+        const ColumnVector<Initial> * col_nested = checkAndGetColumn<ColumnVector<Initial>>(&array_nested);
 
         if (!col_nested)
             return false;
 
         auto col_res = ResultColumnType::create();
 
-        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
-        const IColumn* item_arg = block.getByPosition(arguments[1]).column.get();
+        const auto [null_map_data, null_map_item] = maps;
 
-        if (item_arg->onlyNull())
+        if (item_arg.onlyNull())
             Impl::Null<ConcreteAction>::process(
-                col_array->getOffsets(),
+                offsets,
                 col_res->getData(),
                 null_map_data);
-        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(item_arg))
+        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&item_arg))
             Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 col_nested->getData(),
-                col_array->getOffsets(),
+                offsets,
                 item_arg_const->template getValue<Resulting>(),
                 col_res->getData(),
                 null_map_data,
                 nullptr);
-        else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(item_arg))
+        else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&item_arg))
             Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 col_nested->getData(),
-                col_array->getOffsets(),
+                offsets,
                 item_arg_vector->getData(),
                 col_res->getData(),
                 null_map_data,
@@ -854,7 +866,7 @@ private:
 
                 ConcreteAction::apply(current, i);
 
-                if constexpr(!ConcreteAction::resume_execution)
+                if constexpr (!ConcreteAction::resume_execution)
                     break;
             }
 
@@ -907,6 +919,8 @@ private:
         return true;
     }
 
+#define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
+
     bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         const ColumnArray * col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
@@ -928,26 +942,57 @@ private:
                 col_res->getData(),
                 null_map_data);
         }
-        else if (isColumnConst(item_arg))
-            Impl::Main<ConcreteAction, true>::vector(
-                col_nested,
-                col->getOffsets(),
-                typeid_cast<const ColumnConst &>(item_arg).getDataColumn(),
-                col_res->getData(), /// TODO This is wrong.
-                null_map_data,
-                nullptr);
         else
         {
-            const auto right_casted = item_arg.convertToFullColumnIfLowCardinality();
-            const auto left_casted = col_nested.convertToFullColumnIfLowCardinality();
+            auto left_casted = col_nested.convertToFullColumnIfLowCardinality();
+            const bool left_casted_is_nullable = left_casted->isNullable();
 
-            Impl::Main<ConcreteAction>::vector(
-                *left_casted.get(),
-                col->getOffsets(),
-                *right_casted.get(),
-                col_res->getData(),
-                null_map_data,
-                null_map_item);
+            const NullMap * const null_map_left_casted = left_casted_is_nullable
+                ? &checkAndGetColumn<ColumnNullable>(left_casted.get())->getNullMapColumn().getData()
+                : nullptr;
+
+            const IColumn* const left_ptr = left_casted_is_nullable
+                ? &checkAndGetColumn<ColumnNullable>(left_casted.get())->getNestedColumn()
+                : left_casted.get();
+
+            if (isColumnConst(item_arg))
+            {
+                Impl::Main<ConcreteAction, true>::vector(
+                    *left_ptr,
+                    col->getOffsets(),
+                    typeid_cast<const ColumnConst &>(item_arg).getDataColumn(),
+                    col_res->getData(), /// TODO This is wrong.
+                    null_map_left_casted,
+                    nullptr);
+            }
+            else
+            {
+                const ColumnPtr right_casted = item_arg.convertToFullColumnIfLowCardinality();
+                const bool right_casted_is_nullable = right_casted->isNullable();
+
+                const NullMap * const null_map_right_casted = right_casted_is_nullable
+                    ? &checkAndGetColumn<ColumnNullable>(right_casted.get())->getNullMapColumn().getData()
+                    : nullptr;
+                const IColumn* const right_ptr = right_casted_is_nullable
+                    ? &checkAndGetColumn<ColumnNullable>(right_casted.get())->getNestedColumn()
+                    : right_casted.get();
+
+                if (left_ptr->isNumeric() && right_ptr->isNumeric())
+                    // hack to determine ColumnArrays
+                    return executeIntegral<INTEGRAL_TPL_PACK>(
+                            *left_ptr,
+                            col->getOffsets(),
+                            *right_ptr, block, result,
+                            {null_map_left_casted, null_map_right_casted});
+
+                Impl::Main<ConcreteAction>::vector(
+                    *left_casted.get(),
+                    col->getOffsets(),
+                    *right_casted.get(),
+                    col_res->getData(),
+                    null_map_left_casted,
+                    null_map_right_casted);
+            }
         }
 
         block.getByPosition(result).column = std::move(col_res);
@@ -956,15 +1001,23 @@ private:
 
     void executeOnNonNullable(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (!(executeIntegral<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(block, arguments, result)
+        if (const auto* const left_arr = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
+            if (const auto* const left_lc = checkAndGetColumn<ColumnLowCardinality>(&left_arr->getData()))
+                if (!executeLowCardinalityAndConst(block, arguments, result) && !executeGeneric(block, arguments, result))
+                    throw Exception(
+                        "Illegal internal type of first argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+
+        if (!(executeIntegral<INTEGRAL_TPL_PACK>(block, arguments, result)
               || executeConst(block, arguments, result)
               || executeString(block, arguments, result)
-              || executeLowCardinalityAndConst(block, arguments, result)
               || executeGeneric(block, arguments, result)))
             throw Exception(
                 "Illegal internal type of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
+
+#undef INTEGRAL_TPL_PACK
 };
 }
 
