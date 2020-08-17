@@ -1,0 +1,22 @@
+SELECT ?
+SELECT ?
+SELECT ?..
+SELECT ?.., 
+SELECT ?.., 
+SELECT ?..
+SELECT ?.. WHERE ?
+SELECT ?.. WHERE ? = ?
+SELECT ?.. WHERE ? = ? AND (x, y)
+SELECT ?.. WHERE ? = ? AND (?, y)
+[?..]
+[?.., x]
+SELECT ?.. WHERE ? = ? AND (?, y) LIMIT ?..
+SELECT ? AS `xyz`
+SELECT ? AS `xyz1`
+SELECT ? AS `xyz11`
+SELECT ? AS `?`
+SELECT ? AS xyz1
+SELECT ? AS xyz11
+SELECT ? xyz11
+SELECT ?, xyz11
+SELECT ?..
