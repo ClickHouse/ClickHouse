@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <common/DateLUT.h>
 #include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>

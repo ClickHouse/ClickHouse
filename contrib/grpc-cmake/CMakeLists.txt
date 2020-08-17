@@ -37,7 +37,6 @@ else()
   set(CARES_STATIC ON CACHE BOOL "" FORCE)
 endif()
 set(_gRPC_CARES_LIBRARIES c-ares)
-add_subdirectory(${CARES_ROOT_DIR} ${CARES_BINARY_DIR})
 
 # upb.cmake
 set(UPB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/upb)
