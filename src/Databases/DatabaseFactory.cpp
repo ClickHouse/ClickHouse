@@ -18,7 +18,7 @@
 #endif
 
 #if USE_MYSQL
-#    include <Core/MySQLClient.h>
+#    include <Core/MySQL/MySQLClient.h>
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
@@ -103,16 +103,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
         if (!engine->arguments || engine->arguments->children.size() != 4)
             throw Exception(
-                "MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
+                engine_name + " Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         ASTs & arguments = engine->arguments->children;
         arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
 
-        const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], "MySQL");
-        const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], "MySQL");
-        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], "MySQL");
-        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], "MySQL");
+        const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+        const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], engine_name);
+        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
+        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
 
         try
         {
