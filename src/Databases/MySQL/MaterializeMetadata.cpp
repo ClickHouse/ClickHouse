@@ -140,6 +140,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 {
     binlog_file = position.binlog_name;
     binlog_position = position.binlog_pos;
+    executed_gtid_set = position.gtid_sets.toString();
 
     String persistent_tmp_path = persistent_path + ".tmp";
 
