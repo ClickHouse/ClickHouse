@@ -241,7 +241,7 @@ struct QuantileExactLow : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
 
-    Value get(Float64 level)
+    Value get(Float64 level) override
     {
         if (!array.empty())
         {
@@ -270,7 +270,7 @@ struct QuantileExactLow : public QuantileExact<Value>
         return std::numeric_limits<Value>::quiet_NaN();
     }
 
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) override
     {
         if (!array.empty())
         {
@@ -315,7 +315,7 @@ struct QuantileExactHigh : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
 
-    Value get(Float64 level)
+    Value get(Float64 level) override
     {
         if (!array.empty())
         {
@@ -336,7 +336,7 @@ struct QuantileExactHigh : public QuantileExact<Value>
         return std::numeric_limits<Value>::quiet_NaN();
     }
 
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) override
     {
         if (!array.empty())
         {
