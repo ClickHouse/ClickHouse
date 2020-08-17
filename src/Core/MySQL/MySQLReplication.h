@@ -486,6 +486,7 @@ namespace MySQLReplication
         virtual Position getPosition() const = 0;
         virtual BinlogEventPtr readOneEvent() = 0;
         virtual void setReplicateDatabase(String db) = 0;
+        virtual void setGTIDSets(GTIDSets sets) = 0;
         virtual ~IFlavor() = default;
     };
 
@@ -497,6 +498,7 @@ namespace MySQLReplication
         Position getPosition() const override { return position; }
         BinlogEventPtr readOneEvent() override { return event; }
         void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
+        void setGTIDSets(GTIDSets sets) override { position.gtid_sets = std::move(sets); }
 
     private:
         Position position;

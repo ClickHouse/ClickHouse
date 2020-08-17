@@ -153,6 +153,31 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     packet_endpoint->sendPacket<BinlogDump>(binlog_dump, true);
 }
 
+void MySQLClient::startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid_str)
+{
+    /// Set binlog checksum to CRC32.
+    String checksum = "CRC32";
+    writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'");
+
+    /// Set heartbeat 1s.
+    UInt64 period_ns = (1 * 1e9);
+    writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns));
+
+    // Register slave.
+    registerSlaveOnMaster(slave_id);
+
+    /// Set GTID Sets.
+    GTIDSets gtid_sets;
+    gtid_sets.parse(gtid_str);
+    replication.setGTIDSets(gtid_sets);
+
+    /// Set Filter rule to replication.
+    replication.setReplicateDatabase(replicate_db);
+
+    BinlogDumpGTID binlog_dump(slave_id, gtid_sets.toPayload());
+    packet_endpoint->sendPacket<BinlogDumpGTID>(binlog_dump, true);
+}
+
 BinlogEventPtr MySQLClient::readOneBinlogEvent(UInt64 milliseconds)
 {
     if (packet_endpoint->tryReceivePacket(replication, milliseconds))
