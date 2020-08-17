@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Field.h>
 #include <Core/MySQL/PacketsReplication.h>
+#include <Core/MySQL/MySQLGtid.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -446,6 +447,17 @@ namespace MySQLReplication
         MySQLEventType type() const override { return MYSQL_UPDATE_ROWS_EVENT; }
     };
 
+    class GTIDEvent : public EventBase
+    {
+    public:
+        UInt8 commit_flag;
+        GTID gtid;
+        void dump(std::ostream & out) const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+    };
+
     class DryRunEvent : public EventBase
     {
         void dump(std::ostream & out) const override;
@@ -459,11 +471,11 @@ namespace MySQLReplication
     public:
         UInt64 binlog_pos;
         String binlog_name;
+        GTIDSets gtid_sets;
 
         Position() : binlog_pos(0), binlog_name("") { }
         Position(UInt64 binlog_pos_, const String & binlog_name_) : binlog_pos(binlog_pos_), binlog_name(binlog_name_) { }
-        void updateLogPos(UInt64 pos) { binlog_pos = pos; }
-        void updateLogName(String binlog) { binlog_name = std::move(binlog); }
+        void update(BinlogEventPtr event);
     };
 
     class IFlavor : public MySQLProtocol::IMySQLReadPacket
