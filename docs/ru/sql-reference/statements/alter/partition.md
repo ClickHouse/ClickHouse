@@ -165,7 +165,7 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 -   `N` — инкрементальный номер резервной копии.
 
 !!! note "Примечание"
-    При использовании [нескольких дисков для хранения данных таблицы](../../sql-reference/statements/alter/index.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
+    При использовании [нескольких дисков для хранения данных таблицы](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
 
 Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит ‘chmod’ для всех файлов, запрещая запись в них.
 
@@ -216,7 +216,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 ## MOVE PARTITION\|PART {#alter_move-partition}
 
-Перемещает партицию или кусок данных на другой том или диск для таблиц с движком `MergeTree`. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](../../sql-reference/statements/alter/index.md#table_engine-mergetree-multiple-volumes).
+Перемещает партицию или кусок данных на другой том или диск для таблиц с движком `MergeTree`. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes).
 
 ``` sql
 ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
