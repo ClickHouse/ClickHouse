@@ -271,6 +271,12 @@ void RemoteQueryExecutor::finish()
             finished = true;
             break;
 
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
+
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
             packet.exception->rethrow();
