@@ -86,7 +86,8 @@ enum Command
     COM_BINLOG_DUMP = 0x12,
     COM_REGISTER_SLAVE = 0x15,
     COM_RESET_CONNECTION = 0x1f,
-    COM_DAEMON = 0x1d
+    COM_DAEMON = 0x1d,
+    COM_BINLOG_DUMP_GTID = 0x1e
 };
 
 class ResultSetRow : public IMySQLWritePacket
