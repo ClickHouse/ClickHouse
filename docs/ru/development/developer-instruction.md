@@ -1,3 +1,5 @@
+# Инструкция для разработчиков
+
 Сборка ClickHouse поддерживается на Linux, FreeBSD, Mac OS X.
 
 # Если вы используете Windows {#esli-vy-ispolzuete-windows}
