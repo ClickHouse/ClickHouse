@@ -605,6 +605,23 @@ namespace MySQLReplication
                         row.push_back(Field{Int32{val}});
                         break;
                     }
+                    case MYSQL_TYPE_BIT: {
+                        UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
+                        UInt32 size = (bits + 7) / 8;
+
+                        Bitmap bitmap1;
+                        readBitmap(payload, bitmap1, size);
+                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
+                        break;
+                    }
+                    case MYSQL_TYPE_SET: {
+                        UInt32 size = (meta & 0xff);
+
+                        Bitmap bitmap1;
+                        readBitmap(payload, bitmap1, size);
+                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
+                        break;
+                    }
                     case MYSQL_TYPE_VARCHAR:
                     case MYSQL_TYPE_VAR_STRING: {
                         uint32_t size = 0;
