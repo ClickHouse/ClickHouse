@@ -979,8 +979,9 @@ private:
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
         else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (which.isDecimal32()) executeIntType<Decimal32, first>(icolumn, vec_to);
-        else if (which.isDecimal64()) executeIntType<Decimal64, first>(icolumn, vec_to);
+        /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
+        else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(icolumn, vec_to);
+        else if (which.isDecimal64()) executeBigIntType<Decimal64, first>(icolumn, vec_to);
         else if (which.isDecimal128()) executeBigIntType<Decimal128, first>(icolumn, vec_to);
         else if (which.isDecimal256()) executeBigIntType<Decimal256, first>(icolumn, vec_to);
         else if (which.isFloat32()) executeIntType<Float32, first>(icolumn, vec_to);
