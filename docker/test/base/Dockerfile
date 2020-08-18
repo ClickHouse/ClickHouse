@@ -1,22 +1,21 @@
-# docker build -t yandex/clickhouse-deb-builder .
-FROM ubuntu:20.04
+# docker build -t yandex/clickhouse-test-base .
+FROM ubuntu:19.10
 
 RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-RUN echo "deb [trusted=yes] http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main" >> /etc/apt/sources.list
+RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
 
 # initial packages
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
-            bash \
-            fakeroot \
-            ccache \
-            curl \
-            software-properties-common \
-            gnupg \
             apt-transport-https \
-            ca-certificates
+            bash \
+            ca-certificates \
+            curl \
+            fakeroot \
+            gnupg \
+            software-properties-common
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
@@ -28,39 +27,25 @@ RUN cp dpkg-deb /usr/bin
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
-            gcc-10 \
-            g++-10 \
-            gcc-9 \
-            g++-9 \
-            llvm-11 \
-            clang-11 \
-            lld-11 \
-            clang-tidy-11 \
-            llvm-10 \
             clang-10 \
-            lld-10 \
-            clang-tidy-10 \
-            clang-9 \
-            lld-9 \
-            clang-tidy-9 \
-            ninja-build \
-            perl \
-            pkg-config \
-            devscripts \
             debhelper \
-            git \
-            tzdata \
-            gperf \
-            alien \
-            cmake \
+            devscripts \
             gdb  \
+            git \
+            gperf \
+            lcov \
+            llvm-10 \
             moreutils \
-            pigz
+            perl \
+            perl \
+            pigz \
+            pkg-config \
+            tzdata
 
+# Sanitizer options
+RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
+  echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
+  echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
+  ln -s /usr/lib/llvm-10/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
 
-# This symlink required by gcc to find lld compiler
-RUN ln -s /usr/bin/lld-10 /usr/bin/ld.lld
-
-COPY build.sh /
-
-CMD ["/bin/bash", "/build.sh"]
+CMD sleep 1
