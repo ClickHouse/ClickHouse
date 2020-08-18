@@ -50,6 +50,13 @@ struct BigInt : BigIntPayload<T>
         return StringRef(pos, size);
     }
 
+    static String serialize(const T & x)
+    {
+        String str(size, '\0');
+        serialize(x, str.data());
+        return str;
+    }
+
     static T deserialize(const char * pos)
     {
         if constexpr (is_signed_v<T>)

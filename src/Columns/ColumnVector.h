@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
@@ -126,11 +131,6 @@ public:
     size_t size() const override
     {
         return data.size();
-    }
-
-    StringRef getDataAt(size_t n) const override
-    {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     void insertFrom(const IColumn & src, size_t n) override
@@ -294,8 +294,22 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return is_POD; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
 
+    StringRef getRawData() const override
+    {
+        if constexpr (is_POD)
+            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+        else
+            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    StringRef getDataAt(size_t n) const override
+    {
+        if constexpr (is_POD)
+            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        else
+            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     bool structureEquals(const IColumn & rhs) const override
     {

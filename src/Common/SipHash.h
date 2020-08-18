@@ -150,9 +150,7 @@ public:
     template <typename T>
     std::enable_if_t<is_big_int_v<T>, void> update(const T & x)
     {
-        std::string buffer(DB::BigInt<T>::size, '\0');
-        DB::BigInt<T>::serialize(x, buffer.data());
-        update(buffer);
+        update(DB::BigInt<T>::serialize(x));
     }
 
     void update(const std::string & x)

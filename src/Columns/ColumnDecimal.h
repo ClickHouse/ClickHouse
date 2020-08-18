@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// PaddedPODArray extended by Decimal scale
@@ -165,6 +166,22 @@ public:
             data.resize(data.size() - n);
     }
 
+    StringRef getRawData() const override
+    {
+        if constexpr (is_POD)
+            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+        else
+            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    StringRef getDataAt(size_t n) const override
+    {
+        if constexpr (is_POD)
+            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        else
+            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -180,9 +197,6 @@ public:
     MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
-
-    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
-    StringRef getDataAt(size_t n) const override { return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n])); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value * scale); }
