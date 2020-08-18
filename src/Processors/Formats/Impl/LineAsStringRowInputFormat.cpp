@@ -32,6 +32,12 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
     PeekableReadBufferCheckpoint checkpoint{buf};
     size_t balance = 0;
 
+    if (*buf.position() == ';') {
+        ++buf.position();
+        if(buf.eof())
+            return;
+    }
+
     if (*buf.position() != '"')
         throw Exception("Line object must begin with '\"'.", ErrorCodes::INCORRECT_DATA);
 
