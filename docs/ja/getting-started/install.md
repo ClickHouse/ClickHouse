@@ -94,6 +94,18 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Docker内でClickHouseを実行するには、次のガイドに従います [Dockerハブ](https://hub.docker.com/r/yandex/clickhouse-server/). このように映像公 `deb` 中のパッケージ。
 
+### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
+
+For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+
+-   [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+
+After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data. To run `clickhouse server`, you have to additionally download [server](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) and [users](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml) configuration files from GitHub.
+
+These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
+
 ### ソースから {#from-sources}
 
 ClickHouseを手動でコンパイルするには、以下の手順に従います [Linux](../development/build.md) または [Mac OS X](../development/build-osx.md).
