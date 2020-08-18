@@ -676,11 +676,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
-bool IMergeTreeDataPart::areMergesAllowed() const
+bool IMergeTreeDataPart::canParticipateInMerges() const
 {
     auto storage_policy = storage.getStoragePolicy();
 
     /// One need to get volume description for given volume.
+    /// `volume` member would not suit us because it is hard-wired to exact place where part belongs and
+    /// does not update along with configuration and changes of settings.
     auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
 
     return volume_ptr->areMergesAllowed();
