@@ -35,7 +35,7 @@ or merge the `master` branch to your pull request branch using git.
 
 Tries to build the ClickHouse documentation website. It can fail if you changed
 something in the documentation. Most probable reason is that some cross-link in
-the documentation is wrong. See the check report and look for `ERROR` messages.
+the documentation is wrong. Go to the check report and look for `ERROR` and `WARNING` messages.
 
 #### Report details
 
