@@ -93,8 +93,9 @@ struct make_unsigned
     typedef std::make_unsigned_t<T> type;
 };
 
-template <> struct make_unsigned<bInt256>  { typedef bUInt256 type; };
-template <> struct make_unsigned<bUInt256> { typedef bUInt256 type; };
+template <> struct make_unsigned<__int128> { using type = unsigned __int128; };
+template <> struct make_unsigned<bInt256>  { using type = bUInt256; };
+template <> struct make_unsigned<bUInt256> { using type = bUInt256; };
 
 template <typename T> using make_unsigned_t = typename make_unsigned<T>::type;
 

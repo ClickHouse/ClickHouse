@@ -394,7 +394,7 @@ template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     bool negative = false;
-    std::make_unsigned_t<T> res = 0;
+    make_unsigned_t<T> res = 0;
 
     auto on_error = []
     {
