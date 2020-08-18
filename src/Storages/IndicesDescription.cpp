@@ -1,5 +1,5 @@
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Parsers/ASTIndexDeclaration.h>
@@ -90,7 +90,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
     result.expression_list_ast = expr_list->clone();
 
-    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns.getAllPhysical());
+    auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
     Block block_without_columns = result.expression->getSampleBlock();
 
@@ -166,7 +166,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(combined_expr_list, columns.getAllPhysical());
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 

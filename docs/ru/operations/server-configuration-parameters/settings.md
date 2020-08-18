@@ -374,7 +374,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## max_server_memory_usage {#max_server_memory_usage}
 
-Ограничивает объём оперативной памяти, используемой сервером ClickHouse. Настройка может быть задана только для профиля `default`.
+Ограничивает объём оперативной памяти, используемой сервером ClickHouse.
 
 Возможные значения:
 
@@ -385,11 +385,36 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 **Дополнительная информация**
 
-На серверах с небольшим объёмом RAM и файла подкачки может потребоваться настройка `max_server_memory_usage_to_ram_ratio > 1`.
+Значение по умолчанию для `max_server_memory_usage` рассчитывается как `memory_amount * max_server_memory_usage_to_ram_ratio`.
 
 **См. также**
 
 -   [max_memory_usage](../settings/query-complexity.md#settings_max_memory_usage)
+
+## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
+
+Определяет долю оперативной памяти, доступную для использования сервером Clickhouse. Если сервер попытается использовать больше, предоставляемый ему объём памяти будет ограничен до расчётного значения. 
+
+Возможные значения:
+
+-   Положительное число с плавающей запятой.
+-   0 — сервер Clickhouse может использовать всю оперативную память.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+На серверах с небольшим объёмом оперативной памяти и файла подкачки может потребоваться установить настройку `max_server_memory_usage_to_ram_ratio` в значение, большее 1.
+
+**Пример**
+
+``` xml
+<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+```
+
+**См. также**
+
+-   [max_server_memory_usage](#max_server_memory_usage)
 
 ## max\_connections {#max-connections}
 
@@ -551,9 +576,9 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 -   `endpoint` – путь по которому будет осуществляться экспорт данных метрик по HTTP протоколу для сбора с помощью prometheus. Должен начинаться с ‘/’.
 -   `port` – порт по которому будет доступен endpoint для сбора метрик.
--   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables.md#system_tables-metrics).
--   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables.md#system_tables-events).
--   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous\_metrics](../system-tables.md#system_tables-asynchronous_metrics).
+-   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
+-   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
+-   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous\_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
 
 **Пример**
 

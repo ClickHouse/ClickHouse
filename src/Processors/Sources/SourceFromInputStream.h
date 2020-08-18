@@ -12,6 +12,7 @@ using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 class SourceFromInputStream : public ISourceWithProgress
 {
 public:
+    /// If force_add_aggregating_info is enabled, AggregatedChunkInfo (with bucket number and is_overflows flag) will be added to result chunk.
     explicit SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_ = false);
     String getName() const override { return "SourceFromInputStream"; }
 

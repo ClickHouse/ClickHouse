@@ -100,10 +100,12 @@ template <typename A, typename B> struct ResultOfIntegerDivision
     */
 template <typename A, typename B> struct ResultOfModulo
 {
-    using Type = typename Construct<
-        is_signed_v<A> || is_signed_v<B>,
-        false,
-        sizeof(B)>::Type;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>,
+        Float64,
+        typename Construct<
+            is_signed_v<A> || is_signed_v<B>,
+            false,
+            sizeof(B)>::Type>;
 };
 
 template <typename A> struct ResultOfNegate

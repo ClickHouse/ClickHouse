@@ -123,10 +123,13 @@ public:
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
+    void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr tryGetDatabase(const String & database_name) const;
+    DatabasePtr getDatabase(const UUID & uuid) const;
+    DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(const String & database_name) const;
     Databases getDatabases() const;
 
@@ -167,6 +170,9 @@ public:
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+
+    /// Try convert qualified dictionary name to persistent UUID
+    String resolveDictionaryName(const String & name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -211,6 +217,8 @@ private:
     static constexpr size_t reschedule_time_ms = 100;
 
 private:
+    using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
+
     /// For some reason Context is required to get Storage from Database object
     Context * global_context;
     mutable std::mutex databases_mutex;
@@ -218,6 +226,7 @@ private:
     ViewDependencies view_dependencies;
 
     Databases databases;
+    UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
 
     Poco::Logger * log;

@@ -1,9 +1,7 @@
 #include <Core/UUID.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/FieldVisitors.h>
@@ -41,7 +39,6 @@ static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
     writeText(x.getValue(), x.getScale(), buf);
     writeChar('\'', buf);
 }
-
 
 String FieldVisitorDump::operator() (const Null &) const { return "NULL"; }
 String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
@@ -95,8 +92,11 @@ String FieldVisitorDump::operator() (const Tuple & x) const
 String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
 {
     WriteBufferFromOwnString wb;
+    wb << "AggregateFunctionState_(";
     writeQuoted(x.name, wb);
+    wb << ", ";
     writeQuoted(x.data, wb);
+    wb << ')';
     return wb.str();
 }
 

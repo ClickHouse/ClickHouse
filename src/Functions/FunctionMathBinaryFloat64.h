@@ -13,13 +13,6 @@
 #    include "config_functions.h"
 #endif
 
-/** More efficient implementations of mathematical functions are possible when using a separate library.
-  * Disabled due to license compatibility limitations.
-  * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
-  * Then rebuild with -DENABLE_VECTORCLASS=1
-  */
-
-
 namespace DB
 {
 
@@ -61,7 +54,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg)
+    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -100,7 +93,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg)
+    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg) const
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -172,7 +165,7 @@ private:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_left = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & col_right = block.getByPosition(arguments[1]);

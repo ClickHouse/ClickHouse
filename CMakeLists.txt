@@ -142,6 +142,27 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+
+    if (ARCH_AMD64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+    elseif (ARCH_AARCH64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
+    endif ()
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
+endif ()
+
+if (OS_DARWIN)
+    set(WHOLE_ARCHIVE -all_load)
+    set(NO_WHOLE_ARCHIVE -noall_load)
+else ()
+    set(WHOLE_ARCHIVE --whole-archive)
+    set(NO_WHOLE_ARCHIVE --no-whole-archive)
+endif ()
+
 option (ADD_GDB_INDEX_FOR_GOLD "Set to add .gdb-index to resulting binaries for gold linker. NOOP if lld is used." 0)
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     if (LINKER_NAME STREQUAL "lld")
@@ -176,10 +197,7 @@ if(NOT DISABLE_CPU_OPTIMIZE)
     include(cmake/cpu_features.cmake)
 endif()
 
-if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
-    option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
-endif()
-
+option(ARCH_NATIVE "Enable -march=native compiler flag" 0)
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
@@ -287,7 +305,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
@@ -350,7 +368,6 @@ include (cmake/find/icu.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
-include (cmake/find/termcap.cmake)
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
@@ -378,6 +395,7 @@ include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
+include (cmake/find/stats.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

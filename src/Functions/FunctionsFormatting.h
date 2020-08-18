@@ -56,7 +56,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (!(executeType<UInt8>(block, arguments, result)
             || executeType<UInt16>(block, arguments, result)
@@ -92,7 +92,7 @@ private:
     }
 
     template <typename T>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -152,7 +152,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (!(executeType<UInt8>(block, arguments, result)
             || executeType<UInt16>(block, arguments, result)
@@ -171,7 +171,7 @@ public:
 
 private:
     template <typename T>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {

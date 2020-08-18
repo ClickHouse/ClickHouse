@@ -11,19 +11,19 @@ namespace DB
 struct FilesystemAvailable
 {
     static constexpr auto name = "filesystemAvailable";
-    static std::uintmax_t get(std::filesystem::space_info & spaceinfo) { return spaceinfo.available; }
+    static std::uintmax_t get(const std::filesystem::space_info & spaceinfo) { return spaceinfo.available; }
 };
 
 struct FilesystemFree
 {
     static constexpr auto name = "filesystemFree";
-    static std::uintmax_t get(std::filesystem::space_info & spaceinfo) { return spaceinfo.free; }
+    static std::uintmax_t get(const std::filesystem::space_info & spaceinfo) { return spaceinfo.free; }
 };
 
 struct FilesystemCapacity
 {
     static constexpr auto name = "filesystemCapacity";
-    static std::uintmax_t get(std::filesystem::space_info & spaceinfo) { return spaceinfo.capacity; }
+    static std::uintmax_t get(const std::filesystem::space_info & spaceinfo) { return spaceinfo.capacity; }
 };
 
 template <typename Impl>
@@ -48,7 +48,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
         block.getByPosition(result).column = DataTypeUInt64().createColumnConst(input_rows_count, static_cast<UInt64>(Impl::get(spaceinfo)));
     }

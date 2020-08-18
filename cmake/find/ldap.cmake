@@ -16,11 +16,16 @@ if (ENABLE_LDAP)
     set (OPENLDAP_USE_REENTRANT_LIBS 1)
 
     if (NOT USE_INTERNAL_LDAP_LIBRARY)
-        if (APPLE AND NOT OPENLDAP_ROOT_DIR)
-            set (OPENLDAP_ROOT_DIR "/usr/local/opt/openldap")
-        endif ()
+        if (OPENLDAP_USE_STATIC_LIBS)
+            message (WARNING "Unable to use external static OpenLDAP libraries, falling back to the bundled version.")
+            set (USE_INTERNAL_LDAP_LIBRARY 1)
+        else ()
+            if (APPLE AND NOT OPENLDAP_ROOT_DIR)
+                set (OPENLDAP_ROOT_DIR "/usr/local/opt/openldap")
+            endif ()
 
-        find_package (OpenLDAP)
+            find_package (OpenLDAP)
+        endif ()
     endif ()
 
     if (NOT OPENLDAP_FOUND AND NOT MISSING_INTERNAL_LDAP_LIBRARY)
@@ -54,7 +59,10 @@ if (ENABLE_LDAP)
         else ()
             set (USE_INTERNAL_LDAP_LIBRARY 1)
             set (OPENLDAP_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap")
-            set (OPENLDAP_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap/include")
+            set (OPENLDAP_INCLUDE_DIRS
+                "${ClickHouse_SOURCE_DIR}/contrib/openldap-cmake/${_system_name}_${_system_processor}/include"
+                "${ClickHouse_SOURCE_DIR}/contrib/openldap/include"
+            )
             # Below, 'ldap'/'ldap_r' and 'lber' will be resolved to
             # the targets defined in contrib/openldap-cmake/CMakeLists.txt
             if (OPENLDAP_USE_REENTRANT_LIBS)
@@ -73,4 +81,4 @@ if (ENABLE_LDAP)
     endif ()
 endif ()
 
-message (STATUS "Using ldap=${USE_LDAP}: ${OPENLDAP_INCLUDE_DIR} : ${OPENLDAP_LIBRARIES}")
+message (STATUS "Using ldap=${USE_LDAP}: ${OPENLDAP_INCLUDE_DIRS} : ${OPENLDAP_LIBRARIES}")

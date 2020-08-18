@@ -245,6 +245,13 @@ DEFINE_HASH(DB::Float64)
 #undef DEFINE_HASH
 
 
+template <>
+struct DefaultHash<DB::UInt128> : public DB::UInt128Hash {};
+
+template <>
+struct DefaultHash<DB::UInt256> : public DB::UInt256Hash {};
+
+
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.
 struct TrivialHash
 {

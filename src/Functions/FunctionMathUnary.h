@@ -12,13 +12,6 @@
 #    include "config_functions.h"
 #endif
 
-/** More efficient implementations of mathematical functions are possible when using a separate library.
-  * Disabled due to license compatibility limitations.
-  * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
-  * Then rebuild with -DENABLE_VECTORCLASS=1
-  */
-
-
 /** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
   * Enabled by default.
   */
@@ -143,7 +136,7 @@ private:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
 

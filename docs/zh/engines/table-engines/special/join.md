@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **引擎参数**
 
--   `join_strictness` – [JOIN 限制](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [JOIN 限制](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [JOIN 类型](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – 进行`JOIN` 操作时 `USING`语句用到的key列
 

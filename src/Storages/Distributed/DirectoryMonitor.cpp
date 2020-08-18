@@ -368,7 +368,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
         }
 
         readStringBinary(insert_query, header_buf);
-        insert_settings.deserialize(header_buf);
+        insert_settings.read(header_buf);
 
         if (header_buf.hasPendingData())
             client_info.read(header_buf, initiator_revision);
@@ -382,7 +382,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
 
     if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
     {
-        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
+        insert_settings.read(in, SettingsWriteFormat::BINARY);
         readStringBinary(insert_query, in);
         return;
     }

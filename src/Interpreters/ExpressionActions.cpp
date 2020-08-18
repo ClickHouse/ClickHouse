@@ -1309,7 +1309,7 @@ void ExpressionActionsChain::finalize()
     }
 }
 
-std::string ExpressionActionsChain::dumpChain()
+std::string ExpressionActionsChain::dumpChain() const
 {
     std::stringstream ss;
 

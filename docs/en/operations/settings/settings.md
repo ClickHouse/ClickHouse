@@ -471,7 +471,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
 
 ## temporary\_files\_codec {#temporary_files_codec}
 
@@ -585,6 +585,31 @@ Possible values:
 
 Default value: 0.
 
+## network_compression_method {#network_compression_method}
+
+Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+
+Possible values:
+
+-   `LZ4` — sets LZ4 compression method.
+-   `ZSTD` — sets ZSTD compression method.
+
+Default value: `LZ4`.
+
+**See Also**
+
+-   [network_zstd_compression_level](#network_zstd_compression_level)
+
+## network_zstd_compression_level {#network_zstd_compression_level}
+
+Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
+
+Possible values:
+
+-   Positive integer from 1 to 15.
+
+Default value: `1`.
+
 ## log\_queries {#settings-log-queries}
 
 Setting up query logging.
@@ -629,7 +654,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-The size of blocks to form for insertion into a table.
+The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
 But when using clickhouse-client, the client parses the data itself, and the ‘max\_insert\_block\_size’ setting on the server doesn’t affect the size of the inserted blocks.
@@ -783,6 +808,17 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 50.
 
+## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
+
+The wait time in milliseconds for a connection when the connection pool is full.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 0.
+
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 The maximum number of connection attempts with each replica for the Distributed table engine.
@@ -793,6 +829,21 @@ Default value: 3.
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section “Extreme values”.
+
+## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
+
+The wait time in milliseconds for reading messages from [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) before retry.
+
+Possible values:
+
+- Positive integer.
+- 0 — Infinite timeout.
+
+Default value: 5000.
+
+See also:
+
+-   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -811,6 +862,17 @@ If a query from the same user with the same ‘query\_id’ already exists at th
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+
+## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
+
+The wait time for running query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+
+Possible values:
+
+- Positive integer.
+- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the  same `query_id`.
+
+Default value: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -935,6 +997,105 @@ The results of the compilation are saved in the build directory in the form of .
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+
+## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
+
+Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/formats.md#json) output format.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Consider the following table `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+When `output_format_json_quote_denormals = 0`, the query returns `null` values in output:
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+When `output_format_json_quote_denormals = 1`, the query returns:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
@@ -1385,6 +1546,17 @@ Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-regist
 
 Default value: `Empty`.
 
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+
+Enables using fields that are not specified in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When a field is not found in the schema, ClickHouse uses the default value instead of throwing an exception.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## background\_pool\_size {#background_pool_size}
 
 Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from `default` profile at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
@@ -1397,6 +1569,37 @@ Possible values:
 
 Default value: 16.
 
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+
+Enables parallel distributed `INSERT ... SELECT` query. 
+
+If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
+
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+## insert_distributed_sync {#insert_distributed_sync}
+
+Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true). 
+
+Possible values:
+
+-   0 — Data is inserted in asynchronous mode.
+-   1 — Data is inserted in synchronous mode.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
+-   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
@@ -1453,6 +1656,17 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## validate\_polygons {#validate_polygons}
+
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+
+Possible values:
+
+- 0 — Throwing an exception is disabled. `pointInPolygon` accepts invalid polygons and returns possibly incorrect results for them.
+- 1 — Throwing an exception is enabled.
+
+Default value: 1.
 
 ## transform\_null\_in {#transform_null_in}
 
@@ -1618,5 +1832,36 @@ SELECT * FROM a;
 | 1 |
 +---+
 ```
+## optimize_read_in_order {#optimize_read_in_order}
+
+Enables [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `ORDER BY` optimization is disabled. 
+-   1 — `ORDER BY` optimization is enabled. 
+
+Default value: `1`.
+
+**See Also**
+
+-   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
+
+## mutations_sync {#mutations_sync}
+
+Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
+
+Possible values:
+
+-   0 - Mutations execute asynchronously. 
+-   1 - The query waits for all mutations to complete on the current server. 
+-   2 - The query waits for all mutations to complete on all replicas (if they exist).
+
+Default value: `0`.
+
+**See Also**
+
+-   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+-   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

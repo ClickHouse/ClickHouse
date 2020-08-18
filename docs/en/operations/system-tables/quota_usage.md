@@ -1,4 +1,4 @@
-# system.quota\_usage {#system_tables-quota_usage}
+# system.quota_usage {#system_tables-quota_usage}
 
 Quota usage by the current user: how much is used and how much is left.
 
@@ -22,3 +22,5 @@ Columns:
 - `max_read_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum of bytes read from all tables and table functions.
 - `execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — The total query execution time, in seconds (wall time).
 - `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Maximum of query execution time.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/quota_usage) <!--hide-->

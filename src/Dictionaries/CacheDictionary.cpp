@@ -1,6 +1,5 @@
 #include "CacheDictionary.h"
 
-#include <functional>
 #include <memory>
 #include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
@@ -61,8 +60,7 @@ inline size_t CacheDictionary::getCellIdx(const Key id) const
 
 
 CacheDictionary::CacheDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     DictionaryLifetime dict_lifetime_,
@@ -73,9 +71,7 @@ CacheDictionary::CacheDictionary(
     size_t update_queue_push_timeout_milliseconds_,
     size_t query_wait_timeout_milliseconds_,
     size_t max_threads_for_updates_)
-    : database(database_)
-    , name(name_)
-    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -93,7 +89,7 @@ CacheDictionary::CacheDictionary(
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
 {
-    if (!this->source_ptr->supportsSelectiveLoad())
+    if (!source_ptr->supportsSelectiveLoad())
         throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
@@ -239,7 +235,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -250,7 +246,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -259,7 +255,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -703,8 +699,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
             throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const size_t strict_max_lifetime_seconds =
@@ -713,7 +708,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const size_t max_update_queue_size =
                 config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
         if (max_update_queue_size == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have empty update queue of size 0",
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have empty update queue of size 0",
                             ErrorCodes::TOO_SMALL_BUFFER_SIZE};
 
         const bool allow_read_expired_keys =
@@ -722,7 +717,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const size_t update_queue_push_timeout_milliseconds =
                 config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
         if (update_queue_push_timeout_milliseconds < 10)
-            throw Exception{name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
+            throw Exception{full_name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
                             ErrorCodes::BAD_ARGUMENTS};
 
         const size_t query_wait_timeout_milliseconds =
@@ -731,12 +726,11 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const size_t max_threads_for_updates =
                 config.getUInt64(layout_prefix + ".max_threads_for_updates", 4);
         if (max_threads_for_updates == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have zero threads for updates.",
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have zero threads for updates.",
                             ErrorCodes::BAD_ARGUMENTS};
 
         return std::make_unique<CacheDictionary>(
-                database,
-                name,
+                dict_id,
                 dict_struct,
                 std::move(source_ptr),
                 dict_lifetime,
@@ -830,9 +824,9 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
          * intended to do a synchronous update. AsyncUpdate thread can touch deallocated memory and explode.
          * */
         update_unit_ptr->can_use_callback = false;
-        throw DB::Exception(
-            "Dictionary " + getName() + " source seems unavailable, because " +
-                toString(timeout_for_wait) + " timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                            "Dictionary {} source seems unavailable, because {} timeout exceeded.",
+                            getDictionaryID().getNameForLogs(), toString(timeout_for_wait));
     }
 
 
@@ -843,10 +837,11 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr & update_unit_ptr) const
 {
     if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
-        throw DB::Exception(
-                "Cannot push to internal update queue in dictionary " + getFullName() + ". Timelimit of " +
-                std::to_string(update_queue_push_timeout_milliseconds) + " ms. exceeded. Current queue size is " +
-                std::to_string(update_queue.size()), ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL);
+        throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                "Cannot push to internal update queue in dictionary {}. "
+                "Timelimit of {} ms. exceeded. Current queue size is {}",
+                getDictionaryID().getNameForLogs(), std::to_string(update_queue_push_timeout_milliseconds),
+                std::to_string(update_queue.size()));
 }
 
 void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
@@ -860,44 +855,29 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
     const auto now = std::chrono::system_clock::now();
 
-    /// Non const because it will be unlocked.
-    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
     if (now > backoff_end_time.load())
     {
         try
         {
-            if (error_count)
-            {
-                /// Recover after error: we have to clone the source here because
-                /// it could keep connections which should be reset after error.
-                source_ptr = source_ptr->clone();
-            }
+            auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
 
-            /// To perform parallel loading.
-            BlockInputStreamPtr stream = nullptr;
-            {
-                ProfilingScopedWriteUnlocker unlocker(write_lock);
-                stream = source_ptr->loadIds(bunch_update_unit.getRequestedIds());
-            }
-
+            BlockInputStreamPtr stream = current_source_ptr->loadIds(bunch_update_unit.getRequestedIds());
             stream->readPrefix();
+
 
             while (true)
             {
-                Block block;
-                {
-                    ProfilingScopedWriteUnlocker unlocker(write_lock);
-                    block = stream->read();
-                    if (!block)
-                        break;
-                }
+                Block block = stream->read();
+                if (!block)
+                    break;
 
                 const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
-                    throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{ErrorCodes::TYPE_MISMATCH,
+                                    "{}: id column has type different from UInt64.", getDictionaryID().getNameForLogs()};
 
                 const auto & ids = id_column->getData();
 
@@ -907,6 +887,8 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
+                    /// Modifying cache with write lock
+                    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
                     const auto id = ids[i];
 
                     const auto find_result = findCellIdx(id, now);
@@ -943,6 +925,9 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
 
             stream->readSuffix();
 
+            /// Lock just for last_exception safety
+            ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
             error_count = 0;
             last_exception = std::exception_ptr{};
             backoff_end_time = std::chrono::system_clock::time_point{};
@@ -951,15 +936,20 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         }
         catch (...)
         {
+            /// Lock just for last_exception safety
+            ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
             ++error_count;
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
 
-            tryLogException(last_exception, log, "Could not update cache dictionary '" + getFullName() +
-                                                 "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
+            tryLogException(last_exception, log,
+                            "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +
+                            "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
         }
     }
 
+    /// Modifying cache state again with write lock
+    ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
     size_t not_found_num = 0;
     size_t found_num = 0;
 

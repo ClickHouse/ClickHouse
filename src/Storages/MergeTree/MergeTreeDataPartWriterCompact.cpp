@@ -99,14 +99,13 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
         for (const auto & column : columns_list)
         {
-            /// There could already be enough data to compress into the new block.
-            if (stream->compressed.offset() >= settings.min_compress_block_size)
-                stream->compressed.next();
-
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
 
             writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+
+            /// Write one compressed block per column in granule for more optimal reading.
+            stream->compressed.next();
         }
 
         ++from_mark;

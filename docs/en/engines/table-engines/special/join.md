@@ -24,7 +24,7 @@ See the detailed description of the [CREATE TABLE](../../../sql-reference/statem
 
 **Engine Parameters**
 
--   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_strictness` – [JOIN strictness](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `join_type` – [JOIN type](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 

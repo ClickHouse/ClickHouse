@@ -57,7 +57,7 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
-#include <Parsers/ParserQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -67,6 +67,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -216,7 +217,7 @@ private:
     ConnectionParameters connection_parameters;
 
     QueryFuzzer fuzzer;
-    int query_fuzzer_runs;
+    int query_fuzzer_runs = 0;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -232,10 +233,10 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef().allUnchanged())
         {
-            const String & name = setting.getName().toString();
-            if (config().has(name) && !setting.isChanged())
+            const auto & name = setting.getName();
+            if (config().has(name))
                 context.setSetting(name, config().getString(name));
         }
 
@@ -789,7 +790,7 @@ private:
         // in particular, it can't distinguish the end of partial input buffer
         // and the final end of input file. This means we have to try to split
         // the input into separate queries here. Two patterns of input are
-        // especially interesing:
+        // especially interesting:
         // 1) multiline query:
         //      select 1
         //      from system.numbers;
@@ -1040,11 +1041,25 @@ private:
             full_query = text.substr(this_query_begin - text.data(),
                 begin - text.data());
 
-            ASTPtr fuzz_base = orig_ast;
-            for (int fuzz_step = 0; fuzz_step < query_fuzzer_runs; fuzz_step++)
+            // Don't repeat inserts, the tables grow too big. Also don't repeat
+            // creates because first we run the unmodified query, it will succeed,
+            // and the subsequent queries will fail. When we run out of fuzzer
+            // errors, it may be interesting to add fuzzing of create queries that
+            // wraps columns into LowCardinality or Nullable. Also there are other
+            // kinds of create queries such as CREATE DICTIONARY, we could fuzz
+            // them as well.
+            int this_query_runs = query_fuzzer_runs;
+            if (as_insert
+                || orig_ast->as<ASTCreateQuery>())
             {
-                fprintf(stderr, "fuzzing step %d for query at pos %zd\n",
-                    fuzz_step, this_query_begin - text.data());
+                this_query_runs = 1;
+            }
+
+            ASTPtr fuzz_base = orig_ast;
+            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
+            {
+                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
+                    fuzz_step, this_query_runs, this_query_begin - text.data());
 
                 ASTPtr ast_to_process;
                 try
@@ -1058,7 +1073,11 @@ private:
                     std::stringstream dump_of_cloned_ast;
                     ast_to_process->dumpTree(dump_of_cloned_ast);
 
-                    fuzzer.fuzzMain(ast_to_process);
+                    // Run the original query as well.
+                    if (fuzz_step > 0)
+                    {
+                        fuzzer.fuzzMain(ast_to_process);
+                    }
 
                     auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
@@ -2246,9 +2265,9 @@ public:
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (const auto & setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef().all())
         {
-            const String name = setting.getName().toString();
+            const auto & name = setting.getName();
             if (options.count(name))
                 config().setString(name, options[name].as<std::string>());
         }
