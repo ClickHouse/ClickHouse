@@ -1,6 +1,11 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
-#include <cmath>
+
+extern "C"
+{
+    /// Is defined in libglibc-compatibility.a
+    double lgamma_r(double x, int * signgamp);
+}
 
 namespace DB
 {
@@ -9,7 +14,7 @@ namespace DB
 static Float64 lgamma_wrapper(Float64 arg)
 {
     int signp;
-    return ::lgamma_r(arg, &signp);
+    return lgamma_r(arg, &signp);
 }
 
 struct LGammaName { static constexpr auto name = "lgamma"; };
