@@ -1,11 +1,13 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
+#ifdef lgamma_r
 extern "C"
 {
     /// Is defined in libglibc-compatibility.a
     double lgamma_r(double x, int * signgamp);
 }
+#endif
 
 namespace DB
 {
