@@ -133,7 +133,6 @@ namespace MySQLReplication
 
     void XIDEvent::parseImpl(ReadBuffer & payload) { payload.readStrict(reinterpret_cast<char *>(&xid), 8); }
 
-
     void XIDEvent::dump(std::ostream & out) const
     {
         header.dump(out);
@@ -756,21 +755,15 @@ namespace MySQLReplication
     {
         switch (event->header.type)
         {
-            case FORMAT_DESCRIPTION_EVENT: {
+            case FORMAT_DESCRIPTION_EVENT:
+            case QUERY_EVENT:
+            case XID_EVENT: {
                 binlog_pos = event->header.log_pos;
                 break;
             }
             case ROTATE_EVENT: {
                 auto rotate = std::static_pointer_cast<RotateEvent>(event);
                 binlog_name = rotate->next_binlog;
-                binlog_pos = event->header.log_pos;
-                break;
-            }
-            case QUERY_EVENT: {
-                binlog_pos = event->header.log_pos;
-                break;
-            }
-            case XID_EVENT: {
                 binlog_pos = event->header.log_pos;
                 break;
             }

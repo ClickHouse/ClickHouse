@@ -291,6 +291,7 @@ namespace MySQLReplication
         UInt32 log_pos;
         UInt16 flags;
 
+        EventHeader() : timestamp(0), server_id(0), event_size(0), log_pos(0), flags(0) { }
         void dump(std::ostream & out) const;
         void parse(ReadBuffer & payload);
     };
@@ -312,6 +313,9 @@ namespace MySQLReplication
 
     class FormatDescriptionEvent : public EventBase
     {
+    public:
+        FormatDescriptionEvent() : binlog_version(0), create_timestamp(0), event_header_length(0) { }
+
     protected:
         UInt16 binlog_version;
         String server_version;
@@ -332,6 +336,7 @@ namespace MySQLReplication
         UInt64 position;
         String next_binlog;
 
+        RotateEvent() : position(0) { }
         void dump(std::ostream & out) const override;
 
     protected:
@@ -358,6 +363,7 @@ namespace MySQLReplication
         String query;
         QueryType typ = DDL;
 
+        QueryEvent() : thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0) { }
         void dump(std::ostream & out) const override;
         MySQLEventType type() const override { return MYSQL_QUERY_EVENT; }
 
@@ -367,6 +373,9 @@ namespace MySQLReplication
 
     class XIDEvent : public EventBase
     {
+    public:
+        XIDEvent() : xid(0) { }
+
     protected:
         UInt64 xid;
 
@@ -388,6 +397,7 @@ namespace MySQLReplication
         std::vector<UInt16> column_meta;
         Bitmap null_bitmap;
 
+        TableMapEvent() : table_id(0), flags(0), schema_len(0), table_len(0), column_count(0) { }
         void dump(std::ostream & out) const override;
 
     protected:
@@ -452,6 +462,8 @@ namespace MySQLReplication
     public:
         UInt8 commit_flag;
         GTID gtid;
+
+        GTIDEvent() : commit_flag(0) { }
         void dump(std::ostream & out) const override;
 
     protected:
@@ -473,6 +485,7 @@ namespace MySQLReplication
         String binlog_name;
         GTIDSets gtid_sets;
 
+        Position() : binlog_pos(0) { }
         void update(BinlogEventPtr event);
         void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_);
         void dump(std::ostream & out) const;

@@ -2,7 +2,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-
 namespace DB
 {
 class GTID
@@ -10,6 +9,8 @@ class GTID
 public:
     UInt8 uuid[16];
     Int64 seq_no;
+
+    GTID() : seq_no(0) { }
 };
 
 class GTIDSet
