@@ -194,7 +194,7 @@ void AsynchronousMetrics::update()
     new_values["Uptime"] = context.getUptimeSeconds();
 
     /// Process memory usage according to OS
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
         MemoryStatisticsOS::Data data = memory_stat.get();
 

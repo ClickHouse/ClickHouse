@@ -35,7 +35,11 @@ public:
     Data get() const;
 
 private:
+#ifdef OS_FREEBSD
+    struct procstat * pstat;
+#else
     int fd;
+#endif
 };
 
 }

@@ -50,7 +50,7 @@ private:
     bool quit {false};
     AsynchronousMetricValues values;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
 #endif
 
