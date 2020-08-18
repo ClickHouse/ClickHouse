@@ -14,29 +14,32 @@ namespace ErrorCodes
 }
 
 
-LDAPAccessStorage::LDAPAccessStorage() : IAccessStorage("ldap")
+LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_)
+    : IAccessStorage(storage_name_)
 {
 }
 
 
-void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config, IAccessStorage * top_enclosing_storage_)
+void LDAPAccessStorage::setConfiguration(IAccessStorage * top_enclosing_storage_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
+    const String prefix_str = (prefix.empty() ? "" : prefix + ".");
+
     std::scoped_lock lock(mutex);
 
-    const bool has_server = config.has("server");
-    const bool has_user_template = config.has("user_template");
+    const bool has_server = config.has(prefix_str + "server");
+    const bool has_user_template = config.has(prefix_str + "user_template");
 
     if (!has_server)
         throw Exception("Missing 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
-    const auto ldap_server_cfg = config.getString("server");
+    const auto ldap_server_cfg = config.getString(prefix_str + "server");
     String user_template_cfg;
 
     if (ldap_server_cfg.empty())
         throw Exception("Empty 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
     if (has_user_template)
-        user_template_cfg = config.getString("user_template");
+        user_template_cfg = config.getString(prefix_str + "user_template");
 
     if (user_template_cfg.empty())
         user_template_cfg = "default";
@@ -50,6 +53,18 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
 bool LDAPAccessStorage::isConfiguredNoLock() const
 {
     return !ldap_server.empty() && !user_template.empty() && top_enclosing_storage;
+}
+
+
+const char * LDAPAccessStorage::getStorageType() const
+{
+    return STORAGE_TYPE;
+}
+
+
+bool LDAPAccessStorage::isStorageReadOnly() const
+{
+    return true;
 }
 
 

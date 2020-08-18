@@ -22,24 +22,31 @@ namespace DB
 class LDAPAccessStorage : public IAccessStorage
 {
 public:
-    LDAPAccessStorage();
+    static constexpr char STORAGE_TYPE[] = "ldap";
 
-    void setConfiguration(const Poco::Util::AbstractConfiguration & config, IAccessStorage * top_enclosing_storage_);
+    explicit LDAPAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    virtual ~LDAPAccessStorage() override = default;
+
+    void setConfiguration(IAccessStorage * top_enclosing_storage_, const Poco::Util::AbstractConfiguration & config, const String & prefix = "");
+
+public: // IAccessStorage implementations.
+    virtual const char * getStorageType() const override;
+    virtual bool isStorageReadOnly() const override;
 
 private: // IAccessStorage implementations.
-    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(EntityType type) const override;
-    bool existsImpl(const UUID & id) const override;
-    AccessEntityPtr readImpl(const UUID & id) const override;
-    String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr &) const override;
-    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
-    void removeImpl(const UUID & id) override;
-    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
-    ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
-    bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(EntityType type) const override;
+    virtual std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    virtual std::vector<UUID> findAllImpl(EntityType type) const override;
+    virtual bool existsImpl(const UUID & id) const override;
+    virtual AccessEntityPtr readImpl(const UUID & id) const override;
+    virtual String readNameImpl(const UUID & id) const override;
+    virtual bool canInsertImpl(const AccessEntityPtr &) const override;
+    virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
+    virtual void removeImpl(const UUID & id) override;
+    virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
+    virtual ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
+    virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    virtual bool hasSubscriptionImpl(const UUID & id) const override;
+    virtual bool hasSubscriptionImpl(EntityType type) const override;
 
 private:
     bool isConfiguredNoLock() const;
