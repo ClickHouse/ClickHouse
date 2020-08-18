@@ -15,6 +15,10 @@ function wait_server()
     do
         if [ "$counter" -gt 120 ]
         then
+            echo "Cannot start clickhouse-server"
+            cat /var/log/clickhouse-server/stdout.log
+            cat /var/log/clickhouse-server/stderr.log
+            cat /var/log/clickhouse-server/clickhouse-server.err.log
             break
         fi
         sleep 0.5

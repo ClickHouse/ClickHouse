@@ -25,8 +25,8 @@ PEERDIR(
     contrib/libs/cctz/src
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
-    contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/poco/Util
+    contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/fmt
     contrib/restricted/boost
     contrib/restricted/cityhash-1.0.2
@@ -52,6 +52,7 @@ SRCS(
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
+
 )
 
 END()

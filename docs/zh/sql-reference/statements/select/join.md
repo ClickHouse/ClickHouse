@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_title: JOIN
 ---
 
@@ -29,7 +27,7 @@ FROM <left_table>
 -   `FULL OUTER JOIN`，除了匹配的行之外，还会返回两个表中的非匹配行。
 -   `CROSS JOIN`，产生整个表的笛卡尔积, “join keys” 是 **不** 指定。
 
-`JOIN` 没有指定类型暗示 `INNER`. 关键字 `OUTER` 可以安全地省略。 替代语法 `CROSS JOIN` 在指定多个表 [FROM条款](../../../sql-reference/statements/select/from.md) 用逗号分隔。
+`JOIN` 没有指定类型暗指 `INNER`. 关键字 `OUTER` 可以安全地省略。 替代语法 `CROSS JOIN` 在指定多个表 [FROM](../../../sql-reference/statements/select/from.md) 用逗号分隔。
 
 ClickHouse中提供的其他联接类型:
 
@@ -53,7 +51,7 @@ ClickHouse中提供的其他联接类型:
 
 -   必须包含有序序列。
 -   可以是以下类型之一: [Int*，UInt*](../../../sql-reference/data-types/int-uint.md), [浮动\*](../../../sql-reference/data-types/float.md), [日期](../../../sql-reference/data-types/date.md), [日期时间](../../../sql-reference/data-types/datetime.md), [十进制\*](../../../sql-reference/data-types/decimal.md).
--   不能是唯一的列 `JOIN` 条款
+-   不能是唯一的列 `JOIN` 
 
 语法 `ASOF JOIN ... ON`:
 
@@ -150,7 +148,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 当任何这些限制达到，ClickHouse作为 [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) 设置指示。
 
-## 例 {#examples}
+## 例子 {#examples}
 
 示例:
 

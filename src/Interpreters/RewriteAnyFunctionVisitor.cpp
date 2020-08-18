@@ -20,6 +20,21 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
     {
         if (const auto * arg_func = arg->as<ASTFunction>())
         {
+            /// arrayJoin() is special and should not be optimized (think about
+            /// it as a an aggregate function), otherwise wrong result will be
+            /// produced:
+            ///     SELECT *, any(arrayJoin([[], []])) FROM numbers(1) GROUP BY number
+            ///     ┌─number─┬─arrayJoin(array(array(), array()))─┐
+            ///     │      0 │ []                                 │
+            ///     │      0 │ []                                 │
+            ///     └────────┴────────────────────────────────────┘
+            /// While should be:
+            ///     ┌─number─┬─any(arrayJoin(array(array(), array())))─┐
+            ///     │      0 │ []                                      │
+            ///     └────────┴─────────────────────────────────────────┘
+            if (arg_func->name == "arrayJoin")
+                return false;
+
             if (arg_func->name == "lambda")
                 return false;
 
