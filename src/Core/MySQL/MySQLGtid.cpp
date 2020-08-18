@@ -23,7 +23,7 @@ void GTIDSet::tryMerge(size_t i)
 void GTIDSets::parse(const String gtid_format)
 {
     std::vector<String> gtid_sets;
-    boost::split(gtid_sets, gtid_format, boost::is_any_of(","));
+    boost::split(gtid_sets, gtid_format, [](char c) { return c == ','; });
 
     for (const auto & gset : gtid_sets)
     {
