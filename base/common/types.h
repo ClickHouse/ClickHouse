@@ -120,3 +120,21 @@ template <> struct is_big_int<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
+
+/// This is only needed for non-official, "unbundled" build.
+/// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
+#if !defined(_LIBCPP_LIMITS) && !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
+namespace std
+{
+    template <>
+    struct numeric_limits<__int128_t>
+    {
+        static constexpr bool is_specialized = true;
+        static constexpr bool is_signed = true;
+        static constexpr bool is_integer = true;
+        static constexpr int radix = 2;
+        static constexpr int digits = 127;
+        static constexpr int digits10 = 38;
+    };
+}
+#endif
