@@ -2,10 +2,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
-#include <Common/Throttler.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/ConcatProcessor.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
@@ -322,9 +320,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 auto metadata_snapshot = cur->getInMemoryMetadataPtr();
                 QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
 
-                Pipes pipes;
-
-                pipes = cur->read(
+                Pipe pipe = cur->read(
                     metadata_snapshot->getColumns().getNamesOfPhysical(),
                     metadata_snapshot, {}, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
@@ -332,16 +328,11 @@ void RemoteQueryExecutor::sendExternalTables()
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
 
-                if (pipes.empty())
+                if (pipe.empty())
                     data->pipe = std::make_unique<Pipe>(
                             std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
-                else if (pipes.size() == 1)
-                    data->pipe = std::make_unique<Pipe>(std::move(pipes.front()));
                 else
-                {
-                    auto concat = std::make_shared<ConcatProcessor>(pipes.front().getHeader(), pipes.size());
-                    data->pipe = std::make_unique<Pipe>(std::move(pipes), std::move(concat));
-                }
+                    data->pipe = std::make_unique<Pipe>(std::move(pipe));
 
                 res.emplace_back(std::move(data));
             }

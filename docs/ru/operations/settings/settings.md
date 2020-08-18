@@ -571,7 +571,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-Формировать блоки указанного размера, при вставке в таблицу.
+Формировать блоки указанного размера (в количестве строк), при вставке в таблицу.
 Эта настройка действует только в тех случаях, когда сервер сам формирует такие блоки.
 Например, при INSERT-е через HTTP интерфейс, сервер парсит формат данных, и формирует блоки указанного размера.
 А при использовании clickhouse-client, клиент сам парсит данные, и настройка max\_insert\_block\_size на сервере не влияет на размер вставляемых блоков.
@@ -1548,6 +1548,16 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
 
 Значение по умолчанию: `Пустая строка`.
+
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+Позволяет использовать данные, которых не нашлось в схеме формата [Avro](../../interfaces/formats.md#data-format-avro) или [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent). Если поле не найдено в схеме, ClickHouse подставит значение по умолчанию вместо исключения.
+
+Возможные значения:
+
+-   0 — Выключена.
+-   1 — Включена.
+
+Значение по умолчанию: `0`.
 
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 

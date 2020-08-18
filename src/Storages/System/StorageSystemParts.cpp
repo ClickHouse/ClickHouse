@@ -15,8 +15,8 @@
 namespace DB
 {
 
-StorageSystemParts::StorageSystemParts(const std::string & name_)
-    : StorageSystemPartsBase(name_,
+StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
+    : StorageSystemPartsBase(table_id_,
     {
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},

@@ -92,6 +92,10 @@
         "name": "yandex/clickhouse-fasttest",
         "dependent": []
     },
+    "docker/test/style": {
+        "name": "yandex/clickhouse-style-test",
+        "dependent": []
+    },
     "docker/test/integration/s3_proxy": {
         "name": "yandex/clickhouse-s3-proxy",
         "dependent": []

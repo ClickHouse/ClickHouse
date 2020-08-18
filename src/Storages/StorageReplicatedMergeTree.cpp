@@ -268,16 +268,28 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             bool is_first_replica = createTableIfNotExists(metadata_snapshot);
 
-            /// We have to check granularity on other replicas. If it's fixed we
-            /// must create our new replica with fixed granularity and store this
-            /// information in /replica/metadata.
-            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            try
+            {
+                /// NOTE If it's the first replica, these requests to ZooKeeper look redundant, we already know everything.
 
-            checkTableStructure(zookeeper_path, metadata_snapshot);
+                /// We have to check granularity on other replicas. If it's fixed we
+                /// must create our new replica with fixed granularity and store this
+                /// information in /replica/metadata.
+                other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 
-            Coordination::Stat metadata_stat;
-            current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-            metadata_version = metadata_stat.version;
+                checkTableStructure(zookeeper_path, metadata_snapshot);
+
+                Coordination::Stat metadata_stat;
+                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+                metadata_version = metadata_stat.version;
+            }
+            catch (Coordination::Exception & e)
+            {
+                if (!is_first_replica && e.code == Coordination::Error::ZNONODE)
+                    throw Exception("Table " + zookeeper_path + " was suddenly removed.", ErrorCodes::ALL_REPLICAS_LOST);
+                else
+                    throw;
+            }
 
             if (!is_first_replica)
                 createReplica(metadata_snapshot);
@@ -291,7 +303,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
-
         /// In old tables this node may missing or be empty
         String replica_metadata;
         bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
@@ -395,7 +406,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         }
 
         /// It maybe already removed from zk, but local in-memory mutations
-        /// state was not update.
+        /// state was not updated.
         if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id))
         {
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
@@ -758,9 +769,9 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
 }
 
 
-/** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/ metadata).
-    * If not, throw an exception.
-    */
+/** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/metadata).
+  * If not, throw an exception.
+  */
 void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
@@ -3424,7 +3435,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
     return max_added_blocks;
 }
 
-Pipes StorageReplicatedMergeTree::read(
+Pipe StorageReplicatedMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -3870,7 +3881,7 @@ void StorageReplicatedMergeTree::alter(
     }
 }
 
-Pipes StorageReplicatedMergeTree::alterPartition(
+Pipe StorageReplicatedMergeTree::alterPartition(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,

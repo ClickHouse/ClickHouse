@@ -374,7 +374,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## max_server_memory_usage {#max_server_memory_usage}
 
-Ограничивает объём оперативной памяти, используемой сервером ClickHouse. Настройка может быть задана только для профиля `default`.
+Ограничивает объём оперативной памяти, используемой сервером ClickHouse.
 
 Возможные значения:
 

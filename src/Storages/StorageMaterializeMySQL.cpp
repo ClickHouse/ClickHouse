@@ -28,7 +28,7 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
     setInMemoryMetadata(in_memory_metadata);
 }
 
-Pipes StorageMaterializeMySQL::read(
+Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
@@ -77,22 +77,21 @@ Pipes StorageMaterializeMySQL::read(
             expressions->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
     }
 
-    Pipes pipes = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
+    Pipe pipe = nested_storage->read(require_columns_name, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
 
-    if (!expressions->children.empty() && !pipes.empty())
+    if (!expressions->children.empty() && !pipe.empty())
     {
-        Block pipe_header = pipes.front().getHeader();
+        Block pipe_header = pipe.getHeader();
         auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
         ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
 
-        for (auto & pipe : pipes)
+        pipe.addSimpleTransform([&](const Block & header)
         {
-            assertBlocksHaveEqualStructure(pipe_header, pipe.getHeader(), "StorageMaterializeMySQL");
-            pipe.addSimpleTransform(std::make_shared<FilterTransform>(pipe.getHeader(), expression_actions, filter_column_name, false));
-        }
+            return std::make_shared<FilterTransform>(header, expression_actions, filter_column_name, false);
+        });
     }
 
-    return pipes;
+    return pipe;
 }
 
 NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
