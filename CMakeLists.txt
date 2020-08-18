@@ -393,7 +393,6 @@ include (cmake/find/icu.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
-include (cmake/find/termcap.cmake)
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
@@ -404,6 +403,7 @@ include (cmake/find/rdkafka.cmake)
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/termcap.cmake) # for external static llvm
 include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
