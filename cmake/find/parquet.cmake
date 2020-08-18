@@ -106,7 +106,9 @@ if(NOT USE_INTERNAL_PARQUET_LIBRARY)
         set(EXTERNAL_PARQUET_FOUND 1)
     else()
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "Can't find system parquet: arrow=${ARROW_INCLUDE_DIR} parquet=${PARQUET_INCLUDE_DIR}" )
+                 "Can't find system parquet: arrow=${ARROW_INCLUDE_DIR}:${ARROW_LIBRARY} ;"
+                 " parquet=${PARQUET_INCLUDE_DIR}:${PARQUET_LIBRARY} ;"
+                 " thrift=${THRIFT_LIBRARY} ;")
         set(EXTERNAL_PARQUET_FOUND 0)
     endif()
 endif()
