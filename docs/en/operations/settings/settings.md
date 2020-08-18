@@ -1864,4 +1864,17 @@ Default value: `0`.
 -   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 
+## lock_acquire_timeout {#lock_acquire_timeout}
+
+Defines how many seconds locking request waits before failing. 
+
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the Clickhouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No locking timeout.
+
+Default value: `120`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
