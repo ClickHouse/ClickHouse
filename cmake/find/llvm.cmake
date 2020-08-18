@@ -44,8 +44,9 @@ if (NOT USE_INTERNAL_LLVM_LIBRARY)
         set (USE_EMBEDDED_COMPILER 0)
     endif()
 
-    if (LLVM_FOUND AND OS_LINUX AND USE_LIBCXX)
-        message(WARNING "Option USE_INTERNAL_LLVM_LIBRARY is not set but the LLVM library from OS packages in Linux is incompatible with libc++ ABI. LLVM Will be disabled.")
+    if (LLVM_FOUND AND OS_LINUX AND USE_LIBCXX AND NOT FORCE_LLVM_WITH_LIBCXX)
+        message(WARNING "Option USE_INTERNAL_LLVM_LIBRARY is not set but the LLVM library from OS packages "
+                "in Linux is incompatible with libc++ ABI. LLVM Will be disabled. Force: -DFORCE_LLVM_WITH_LIBCXX=ON")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Unsupported LLVM configuration, cannot enable LLVM")
         set (LLVM_FOUND 0)
         set (USE_EMBEDDED_COMPILER 0)
