@@ -53,8 +53,7 @@ write a user-readable message describing the change for [CHANGELOG.md](../whats-
 
 ### Push to dockerhub
 
-Builds docker images used for build and tests.
-
+Builds docker images used for build and tests, then pushes them to DockerHub.
 
 ### Marker check
 
