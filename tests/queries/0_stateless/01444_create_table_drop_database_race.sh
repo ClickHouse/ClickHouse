@@ -11,8 +11,8 @@ function thread1()
 {
     while true; do
 #        ${CLICKHOUSE_CLIENT} --query="SHOW TABLES FROM test_01444"
-        ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS test_01444"
-        ${CLICKHOUSE_CLIENT} --query="CREATE DATABASE test_01444"
+        ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS test_01444" 2>&1| grep -F "Code: " | grep -Fv "Code: 219"
+        ${CLICKHOUSE_CLIENT} --query="CREATE DATABASE IF NOT EXISTS test_01444"
     done
 }
 
@@ -30,5 +30,8 @@ TIMEOUT=10
 
 timeout $TIMEOUT bash -c thread1 &
 timeout $TIMEOUT bash -c thread2 &
+timeout $TIMEOUT bash -c thread2 &
 
 wait
+
+${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS test_01444"
