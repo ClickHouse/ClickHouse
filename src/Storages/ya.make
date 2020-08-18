@@ -182,8 +182,8 @@ SRCS(
     System/StorageSystemTableEngines.cpp
     System/StorageSystemTableFunctions.cpp
     System/StorageSystemTables.cpp
-    System/StorageSystemUsers.cpp
     System/StorageSystemUserDirectories.cpp
+    System/StorageSystemUsers.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
     transformQueryForExternalDatabase.cpp
