@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -exu
 set -o pipefail
 trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
