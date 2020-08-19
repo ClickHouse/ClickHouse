@@ -390,7 +390,7 @@ struct ExpressionActionsChain
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
         }
 
-        return steps.back().actions();
+        return steps.back()->actions();
     }
 
     Step & getLastStep()
@@ -398,14 +398,14 @@ struct ExpressionActionsChain
         if (steps.empty())
             throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-        return steps.back();
+        return *steps.back();
     }
 
     Step & lastStep(const NamesAndTypesList & columns)
     {
         if (steps.empty())
-            steps.emplace_back(std::make_shared<ExpressionActions>(columns, context));
-        return steps.back();
+            steps.emplace_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ExpressionActions>(columns, context)));
+        return *steps.back();
     }
 
     std::string dumpChain() const;
