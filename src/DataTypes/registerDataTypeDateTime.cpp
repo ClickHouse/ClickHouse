@@ -47,8 +47,14 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
         if constexpr (Kind == ArgumentKind::Optional)
             return {};
         else
-            throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        {
+            if (argument->value.getType() != field_type)
+                throw Exception(getExceptionMessage(String(" has wrong type: ") + argument->value.getTypeName(),
+                    argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
+                throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        }
     }
 
     return argument->value.get<NearestResultType>();
