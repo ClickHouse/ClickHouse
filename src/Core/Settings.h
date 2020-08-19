@@ -375,6 +375,7 @@ class IColumn;
     M(String, function_implementation, "", "Choose function implementation for specific target or variant (experimental). If empty enable all of them.", 0) \
     \
     M(Bool, allow_experimental_geo_types, false, "Allow geo data types such as Point, Ring, Polygon, MultiPolygon", 0) \
+    M(Bool, allow_experimental_bigint_types, false, "Allow Int128, Int256, UInt256 and Decimal256 types", 0) \
     M(Bool, data_type_default_nullable, false, "Data types without NULL or NOT NULL will make Nullable", 0) \
     M(Bool, cast_keep_nullable, false, "CAST operator keep Nullable for result data type", 0) \
     M(Bool, alter_partition_verbose_result, false, "Output information about affected parts. Currently works only for FREEZE and ATTACH commands.", 0) \

@@ -5,6 +5,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -16,9 +17,12 @@ struct DivideFloatingImpl
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        return static_cast<Result>(a) / b;
+        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
+            throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        else
+            return static_cast<Result>(a) / b;
     }
 
 #if USE_EMBEDDED_COMPILER
