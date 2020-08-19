@@ -1,7 +1,9 @@
-#include "StorageSystemTimeZones.h"
+#if __has_include("StorageSystemTimeZones.generated.cpp")
 
-#include <algorithm>
-#include <DataTypes/DataTypeString.h>
+#    include "StorageSystemTimeZones.h"
+
+#    include <algorithm>
+#    include <DataTypes/DataTypeString.h>
 
 
 extern const char * auto_time_zones[];
@@ -17,11 +19,9 @@ NamesAndTypesList StorageSystemTimeZones::getNamesAndTypes()
 
 void StorageSystemTimeZones::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
-    std::vector<const char *> time_zones;
     for (auto * it = auto_time_zones; *it; ++it)
-        time_zones.emplace_back(*it);
+        res_columns[0]->insert(String(*it));
+}
+}
 
-    for (auto & it : time_zones)
-        res_columns[0]->insert(String(it));
-}
-}
+#endif
