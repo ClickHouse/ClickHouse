@@ -4,7 +4,7 @@
 #    include "config_formats.h"
 #endif
 
-#if USE_PROTOBUF
+#if USE_GRPC
 
 #include <mutex>
 #include <map>

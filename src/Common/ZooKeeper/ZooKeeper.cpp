@@ -106,7 +106,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 chroot,
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
     }
-#if USE_PROTOBUF
+#if USE_GRPC
     else if (implementation == "etcdkeeper")
     {
         if (hosts.empty())

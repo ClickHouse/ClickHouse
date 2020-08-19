@@ -2,7 +2,7 @@
 #    include "config_formats.h"
 #endif
 
-#if USE_PROTOBUF
+#if USE_GRPC
 
 #include <boost/algorithm/string.hpp>
 
