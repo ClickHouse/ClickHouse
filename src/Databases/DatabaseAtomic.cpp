@@ -65,6 +65,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(const Context &)
 {
+    assert(tables.empty());
     try
     {
         Poco::File(path_to_metadata_symlink).remove();
