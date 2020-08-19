@@ -94,9 +94,7 @@ def test_materialize_database_dml_with_mysql_5_7(started_cluster, started_mysql_
 def test_materialize_database_dml_with_mysql_8_0(started_cluster, started_mysql_8_0):
     materialize_with_ddl.dml_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
-@pytest.mark.parametrize("n", range(0, 50))
-def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7, n):
-    print(n)
+def test_materialize_database_ddl_with_mysql_5_7(started_cluster, started_mysql_5_7):
     try:
         materialize_with_ddl.drop_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
         materialize_with_ddl.create_table_with_materialize_mysql_database(clickhouse_node, started_mysql_5_7, "mysql5_7")
