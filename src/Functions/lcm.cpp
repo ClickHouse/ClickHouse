@@ -61,7 +61,7 @@ struct LCMImpl
           */
 
         using Int = typename NumberTraits::ToInteger<Result>::Type;
-        using Unsigned = std::make_unsigned_t<Int>;
+        using Unsigned = make_unsigned_t<Int>;
 
         Unsigned val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
         Unsigned val2 = abs<Int>(b);

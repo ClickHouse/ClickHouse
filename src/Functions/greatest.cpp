@@ -47,7 +47,7 @@ struct GreatestBaseImpl
 template <typename A, typename B>
 struct GreatestSpecialImpl
 {
-    using ResultType = std::make_unsigned_t<A>;
+    using ResultType = make_unsigned_t<A>;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>

@@ -167,7 +167,7 @@ struct RadixSortIntTraits
     using Result = Element;
     using Key = Element;
     using CountType = uint32_t;
-    using KeyBits = std::make_unsigned_t<Key>;
+    using KeyBits = make_unsigned_t<Key>;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
