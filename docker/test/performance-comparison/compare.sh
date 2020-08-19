@@ -7,6 +7,29 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+function wait_for_server # port, pid
+{
+    for _ in {1..60}
+    do
+        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
+        then
+            break
+        fi
+        sleep 1
+    done
+
+    if ! clickhouse-client --port "$1" --query "select 1"
+    then
+        echo "Cannot connect to ClickHouse server at $1"
+        return 1
+    fi
+
+    if ! kill -0 "$2"
+    then
+        echo "Server pid '$2' is not running"
+        return 1
+    fi
+}
 
 function configure
 {
@@ -27,8 +50,9 @@ function configure
     kill -0 $left_pid
     disown $left_pid
     set +m
-    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
-    echo server for setup started
+
+    wait_for_server 9001 $left_pid
+    echo Server for setup started
 
     clickhouse-client --port 9001 --query "create database test" ||:
     clickhouse-client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
@@ -67,9 +91,10 @@ function restart
 
     set +m
 
-    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
+    wait_for_server 9001 $left_pid
     echo left ok
-    while ! clickhouse-client --port 9002 --query "select 1" && kill -0 $right_pid ; do echo . ; sleep 1 ; done
+
+    wait_for_server 9002 $right_pid
     echo right ok
 
     clickhouse-client --port 9001 --query "select * from system.tables where database != 'system'"
