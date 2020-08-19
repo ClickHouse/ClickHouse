@@ -1,15 +1,25 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos)
+if (USE_GRPC)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos)
 
-file(GLOB PROTO_DEF "${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos/*.proto")
-protobuf_generate_grpc_cpp(EtcdProtos_Srcs EtcdProtos_Hdrs ${PROTO_DEF})
+    file(GLOB PROTO_DEF "${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos/*.proto")
+    protobuf_generate_grpc_cpp(EtcdProtos_Srcs EtcdProtos_Hdrs ${PROTO_DEF})
+endif()
 
 add_headers_and_sources(clickhouse_common_zookeeper .)
 
-add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources} ${EtcdProtosGRPC_Srcs} ${EtcdProtosGRPC_Hdrs} ${EtcdProtos_Srcs} ${EtcdProtos_Hdrs})
+if (USE_GRPC)
+    add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources} ${EtcdProtosGRPC_Srcs} ${EtcdProtosGRPC_Hdrs} ${EtcdProtos_Srcs} ${EtcdProtos_Hdrs})
+else()
+    add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
+endif()
 
-target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils PUBLIC libgrpc++)
+if (USE_GRPC)
+    target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils PUBLIC libgrpc++)
+else()
+    target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils)
+endif()
 target_include_directories(clickhouse_common_zookeeper PUBLIC ${DBMS_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
