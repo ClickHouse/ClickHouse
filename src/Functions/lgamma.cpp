@@ -1,7 +1,7 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
-#ifndef lgamma_r
+#if defined(OS_DARWIN)
 extern "C"
 {
     /// Is defined in libglibc-compatibility.a
