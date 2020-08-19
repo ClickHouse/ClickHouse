@@ -579,7 +579,7 @@ Default value: 10000.
 
 Логирование событий, связанных с данными типа [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
-Запросы логируются не в отдельный файл, а в таблицу [system.part\_log](../../operations/system-tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в таблицу [system.part\_log](../../operations/system-tables/part_log.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -641,7 +641,7 @@ Default value: 10000.
 
 Настройка логирования запросов, принятых с настройкой [log\_queries=1](../../operations/settings/settings.md).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_log](../../operations/system-tables.md#system_tables-query_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_log](../../operations/system-tables/query_log.md#system_tables-query_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -668,7 +668,7 @@ Default value: 10000.
 
 Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -721,7 +721,7 @@ Default value: 10000.
 
 ## trace\_log {#server_configuration_parameters-trace_log}
 
-Settings for the [trace\_log](../../operations/system-tables.md#system_tables-trace_log) system table operation.
+Настройки для [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
 Parameters:
 
