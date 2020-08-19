@@ -34,4 +34,4 @@ timeout $TIMEOUT bash -c thread2 &
 
 wait
 
-${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS test_01444"
+${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS test_01444" 2>&1| grep -F "Code: " | grep -Fv "Code: 219"
