@@ -30,35 +30,22 @@ void LineAsStringRowInputFormat::resetParser()
 void LineAsStringRowInputFormat::readLineObject(IColumn & column)
 {
     PeekableReadBufferCheckpoint checkpoint{buf};
-    size_t balance = 0;
-
-    if (*buf.position() == ';') {
-        ++buf.position();
-        if(buf.eof())
-            return;
-    }
-
-    if (*buf.position() != '"')
-        throw Exception("Line object must begin with '\"'.", ErrorCodes::INCORRECT_DATA);
-
-    ++buf.position();
-    ++balance;
+    bool newline = true;
+    bool over = false;
 
     char * pos;
 
-    while (balance)
+    while (newline)
     {
-        if (buf.eof())
-            throw Exception("Unexpected end of file while parsing Line object.", ErrorCodes::INCORRECT_DATA);
-
-        pos = find_last_symbols_or_null<'"', '\\'>(buf.position(), buf.buffer().end());
+        pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
         buf.position() = pos;
-        if (buf.position() == buf.buffer().end())
-            continue;
-        else if (*buf.position() == '"')
+        if (buf.position() == buf.buffer().end())  {
+            over = true;
+            break;
+        }
+        else if (*buf.position() == '\n')
         {
-            --balance;
-            ++buf.position();
+            newline = false;
         }
         else if (*buf.position() == '\\')
             {
@@ -70,24 +57,18 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
         }
         
     }
+
     buf.makeContinuousMemoryFromCheckpointToPos();
-    char * end = buf.position();
+    char * end = over ? buf.position(): ++buf.position();
     buf.rollbackToCheckpoint();
-    column.insertData(buf.position(), end - buf.position());
+    column.insertData(buf.position(), end - (over ? 0 : 1) - buf.position());
     buf.position() = end;
 }
 
 bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    skipWhitespaceIfAny(buf);
-
     if (!buf.eof())
         readLineObject(*columns[0]);
-
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == ',')
-        ++buf.position();
-    skipWhitespaceIfAny(buf);
 
     return !buf.eof();
 }

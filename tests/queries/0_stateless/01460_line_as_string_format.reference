@@ -1,1 +1,6 @@
-"I love apple","I love banana","I love pear"
+"id" : 1,
+"date" : "01.01.2020",
+"string" : "123{{{\\"\\\\",
+"array" : [1, 2, 3],
+
+Finally implement this new feature.
