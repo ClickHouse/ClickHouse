@@ -1088,7 +1088,7 @@ ClickHouse генерирует исключение
 -   1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
 -   2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
 
-Значение по умолчанию: 0
+Значение по умолчанию: 0.
 
 ## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
 
