@@ -87,7 +87,7 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -111,7 +111,7 @@ public:
 
     void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
-    Pipes alterPartition(
+    Pipe alterPartition(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,

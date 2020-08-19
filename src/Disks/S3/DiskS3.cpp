@@ -439,6 +439,39 @@ private:
     CurrentMetrics::Increment metric_increment;
 };
 
+/// Runs tasks asynchronously using global thread pool.
+class AsyncExecutor : public Executor
+{
+public:
+    explicit AsyncExecutor() = default;
+
+    std::future<void> execute(std::function<void()> task) override
+    {
+        auto promise = std::make_shared<std::promise<void>>();
+
+        GlobalThreadPool::instance().scheduleOrThrowOnError(
+            [promise, task]()
+            {
+                try
+                {
+                    task();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Failed to run async task");
+
+                    try
+                    {
+                        promise->set_exception(std::current_exception());
+                    } catch (...) { }
+                }
+            });
+
+        return promise->get_future();
+    }
+};
+
 
 DiskS3::DiskS3(
     String name_,
@@ -450,7 +483,8 @@ DiskS3::DiskS3(
     size_t min_upload_part_size_,
     size_t min_multi_part_upload_size_,
     size_t min_bytes_for_seek_)
-    : name(std::move(name_))
+    : IDisk(std::make_unique<AsyncExecutor>())
+    , name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))

@@ -68,6 +68,19 @@ SRCS(
     IParserBase.cpp
     Lexer.cpp
     makeASTForLogicalFunction.cpp
+    MySQL/ASTAlterCommand.cpp
+    MySQL/ASTAlterQuery.cpp
+    MySQL/ASTCreateDefines.cpp
+    MySQL/ASTCreateQuery.cpp
+    MySQL/ASTDeclareColumn.cpp
+    MySQL/ASTDeclareConstraint.cpp
+    MySQL/ASTDeclareIndex.cpp
+    MySQL/ASTDeclareOption.cpp
+    MySQL/ASTDeclarePartition.cpp
+    MySQL/ASTDeclarePartitionOptions.cpp
+    MySQL/ASTDeclareReference.cpp
+    MySQL/ASTDeclareSubPartition.cpp
+    MySQL/ASTDeclareTableOptions.cpp
     parseDatabaseAndTableName.cpp
     parseIdentifierOrStringLiteral.cpp
     parseIntervalKind.cpp
@@ -88,6 +101,7 @@ SRCS(
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
     ParserExplainQuery.cpp
+    ParserExternalDDLQuery.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp

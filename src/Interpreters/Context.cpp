@@ -1070,7 +1070,6 @@ void Context::setCurrentDatabase(const String & name)
     calculateAccessRights();
 }
 
-
 void Context::setCurrentQueryId(const String & query_id)
 {
     if (!client_info.current_query_id.empty())

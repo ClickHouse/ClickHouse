@@ -144,6 +144,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Copy binary to the destination directory.
 
+        /// TODO An option to link instead of copy - useful for developers.
+        /// TODO Check if the binary is the same.
+
         size_t binary_size = fs::file_size(binary_self_path);
 
         fs::path prefix = fs::path(options["prefix"].as<std::string>());
@@ -175,7 +178,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                std::cerr << "Install must be run as root: sudo ./clickhouse install";
+                std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
             throw;
         }
 
@@ -469,6 +472,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             executeScript(command);
         }
 
+        /// All users are allowed to read pid file (for clickhouse status command).
+        fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
         /// Other users in clickhouse group are allowed to read and even delete logs.
         fs::permissions(log_path, fs::perms::owner_all | fs::perms::group_all, fs::perm_options::replace);
 
@@ -583,7 +589,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 
@@ -613,6 +619,22 @@ namespace
             {
                 fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
                 fs::remove(pid_file);
+            }
+        }
+        else
+        {
+            /// Create a directory for pid file.
+            /// It's created by "install" but we also support cases when ClickHouse is already installed different way.
+            fs::path pid_path = pid_file;
+            pid_path.remove_filename();
+            fs::create_directories(pid_path);
+            /// All users are allowed to read pid file (for clickhouse status command).
+            fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
+
+            {
+                std::string command = fmt::format("chown --recursive {} '{}'", user, pid_path.string());
+                fmt::print(" {}\n", command);
+                executeScript(command);
             }
         }
 
@@ -649,6 +671,28 @@ namespace
         if (try_num == num_tries)
         {
             fmt::print("Cannot start server. You can execute {} without --daemon option to run manually.\n", command);
+
+            fs::path log_path;
+
+            {
+                ConfigProcessor processor(config.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+                ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
+
+                if (configuration->has("logger.log"))
+                    log_path = fs::path(configuration->getString("logger.log")).remove_filename();
+            }
+
+            if (log_path.empty())
+            {
+                fmt::print("Cannot obtain path to logs (logger.log) from config file {}.\n", config.string());
+            }
+            else
+            {
+                fs::path stderr_path = log_path;
+                stderr_path.replace_filename("stderr.log");
+                fmt::print("Look for logs at {} and for {}.\n", log_path.string(), stderr_path.string());
+            }
+
             return 3;
         }
 
@@ -782,7 +826,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -816,7 +860,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -850,7 +894,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }
@@ -893,7 +937,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(false);
+        std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
 }

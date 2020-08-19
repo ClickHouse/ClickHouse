@@ -28,7 +28,11 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     if (!s_eq.ignore(pos, expected))
         return false;
 
-    if (!value_p.parse(pos, value, expected))
+    if (ParserKeyword("TRUE").ignore(pos, expected))
+        value = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+    else if (ParserKeyword("FALSE").ignore(pos, expected))
+        value = std::make_shared<ASTLiteral>(Field(UInt64(0)));
+    else if (!value_p.parse(pos, value, expected))
         return false;
 
     tryGetIdentifierNameInto(name, change.name);
