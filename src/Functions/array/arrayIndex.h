@@ -232,6 +232,7 @@ struct String
 {
 private:
     using Offset = ColumnString::Offset;
+    template <bool IsConst> using OffsetT = std::conditional_t<IsConst, Offset, const ColumnString::Offsets &>;
     using ArrayOffset = ColumnArray::Offset;
     using ResultType = typename ConcreteAction::ResultType;
 
@@ -241,7 +242,7 @@ private:
         const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets,
         const ColumnString::Chars & item_values,
-        std::conditional_t<IsConst, Offset, const ColumnString::Offsets &> item_offsets,
+        OffsetT<IsConst> item_offsets,
         PaddedPODArray<ResultType> & result,
         [[maybe_unused]] const NullMap * data_map,
         [[maybe_unused]] const NullMap * item_map)
@@ -315,7 +316,7 @@ private:
     static inline void invokeCheckNullMaps(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
-        std::conditional_t<IsConst, Offset, const ColumnString::Offsets&> item_offsets,
+        OffsetT<IsConst> item_offsets,
         PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map)
     {
         if (data_map && item_map)
@@ -347,83 +348,6 @@ public:
         invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 };
-}
-
-static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
-{
-    return ((isNativeNumber(left) || isEnum(left)) && isNativeNumber(right)) || left->equals(*right);
-}
-
-static inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
-{
-    if (allowNested(array_inner_type, arg))
-        return true;
-
-    /// Nullable
-
-    const bool array_is_nullable = array_inner_type->isNullable();
-    const bool arg_is_nullable = arg->isNullable();
-
-    const DataTypePtr arg_or_arg_nullable_nested = arg_is_nullable
-        ? checkAndGetDataType<DataTypeNullable>(arg.get())->getNestedType()
-        : arg;
-
-    if (array_is_nullable) // comparing Array(Nullable(T)) elem and U
-    {
-        const DataTypePtr array_nullable_nested =
-            checkAndGetDataType<DataTypeNullable>(array_inner_type.get())->getNestedType();
-
-        return allowNested(
-                array_nullable_nested,
-                arg_or_arg_nullable_nested);
-    }
-    else if (arg_is_nullable) // cannot compare Array(T) elem (namely, T) and Nullable(T)
-        return false;
-
-    /// LowCardinality
-
-    const auto * const array_lc_ptr = checkAndGetDataType<DataTypeLowCardinality>(array_inner_type.get());
-    const auto * const arg_lc_ptr = checkAndGetDataType<DataTypeLowCardinality>(arg.get());
-
-    const DataTypePtr array_lc_inner_type = recursiveRemoveLowCardinality(array_inner_type);
-    const DataTypePtr arg_lc_inner_type = recursiveRemoveLowCardinality(arg);
-
-    const bool array_is_lc = nullptr != array_lc_ptr;
-    const bool arg_is_lc = nullptr != arg_lc_ptr;
-
-    const bool array_lc_inner_type_is_nullable = array_is_lc && array_lc_inner_type->isNullable();
-    const bool arg_lc_inner_type_is_nullable = arg_is_lc && arg_lc_inner_type->isNullable();
-
-    if (array_is_lc) // comparing LC(T) and U
-    {
-        const DataTypePtr array_lc_nested_or_lc_nullable_nested = array_lc_inner_type_is_nullable
-            ? checkAndGetDataType<DataTypeNullable>(array_lc_inner_type.get())->getNestedType()
-            : array_lc_inner_type;
-
-        if (arg_is_lc) // comparing LC(T) and LC(U)
-        {
-            const DataTypePtr arg_lc_nested_or_lc_nullable_nested = arg_lc_inner_type_is_nullable
-                ? checkAndGetDataType<DataTypeNullable>(arg_lc_inner_type.get())->getNestedType()
-                : arg_lc_inner_type;
-
-            return allowNested(
-                    array_lc_nested_or_lc_nullable_nested,
-                    arg_lc_nested_or_lc_nullable_nested);
-        }
-        else if (arg_is_nullable) // Comparing LC(T) and Nullable(U)
-        {
-            if (!array_lc_inner_type_is_nullable)
-                return false; // Can't compare Array(LC(U)) elem and Nullable(T);
-
-            return allowNested(
-                    array_lc_nested_or_lc_nullable_nested,
-                    arg_or_arg_nullable_nested);
-        }
-        else // Comparing LC(T) and U (U neither Nullable nor LC)
-            return allowNested(array_lc_nested_or_lc_nullable_nested, arg);
-    }
-
-    return false;
 }
 
 template <class ConcreteAction, class Name>
@@ -560,7 +484,99 @@ public:
 private:
     using ResultType = typename ConcreteAction::ResultType;
     using ResultColumnType = ColumnVector<ResultType>;
+    using ResultColumnPtr = decltype(ResultColumnType::create());
+
     using NullMaps = std::pair<const NullMap *, const NullMap *>;
+
+    struct ExecutionData
+    {
+        const IColumn& left;
+        const IColumn& right;
+        const ColumnArray::Offsets& offsets;
+        Block & block;
+        size_t result_pos;
+        NullMaps maps;
+        ResultColumnPtr result { ResultColumnType::create() };
+
+        inline void move_result() { block.getByPosition(result_pos).column = std::move(result); }
+    };
+
+    static inline bool allowNested(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        return ((isNativeNumber(left) || isEnum(left)) && isNativeNumber(right)) || left->equals(*right);
+    }
+
+    static inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
+    {
+        if (allowNested(array_inner_type, arg))
+            return true;
+
+        /// Nullable
+
+        const bool array_is_nullable = array_inner_type->isNullable();
+        const bool arg_is_nullable = arg->isNullable();
+
+        const DataTypePtr arg_or_arg_nullable_nested = arg_is_nullable
+            ? checkAndGetDataType<DataTypeNullable>(arg.get())->getNestedType()
+            : arg;
+
+        if (array_is_nullable) // comparing Array(Nullable(T)) elem and U
+        {
+            const DataTypePtr array_nullable_nested =
+                checkAndGetDataType<DataTypeNullable>(array_inner_type.get())->getNestedType();
+
+            return allowNested(
+                    array_nullable_nested,
+                    arg_or_arg_nullable_nested);
+        }
+        else if (arg_is_nullable) // cannot compare Array(T) elem (namely, T) and Nullable(T)
+            return false;
+
+        /// LowCardinality
+
+        const auto * const array_lc_ptr = checkAndGetDataType<DataTypeLowCardinality>(array_inner_type.get());
+        const auto * const arg_lc_ptr = checkAndGetDataType<DataTypeLowCardinality>(arg.get());
+
+        const DataTypePtr array_lc_inner_type = recursiveRemoveLowCardinality(array_inner_type);
+        const DataTypePtr arg_lc_inner_type = recursiveRemoveLowCardinality(arg);
+
+        const bool array_is_lc = nullptr != array_lc_ptr;
+        const bool arg_is_lc = nullptr != arg_lc_ptr;
+
+        const bool array_lc_inner_type_is_nullable = array_is_lc && array_lc_inner_type->isNullable();
+        const bool arg_lc_inner_type_is_nullable = arg_is_lc && arg_lc_inner_type->isNullable();
+
+        if (array_is_lc) // comparing LC(T) and U
+        {
+            const DataTypePtr array_lc_nested_or_lc_nullable_nested = array_lc_inner_type_is_nullable
+                ? checkAndGetDataType<DataTypeNullable>(array_lc_inner_type.get())->getNestedType()
+                : array_lc_inner_type;
+
+            if (arg_is_lc) // comparing LC(T) and LC(U)
+            {
+                const DataTypePtr arg_lc_nested_or_lc_nullable_nested = arg_lc_inner_type_is_nullable
+                    ? checkAndGetDataType<DataTypeNullable>(arg_lc_inner_type.get())->getNestedType()
+                    : arg_lc_inner_type;
+
+                return allowNested(
+                        array_lc_nested_or_lc_nullable_nested,
+                        arg_lc_nested_or_lc_nullable_nested);
+            }
+            else if (arg_is_nullable) // Comparing LC(T) and Nullable(U)
+            {
+                if (!array_lc_inner_type_is_nullable)
+                    return false; // Can't compare Array(LC(U)) elem and Nullable(T);
+
+                return allowNested(
+                        array_lc_nested_or_lc_nullable_nested,
+                        arg_or_arg_nullable_nested);
+            }
+            else // Comparing LC(T) and U (U neither Nullable nor LC)
+                return allowNested(array_lc_nested_or_lc_nullable_nested, arg);
+        }
+
+        return false;
+    }
 
 #define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
 
@@ -599,7 +615,7 @@ private:
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    NullMaps getNullMaps(const Block & block, const ColumnNumbers & arguments) const noexcept
+    static NullMaps getNullMaps(const Block & block, const ColumnNumbers & arguments) noexcept
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
@@ -622,37 +638,38 @@ private:
      * (s1, s1, s2, ...), (s2, s1, s2, ...), (s3, s1, s2, ...)
      */
     template <class ...Integral>
-    inline bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result) const
+    static inline bool executeIntegral(Block & block, const ColumnNumbers & arguments, size_t result_pos)
     {
-        const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
-                block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * const left = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
-        if (!col_array)
+        if (!left)
             return false;
 
-        const IColumn* const item_arg = block.getByPosition(arguments[1]).column.get();
+        const IColumn& right = *block.getByPosition(arguments[1]).column.get();
 
-        return executeIntegral<Integral...>(
-                col_array->getData(), col_array->getOffsets(),
-                *item_arg, block, result, getNullMaps(block, arguments));
+        ExecutionData data = {
+            left->getData(),
+            right,
+            left->getOffsets(),
+            block,
+            result_pos,
+            getNullMaps(block, arguments)
+        };
+
+        return executeIntegral<Integral...>(data);
     }
 
     template <class ...Integral>
-    inline bool executeIntegral(
-            const IColumn& array_nested, const ColumnArray::Offsets& offsets, const IColumn& arg,
-            Block & block, size_t result, NullMaps maps) const
+    static inline bool executeIntegral(ExecutionData& data)
     {
-        return (executeIntegralExpanded<Integral, Integral...>(array_nested, offsets, arg, block, result, maps) || ...);
+        return (executeIntegralExpanded<Integral, Integral...>(data) || ...);
     }
-
 
     /// Invoke executeIntegralImpl with such parameters: (A, other1), (A, other2), ...
     template <class A, class ...Other>
-    inline bool executeIntegralExpanded(
-            const IColumn& array_nested, const ColumnArray::Offsets& offsets,
-            const IColumn& arg, Block & block, size_t result, NullMaps maps) const
+    static inline bool executeIntegralExpanded(ExecutionData& data)
     {
-        return (executeIntegralImpl<A, Other>(array_nested, offsets, arg, block, result, maps) || ...);
+        return (executeIntegralImpl<A, Other>(data) || ...);
     }
 
     /**
@@ -661,46 +678,40 @@ private:
      * so we have to check all possible variants for #Initial and #Resulting types.
      */
     template <class Initial, class Resulting>
-    bool executeIntegralImpl(
-            const IColumn& array_nested,
-            const ColumnArray::Offsets& offsets,
-            const IColumn& item_arg,
-            Block & block, size_t result, NullMaps maps) const
+    static bool executeIntegralImpl(ExecutionData& data)
     {
-        const ColumnVector<Initial> * col_nested = checkAndGetColumn<ColumnVector<Initial>>(&array_nested);
+        const ColumnVector<Initial> * col_nested = checkAndGetColumn<ColumnVector<Initial>>(&data.left);
 
         if (!col_nested)
             return false;
 
-        auto col_res = ResultColumnType::create();
+        const auto [null_map_data, null_map_item] = data.maps;
 
-        const auto [null_map_data, null_map_item] = maps;
-
-        if (item_arg.onlyNull())
+        if (data.right.onlyNull())
             Impl::Null<ConcreteAction>::process(
-                offsets,
-                col_res->getData(),
+                data.offsets,
+                data.result->getData(),
                 null_map_data);
-        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&item_arg))
+        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<Resulting>>(&data.right))
             Impl::Main<ConcreteAction, true, Initial, Resulting>::vector(
                 col_nested->getData(),
-                offsets,
+                data.offsets,
                 item_arg_const->template getValue<Resulting>(),
-                col_res->getData(),
+                data.result->getData(),
                 null_map_data,
                 nullptr);
-        else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&item_arg))
+        else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<Resulting>>(&data.right))
             Impl::Main<ConcreteAction, false, Initial, Resulting>::vector(
                 col_nested->getData(),
-                offsets,
+                data.offsets,
                 item_arg_vector->getData(),
-                col_res->getData(),
+                data.result->getData(),
                 null_map_data,
                 null_map_item);
         else
             return false;
 
-        block.getByPosition(result).column = std::move(col_res);
+        data.move_result();
         return true;
     }
 
@@ -717,7 +728,7 @@ private:
      *
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
-    bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result) const
+    static bool executeLowCardinality(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * const col_array = checkAndGetColumn<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
@@ -730,13 +741,11 @@ private:
         if (!col_lc)
             return false;
 
-        auto col_result = ResultColumnType::create();
         const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
 
         const IColumn& col_arg = *block.getByPosition(arguments[1]).column.get();
-        const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg);
 
-        if (col_arg_const)
+        if (const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg))
         {
             const IColumnUnique& col_lc_dict = col_lc->getDictionary();
 
@@ -758,8 +767,8 @@ private:
                 ? castColumn(block.getByPosition(arguments[1]), target_type_ptr)
                 : col_arg_const->getPtr();
 
-
             const StringRef elem = col_arg_cloned->getDataAt(0);
+            ResultColumnPtr col_result = ResultColumnType::create();
 
             UInt64 index = 0;
 
@@ -786,6 +795,9 @@ private:
                 col_result->getData(),
                 null_map_data,
                 null_map_item);
+
+            block.getByPosition(result).column = std::move(col_result);
+            return true;
         }
         else if (col_lc->getDictionaryPtr()->isNullable()) // LC(Nullable(T)) and U
         {
@@ -807,13 +819,13 @@ private:
                 ? right_nullable->getNestedColumn()
                 : *right_casted.get();
 
-            Impl::Main<ConcreteAction, true>::vector(
-                left_ptr,
+            ExecutionData data = {
+                left_ptr, right_ptr,
                 col_array->getOffsets(),
-                right_ptr,
-                col_result->getData(),
-                null_map_left_casted,
-                null_map_right_casted);
+                block, result,
+                {null_map_left_casted, null_map_right_casted}};
+
+            return dispatchConvertedLCColumns(data);
         }
         else // LC(T) and U, T not Nullable
         {
@@ -829,50 +841,69 @@ private:
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality();
             const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
 
-            if (left_casted->isNumeric() && right_casted->isNumeric()) // hack to determine ColumnArrays
-                return executeIntegral<INTEGRAL_TPL_PACK>(
-                    *left_casted.get(), col_array->getOffsets(), *right_casted.get(),
-                    block, result, {null_map_data, null_map_item});
+            ExecutionData data = {
+                *left_casted.get(), *right_casted.get(), col_array->getOffsets(),
+                block, result, {null_map_data, null_map_item}
+            };
 
-            Impl::Main<ConcreteAction, true>::vector(
-                *left_casted.get(),
-                col_array->getOffsets(),
-                *right_casted.get(),
-                col_result->getData(),
-                null_map_data,
-                null_map_item);
+            return dispatchConvertedLCColumns(data);
         }
+    }
 
-        block.getByPosition(result).column = std::move(col_result);
+    static bool dispatchConvertedLCColumns(ExecutionData& data)
+    {
+        if (data.left.isNumeric() && data.right.isNumeric()) // ColumnArrays
+            return executeIntegral<INTEGRAL_TPL_PACK>(data);
+
+        if (checkAndGetColumn<ColumnString>(&data.left))
+            return executeStringImpl(data);
+
+        Impl::Main<ConcreteAction, true>::vector(
+            data.left,
+            data.offsets, data.right,
+            data.result->getData(),
+            data.maps.first, data.maps.second);
+
+        data.move_result();
         return true;
     }
 
 #undef INTEGRAL_TPL_PACK
 
-    bool executeString(Block & block, const ColumnNumbers & arguments, size_t result) const
+    static bool executeString(Block & block, const ColumnNumbers & arguments, size_t result_pos)
     {
-        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(
-                block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
-        if (!col_array)
+        if (!array)
             return false;
 
-        const ColumnString * col_nested = checkAndGetColumn<ColumnString>(&col_array->getData());
+        const ColumnString * left = checkAndGetColumn<ColumnString>(&array->getData());
 
-        if (!col_nested)
+        if (!left)
             return false;
 
-        auto col_res = ResultColumnType::create();
+        const IColumn & right = *block.getByPosition(arguments[1]).column.get();
 
-        const auto [null_map_data, null_map_item] = getNullMaps(block, arguments);
-        const IColumn * item_arg = block.getByPosition(arguments[1]).column.get();
+        ExecutionData data = {
+            *left, right, array->getOffsets(),
+            block, result_pos, getNullMaps(block, arguments),
+            std::move(ResultColumnType::create())
+        };
 
-        if (item_arg->onlyNull())
+        return executeStringImpl(data);
+    }
+
+    static bool executeStringImpl(ExecutionData& data)
+    {
+        const auto [null_map_data, null_map_item] = data.maps;
+        const ColumnString& left = *typeid_cast<const ColumnString* const>(&data.left);
+
+        if (data.right.onlyNull())
             Impl::Null<ConcreteAction>::process(
-                col_array->getOffsets(),
-                col_res->getData(),
+                data.offsets,
+                data.result->getData(),
                 null_map_data);
-        else if (const auto *const item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
+        else if (const auto *const item_arg_const = checkAndGetColumnConstStringOrFixedString(&data.right))
         {
             const ColumnString * item_const_string =
                 checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
@@ -882,22 +913,22 @@ private:
 
             if (item_const_string)
                 Impl::String<ConcreteAction>::process(
-                    col_nested->getChars(),
-                    col_array->getOffsets(),
-                    col_nested->getOffsets(),
+                    left.getChars(),
+                    data.offsets,
+                    left.getOffsets(),
                     item_const_string->getChars(),
                     item_const_string->getDataAt(0).size,
-                    col_res->getData(),
+                    data.result->getData(),
                     null_map_data,
                     null_map_item);
             else if (item_const_fixedstring)
                 Impl::String<ConcreteAction>::process(
-                    col_nested->getChars(),
-                    col_array->getOffsets(),
-                    col_nested->getOffsets(),
+                    left.getChars(),
+                    data.offsets,
+                    left.getOffsets(),
                     item_const_fixedstring->getChars(),
                     item_const_fixedstring->getN(),
-                    col_res->getData(),
+                    data.result->getData(),
                     null_map_data,
                     null_map_item);
             else
@@ -905,26 +936,26 @@ private:
                     "Logical error: ColumnConst contains not String nor FixedString column",
                         ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
+        else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {
             Impl::String<ConcreteAction>::process(
-                col_nested->getChars(),
-                col_array->getOffsets(),
-                col_nested->getOffsets(),
+                left.getChars(),
+                data.offsets,
+                left.getOffsets(),
                 item_arg_vector->getChars(),
                 item_arg_vector->getOffsets(),
-                col_res->getData(),
+                data.result->getData(),
                 null_map_data,
                 null_map_item);
         }
         else
             return false;
 
-        block.getByPosition(result).column = std::move(col_res);
+        data.move_result();
         return true;
     }
 
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result) const
+    static bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(
                 block.getByPosition(arguments[0]).column.get());
@@ -1001,7 +1032,7 @@ private:
         return true;
     }
 
-    bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result) const
+    static bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnArray * col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
