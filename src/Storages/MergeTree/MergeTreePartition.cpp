@@ -81,8 +81,9 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     char hash_data[16];
     hash.get128(hash_data);
     result.resize(32);
+    char * result_out = &result[0]; /// temporary to overcome -Wstringop-overflow
     for (size_t i = 0; i < 16; ++i)
-        writeHexByteLowercase(hash_data[i], &result[2 * i]);
+        writeHexByteLowercase(hash_data[i], &result_out[2 * i]);
 
     return result;
 }
