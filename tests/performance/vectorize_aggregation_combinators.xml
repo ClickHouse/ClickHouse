@@ -1,0 +1,18 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_data(k UInt16, v Array(UInt64)) ENGINE Log</create_query>
+
+    <fill_query>INSERT INTO array_data SELECT number % 1024, arrayWithConstant(16, number) from numbers(10000000)</fill_query>
+
+    <query>SELECT countMerge(v) FROM (SELECT countState() v FROM zeros(1000000000)) FORMAT Null</query>
+    <query>SELECT countMerge(v) FROM (SELECT number % 1024 k, countState() v FROM numbers(10000000) GROUP BY k) FORMAT Null</query>
+
+    <query>SELECT sumArray(v) FROM array_data FORMAT Null</query>
+    <query>SELECT k, sumArray(v) FROM array_data GROUP BY k FORMAT Null</query>
+    <query>SELECT arrayReduce('avg', v) FROM array_data FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_data</drop_query>
+</test>

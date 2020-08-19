@@ -1,0 +1,103 @@
+DISTINCT ORDER BY
+0
+1
+2
+GROUP BY ORDER BY
+0
+1
+2
+GROUP BY ORDER BY LIMIT
+0
+HAVING
+1
+1
+1
+1
+GROUP BY HAVING
+1
+ORDER BY
+0
+0
+0
+0
+1
+1
+1
+1
+2
+2
+2
+2
+ORDER BY LIMIT
+0
+ORDER BY LIMIT BY
+0
+1
+2
+cluster() ORDER BY
+0
+0
+0
+0
+0
+0
+0
+0
+1
+1
+1
+1
+1
+1
+1
+1
+2
+2
+2
+2
+2
+2
+2
+2
+cluster() GROUP BY ORDER BY
+0
+1
+2
+LEFT JOIN
+0	0
+1	1
+RIGHT JOIN
+0	0
+1	1
+0	2
+GROUP BY ORDER BY group_by_two_level_threshold
+0
+1
+2
+GROUP BY ORDER BY distributed_aggregation_memory_efficient
+0
+1
+2
+GROUP BY ORDER BY distributed_aggregation_memory_efficient/group_by_two_level_threshold
+0
+1
+2
+COUNT
+132
+distributed_group_by_no_merge
+33
+33
+33
+33
+only one shard in nested
+66
+distributed_group_by_no_merge
+33
+33
+merge()
+66
+distributed_group_by_no_merge
+33
+33
+GLOBAL IN
+1

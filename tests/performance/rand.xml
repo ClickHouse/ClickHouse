@@ -1,0 +1,24 @@
+<test>
+    <stop_conditions>
+        <all_of>
+            <total_time_ms>10000</total_time_ms>
+        </all_of>
+        <any_of>
+            <total_time_ms>20000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+
+    <substitutions>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>zeros(100000000)</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM (SELECT rand() FROM {table}) </query>
+    <query>SELECT count() FROM (SELECT rand64() FROM {table}) </query>
+    <query>SELECT count() FROM (SELECT generateUUIDv4() FROM {table}) </query>
+</test>

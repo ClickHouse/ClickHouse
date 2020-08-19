@@ -1,0 +1,15 @@
+<test>
+    <tags>
+        <tag>columns_hashing</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <query><![CDATA[select sum(UserID + 1 in (select UserID from test.hits)) from test.hits]]></query>
+    <query><![CDATA[select sum((UserID + 1, RegionID) in (select UserID, RegionID from test.hits)) from test.hits]]></query>
+    <query><![CDATA[select sum(URL in (select URL from test.hits where URL != '')) from test.hits]]></query>
+    <query><![CDATA[select sum(MobilePhoneModel in (select MobilePhoneModel from test.hits where MobilePhoneModel != '')) from test.hits]]></query>
+    <query><![CDATA[select sum((MobilePhoneModel, UserID + 1) in (select MobilePhoneModel, UserID from test.hits where MobilePhoneModel != '')) from test.hits]]></query>
+</test>

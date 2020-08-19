@@ -1,0 +1,29 @@
+CSV
+Column 2,   name: d, type: Decimal(18, 10), parsed text: "123456789"ERROR
+ERROR: garbage after DateTime: "7, <DOUBLE QUOTE>Hello<DOUBLE QUOTE>"
+ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.
+ERROR: There is no line feed. "1" found instead.
+ERROR: garbage after Decimal(18, 10): "Hello<LINE FEED>"
+Column 0,   name: t, type: DateTime,        ERROR: text "<LINE FEED>" is not like DateTime
+
+CustomSeparatedIgnoreSpaces
+Column 2,   name: d, type: Decimal(18, 10), parsed text: "123456789"ERROR
+ERROR: There is no delimiter before field 1: expected ",", got "7, <DOUBLE QUOTE>Hello<DOUBLE QUOTE>,"
+Column 0,   name: t, type: DateTime,        ERROR: text ",1<LINE FEED>" is not like DateTime
+Column 0,   name: t, type: DateTime,        ERROR: text "Hello<LINE FEED>" is not like DateTime
+OK
+
+TSV
+Column 2,   name: d, type: Decimal(18, 10), parsed text: "123456789"ERROR
+ERROR: garbage after DateTime: "7<TAB>Hello<TAB>12"
+ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.
+ERROR: Tab found where line feed is expected. It's like your file has more columns than expected.
+ERROR: garbage after Decimal(18, 10): "Hello<LINE FEED>"
+Column 0,   name: t, type: DateTime,        ERROR: text "<LINE FEED>" is not like DateTime
+
+CustomSeparated
+Column 2,   name: d, type: Decimal(18, 10), parsed text: "123456789"ERROR
+ERROR: There is no delimiter before field 1: expected "<TAB>", got "7<TAB>Hello<TAB>123"
+ERROR: There is no delimiter after last field: expected "<LINE FEED>", got "<TAB>1<LINE FEED>"
+ERROR: There is no delimiter after last field: expected "<LINE FEED>", got "Hello<LINE FEED>"
+Column 0,   name: t, type: DateTime,        ERROR: text "<LINE FEED>" is not like DateTime

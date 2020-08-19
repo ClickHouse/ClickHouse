@@ -1,0 +1,43 @@
+<div id="sidebar" class="col-xl-2 col-md-4 bg-secondary-alt p-3 d-print-none min-vh-100 overflow-auto">
+    <div class="overflow-auto">
+        <div id="single-page-switch" class="btn-group mb-2 float-right" role="group" aria-label="{{ _('Multi-page or single-page') }}">
+            <a href="{{ base_url }}" role="button" class="btn btn-dark{% if config.extra.single_page %}-alt{% endif %} active" aria-pressed="{% if not config.extra.single_page %}true{% else %}false{% endif %}">
+                <img src="/images/mkdocs/multi.svg" alt="{{ _('Multi-page version') }}" title="{{ _('Multi-page version') }}" />
+            </a>
+            <a href="{{ base_url }}/single/" role="button" class="btn btn-dark{% if not config.extra.single_page %}-alt{% endif %} active" aria-pressed="{% if not config.extra.single_page %}true{% else %}false{% endif %}">
+                <img src="/images/mkdocs/single.svg" alt="{{ _('Single-page version') }}" title="{{ _('Single-page version') }}" />
+            </a>
+        </div>
+        <div class="dropdown mb-3">
+            <a class="btn btn-dark dropdown-toggle text-muted" href="#" role="button" id="select-version" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                {{ _('Version') }}: <span class="text-light">{{ config.extra.version_prefix or _('latest') }}</span>
+            </a>
+
+            <div class="dropdown-menu bg-dark text-muted p-1" aria-labelledby="select-version">
+                <a class="dropdown-item{% if not config.extra.version_prefix %} disable{% endif %}"
+                   href="/docs/{{ language }}/">
+                    <span class="text-light">{{ _('latest') }}</span>
+                </a>
+
+                {% for release in config.extra.stable_releases %}
+                    <a class="dropdown-item{% if release.0 == config.extra.version_prefix %} disable{% endif %}"
+                       href="/docs/{{ release.0 }}/{{ language }}/">{{ release.0 }}{% if release.1.2 %} LTS{% endif %}</a>
+                {% endfor %}
+            </div>
+        </div>
+        {% if not single_page %}
+        <nav id="sidebar-nav" class="nav flex-column mb-5">
+            {% for nav_item in nav %}
+                {% set path = "sidebar-" + loop.index | string %}
+                {% set level = 1 %}
+                {% include "templates/docs/sidebar-item.html" %}
+            {% endfor %}
+            <a href="{{ base_url }}/single/clickhouse_{{ language }}.pdf" class="nav-link border-top border-secondary mt-3 px-0 pt-3 text-light">
+                <img src="/images/mkdocs/pdf.svg" alt="{{ _('PDF version') }}" title="{{ _('PDF version') }}" height="24" class="d-block mr-1 float-left" /><div>{{ _('PDF version') }}</div>
+            </a>
+        </nav>
+        {% else %}
+            {% include "templates/docs/toc.html" %}
+        {% endif %}
+    </div>
+</div>

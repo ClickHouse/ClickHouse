@@ -25,7 +25,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Секция INTO OUTFILE {#sektsiia-into-outfile}
 
-Добавьте секцию [INTO OUTFILE](../query_language/select/#into-outfile-clause) к своему запросу.
+Добавьте секцию [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
 
 Например:
 
@@ -33,7 +33,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../query_language/select/#format-clause).
+По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../sql-reference/statements/select/format.md#format-clause).
 
 Например:
 
@@ -43,7 +43,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Таблица с движком File {#tablitsa-s-dvizhkom-file}
 
-Смотрите [File](../operations/table_engines/file.md).
+Смотрите [File](../engines/table-engines/special/file.md).
 
 ### Перенаправление в командой строке {#perenapravlenie-v-komandoi-stroke}
 

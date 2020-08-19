@@ -1,0 +1,11 @@
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` String DEFAULT \'10\'\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+1000
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt64 DEFAULT \'10\'\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt64 DEFAULT 10\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+1000
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt64 DEFAULT 100\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt16 DEFAULT 100\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+10000
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt8 DEFAULT 10\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt8 DEFAULT 10,\n    `better_column` UInt8 DEFAULT \'1\'\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value` UInt8 DEFAULT 10,\n    `better_column` UInt8 DEFAULT \'1\',\n    `other_date` String DEFAULT 1\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/alter_default\', \'1\')\nORDER BY key\nSETTINGS index_granularity = 8192

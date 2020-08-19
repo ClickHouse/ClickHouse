@@ -1,0 +1,585 @@
+-------No need for predicate optimization, but still works-------
+1
+1
+1
+2000-01-01	1	test string 1	1
+-------Forbid push down-------
+SELECT count()
+FROM 
+(
+    SELECT 
+        [number] AS a,
+        [number * 2] AS b
+    FROM system.numbers
+    LIMIT 1
+) AS t
+ARRAY JOIN 
+    a,
+    b
+WHERE NOT ignore(a + b)
+1
+SELECT 
+    a,
+    b
+FROM 
+(
+    SELECT 1 AS a
+)
+ANY LEFT JOIN 
+(
+    SELECT 
+        1 AS a,
+        1 AS b
+) USING (a)
+WHERE b = 0
+SELECT 
+    a,
+    b
+FROM 
+(
+    SELECT 
+        1 AS a,
+        1 AS b
+)
+ANY RIGHT JOIN 
+(
+    SELECT 1 AS a
+) USING (a)
+WHERE b = 0
+SELECT 
+    a,
+    b
+FROM 
+(
+    SELECT 1 AS a
+)
+ANY FULL OUTER JOIN 
+(
+    SELECT 
+        1 AS a,
+        1 AS b
+) USING (a)
+WHERE b = 0
+SELECT 
+    a,
+    b
+FROM 
+(
+    SELECT 
+        1 AS a,
+        1 AS b
+)
+ANY FULL OUTER JOIN 
+(
+    SELECT 1 AS a
+) USING (a)
+WHERE b = 0
+-------Need push down-------
+SELECT toString(value) AS value
+FROM 
+(
+    SELECT 1 AS value
+)
+1
+SELECT id
+FROM 
+(
+    SELECT 1 AS id
+    UNION ALL
+    SELECT 2 AS `--predicate_optimizer_0`
+    WHERE 0
+)
+WHERE id = 1
+1
+SELECT id
+FROM 
+(
+    SELECT arrayJoin([1, 2, 3]) AS id
+    WHERE id = 1
+)
+WHERE id = 1
+1
+SELECT id
+FROM 
+(
+    SELECT arrayJoin([1, 2, 3]) AS id
+    WHERE id = 1
+)
+WHERE id = 1
+1
+SELECT 
+    id,
+    subquery
+FROM 
+(
+    SELECT 
+        1 AS id,
+        CAST(1, \'UInt8\') AS subquery
+)
+1	1
+SELECT 
+    a,
+    b
+FROM 
+(
+    SELECT 
+        toUInt64(sum(id) AS b) AS a,
+        b
+    FROM test_00597
+    HAVING a = 3
+)
+WHERE a = 3
+3	3
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        name,
+        value,
+        min(id) AS id
+    FROM test_00597
+    GROUP BY 
+        date,
+        name,
+        value
+    HAVING id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    a,
+    b
+FROM 
+(
+    SELECT 
+        toUInt64(sum(id) AS b) AS a,
+        b
+    FROM test_00597 AS table_alias
+    HAVING b = 3
+) AS outer_table_alias
+WHERE b = 3
+3	3
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    )
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    ) AS b
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    )
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+    WHERE id = 1
+) AS b
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    ) AS a
+    WHERE id = 1
+) AS b
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    id,
+    date,
+    value
+FROM 
+(
+    SELECT 
+        id,
+        date,
+        min(value) AS value
+    FROM test_00597
+    WHERE id = 1
+    GROUP BY 
+        id,
+        date
+)
+WHERE id = 1
+1	2000-01-01	1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+    WHERE id = 1
+    UNION ALL
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value,
+    date,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+    WHERE id = 1
+)
+ANY LEFT JOIN 
+(
+    SELECT id
+    FROM test_00597
+) USING (id)
+WHERE id = 1
+2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+SELECT 
+    id,
+    date,
+    name,
+    value
+FROM 
+(
+    SELECT toInt8(1) AS id
+)
+ANY LEFT JOIN 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+) AS test_00597 USING (id)
+WHERE value = 1
+1	2000-01-01	test string 1	1
+SELECT value
+FROM 
+(
+    SELECT toInt8(1) AS id
+)
+ANY LEFT JOIN test_00597 AS b USING (id)
+WHERE value = 1
+1
+SELECT 
+    date,
+    id,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value,
+        date,
+        name,
+        value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    )
+    ANY LEFT JOIN 
+    (
+        SELECT id
+        FROM test_00597
+    ) USING (id)
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value,
+    b.date,
+    b.name,
+    b.value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+)
+ANY LEFT JOIN 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+) AS b USING (id)
+WHERE b.id = 1
+2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+SELECT 
+    id,
+    date,
+    name,
+    value
+FROM 
+(
+    SELECT 
+        toInt8(1) AS id,
+        toDate(\'2000-01-01\') AS date
+    FROM system.numbers
+    LIMIT 1
+)
+ANY LEFT JOIN 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+) AS b USING (date, id)
+WHERE b.date = toDate(\'2000-01-01\')
+1	2000-01-01	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value,
+    `b.date`,
+    `b.id`,
+    `b.name`,
+    `b.value`
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value,
+        b.date,
+        b.id,
+        b.name,
+        b.value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    ) AS a
+    ANY LEFT JOIN 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+    ) AS b ON id = b.id
+    WHERE id = 1
+)
+WHERE id = 1
+2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1
+SELECT 
+    date,
+    id,
+    name,
+    value,
+    r.date,
+    r.name,
+    r.value
+FROM 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM test_00597
+)
+SEMI LEFT JOIN 
+(
+    SELECT 
+        date,
+        id,
+        name,
+        value
+    FROM 
+    (
+        SELECT 
+            date,
+            id,
+            name,
+            value
+        FROM test_00597
+        WHERE id = 1
+    )
+    WHERE id = 1
+) AS r USING (id)
+WHERE r.id = 1
+2000-01-01	1	test string 1	1	2000-01-01	test string 1	1

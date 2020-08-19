@@ -1,0 +1,39 @@
+<test>
+
+
+
+    <substitutions>
+        <substitution>
+           <name>json</name>
+           <values>
+               <value>'{"sparam":"test_string","nparam": 772}'</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>long_json</name>
+           <values>
+               <value>'{"sparam":{"nested_1":"test_string","nested_2":"test_2"}, "nparam":8495, "fparam":{"nested_1":91.15,"nested_2":[334, 89.05, 1000.01]}, "bparam":false}'</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <allow_simdjson>1</allow_simdjson>
+    </settings>
+
+    <query>SELECT 'simdjson-1', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam'))</query>
+    <query>SELECT 'simdjson-2', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam', 'nested_1'))</query>
+    <query>SELECT 'simdjson-3', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractInt(materialize({json}), 'nparam'))</query>
+    <query>SELECT 'simdjson-4', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractUInt(materialize({json}), 'nparam'))</query>
+    <query>SELECT 'simdjson-5', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractFloat(materialize({json}), 'fparam'))</query>
+
+    <query>SELECT 'simdjson-6', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam'))</query>
+    <query>SELECT 'simdjson-7', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam', 'nested_1'))</query>
+    <query>SELECT 'simdjson-8', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractInt(materialize({long_json}), 'nparam'))</query>
+    <query>SELECT 'simdjson-9', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractUInt(materialize({long_json}), 'nparam'))</query>
+    <query>SELECT 'simdjson-10', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractRaw(materialize({long_json}), 'fparam'))</query>
+    <query>SELECT 'simdjson-11', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractFloat(materialize({long_json}), 'fparam'))</query>
+    <query>SELECT 'simdjson-12', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractFloat(materialize({long_json}), 'fparam', 'nested_2', -2))</query>
+    <query>SELECT 'simdjson-13', count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractBool(materialize({long_json}), 'bparam'))</query>
+
+</test>

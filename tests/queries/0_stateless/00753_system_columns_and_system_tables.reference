@@ -1,0 +1,41 @@
+┌─name────────────────┬─partition_key─┬─sorting_key─┬─primary_key─┬─sampling_key─┬─storage_policy─┬─total_rows─┐
+│ check_system_tables │ name2         │ name1       │ name1       │ name1        │ default        │          0 │
+└─────────────────────┴───────────────┴─────────────┴─────────────┴──────────────┴────────────────┴────────────┘
+┌─name──┬─is_in_partition_key─┬─is_in_sorting_key─┬─is_in_primary_key─┬─is_in_sampling_key─┐
+│ name1 │                   0 │                 1 │                 1 │                  1 │
+│ name2 │                   1 │                 0 │                 0 │                  0 │
+│ name3 │                   0 │                 0 │                 0 │                  0 │
+└───────┴─────────────────────┴───────────────────┴───────────────────┴────────────────────┘
+231	1
+┌─name────────────────┬─partition_key─┬─sorting_key───┬─primary_key─┬─sampling_key─┐
+│ check_system_tables │ date          │ date, version │ date        │              │
+└─────────────────────┴───────────────┴───────────────┴─────────────┴──────────────┘
+┌─name────┬─is_in_partition_key─┬─is_in_sorting_key─┬─is_in_primary_key─┬─is_in_sampling_key─┐
+│ date    │                   1 │                 1 │                 1 │                  0 │
+│ value   │                   0 │                 0 │                 0 │                  0 │
+│ version │                   0 │                 1 │                 0 │                  0 │
+│ sign    │                   0 │                 0 │                 0 │                  0 │
+└─────────┴─────────────────────┴───────────────────┴───────────────────┴────────────────────┘
+┌─name────────────────┬─partition_key───┬─sorting_key───────────────────────┬─primary_key───────────────────────┬─sampling_key──────┐
+│ check_system_tables │ toYYYYMM(Event) │ Counter, Event, intHash32(UserId) │ Counter, Event, intHash32(UserId) │ intHash32(UserId) │
+└─────────────────────┴─────────────────┴───────────────────────────────────┴───────────────────────────────────┴───────────────────┘
+┌─name────┬─is_in_partition_key─┬─is_in_sorting_key─┬─is_in_primary_key─┬─is_in_sampling_key─┐
+│ Event   │                   1 │                 1 │                 1 │                  0 │
+│ UserId  │                   0 │                 1 │                 1 │                  1 │
+│ Counter │                   0 │                 1 │                 1 │                  0 │
+└─────────┴─────────────────────┴───────────────────┴───────────────────┴────────────────────┘
+Check total_bytes/total_rows for TinyLog
+\N	\N
+\N	\N
+Check total_bytes/total_rows for Memory
+0	0
+64	1
+Check total_bytes/total_rows for Buffer
+0	0
+256	50
+Check lifetime_bytes/lifetime_rows for Buffer
+100	50
+100	50
+200	100
+200	100
+402	201

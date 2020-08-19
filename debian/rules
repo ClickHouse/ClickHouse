@@ -24,6 +24,10 @@ DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 
 ifndef ENABLE_TESTS
     CMAKE_FLAGS += -DENABLE_TESTS=0
+else
+# To export binaries and from deb build we do not strip them. No need to run tests in deb build as we run them in CI
+    DEB_BUILD_OPTIONS+= nocheck
+    DEB_BUILD_OPTIONS+= nostrip
 endif
 
 ifndef MAKE_TARGET
@@ -88,14 +92,19 @@ override_dh_auto_build:
 	$(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
 
 override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
+endif
 
 override_dh_clean:
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
-	dh_clean -X contrib
+	dh_clean # -X contrib
 
 override_dh_strip:
+	#https://www.debian.org/doc/debian-policy/ch-source.html#debian-rules-and-deb-build-options
+ifeq (,$(filter nostrip,$(DEB_BUILD_OPTIONS)))
 	dh_strip -pclickhouse-common-static --dbg-package=clickhouse-common-static-dbg
+endif
 
 override_dh_install:
 	# Making docs

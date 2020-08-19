@@ -1,3 +1,8 @@
+---
+toc_priority: 58
+toc_title: Usage Recommendations
+---
+
 # Usage Recommendations {#usage-recommendations}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
@@ -115,13 +120,17 @@ zoo.cfg:
 tickTime=2000
 # The number of ticks that the initial
 # synchronization phase can take
-initLimit=30000
+# This value is not quite motivated
+initLimit=300
 # The number of ticks that can pass between
 # sending a request and getting an acknowledgement
 syncLimit=10
 
 maxClientCnxns=2000
 
+# It is the maximum value that client may request and the server will accept.
+# It is Ok to have high maxSessionTimeout on server to allow clients to work with high session timeout if they want.
+# But we request session timeout of 30 seconds by default (you can change it with session_timeout_ms in ClickHouse config).
 maxSessionTimeout=60000000
 # the directory where the snapshot is stored.
 dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/data
@@ -241,4 +250,4 @@ script
 end script
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}

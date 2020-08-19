@@ -1,0 +1,11 @@
+<test>
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+    </preconditions>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT Title FROM hits_10m_single PREWHERE WatchID % 2 = 1 WHERE UserID = 10000 FORMAT Null</query>
+</test>

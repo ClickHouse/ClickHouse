@@ -1,1 +1,0 @@
-../../../en/query_language/functions/type_conversion_functions.md

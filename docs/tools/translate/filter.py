@@ -8,9 +8,12 @@ import pandocfilters
 import slugify
 
 import translate
+import util
 
 
 is_debug = os.environ.get('DEBUG') is not None
+
+filename = os.getenv('INPUT')
 
 
 def debug(*args):
@@ -18,7 +21,7 @@ def debug(*args):
         print(*args, file=sys.stderr)
 
 
-def process_buffer(buffer, new_value, item=None):
+def process_buffer(buffer, new_value, item=None, is_header=False):
     if buffer:
         text = ''.join(buffer)
 
@@ -37,11 +40,27 @@ def process_buffer(buffer, new_value, item=None):
 
         if text.startswith(' ') and not translated_text.startswith(' '):
             translated_text = ' ' + translated_text
-            
+
         if text.endswith(' ') and not translated_text.endswith(' '):
             translated_text = translated_text + ' '
 
+        if is_header and translated_text.endswith('.'):
+            translated_text = translated_text.rstrip('.')
+
+        title_case = is_header and translate.default_target_language == 'en' and text[0].isupper()
+        title_case_whitelist = {
+            'a', 'an', 'the', 'and', 'or', 'that',
+            'of', 'on', 'for', 'from', 'with', 'to', 'in'
+        }
+        is_first_iteration = True
         for token in translated_text.split(' '):
+            if title_case and token.isascii() and not token.isupper():
+                if len(token) > 1 and token.lower() not in title_case_whitelist:
+                    token = token[0].upper() + token[1:]
+                elif not is_first_iteration:
+                    token = token.lower()
+            is_first_iteration = False
+
             new_value.append(pandocfilters.Str(token))
             new_value.append(pandocfilters.Space())
 
@@ -53,12 +72,12 @@ def process_buffer(buffer, new_value, item=None):
         new_value.append(item)
 
 
-def process_sentence(value):
+def process_sentence(value, is_header=False):
     new_value = []
     buffer = []
     for item in value:
         if isinstance(item, list):
-            new_value.append([process_sentence(subitem) for subitem in item])
+            new_value.append([process_sentence(subitem, is_header) for subitem in item])
             continue
         elif isinstance(item, dict):
             t = item.get('t')
@@ -70,11 +89,11 @@ def process_sentence(value):
             elif t == 'DoubleQuote':
                 buffer.append('"')
             else:
-                process_buffer(buffer, new_value, item)
+                process_buffer(buffer, new_value, item, is_header)
                 buffer = []
         else:
             new_value.append(item)
-    process_buffer(buffer, new_value)
+    process_buffer(buffer, new_value, is_header=is_header)
     return new_value
 
 
@@ -98,6 +117,7 @@ def translate_filter(key, value, _format, _):
             admonition_value = []
             remaining_para_value = []
             in_admonition = True
+            break_value = [pandocfilters.LineBreak(), pandocfilters.Str(' ' * 4)]
             for item in value:
                 if in_admonition:
                     if item.get('t') == 'SoftBreak':
@@ -105,9 +125,11 @@ def translate_filter(key, value, _format, _):
                     else:
                         admonition_value.append(item)
                 else:
-                    remaining_para_value.append(item)
+                    if item.get('t') == 'SoftBreak':
+                        remaining_para_value += break_value
+                    else:
+                        remaining_para_value.append(item)
 
-            break_value = [pandocfilters.LineBreak(),pandocfilters.Str(' ' * 4)]
             if admonition_value[-1].get('t') == 'Quoted':
                 text = process_sentence(admonition_value[-1]['c'][-1])
                 text[0]['c'] = '"' + text[0]['c']
@@ -117,7 +139,7 @@ def translate_filter(key, value, _format, _):
             else:
                 text = admonition_value[-1].get('c')
                 if text:
-                    text = translate(text[0].upper() + text[1:])
+                    text = translate.translate(text[0].upper() + text[1:])
                     admonition_value.append(pandocfilters.Space())
                     admonition_value.append(pandocfilters.Str(f'"{text}"'))
 
@@ -133,13 +155,33 @@ def translate_filter(key, value, _format, _):
                 return pandocfilters.Str(value[2][0])
         except IndexError:
             pass
+
         value[1] = process_sentence(value[1])
+        href = value[2][0]
+        if not (href.startswith('http') or href.startswith('#')):
+            anchor = None
+            attempts = 10
+            if '#' in href:
+                href, anchor = href.split('#', 1)
+            if href.endswith('.md') and not href.startswith('/'):
+                parts = [part for part in os.environ['INPUT'].split('/') if len(part) == 2]
+                lang = parts[-1]
+                script_path = os.path.dirname(__file__)
+                base_path = os.path.abspath(f'{script_path}/../../{lang}')
+                href = os.path.join(
+                    os.path.relpath(base_path, os.path.dirname(os.environ['INPUT'])),
+                    os.path.relpath(href, base_path)
+                )
+            if anchor:
+                href = f'{href}#{anchor}'
+            value[2][0] = href
         return cls(*value)
     elif key == 'Header':
-        # TODO: title case header in en
-        if '_' not in value[1][0]:  # Preserve some manually specified anchors
+        if value[1][0].islower() and '_' not in value[1][0]:  # Preserve some manually specified anchors
             value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
-        value[2] = process_sentence(value[2])
+
+        # TODO: title case header in en
+        value[2] = process_sentence(value[2], is_header=True)
         return cls(*value)
     elif key == 'SoftBreak':
         return pandocfilters.LineBreak()
@@ -148,4 +190,10 @@ def translate_filter(key, value, _format, _):
 
 
 if __name__ == "__main__":
-    pandocfilters.toJSONFilter(translate_filter)
+    os.environ['INPUT'] = os.path.abspath(os.environ['INPUT'])
+    pwd = os.path.dirname(filename or '.')
+    if pwd:
+        with util.cd(pwd):
+            pandocfilters.toJSONFilter(translate_filter)
+    else:
+        pandocfilters.toJSONFilter(translate_filter)

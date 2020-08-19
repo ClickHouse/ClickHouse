@@ -1,6 +1,15 @@
-# Configuración {#settings}
+---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "Configuraci\xF3n"
+toc_priority: 55
+toc_title: "Implantaci\xF3n"
+---
 
-Hay varias formas de realizar todos los ajustes que se describen a continuación.
+# Configuración {#session-settings-intro}
+
+Hay varias maneras de realizar todos los ajustes descritos en esta sección de documentación.
+
 Los ajustes se configuran en capas, por lo que cada capa subsiguiente redefine los ajustes anteriores.
 
 Formas de configurar los ajustes, por orden de prioridad:
@@ -21,4 +30,4 @@ Formas de configurar los ajustes, por orden de prioridad:
 
 Los ajustes que solo se pueden realizar en el archivo de configuración del servidor no se tratan en esta sección.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/settings/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->

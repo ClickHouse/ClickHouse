@@ -1,5 +1,0 @@
-SELECT 1\nWHERE 0
-SELECT 1
-SELECT 1\nWHERE 0
-SELECT 1\nWHERE 1 IN (\n(\n    SELECT arrayJoin([1, 2, 3])\n) AS subquery)
-SELECT 1\nWHERE NOT ignore()

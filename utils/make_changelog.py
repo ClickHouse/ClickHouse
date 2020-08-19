@@ -284,7 +284,7 @@ def parse_one_pull_request(item):
     cat = re.sub(r'^[-*\s]*', '', cat)
 
     # Filter out the PR categories that are not for changelog.
-    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)', cat):
+    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)', cat):
         return False
 
     short_descr = ''

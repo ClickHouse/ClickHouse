@@ -1,0 +1,92 @@
+<test max_ignored_relative_change="0.3">
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <value>1000000</value>
+        </substitution>
+    </substitutions>
+
+<query>select min(Title) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(Title) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(Title) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(Title) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(URL) from hits_100m_single where URL != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(URL) from hits_100m_single where URL != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(URL) from hits_100m_single where URL != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(URL) from hits_100m_single where URL != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(Referer) from hits_100m_single where Referer != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(Referer) from hits_100m_single where Referer != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(Referer) from hits_100m_single where Referer != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(Referer) from hits_100m_single where Referer != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(FlashMinor2) from hits_100m_single where FlashMinor2 != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(FlashMinor2) from hits_100m_single where FlashMinor2 != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(FlashMinor2) from hits_100m_single where FlashMinor2 != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(FlashMinor2) from hits_100m_single where FlashMinor2 != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(MobilePhoneModel) from hits_100m_single where MobilePhoneModel != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(MobilePhoneModel) from hits_100m_single where MobilePhoneModel != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(MobilePhoneModel) from hits_100m_single where MobilePhoneModel != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(MobilePhoneModel) from hits_100m_single where MobilePhoneModel != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(Params) from hits_100m_single where Params != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(Params) from hits_100m_single where Params != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(Params) from hits_100m_single where Params != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(Params) from hits_100m_single where Params != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(SearchPhrase) from hits_100m_single where SearchPhrase != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(SearchPhrase) from hits_100m_single where SearchPhrase != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(SearchPhrase) from hits_100m_single where SearchPhrase != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(SearchPhrase) from hits_100m_single where SearchPhrase != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(PageCharset) from hits_100m_single where PageCharset != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(PageCharset) from hits_100m_single where PageCharset != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(PageCharset) from hits_100m_single where PageCharset != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(PageCharset) from hits_100m_single where PageCharset != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<!-- SocialAction and SocialNetwork is always empty in hits_100m_single, don't test it -->
+<query>select min(SocialSourcePage) from hits_100m_single where SocialSourcePage != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(SocialSourcePage) from hits_100m_single where SocialSourcePage != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(SocialSourcePage) from hits_100m_single where SocialSourcePage != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(SocialSourcePage) from hits_100m_single where SocialSourcePage != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<!-- ParamOrderID is almost always empty in hits_100m_single (3k nonempty rows), don't test it -->
+<query>select min(OpenstatServiceName) from hits_100m_single where OpenstatServiceName != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(OpenstatServiceName) from hits_100m_single where OpenstatServiceName != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(OpenstatServiceName) from hits_100m_single where OpenstatServiceName != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(OpenstatServiceName) from hits_100m_single where OpenstatServiceName != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(OpenstatCampaignID) from hits_100m_single where OpenstatCampaignID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(OpenstatCampaignID) from hits_100m_single where OpenstatCampaignID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(OpenstatCampaignID) from hits_100m_single where OpenstatCampaignID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(OpenstatCampaignID) from hits_100m_single where OpenstatCampaignID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(OpenstatAdID) from hits_100m_single where OpenstatAdID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(OpenstatAdID) from hits_100m_single where OpenstatAdID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(OpenstatAdID) from hits_100m_single where OpenstatAdID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(OpenstatAdID) from hits_100m_single where OpenstatAdID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(OpenstatSourceID) from hits_100m_single where OpenstatSourceID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(OpenstatSourceID) from hits_100m_single where OpenstatSourceID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(OpenstatSourceID) from hits_100m_single where OpenstatSourceID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(OpenstatSourceID) from hits_100m_single where OpenstatSourceID != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(UTMSource) from hits_100m_single where UTMSource != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(UTMSource) from hits_100m_single where UTMSource != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(UTMSource) from hits_100m_single where UTMSource != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(UTMSource) from hits_100m_single where UTMSource != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(UTMMedium) from hits_100m_single where UTMMedium != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(UTMMedium) from hits_100m_single where UTMMedium != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(UTMMedium) from hits_100m_single where UTMMedium != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(UTMMedium) from hits_100m_single where UTMMedium != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(UTMCampaign) from hits_100m_single where UTMCampaign != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(UTMCampaign) from hits_100m_single where UTMCampaign != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(UTMCampaign) from hits_100m_single where UTMCampaign != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(UTMCampaign) from hits_100m_single where UTMCampaign != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(UTMContent) from hits_100m_single where UTMContent != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(UTMContent) from hits_100m_single where UTMContent != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(UTMContent) from hits_100m_single where UTMContent != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(UTMContent) from hits_100m_single where UTMContent != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(UTMTerm) from hits_100m_single where UTMTerm != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(UTMTerm) from hits_100m_single where UTMTerm != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(UTMTerm) from hits_100m_single where UTMTerm != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(UTMTerm) from hits_100m_single where UTMTerm != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select min(FromTag) from hits_100m_single where FromTag != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select max(FromTag) from hits_100m_single where FromTag != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select any(FromTag) from hits_100m_single where FromTag != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select anyHeavy(FromTag) from hits_100m_single where FromTag != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+
+</test>

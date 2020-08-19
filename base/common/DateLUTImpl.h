@@ -12,7 +12,7 @@
 /// Table size is bigger than DATE_LUT_MAX_DAY_NUM to fill all indices within UInt16 range: this allows to remove extra check.
 #define DATE_LUT_SIZE 0x10000
 #define DATE_LUT_MIN_YEAR 1970
-#define DATE_LUT_MAX_YEAR 2105 /// Last supported year
+#define DATE_LUT_MAX_YEAR 2106 /// Last supported year (incomplete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 #if defined(__PPC__)
@@ -37,14 +37,19 @@ using YearWeek = std::pair<UInt16, UInt8>;
 class DateLUTImpl
 {
 public:
-    DateLUTImpl(const std::string & time_zone);
+    explicit DateLUTImpl(const std::string & time_zone);
+
+    DateLUTImpl(const DateLUTImpl &) = delete;
+    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
+    DateLUTImpl(const DateLUTImpl &&) = delete;
+    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
 
 public:
     /// The order of fields matters for alignment and sizeof.
     struct Values
     {
         /// Least significat 32 bits from time_t at beginning of the day.
-        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value is zero.
+        /// If the unix timestamp of beginning of the day is negative (example: 1970-01-01 MSK, where time_t == -10800), then value will overflow.
         /// Change to time_t; change constants above; and recompile the sources if you need to support time after 2105 year.
         UInt32 date;
 
@@ -99,7 +104,7 @@ private:
             return guess;
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
-        if (offset_at_start_of_epoch >= 0)
+        if (t >= lut[DayNum(guess + 1)].date)
             return DayNum(guess + 1);
 
         return DayNum(guess - 1);
@@ -287,8 +292,8 @@ public:
         if (offset_is_whole_number_of_hours_everytime)
             return (t / 60) % 60;
 
-        time_t date = find(t).date;
-        return (t - date) / 60 % 60;
+        UInt32 date = find(t).date;
+        return (UInt32(t) - date) / 60 % 60;
     }
 
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
@@ -301,9 +306,8 @@ public:
         if (offset_is_whole_number_of_hours_everytime)
             return t / 3600 * 3600;
 
-        time_t date = find(t).date;
-        /// Still can return wrong values for time at 1970-01-01 if the UTC offset was non-whole number of hours.
-        return date + (t - date) / 3600 * 3600;
+        UInt32 date = find(t).date;
+        return date + (UInt32(t) - date) / 3600 * 3600;
     }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
@@ -400,7 +404,7 @@ public:
         a date at start of january) In this case one can get 53 for the
         first week of next year.  This flag ensures that the week is
         relevant for the given year. Note that this flag is only
-        releveant if WeekModeFlag::JANUARY is not set.
+        relevant if WeekModeFlag::JANUARY is not set.
 
                   If set Week is in range 1-53.
 
@@ -579,7 +583,7 @@ public:
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
-        /// NOTE This assumption is false for "Pacific/Pitcairn" time zone.
+        /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
         return (t + 86400 - offset_at_start_of_epoch) / 3600;
     }
 
@@ -682,12 +686,17 @@ public:
     inline time_t makeDateTime(UInt16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeDayNum(year, month, day_of_month);
-        time_t time_offset = hour * 3600 + minute * 60 + second;
+        UInt32 time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change)
             time_offset -= lut[index].amount_of_offset_change;
 
-        return lut[index].date + time_offset;
+        UInt32 res = lut[index].date + time_offset;
+
+        if (unlikely(res > DATE_LUT_MAX))
+            return 0;
+
+        return res;
     }
 
     inline const Values & getValues(DayNum d) const { return lut[d]; }

@@ -1,0 +1,15 @@
+-1
+0
+0
+-1
+1
+test_string
+test"string
+"test_string"
+ "test_string"
+ "test\\"string"
+ "test\\"string"
+ "{"
+ "["
+ ["]", "2", "3"]
+ {"nested" : [1,2,3]}

@@ -1,0 +1,16 @@
+0	0
+0	0
+5	6
+2000-10-10 00:00:00	0
+2000-10-10 00:00:00	0
+2000-10-10 00:00:00	0
+2100-10-10 00:00:00	3
+2100-10-10	2
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL now() - 1000\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+1	0
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL now() + 1000\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+1	1
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL today() - 1\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+1	0
+CREATE TABLE default.ttl_00933_1\n(\n    `b` Int32,\n    `a` Int32 TTL today() + 1\n)\nENGINE = MergeTree\nPARTITION BY tuple()\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+1	1

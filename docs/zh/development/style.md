@@ -200,7 +200,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 ```
 
-## Comments {#comments}
+## 评论 {#comments}
 
 **1.** 请务必为所有非常重要的代码部分添加注释。
 
@@ -297,7 +297,7 @@ void executeQuery(
 /// for
 ```
 
-## Names {#names}
+## 姓名 {#names}
 
 **1.** 在变量和类成员的名称中使用带下划线的小写字母。
 
@@ -623,7 +623,7 @@ Loader() {}
 
 **18.** 编码。
 
-在所有情况下使用 UTF-8 编码。使用 `std::string` and `char *`。不要使用 `std::wstring` 和 `wchar_t`。
+在所有情况下使用 UTF-8 编码。使用 `std::string` 和 `char *`。不要使用 `std::wstring` 和 `wchar_t`。
 
 **19.** 日志。
 
@@ -694,9 +694,9 @@ auto s = std::string{"Hello"};
 
 但在其他条件相同的情况下，首选跨平台或可移植代码。
 
-**2.** 语言： C++17.
+**2.** 语言： C++20.
 
-**3.** 编译器： `gcc`。 此时（2017年12月），代码使用7.2版编译。（它也可以使用`clang 4` 编译）
+**3.** 编译器： `gcc`。 此时（2020年08月），代码使用9.3版编译。（它也可以使用`clang 8` 编译）
 
 使用标准库 (`libstdc++` 或 `libc++`)。
 
@@ -742,7 +742,7 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 ## 库 {#ku}
 
-**1.** 使用C ++ 14标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
+**1.** 使用C++20标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
 
 **2.** 如有必要，您可以使用 OS 包中提供的任何已知库。
 

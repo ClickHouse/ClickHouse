@@ -1,0 +1,160 @@
+SELECT 
+    k,
+    v,
+    d,
+    i
+FROM 
+(
+    SELECT 
+        t.1 AS k,
+        t.2 AS v,
+        runningDifference(v) AS d,
+        runningDifference(cityHash64(t.1)) AS i
+    FROM 
+    (
+        SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t
+    )
+)
+WHERE i = 0
+a	1	0	0
+a	2	1	0
+a	3	1	0
+b	13	2	0
+b	15	2	0
+SELECT 
+    co,
+    co2,
+    co3,
+    num
+FROM 
+(
+    SELECT 
+        co,
+        co2,
+        co3,
+        count() AS num
+    FROM 
+    (
+        SELECT 
+            1 AS co,
+            2 AS co2,
+            3 AS co3
+    )
+    GROUP BY 
+        co,
+        co2,
+        co3
+        WITH CUBE
+    HAVING (co2 != 2) AND (co != 0)
+)
+WHERE (co != 0) AND (co2 != 2)
+1	0	3	1
+1	0	0	1
+SELECT alias AS name
+FROM 
+(
+    SELECT name AS alias
+    FROM system.settings
+    WHERE alias = \'enable_optimize_predicate_expression\'
+)
+ANY INNER JOIN 
+(
+    SELECT name
+    FROM system.settings
+) USING (name)
+WHERE name = \'enable_optimize_predicate_expression\'
+enable_optimize_predicate_expression
+1	val11	val21	val31
+SELECT ccc
+FROM 
+(
+    SELECT 1 AS ccc
+    WHERE 0
+    UNION ALL
+    SELECT ccc
+    FROM 
+    (
+        SELECT 2 AS ccc
+    )
+    ANY INNER JOIN 
+    (
+        SELECT 2 AS ccc
+    ) USING (ccc)
+    WHERE ccc > 1
+)
+WHERE ccc > 1
+2
+SELECT 
+    ts,
+    id,
+    id_b,
+    b.ts,
+    b.id,
+    id_c
+FROM 
+(
+    SELECT 
+        ts,
+        id,
+        id_b
+    FROM A
+    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+) AS a
+ALL LEFT JOIN B AS b ON b.id = id_b
+WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+SELECT 
+    ts AS `--a.ts`,
+    id AS `--a.id`,
+    id_b AS `--a.id_b`,
+    b.ts AS `--b.ts`,
+    b.id AS `--b.id`,
+    id_c AS `--b.id_c`
+FROM 
+(
+    SELECT 
+        ts,
+        id,
+        id_b
+    FROM A
+    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+) AS a
+ALL LEFT JOIN B AS b ON `--b.id` = `--a.id_b`
+WHERE `--a.ts` <= toDateTime(\'1970-01-01 03:00:00\')
+2	3
+3	4
+4	5
+5	0
+2	4
+4	0
+2	3
+4	5
+SELECT dummy
+FROM 
+(
+    SELECT dummy
+    FROM system.one
+    WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
+)
+WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
+0
+SELECT 
+    id,
+    value,
+    value_1
+FROM 
+(
+    SELECT 
+        1 AS id,
+        2 AS value
+)
+ALL INNER JOIN 
+(
+    SELECT 
+        1 AS id,
+        3 AS value_1
+) USING (id)
+WHERE arrayMap(x -> ((x + value) + value_1), [1]) = [6]
+1	2	3
+SELECT dummy
+FROM system.one
+WHERE (dummy > 0) AND (dummy < 0)

@@ -1,0 +1,36 @@
+<test max_ignored_relative_change="0.2">
+    
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
+
+    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>TabSeparated</value>
+                <value>TabSeparatedWithNames</value>
+                <value>TabSeparatedWithNamesAndTypes</value>
+                <value>CSV</value>
+                <value>CSVWithNames</value>
+                <value>Values</value>
+                <value>JSONEachRow</value>
+                <value>JSONCompactEachRow</value>
+                <value>JSONCompactEachRowWithNamesAndTypes</value>
+                <value>TSKV</value>
+                <value>RowBinary</value>
+                <value>Native</value>
+                <value>Avro</value>
+                <value>MsgPack</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+<query>SELECT * FROM table_{format} FORMAT Null</query>
+
+<drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+</test>

@@ -1,0 +1,12 @@
+SELECT 1
+WHERE 0
+SELECT 1
+SELECT 1
+WHERE 0
+SELECT 1
+WHERE 1 IN (
+(
+    SELECT arrayJoin([1, 2, 3])
+) AS subquery)
+SELECT 1
+WHERE NOT ignore()

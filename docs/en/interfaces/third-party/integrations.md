@@ -1,3 +1,8 @@
+---
+toc_priority: 27
+toc_title: Integrations
+---
+
 # Integration Libraries from Third-party Developers {#integration-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
@@ -7,6 +12,7 @@
 
 -   Relational database management systems
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
@@ -19,7 +25,11 @@
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
+-   Stream processing
+    -   [Flink](https://flink.apache.org)
+        -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Object storages
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
@@ -35,7 +45,7 @@
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../operations/table_engines/graphitemergetree.md#rollup-configuration) could be applied
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -67,12 +77,15 @@
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
+-   PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
-        -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
+        -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../query_language/table_functions/jdbc.md))
+        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
@@ -85,5 +98,11 @@
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

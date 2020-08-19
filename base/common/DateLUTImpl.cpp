@@ -2,15 +2,16 @@
 
 #include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
+#include <cctz/zone_info_source.h>
+#include <common/getResource.h>
 #include <Poco/Exception.h>
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstring>
 #include <iostream>
 #include <memory>
-
-#define DATE_LUT_MIN 0
 
 
 namespace
@@ -28,9 +29,8 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::friday:     return 5;
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
-        default:
-            throw Poco::Exception("Logical error: incorrect week day.");
     }
+    __builtin_unreachable();
 }
 
 }
@@ -47,7 +47,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         assert(inside_main);
 
     size_t i = 0;
-    time_t start_of_day = DATE_LUT_MIN;
+    time_t start_of_day = 0;
 
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
@@ -71,6 +71,11 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.day_of_month = date.day();
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
+
+        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR);
+        assert(values.month >= 1 && values.month <= 12);
+        assert(values.day_of_month >= 1 && values.day_of_month <= 31);
+        assert(values.day_of_week >= 1 && values.day_of_week <= 7);
 
         if (values.day_of_month == 1)
         {
@@ -128,12 +133,15 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
     while (i < DATE_LUT_SIZE)
     {
-        lut[i] = lut[DATE_LUT_MAX_DAY_NUM];
+        lut[i] = lut[i - 1];
         ++i;
     }
 
     /// Fill lookup table for years and months.
-    for (size_t day = 0; day < DATE_LUT_SIZE && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
+    size_t year_months_lut_index = 0;
+    size_t first_day_of_last_month = 0;
+
+    for (size_t day = 0; day < DATE_LUT_SIZE; ++day)
     {
         const Values & values = lut[day];
 
@@ -141,7 +149,77 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         {
             if (values.month == 1)
                 years_lut[values.year - DATE_LUT_MIN_YEAR] = day;
-            years_months_lut[(values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1] = day;
+
+            year_months_lut_index = (values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1;
+            years_months_lut[year_months_lut_index] = day;
+            first_day_of_last_month = day;
         }
     }
+
+    /// Fill the rest of lookup table with the same last month (2106-02-01).
+    for (; year_months_lut_index < DATE_LUT_YEARS * 12; ++year_months_lut_index)
+    {
+        years_months_lut[year_months_lut_index] = first_day_of_last_month;
+    }
 }
+
+
+#if !defined(ARCADIA_BUILD) /// Arcadia's variant of CCTZ already has the same implementation.
+
+/// Prefer to load timezones from blobs linked to the binary.
+/// The blobs are provided by "tzdata" library.
+/// This allows to avoid dependency on system tzdata.
+namespace cctz_extension
+{
+    namespace
+    {
+        class Source : public cctz::ZoneInfoSource
+        {
+        public:
+            Source(const char * data_, size_t size_) : data(data_), size(size_) {}
+
+            size_t Read(void * buf, size_t bytes) override
+            {
+                if (bytes > size)
+                    bytes = size;
+                memcpy(buf, data, bytes);
+                data += bytes;
+                size -= bytes;
+                return bytes;
+            }
+
+            int Skip(size_t offset) override
+            {
+                if (offset <= size)
+                {
+                    data += offset;
+                    size -= offset;
+                    return 0;
+                }
+                else
+                {
+                    errno = EINVAL;
+                    return -1;
+                }
+            }
+        private:
+            const char * data;
+            size_t size;
+        };
+
+        std::unique_ptr<cctz::ZoneInfoSource> custom_factory(
+            const std::string & name,
+            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
+        {
+            std::string_view resource = getResource(name);
+            if (!resource.empty())
+                return std::make_unique<Source>(resource.data(), resource.size());
+
+            return fallback(name);
+        }
+    }
+
+    ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
+}
+
+#endif

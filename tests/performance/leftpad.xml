@@ -1,0 +1,14 @@
+<test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+    <settings><max_threads>1</max_threads></settings>
+
+    <query><![CDATA[SELECT max(length(MobilePhoneModel)) FROM hits_100m_single]]></query>
+    <query><![CDATA[SELECT max(length(Params)) FROM hits_100m_single]]></query>
+    <query><![CDATA[SELECT max(length(Title)) FROM hits_10m_single]]></query>
+    <query><![CDATA[SELECT max(length(PageCharset)) FROM hits_100m_single]]></query>
+    <query><![CDATA[SELECT max(length(Referer)) FROM hits_10m_single]]></query>
+    <query><![CDATA[SELECT max(length(URL)) FROM hits_10m_single]]></query>
+    <query><![CDATA[SELECT max(length(UTMSource)) FROM hits_100m_single]]></query>
+</test>

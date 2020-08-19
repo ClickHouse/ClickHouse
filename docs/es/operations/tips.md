@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 58
+toc_title: Recomendaciones de uso
+---
+
 # Recomendaciones de uso {#usage-recommendations}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
@@ -19,7 +26,7 @@ Para pequeñas cantidades de datos (hasta ~200 GB comprimidos), es mejor usar ta
 Para grandes cantidades de datos y al procesar consultas interactivas (en línea), debe usar una cantidad razonable de RAM (128 GB o más) para que el subconjunto de datos en caliente quepa en la memoria caché de páginas.
 Incluso para volúmenes de datos de ~ 50 TB por servidor, el uso de 128 GB de RAM mejora significativamente el rendimiento de las consultas en comparación con 64 GB.
 
-No deshabilite el sobrecompromiso. Valor `cat /proc/sys/vm/overcommit_memory` Ser debe 0 la 1. Ejecutar
+No deshabilite el sobrecompromiso. Valor `cat /proc/sys/vm/overcommit_memory` debe ser 0 o 1. Ejecutar
 
 ``` bash
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
@@ -38,7 +45,7 @@ Las páginas enormes permanentes tampoco necesitan ser asignadas.
 
 ## Subsistema de almacenamiento {#storage-subsystem}
 
-Si su presupuesto le permite usar SSD, utilizar SSD.
+Si su presupuesto le permite usar SSD, use SSD.
 Si no, use HDD. Los discos duros SATA 7200 RPM servirán.
 
 Dar preferencia a una gran cantidad de servidores con discos duros locales sobre un número menor de servidores con estantes de discos conectados.
@@ -77,9 +84,9 @@ La mayoría de los otros sistemas de archivos también deberían funcionar bien.
 
 ## Núcleo de Linux {#linux-kernel}
 
-No utilice un kernel de Linux obsoleto.
+No use un kernel de Linux obsoleto.
 
-## Rojo {#network}
+## Red {#network}
 
 Si está utilizando IPv6, aumente el tamaño de la caché de ruta.
 El kernel de Linux anterior a 3.2 tenía una multitud de problemas con la implementación de IPv6.
@@ -88,9 +95,9 @@ Utilice al menos una red de 10 GB, si es posible. 1 Gb también funcionará, per
 
 ## ZooKeeper {#zookeeper}
 
-Probablemente ya esté utilizando ZooKeeper para otros fines. Puede utilizar la misma instalación de ZooKeeper, si aún no está sobrecargado.
+Probablemente ya esté utilizando ZooKeeper para otros fines. Puede usar la misma instalación de ZooKeeper, si aún no está sobrecargada.
 
-Lo mejor es utilizar una nueva versión de ZooKeeper – 3.4.9 o posterior. La versión en distribuciones estables de Linux puede estar desactualizada.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 Nunca debe usar scripts escritos manualmente para transferir datos entre diferentes clústeres de ZooKeeper, ya que el resultado será incorrecto para los nodos secuenciales. Nunca utilice el “zkcopy” utilidad por la misma razón: https://github.com/ksprojects/zkcopy/issues/15
 
@@ -241,4 +248,4 @@ script
 end script
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/tips/) <!--hide-->
+{## [Artículo Original](https://clickhouse.tech/docs/en/operations/tips/) ##}

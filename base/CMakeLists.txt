@@ -3,8 +3,11 @@ if (USE_CLANG_TIDY)
 endif ()
 
 add_subdirectory (common)
-add_subdirectory (loggers)
 add_subdirectory (daemon)
+add_subdirectory (loggers)
+add_subdirectory (pcg-random)
+add_subdirectory (widechar_width)
+add_subdirectory (readpassphrase)
 
 if (USE_MYSQL)
     add_subdirectory (mysqlxx)

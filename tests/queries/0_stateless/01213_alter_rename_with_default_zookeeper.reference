@@ -1,0 +1,17 @@
+date	key	value1	value2
+2019-10-02	1	1	Hello 1
+CREATE TABLE default.table_rename_with_default\n(\n    `date` Date,\n    `key` UInt64,\n    `value1` String,\n    `value2` String DEFAULT concat(\'Hello \', value1),\n    `value3` String ALIAS concat(\'Word \', value1)\n)\nENGINE = MergeTree()\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
+date	key	renamed_value1	value2
+2019-10-02	1	1	Hello 1
+CREATE TABLE default.table_rename_with_default\n(\n    `date` Date,\n    `key` UInt64,\n    `renamed_value1` String,\n    `value2` String DEFAULT concat(\'Hello \', renamed_value1),\n    `value3` String ALIAS concat(\'Word \', renamed_value1)\n)\nENGINE = MergeTree()\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
+Hello 1
+Word 1
+date1	date2	value1	value2
+2019-10-02	2018-10-02	1	1
+CREATE TABLE default.table_rename_with_ttl\n(\n    `date1` Date,\n    `date2` Date,\n    `value1` String,\n    `value2` String TTL date1 + toIntervalMonth(10000)\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test/table_rename_with_ttl\', \'1\')\nORDER BY tuple()\nTTL date2 + toIntervalMonth(10000)\nSETTINGS index_granularity = 8192
+renamed_date1	date2	value1	value2
+2019-10-02	2018-10-02	1	1
+CREATE TABLE default.table_rename_with_ttl\n(\n    `renamed_date1` Date,\n    `date2` Date,\n    `value1` String,\n    `value2` String TTL renamed_date1 + toIntervalMonth(10000)\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test/table_rename_with_ttl\', \'1\')\nORDER BY tuple()\nTTL date2 + toIntervalMonth(10000)\nSETTINGS index_granularity = 8192
+renamed_date1	renamed_date2	value1	value2
+2019-10-02	2018-10-02	1	1
+CREATE TABLE default.table_rename_with_ttl\n(\n    `renamed_date1` Date,\n    `renamed_date2` Date,\n    `value1` String,\n    `value2` String TTL renamed_date1 + toIntervalMonth(10000)\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test/table_rename_with_ttl\', \'1\')\nORDER BY tuple()\nTTL renamed_date2 + toIntervalMonth(10000)\nSETTINGS index_granularity = 8192

@@ -1,0 +1,28 @@
+# https://github.com/google/oss-fuzz/issues/1099
+fun:__gxx_personality_*
+
+# We apply std::tolower to uninitialized padding, but don't use the result, so
+# it is OK. Reproduce with "select ngramDistanceCaseInsensitive(materialize(''), '')"
+fun:tolower
+
+# May be it's not OK, but suppress it to run other tests
+# Some functions in OpenSSL:
+fun:probable_prime
+fun:BN_bin2bn
+fun:BN_add_word
+fun:bn_div_fixed_top
+fun:bn_mul_words
+fun:BN_cmp
+
+# Suppress some failures in contrib so that we can enable MSan in CI.
+# Ideally, we should report these upstream.
+src:*/contrib/zlib-ng/*
+src:*/contrib/openssl/*
+src:*/contrib/simdjson/*
+src:*/contrib/lz4/*
+
+# Hyperscan
+fun:roseRunProgram
+
+# mariadbclient, NSS functions from libc
+fun:_nss_files_parse_servent

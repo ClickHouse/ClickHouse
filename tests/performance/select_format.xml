@@ -1,0 +1,55 @@
+<test max_ignored_relative_change="0.2">
+    <settings>
+        <output_format_pretty_max_rows>1000000</output_format_pretty_max_rows>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>format_slow</name>
+            <values>
+                <value>Pretty</value>
+                <value>PrettyCompact</value>
+                <value>PrettyCompactMonoBlock</value>
+                <value>PrettyNoEscapes</value>
+                <value>PrettySpace</value>
+                <value>MySQLWire</value>
+                <value>XML</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>format_fast</name>
+            <values>
+                <value>TabSeparated</value>
+                <value>TabSeparatedRaw</value>
+                <value>CSV</value>
+                <value>Values</value>
+                <value>Vertical</value>
+                <value>JSON</value>
+                <value>JSONCompact</value>
+                <value>JSONEachRow</value>
+                <value>JSONCompactEachRow</value>
+                <value>TSKV</value>
+                <value>RowBinary</value>
+                <value>Native</value>
+                <value>ODBCDriver2</value>
+                <value>Avro</value>
+                <value>MsgPack</value>
+                <value>ORC</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format_slow} ENGINE = File({format_slow}, '/dev/null') AS test.hits</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format_fast} ENGINE = File({format_fast}, '/dev/null') AS test.hits</create_query>
+
+    <query>INSERT INTO table_{format_slow} SELECT * FROM test.hits LIMIT 10000</query>
+    <query>INSERT INTO table_{format_fast} SELECT * FROM test.hits LIMIT 100000</query>
+
+    <drop_query>DROP TABLE IF EXISTS table_{format_slow}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS table_{format_fast}</drop_query>
+</test>

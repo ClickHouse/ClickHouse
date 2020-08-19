@@ -1,0 +1,7 @@
+version: '2.3'
+services:
+    cassandra1:
+        image: cassandra
+        restart: always
+        ports:
+          - 9043:9042

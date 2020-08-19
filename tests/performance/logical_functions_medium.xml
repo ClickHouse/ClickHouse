@@ -1,0 +1,45 @@
+<test max_ignored_relative_change="0.4">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM (SELECT materialize(1) AS x1, materialize(1) AS x2, materialize(1) AS x3 FROM zeros(100000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(0) AS x2, materialize(0) AS x3 FROM zeros(200000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(0) AS x2, materialize(0) AS x3 FROM zeros(100000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(1) AS x1, materialize(1) AS x2, materialize(1) AS x3 FROM zeros(100000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+
+    <!-- Check with bigger types -->
+    <query>SELECT count() FROM (SELECT materialize(1) AS x1, materialize(toUInt32(1)) AS x2, materialize(toUInt64(1)) AS x3 FROM zeros(50000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(toUInt32(0)) AS x2, materialize(toUInt64(0)) AS x3 FROM zeros(100000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(0) AS x1, materialize(toUInt32(0)) AS x2, materialize(toUInt64(0)) AS x3 FROM zeros(50000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(1) AS x1, materialize(toUInt32(1)) AS x2, materialize(toUInt64(1)) AS x3 FROM zeros(100000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+
+    <query>SELECT count() FROM (SELECT materialize(toNullable(1)) AS x1, materialize(toNullable(1)) AS x2, materialize(toNullable(1)) AS x3 FROM zeros(20000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(0)) AS x1, materialize(toNullable(0)) AS x2, materialize(toNullable(0)) AS x3 FROM zeros(50000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(0)) AS x1, materialize(toNullable(0)) AS x2, materialize(toNullable(0)) AS x3 FROM zeros(20000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(1)) AS x1, materialize(toNullable(1)) AS x2, materialize(toNullable(1)) AS x3 FROM zeros(50000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+
+    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(1))) AS x1, materialize(toNullable(toUInt32(1))) AS x2, materialize(toNullable(toUInt64(1))) AS x3 FROM zeros(20000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(0))) AS x1, materialize(toNullable(toUInt32(0))) AS x2, materialize(toNullable(toUInt64(0))) AS x3 FROM zeros(50000000)) WHERE NOT ignore(and(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(0))) AS x1, materialize(toNullable(toUInt32(0))) AS x2, materialize(toNullable(toUInt64(0))) AS x3 FROM zeros(20000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+    <query>SELECT count() FROM (SELECT materialize(toNullable(toUInt16(1))) AS x1, materialize(toNullable(toUInt32(1))) AS x2, materialize(toNullable(toUInt64(1))) AS x3 FROM zeros(50000000)) WHERE NOT ignore(or(x1,x2,x3))</query>
+
+    <!-- We have to check the high performing XOR function against in-memory data to avoid the overhead of data generating code -->
+    <create_query>CREATE DATABASE IF NOT EXISTS test_logical_functions</create_query>
+
+    <create_query>CREATE TABLE test_logical_functions._4_1_UInt8 (x1 UInt8, x2 UInt8, x3 UInt8, x4 UInt8) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE test_logical_functions._4_1_Mixed (x1 UInt16, x2 UInt32, x3 UInt64, x4 UInt8) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE test_logical_functions._4_1_Nullable_UInt8 (x1 Nullable(UInt8), x2 Nullable(UInt8), x3 Nullable(UInt8), x4 Nullable(UInt8)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE test_logical_functions._4_1_Nullable_Mixed (x1 Nullable(UInt16), x2 Nullable(UInt32), x3 Nullable(UInt64), x4 Nullable(Float64)) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO test_logical_functions._4_1_UInt8 SELECT materialize(1), materialize(1), materialize(1), materialize(1) FROM zeros(500000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._4_1_Mixed SELECT materialize(1), materialize(1), materialize(1), materialize(1) FROM zeros(150000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._4_1_Nullable_UInt8 SELECT materialize(1), materialize(1), materialize(1), materialize(1) FROM zeros(150000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._4_1_Nullable_Mixed SELECT materialize(1), materialize(1), materialize(1), materialize(1.0) FROM zeros(50000000)</fill_query>
+
+    <query>SELECT count() FROM test_logical_functions._4_1_UInt8 WHERE NOT ignore(xor(x1,x2,x3,x4))</query>
+    <query>SELECT count() FROM test_logical_functions._4_1_Mixed WHERE NOT ignore(xor(x1,x2,x3,x4))</query>
+    <query>SELECT count() FROM test_logical_functions._4_1_Nullable_UInt8 WHERE NOT ignore(xor(x1,x2,x3,x4))</query>
+    <query>SELECT count() FROM test_logical_functions._4_1_Nullable_Mixed WHERE NOT ignore(xor(x1,x2,x3,x4))</query>
+
+    <drop_query>DROP DATABASE test_logical_functions</drop_query>
+</test>

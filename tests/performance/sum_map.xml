@@ -1,0 +1,34 @@
+<test max_ignored_relative_change="0.3">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+           <name>scale</name>
+           <values>
+               <value>1000000</value>
+           </values>
+       </substitution>
+        <substitution>
+           <name>func</name>
+           <values>
+               <value>minMap</value>
+               <value>maxMap</value>
+               <value>sumMap</value>
+               <value>sumMapWithOverflow</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE sum_map_{scale} ENGINE Memory AS
+        SELECT
+            arrayMap(x -> (x % 23), range(50)) AS key,
+            arrayMap(x -> intDiv(number, x + 1), range(50)) AS val
+        FROM numbers({scale})
+    </create_query>
+
+    <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
+    <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
+</test>

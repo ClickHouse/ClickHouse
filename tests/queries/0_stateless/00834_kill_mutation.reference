@@ -1,0 +1,8 @@
+*** Create and kill a single invalid mutation ***
+1
+waiting	test	kill_mutation	mutation_3.txt	DELETE WHERE toUInt32(s) = 1
+*** Create and kill invalid mutation that blocks another mutation ***
+happened during execution of mutations 'mutation_4.txt, mutation_5.txt'
+1
+waiting	test	kill_mutation	mutation_4.txt	DELETE WHERE toUInt32(s) = 1
+2001-01-01	2	b

@@ -1,0 +1,55 @@
+<!-- FIXME this instability is abysmal, investigate the unstable queries -->
+<test max_ignored_relative_change="1.5">
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>codec</name>
+            <values>
+                <value>NONE</value> <!-- as a baseline -->
+                <value>LZ4</value>
+                <value>ZSTD</value>
+                <value>DoubleDelta</value>
+                <value>Gorilla</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>seq_type</name>
+            <values>
+                <value>seq</value>
+                <value>mon</value>
+                <value>rnd</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>num_rows</name>
+            <values>
+                <value>20000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec}))
+        ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;
+    </create_query>
+    <create_query>system stop merges</create_query>
+
+    <!-- Using limit to make query finite, allowing it to be run multiple times in a loop, reducing mean error -->
+    <query>INSERT INTO codec_seq_{type}_{codec} (n) SELECT number/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_mon_{type}_{codec} (n) SELECT number+sin(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>INSERT INTO codec_rnd_{type}_{codec} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</query>
+
+    <drop_query>system start merges</drop_query>
+    <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_{codec}</drop_query>
+
+</test>

@@ -1,1 +1,0 @@
-../../../en/query_language/functions/ym_dict_functions.md

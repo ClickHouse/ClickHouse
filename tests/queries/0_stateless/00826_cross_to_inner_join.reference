@@ -1,0 +1,108 @@
+0	0
+cross
+1	1	1	1
+1	1	1	2
+2	2	2	\N
+cross nullable
+1	1	1	1
+2	2	1	2
+cross nullable vs not nullable
+1	1	1	1
+2	2	1	2
+cross self
+1	1	1	1
+2	2	2	2
+cross one table expr
+1	1	1	1
+1	1	1	2
+1	1	2	\N
+1	1	3	\N
+2	2	1	1
+2	2	1	2
+2	2	2	\N
+2	2	3	\N
+cross multiple ands
+1	1	1	1
+cross and inside and
+1	1	1	1
+cross split conjunction
+1	1	1	1
+comma
+1	1	1	1
+1	1	1	2
+2	2	2	\N
+comma nullable
+1	1	1	1
+2	2	1	2
+cross
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON a = t2_00826.a
+WHERE a = t2_00826.a
+cross nullable
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON a = t2_00826.a
+WHERE a = t2_00826.a
+cross nullable vs not nullable
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON a = t2_00826.b
+WHERE a = t2_00826.b
+cross self
+SELECT 
+    a,
+    b,
+    y.a,
+    y.b
+FROM t1_00826 AS x
+ALL INNER JOIN t1_00826 AS y ON (a = y.a) AND (b = y.b)
+WHERE (a = y.a) AND (b = y.b)
+cross one table expr
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+CROSS JOIN t2_00826
+WHERE a = b
+cross multiple ands
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
+WHERE (a = t2_00826.a) AND (b = t2_00826.b)
+cross and inside and
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (a = t2_00826.a) AND (a = t2_00826.a) AND (b = t2_00826.b)
+WHERE (a = t2_00826.a) AND ((a = t2_00826.a) AND ((a = t2_00826.a) AND (b = t2_00826.b)))
+cross split conjunction
+SELECT 
+    a,
+    b,
+    t2_00826.a,
+    t2_00826.b
+FROM t1_00826
+ALL INNER JOIN t2_00826 ON (a = t2_00826.a) AND (b = t2_00826.b)
+WHERE (a = t2_00826.a) AND (b = t2_00826.b) AND (a >= 1) AND (t2_00826.b > 0)
