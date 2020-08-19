@@ -1066,7 +1066,7 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0
 
-## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
+## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
 Разрешает или запрещает выполнение запроса, если настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards) включена, а пропуск неиспользуемых шардов невозможен. Если данная настройка включена и пропуск невозможен, ClickHouse генерирует исключение.
 
@@ -1084,15 +1084,26 @@ ClickHouse генерирует исключение
 
 Возможные значения:
 
--   0 - Disabled, `force_optimize_skip_unused_shards` works on all levels.
--   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
--   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
+-   0 - Выключена, `force_optimize_skip_unused_shards` работает всегда.
+-   1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-   2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+
+Сбрасывает [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) для вложенной `Distributed` таблицы.
+
+Возможные значения:
+
+-   1 — Включена.
+-   0 — Выключена.
 
 Значение по умолчанию: 0
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-Включает или отключает генерирование исключения в в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) не выполняет мёрж.
+Включает или отключает генерирование исключения в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) не выполняет мёрж.
 
 По умолчанию, `OPTIMIZE` завершается успешно и в тех случаях, когда он ничего не сделал. Настройка позволяет отделить подобные случаи и включает генерирование исключения с поясняющим сообщением.
 
