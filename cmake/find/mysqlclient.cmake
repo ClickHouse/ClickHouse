@@ -40,9 +40,11 @@ if (NOT USE_INTERNAL_MYSQL_LIBRARY)
         "/usr/local/opt/mysql/include"
         "/usr/mysql/include"
         "/usr/local/include"
+        "/usr/include/mariadb"
+        "/usr/include/mysql"
         "/usr/include")
 
-    find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h mariadb/mysql.h PATHS ${MYSQL_INCLUDE_PATHS} PATH_SUFFIXES mysql)
+    find_path (MYSQL_INCLUDE_DIR NAMES mysql.h mysql/mysql.h mariadb/mysql.h PATHS ${MYSQL_INCLUDE_PATHS} PATH_SUFFIXES mysql)
 
     if (USE_STATIC_LIBRARIES)
         find_library (STATIC_MYSQLCLIENT_LIB NAMES mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS} PATH_SUFFIXES mysql)
