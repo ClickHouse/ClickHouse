@@ -680,9 +680,9 @@ bool IMergeTreeDataPart::canParticipateInMerges() const
 {
     auto storage_policy = storage.getStoragePolicy();
 
-    /// One need to get volume description for given volume.
-    /// `volume` member would not suit us because it is hard-wired to exact place where part belongs and
-    /// does not update along with configuration and changes of settings.
+    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
+    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
+    /// Therefore we shall obtain volume by name from storage policy.
     auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
 
     return volume_ptr->areMergesAllowed();

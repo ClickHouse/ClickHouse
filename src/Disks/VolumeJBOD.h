@@ -22,9 +22,9 @@ using VolumesJBOD = std::vector<VolumeJBODPtr>;
 class VolumeJBOD : public IVolume
 {
 public:
-    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_allowed_in_config_)
+    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_allowed_)
         : IVolume(name_, disks_, max_data_part_size_)
-        , are_merges_allowed_in_config(are_merges_allowed_in_config_)
+        , are_merges_allowed(are_merges_allowed_)
     {
     }
 
@@ -60,10 +60,10 @@ public:
     void setAllowMergesFromQuery(bool allow) override;
 
     /// True if parts on this volume participate in merges according to configuration.
-    bool are_merges_allowed_in_config = true;
+    bool are_merges_allowed = true;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
-    std::optional<bool> are_merges_allowed_from_query;
+    std::optional<bool> are_merges_allowed_user_override;
 
 private:
     mutable std::atomic<size_t> last_used = 0;
