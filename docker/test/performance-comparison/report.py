@@ -353,7 +353,7 @@ if args.report == 'main':
                 attrs[1] = ''
             if float(row[0]) > allowed_single_run_time:
                 attrs[0] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="#{anchor}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run} seconds"</a>'])
+                errors_explained.append([f'<a href="#{anchor}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run_time} seconds"</a>'])
                 slow_average_tests += 1
             else:
                 attrs[0] = ''
