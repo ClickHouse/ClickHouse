@@ -287,35 +287,11 @@ struct ExpressionActionsChain
 {
     explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
 
-    struct ExpressionActionsLink
-    {
-        ExpressionActionsPtr actions;
-
-        const NamesAndTypesList & getRequiredColumns() const { return actions->getRequiredColumnsWithTypes(); }
-        const ColumnsWithTypeAndName & getResultColumns() const { return actions->getSampleBlock().getColumnsWithTypeAndName(); }
-        void finalize(const Names & required_output_) const { actions->finalize(required_output_); }
-        void prependProjectInput() const { actions->prependProjectInput(); }
-        std::string dump() const { return actions->dumpActions(); }
-    };
-
-    struct ArrayJoinLink
-    {
-        ArrayJoinActionPtr array_join;
-        NamesAndTypesList required_columns;
-        ColumnsWithTypeAndName result_columns;
-
-        ArrayJoinLink(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_);
-
-        const NamesAndTypesList & getRequiredColumns() const { return required_columns; }
-        const ColumnsWithTypeAndName & getResultColumns() const { return result_columns; }
-        void finalize(const Names & required_output_);
-        void prependProjectInput() const {} /// TODO: remove unused columns before ARRAY JOIN ?
-        static std::string dump() { return "ARRAY JOIN"; }
-    };
 
     struct Step
     {
-        std::variant<ExpressionActionsLink, ArrayJoinLink> link;
+        virtual ~Step() = default;
+        explicit Step(Names required_output_) : required_output(std::move(required_output_)) {}
 
         /// Columns were added to the block before current step in addition to prev step output.
         NameSet additional_input;
@@ -326,28 +302,72 @@ struct ExpressionActionsChain
         /// If not empty, has the same size with required_output; is filled in finalize().
         std::vector<bool> can_remove_required_output;
 
-    public:
-        explicit Step(ExpressionActionsPtr actions, const Names & required_output_ = Names())
-            : link(ExpressionActionsLink{std::move(actions)})
-            , required_output(required_output_)
+        virtual const NamesAndTypesList & getRequiredColumns() const = 0;
+        virtual const ColumnsWithTypeAndName & getResultColumns() const = 0;
+        /// Remove unused result and update required columns
+        virtual void finalize(const Names & required_output_) = 0;
+        /// Add projections to expression
+        virtual void prependProjectInput() const = 0;
+        virtual std::string dump() const = 0;
+
+        /// Only for ExpressionActionsStep
+        ExpressionActionsPtr & actions();
+        const ExpressionActionsPtr & actions() const;
+    };
+
+    struct ExpressionActionsStep : public Step
+    {
+        ExpressionActionsPtr actions;
+
+        explicit ExpressionActionsStep(ExpressionActionsPtr actions_, Names required_output_ = Names())
+            : Step(std::move(required_output_))
+            , actions(std::move(actions_))
         {
         }
 
-        explicit Step(ArrayJoinActionPtr array_join, ColumnsWithTypeAndName required_columns);
+        const NamesAndTypesList & getRequiredColumns() const override
+        {
+            return actions->getRequiredColumnsWithTypes();
+        }
 
-        const NamesAndTypesList & getRequiredColumns() const;
-        const ColumnsWithTypeAndName & getResultColumns() const;
-        /// Remove unused result and update required columns
-        void finalize(const Names & required_output_);
-        /// Add projections to expression
-        void prependProjectInput() const;
-        std::string dump() const;
+        const ColumnsWithTypeAndName & getResultColumns() const override
+        {
+            return actions->getSampleBlock().getColumnsWithTypeAndName();
+        }
 
-        ExpressionActionsPtr & actions() { return std::get<ExpressionActionsLink>(link).actions; }
-        const ExpressionActionsPtr & actions() const { return std::get<ExpressionActionsLink>(link).actions; }
+        void finalize(const Names & required_output_) override
+        {
+            actions->finalize(required_output_);
+        }
+
+        void prependProjectInput() const override
+        {
+            actions->prependProjectInput();
+        }
+
+        std::string dump() const override
+        {
+            return actions->dumpActions();
+        }
     };
 
-    using Steps = std::vector<Step>;
+    struct ArrayJoinStep : public Step
+    {
+        ArrayJoinActionPtr array_join;
+        NamesAndTypesList required_columns;
+        ColumnsWithTypeAndName result_columns;
+
+        ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_output_);
+
+        const NamesAndTypesList & getRequiredColumns() const override { return required_columns; }
+        const ColumnsWithTypeAndName & getResultColumns() const override { return result_columns; }
+        void finalize(const Names & required_output_) override;
+        void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
+        std::string dump() const override { return "ARRAY JOIN"; }
+    };
+
+    using StepPtr = std::unique_ptr<Step>;
+    using Steps = std::vector<StepPtr>;
 
     const Context & context;
     Steps steps;

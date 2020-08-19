@@ -1153,22 +1153,17 @@ ExpressionActionsPtr ExpressionActions::splitActionsBeforeArrayJoin(const NameSe
 
             new_actions.emplace_back(action);
         }
-        else
+        else if (action.type == ExpressionAction::REMOVE_COLUMN)
         {
             /// Exception for REMOVE_COLUMN.
             /// We cannot move it to split_actions if any argument from `this` needed that column.
-            if (action.type == ExpressionAction::REMOVE_COLUMN)
-            {
-                if (array_join_dependent_columns_arguments.count(action.source_name))
-                    new_actions.emplace_back(action);
-                else
-                    split_actions->add(action);
-
-                continue;
-            }
-
-            split_actions->add(action);
+            if (array_join_dependent_columns_arguments.count(action.source_name))
+                new_actions.emplace_back(action);
+            else
+                split_actions->add(action);
         }
+        else
+            split_actions->add(action);
     }
 
     /// Return empty actions if nothing was separated. Keep `this` unchanged.
@@ -1365,8 +1360,8 @@ void ExpressionActionsChain::addStep()
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsWithTypeAndName columns = steps.back().getResultColumns();
-    steps.push_back(Step(std::make_shared<ExpressionActions>(columns, context)));
+    ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ExpressionActions>(columns, context)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1374,16 +1369,16 @@ void ExpressionActionsChain::finalize()
     /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
-        Names required_output = steps[i].required_output;
+        Names required_output = steps[i]->required_output;
         std::unordered_map<String, size_t> required_output_indexes;
         for (size_t j = 0; j < required_output.size(); ++j)
             required_output_indexes[required_output[j]] = j;
-        auto & can_remove_required_output = steps[i].can_remove_required_output;
+        auto & can_remove_required_output = steps[i]->can_remove_required_output;
 
         if (i + 1 < static_cast<int>(steps.size()))
         {
-            const NameSet & additional_input = steps[i + 1].additional_input;
-            for (const auto & it : steps[i + 1].getRequiredColumns())
+            const NameSet & additional_input = steps[i + 1]->additional_input;
+            for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
                 if (additional_input.count(it.name) == 0)
                 {
@@ -1395,19 +1390,19 @@ void ExpressionActionsChain::finalize()
                 }
             }
         }
-        steps[i].finalize(required_output);
+        steps[i]->finalize(required_output);
     }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
     for (size_t i = 1; i < steps.size(); ++i)
     {
-        size_t columns_from_previous = steps[i - 1].getResultColumns().size();
+        size_t columns_from_previous = steps[i - 1]->getResultColumns().size();
 
         /// If unnecessary columns are formed at the output of the previous step, we'll add them to the beginning of this step.
         /// Except when we drop all the columns and lose the number of rows in the block.
-        if (!steps[i].getResultColumns().empty()
-            && columns_from_previous > steps[i].getRequiredColumns().size())
-            steps[i].prependProjectInput();
+        if (!steps[i]->getResultColumns().empty()
+            && columns_from_previous > steps[i]->getRequiredColumns().size())
+            steps[i]->prependProjectInput();
     }
 }
 
@@ -1419,16 +1414,17 @@ std::string ExpressionActionsChain::dumpChain() const
     {
         ss << "step " << i << "\n";
         ss << "required output:\n";
-        for (const std::string & name : steps[i].required_output)
+        for (const std::string & name : steps[i]->required_output)
             ss << name << "\n";
-        ss << "\n" << steps[i].dump() << "\n";
+        ss << "\n" << steps[i]->dump() << "\n";
     }
 
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinLink::ArrayJoinLink(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
-    : array_join(std::move(array_join_))
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_outputs_)
+    : Step(std::move(required_outputs_))
+    , array_join(std::move(array_join_))
     , result_columns(std::move(required_columns_))
 {
     for (auto & column : result_columns)
@@ -1445,7 +1441,7 @@ ExpressionActionsChain::ArrayJoinLink::ArrayJoinLink(ArrayJoinActionPtr array_jo
     }
 }
 
-void ExpressionActionsChain::ArrayJoinLink::finalize(const Names & required_output_)
+void ExpressionActionsChain::ArrayJoinStep::finalize(const Names & required_output_)
 {
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
@@ -1466,47 +1462,14 @@ void ExpressionActionsChain::ArrayJoinLink::finalize(const Names & required_outp
     std::swap(result_columns, new_result_columns);
 }
 
-ExpressionActionsChain::Step::Step(ArrayJoinActionPtr array_join, ColumnsWithTypeAndName required_columns)
-    : link(ArrayJoinLink(std::move(array_join), std::move(required_columns)))
+ExpressionActionsPtr & ExpressionActionsChain::Step::actions()
 {
+    return typeid_cast<ExpressionActionsStep *>(this)->actions;
 }
 
-template <typename Res, typename Ptr, typename Callback>
-static Res dispatch(Ptr * ptr, Callback && callback)
+const ExpressionActionsPtr & ExpressionActionsChain::Step::actions() const
 {
-    if (std::holds_alternative<ExpressionActionsChain::ExpressionActionsLink>(ptr->link))
-        return callback(std::get<ExpressionActionsChain::ExpressionActionsLink>(ptr->link));
-    if (std::holds_alternative<ExpressionActionsChain::ArrayJoinLink>(ptr->link))
-        return callback(std::get<ExpressionActionsChain::ArrayJoinLink>(ptr->link));
-
-    throw Exception("Unknown variant in ExpressionActionsChain step", ErrorCodes::LOGICAL_ERROR);
-}
-
-const NamesAndTypesList & ExpressionActionsChain::Step::getRequiredColumns() const
-{
-    using Res = const NamesAndTypesList &;
-    return dispatch<Res>(this, [](auto & x) -> Res { return x.getRequiredColumns(); });
-}
-
-const ColumnsWithTypeAndName & ExpressionActionsChain::Step::getResultColumns() const
-{
-    using Res = const ColumnsWithTypeAndName &;
-    return dispatch<Res>(this, [](auto & x) -> Res{ return x.getResultColumns(); });
-}
-
-void ExpressionActionsChain::Step::finalize(const Names & required_output_)
-{
-    dispatch<void>(this, [&required_output_](auto & x) { x.finalize(required_output_); });
-}
-
-void ExpressionActionsChain::Step::prependProjectInput() const
-{
-    dispatch<void>(this, [](auto & x) { x.prependProjectInput(); });
-}
-
-std::string ExpressionActionsChain::Step::dump() const
-{
-    return dispatch<std::string>(this, [](auto & x) { return x.dump(); });
+    return typeid_cast<const ExpressionActionsStep *>(this)->actions;
 }
 
 }
