@@ -8,6 +8,7 @@
 
 # auto generated files
 *.logrt
+src/Storages/System/StorageSystemTimeZones.generated.cpp
 
 /build
 /build_*
