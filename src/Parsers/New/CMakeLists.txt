@@ -11,6 +11,7 @@ set (SRCS
     AST/JoinExpr.cpp
     AST/LimitExpr.cpp
     AST/Literal.cpp
+    AST/OptimizeQuery.cpp
     AST/OrderExpr.cpp
     AST/Query.cpp
     AST/RatioExpr.cpp
@@ -20,6 +21,7 @@ set (SRCS
     AST/SettingExpr.cpp
     AST/TableElementExpr.cpp
     AST/TableExpr.cpp
+    AST/UseQuery.cpp
     AST/ValueExpr.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp

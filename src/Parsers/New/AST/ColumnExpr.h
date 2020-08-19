@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Parsers/New/AST/INode.h>
+#include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/Literal.h>
 
 
 namespace DB::AST
@@ -16,6 +17,27 @@ class ColumnExpr : public INode
         static PtrTo<ColumnExpr> createLambda(PtrTo<List<Identifier, ','>> params, PtrTo<ColumnExpr> expr);
         static PtrTo<ColumnExpr> createLiteral(PtrTo<Literal> literal);
         static PtrTo<ColumnExpr> createSubquery(PtrTo<SelectUnionQuery> query, bool scalar);
+
+        enum class ExprType
+        {
+            ALIAS,
+            ASTERISK,
+            FUNCTION,
+            IDENTIFIER,
+            LAMBDA,
+            LITERAL,
+            SUBQUERY,
+        };
+
+        auto getType() const { return expr_type; };
+
+        // FUNCTION
+        auto getFunctionName() const { return children[NAME]->as<Identifier>()->getName(); }
+        auto argumentsBegin() const { return children[ARGS] ? children[ARGS]->as<ColumnExprList>()->begin() : children.end(); }
+        auto argumentsEnd() const { return children[ARGS] ? children[ARGS]->as<ColumnExprList>()->end() : children.end(); }
+
+        // LITERAL
+        auto getLiteral() const { return static_pointer_cast<Literal>(children[LITERAL]); }
 
         ASTPtr convertToOld() const override;
 
@@ -43,16 +65,6 @@ class ColumnExpr : public INode
 
             // SUBQUERY
             SUBQUERY = 0,
-        };
-        enum class ExprType
-        {
-            ALIAS,
-            ASTERISK,
-            FUNCTION,
-            IDENTIFIER,
-            LAMBDA,
-            LITERAL,
-            SUBQUERY,
         };
 
         const ExprType expr_type;

@@ -32,6 +32,7 @@ PtrTo<ColumnExpr> ColumnExpr::createAsterisk(PtrTo<TableIdentifier> identifier, 
 // static
 PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnExprList> args)
 {
+    // FIXME: make sure that all function names are lower-case.
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::FUNCTION, {name, params, args}));
 }
 

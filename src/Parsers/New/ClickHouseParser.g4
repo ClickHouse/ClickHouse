@@ -15,6 +15,7 @@ query
     | insertStmt
     | selectUnionStmt
     | setStmt
+    | useStmt
     ;
 
 // DDL statement
@@ -23,6 +24,7 @@ distributedStmt:
     ( createDatabaseStmt
     | createTableStmt
     | dropStmt
+    | optimizeStmt
     )
     (ON CLUSTER identifier)?
     ;
@@ -59,9 +61,10 @@ primaryKeyClause: PRIMARY KEY columnExpr;
 sampleByClause: SAMPLE BY columnExpr;
 ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 
-engineExpr: ENGINE EQ_SINGLE? identifier (LPAREN tableArgList? RPAREN)?;
+engineExpr: ENGINE EQ_SINGLE? identifier (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
-    : identifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?  # TableElementColumn
+    : identifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?  # TableElementExprColumnWithType
+    | identifier columnTypeExpr? tableColumnPropertyExpr /*TODO: codexExpr?*/ (TTL columnExpr)?  # TableElementExprColumnWithDefault
     // TODO: INDEX
     // TODO: CONSTRAINT
     ;
@@ -80,11 +83,20 @@ dropStmt
 insertStmt: INSERT INTO tableIdentifier (LPAREN identifier (COMMA identifier)* RPAREN)? valuesClause;
 
 valuesClause
-    : VALUES valueTupleExpr (COMMA valueTupleExpr)*
+    : VALUES valueTupleExpr (COMMA? valueTupleExpr)*
     | selectUnionStmt
     ;
 
 valueTupleExpr: LPAREN valueExprList RPAREN;  // same as ValueExprTuple
+
+// OPTIMIZE statement
+
+optimizeStmt: OPTIMIZE TABLE tableIdentifier partitionClause? FINAL? DEDUPLICATE?;
+
+partitionClause
+    : PARTITION columnExpr // actually we expect here any form of tuple of literals
+    | PARTITION ID STRING_LITERAL
+    ;
 
 // SELECT statement
 
@@ -150,6 +162,10 @@ settingExpr: identifier EQ_SINGLE literal;
 
 setStmt: SET settingExprList;
 
+// USE statement
+
+useStmt: USE databaseIdentifier;
+
 // Values
 
 valueExprList: valueExpr (COMMA valueExpr)*;
@@ -162,11 +178,11 @@ valueExpr
 // Columns
 
 columnTypeExpr
-    : identifier                                                       # ColumnTypeExprSimple   // UInt64
-    | identifier LPAREN columnParamList RPAREN                         # ColumnTypeExprParam    // FixedString(N)
-    | identifier LPAREN enumValue (COMMA enumValue)* RPAREN            # ColumnTypeExprEnum     // Enum
-    | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN  # ColumnTypeExprComplex  // Array, Tuple
-    // TODO: NestedColumn
+    : identifier                                                                             # ColumnTypeExprSimple   // UInt64
+    | identifier LPAREN columnParamList RPAREN                                               # ColumnTypeExprParam    // FixedString(N)
+    | identifier LPAREN enumValue (COMMA enumValue)* RPAREN                                  # ColumnTypeExprEnum     // Enum
+    | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN                        # ColumnTypeExprComplex  // Array, Tuple
+    | identifier LPAREN identifier columnTypeExpr (COMMA identifier columnTypeExpr)* RPAREN  # ColumnTypeExprNested   // Nested
     ;
 columnExprList: columnsExpr (COMMA columnsExpr)*;
 columnsExpr
@@ -215,7 +231,7 @@ tableExpr
     : tableIdentifier                                       # TableExprIdentifier
     | identifier LPAREN tableArgList? RPAREN                # TableExprFunction
     | LPAREN selectUnionStmt RPAREN                         # TableExprSubquery
-    | tableExpr AS? identifier                               # TableExprAlias
+    | tableExpr AS? identifier                              # TableExprAlias
     ;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
@@ -234,14 +250,15 @@ literal
     : (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL)
     | STRING_LITERAL
     | NULL_SQL
-    ; // TODO: don't forget literal functions, like hostname(), toTypeName(), etc.
+    | identifier LPAREN RPAREN
+    ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
     : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER | COLLATE | CREATE
-    | CROSS | DAY | DATABASE | DEFAULT | DELETE | DESCENDING | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL
-    | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
-    | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OR | ORDER | OUTER | OUTFILE
-    | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | TABLE | TEMPORARY | THEN | TOTALS
-    | TRAILING | TRIM | TO | TTL | UNION | VALUES | VOLUME | WEEK | WHEN | WITH | YEAR
+    | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESCENDING | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS
+    | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS
+    | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR
+    | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | TABLE
+    | TEMPORARY | THEN | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

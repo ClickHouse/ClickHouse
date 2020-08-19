@@ -64,7 +64,7 @@ class EngineClause : public INode
 class EngineExpr : public INode
 {
     public:
-        EngineExpr(PtrTo<Identifier> identifier, PtrTo<TableArgList> args);
+        EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args);
 };
 
 class TTLExpr : public INode

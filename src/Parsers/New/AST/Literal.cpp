@@ -61,22 +61,27 @@ ASTPtr Literal::convertToOld() const
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *ctx)
 {
     if (ctx->NULL_SQL())
-        return AST::Literal::createNull(ctx->NULL_SQL());
+        return Literal::createNull(ctx->NULL_SQL());
     if (ctx->FLOATING_LITERAL())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH()));
+        return static_pointer_cast<Literal>(Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH()));
     if (ctx->HEXADECIMAL_LITERAL())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH()));
+        return static_pointer_cast<Literal>(Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH()));
     if (ctx->INTEGER_LITERAL())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH()));
+        return static_pointer_cast<Literal>(Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH()));
     if (ctx->INF())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->INF(), !!ctx->DASH()));
+        return static_pointer_cast<Literal>(Literal::createNumber(ctx->INF(), !!ctx->DASH()));
     if (ctx->NAN_SQL())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createNumber(ctx->NAN_SQL()));
+        return static_pointer_cast<Literal>(Literal::createNumber(ctx->NAN_SQL()));
     if (ctx->STRING_LITERAL())
-        return std::static_pointer_cast<AST::Literal>(AST::Literal::createString(ctx->STRING_LITERAL()));
+        return static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
+    if (ctx->identifier())
+        // TODO: store as function.
+        return static_pointer_cast<Literal>(Literal::createString(ctx->identifier()->IDENTIFIER()));
     __builtin_unreachable();
 }
 

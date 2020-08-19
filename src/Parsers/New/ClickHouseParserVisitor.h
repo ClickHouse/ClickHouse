@@ -52,7 +52,9 @@ public:
 
     virtual antlrcpp::Any visitEngineExpr(ClickHouseParser::EngineExprContext *context) = 0;
 
-    virtual antlrcpp::Any visitTableElementColumn(ClickHouseParser::TableElementColumnContext *context) = 0;
+    virtual antlrcpp::Any visitTableElementExprColumnWithType(ClickHouseParser::TableElementExprColumnWithTypeContext *context) = 0;
+
+    virtual antlrcpp::Any visitTableElementExprColumnWithDefault(ClickHouseParser::TableElementExprColumnWithDefaultContext *context) = 0;
 
     virtual antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *context) = 0;
 
@@ -67,6 +69,10 @@ public:
     virtual antlrcpp::Any visitValuesClause(ClickHouseParser::ValuesClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *context) = 0;
 
@@ -128,6 +134,8 @@ public:
 
     virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitValueExprList(ClickHouseParser::ValueExprListContext *context) = 0;
 
     virtual antlrcpp::Any visitValueExprLiteral(ClickHouseParser::ValueExprLiteralContext *context) = 0;
@@ -143,6 +151,8 @@ public:
     virtual antlrcpp::Any visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext *context) = 0;
+
+    virtual antlrcpp::Any visitColumnTypeExprNested(ClickHouseParser::ColumnTypeExprNestedContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprList(ClickHouseParser::ColumnExprListContext *context) = 0;
 

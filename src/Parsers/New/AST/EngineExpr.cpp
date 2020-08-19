@@ -68,7 +68,7 @@ void EngineClause::setSettingsClause(PtrTo<SettingsClause> clause)
     children[SETTINGS] = clause;
 }
 
-EngineExpr::EngineExpr(PtrTo<Identifier> identifier, PtrTo<TableArgList> args)
+EngineExpr::EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args)
 {
     children.push_back(identifier);
     children.insert(children.end(), args->begin(), args->end());
@@ -105,7 +105,7 @@ antlrcpp::Any ParseTreeVisitor::visitEngineClause(ClickHouseParser::EngineClause
 antlrcpp::Any ParseTreeVisitor::visitEngineExpr(ClickHouseParser::EngineExprContext *ctx)
 {
     return std::make_shared<EngineExpr>(
-        ctx->identifier()->accept(this), ctx->tableArgList() ? ctx->tableArgList()->accept(this).as<PtrTo<TableArgList>>() : nullptr);
+        ctx->identifier()->accept(this), ctx->columnExprList() ? ctx->columnExprList()->accept(this).as<PtrTo<ColumnExprList>>() : nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitPartitionByClause(ClickHouseParser::PartitionByClauseContext *ctx)

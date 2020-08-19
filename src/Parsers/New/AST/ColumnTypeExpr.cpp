@@ -39,6 +39,21 @@ PtrTo<ColumnTypeExpr> ColumnTypeExpr::createParam(PtrTo<Identifier> identifier, 
     return PtrTo<ColumnTypeExpr>(new ColumnTypeExpr(ExprType::PARAM, {identifier, list}));
 }
 
+// static
+PtrTo<ColumnTypeExpr> ColumnTypeExpr::createNested(PtrTo<Identifier> identifier, NestedParamList params)
+{
+    PtrList list;
+
+    list.push_back(identifier);
+    for (const auto & param : params)
+    {
+        list.push_back(param.first);
+        list.push_back(param.second);
+    }
+
+    return PtrTo<ColumnTypeExpr>(new ColumnTypeExpr(ExprType::NESTED, list));
+}
+
 ColumnTypeExpr::ColumnTypeExpr(ExprType type, PtrList exprs) : expr_type(type)
 {
     children = exprs;
@@ -74,6 +89,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprComplex(ClickHouseParser::Col
     auto list = std::make_shared<ColumnTypeExprList>();
     for (auto * expr : ctx->columnTypeExpr()) list->append(expr->accept(this));
     return ColumnTypeExpr::createComplex(ctx->identifier()->accept(this), list);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprNested(ClickHouseParser::ColumnTypeExprNestedContext *ctx)
+{
+    ColumnTypeExpr::NestedParamList list;
+
+    for (size_t i = 0; i < ctx->columnTypeExpr().size(); ++i)
+        list.emplace_back(ctx->identifier(i+1)->accept(this), ctx->columnTypeExpr(i)->accept(this));
+
+    return ColumnTypeExpr::createNested(ctx->identifier(0)->accept(this), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitEnumValue(ClickHouseParser::EnumValueContext *ctx)

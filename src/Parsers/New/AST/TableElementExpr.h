@@ -35,6 +35,13 @@ class TableElementExpr : public INode
             INDEX,
             CONSTRAINT,
         };
+        enum ChildIndex: UInt8
+        {
+            NAME = 0,
+            TYPE = 1,
+            PROPERTY = 2,
+            TTL = 3,
+        };
 
         ExprType expr_type;
 
