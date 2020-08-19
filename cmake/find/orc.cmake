@@ -7,7 +7,8 @@ if(NOT ENABLE_ORC)
     return()
 endif()
 
-option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled" ${NOT_UNBUNDLED})
+option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled (experimental set to OFF on your own risk)"
+        ON)
 
 include(cmake/find/snappy.cmake)
 
