@@ -1,6 +1,8 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -20,14 +22,22 @@ public:
 
     std::string getName() const override { return name; }
 
+    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) override;
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
+
+    void prepareClusterInfo(const ASTPtr & ast_function, const Context & context) const;
 
     std::string name;
     bool is_cluster_function;
     std::string help_message;
     bool secure;
+
+    mutable ClusterPtr cluster;
+    mutable StorageID remote_table_id = StorageID::createEmpty();
+    mutable ASTPtr remote_table_function_ptr;
 };
 
 }

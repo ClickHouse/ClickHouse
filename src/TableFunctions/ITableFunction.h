@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <memory>
 #include <string>
@@ -31,14 +32,19 @@ public:
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
+    virtual ColumnsDescription getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) { return {}; }
+
     /// Create storage according to the query.
-    StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const;
+    StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
 
     virtual ~ITableFunction() {}
 
 private:
     virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const = 0;
     virtual const char * getStorageTypeName() const = 0;
+
+protected:
+    mutable ColumnsDescription cached_columns;
 };
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;

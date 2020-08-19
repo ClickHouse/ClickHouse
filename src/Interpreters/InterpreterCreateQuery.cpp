@@ -456,6 +456,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
     if (create.columns_list)
     {
+        if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
+            throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
+
         if (create.columns_list->columns)
         {
             bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
@@ -492,7 +495,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
-        return {};
+    {
+        /// Table function without columns list.
+        auto table_function = TableFunctionFactory::instance().get(create.as_table_function->as<ASTFunction &>().name, context);
+        properties.columns = table_function->getActualTableStructure(create.as_table_function, context);
+        if (properties.columns.empty())     //FIXME
+            return {};
+    }
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
@@ -761,7 +770,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table, properties.columns);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
