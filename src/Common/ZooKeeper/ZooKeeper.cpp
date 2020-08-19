@@ -106,6 +106,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 chroot,
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
     }
+#if USE_PROTOBUF
     else if (implementation == "etcdkeeper")
     {
         if (hosts.empty())
@@ -116,6 +117,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 hosts.substr(0, hosts.find(',')),
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
     }
+#endif 
     else
     {
         throw DB::Exception("Unknown implementation of coordination service: " + implementation, DB::ErrorCodes::NOT_IMPLEMENTED);

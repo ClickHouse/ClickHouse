@@ -5,21 +5,16 @@ if (USE_GRPC)
 
     file(GLOB PROTO_DEF "${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos/*.proto")
     protobuf_generate_grpc_cpp(EtcdProtos_Srcs EtcdProtos_Hdrs ${PROTO_DEF})
-endif()
 
-add_headers_and_sources(clickhouse_common_zookeeper .)
-
-if (USE_GRPC)
+    add_headers_and_sources(clickhouse_common_zookeeper .)
     add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources} ${EtcdProtosGRPC_Srcs} ${EtcdProtosGRPC_Hdrs} ${EtcdProtos_Srcs} ${EtcdProtos_Hdrs})
-else()
-    add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
-endif()
-
-if (USE_GRPC)
     target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils PUBLIC libgrpc++)
 else()
+    add_headers_and_sources(clickhouse_common_zookeeper .)
+    add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
     target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils)
 endif()
+    
 target_include_directories(clickhouse_common_zookeeper PUBLIC ${DBMS_INCLUDE_DIR})
 
 if (ENABLE_TESTS)

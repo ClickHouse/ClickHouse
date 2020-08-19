@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
+
+#if USE_PROTOBUF
+
 #include <mutex>
 #include <map>
 #include <atomic>
@@ -254,3 +260,4 @@ private:
     using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
 }
+#endif
