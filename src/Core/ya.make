@@ -17,12 +17,6 @@ SRCS(
     ExternalTable.cpp
     Field.cpp
     iostream_debug_helpers.cpp
-    NamesAndTypes.cpp
-    PostgreSQLProtocol.cpp
-    Settings.cpp
-    SettingsEnums.cpp
-    SettingsFields.cpp
-    SortDescription.cpp
     MySQL/Authentication.cpp
     MySQL/IMySQLReadPacket.cpp
     MySQL/IMySQLWritePacket.cpp
@@ -34,6 +28,12 @@ SRCS(
     MySQL/PacketsGeneric.cpp
     MySQL/PacketsProtocolText.cpp
     MySQL/PacketsReplication.cpp
+    NamesAndTypes.cpp
+    PostgreSQLProtocol.cpp
+    Settings.cpp
+    SettingsEnums.cpp
+    SettingsFields.cpp
+    SortDescription.cpp
 
 )
 
