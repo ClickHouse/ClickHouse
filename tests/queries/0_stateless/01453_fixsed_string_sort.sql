@@ -16,6 +16,7 @@ INSERT INTO badFixedStringSort values (UUIDStringToNum('999e1140-66ef-5610-9c3a-
 INSERT INTO badFixedStringSort values (UUIDStringToNum('999e1140-66ef-5610-9c3a-b3fb33e0fda9'), '1');
 INSERT INTO badFixedStringSort values (UUIDStringToNum('999e1140-66ef-5610-9c3a-b3fb33e0fda9'), '2');
 
+optimize table badFixedStringSort final;
 select hex(uuid5_old), subitem from badFixedStringSort ORDER BY  uuid5_old, subitem;
 
 drop table if exists badFixedStringSort;
