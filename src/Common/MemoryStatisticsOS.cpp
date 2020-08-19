@@ -59,7 +59,7 @@ MemoryStatisticsOS::~MemoryStatisticsOS()
 #ifdef OS_FREEBSD
     if (NULL != pstat)
     {
-	    ::procstat_close(pstat);
+        ::procstat_close(pstat);
     }
 #else
     if (0 != ::close(fd))
@@ -98,7 +98,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
     kve = ::procstat_getvmmap(pstat, kp, &count);
     if (NULL == kve)
     {
-	    ::procstat_freeprocs(pstat, kp);
+        ::procstat_freeprocs(pstat, kp);
         throwFromErrno("Cannot get vmmap info", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
     }
 
