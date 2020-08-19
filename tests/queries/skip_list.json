@@ -13,7 +13,7 @@
         "01098_temporary_and_external_tables",
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
-        "00157_cache_dictionary"
+        "00157_cache_dictionary",
         "01193_metadata_loading"
     ],
     "address-sanitizer": [
