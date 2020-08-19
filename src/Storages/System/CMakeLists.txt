@@ -1,6 +1,8 @@
-# The file StorageSystemContributors.cpp is generated at release time and committed to the source tree.
+# The file StorageSystemContributors.generated.cpp is generated at release time and committed to the source tree.
 # You can also regenerate it manually this way:
 # execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh)
+# Similarly StorageSystemTimeZone.generated.cpp is also generated during release time
+# execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemTimeZone.sh)
 
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp)
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
@@ -22,11 +24,18 @@ add_custom_target(generate-contributors
     # BYPRODUCTS StorageSystemContributors.generated.cpp
 )
 
+add_custom_target(generate-time-zones
+    ./StorageSystemTimeZones.sh
+    SOURCES StorageSystemTimeZones.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    # BYPRODUCTS StorageSystemTimeZones.generated.cpp
+)
+
 if(NOT TARGET generate-source)
     add_custom_target(generate-source)
 endif()
 
-add_dependencies(generate-source generate-contributors)
+add_dependencies(generate-source generate-contributors generate-time-zones)
 
 set(GENERATED_LICENSES_SRC ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.generated.cpp)
 
