@@ -623,7 +623,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         actions_chain.finalize();
 
         /// Propagate information about columns needed as input.
-        for (const auto & column : actions_chain.steps.front().actions()->getRequiredColumnsWithTypes())
+        for (const auto & column : actions_chain.steps.front()->actions()->getRequiredColumnsWithTypes())
             prepared_stages[i - 1].output_columns.insert(column.name);
     }
 
@@ -667,12 +667,12 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                in = std::make_shared<FilterBlockInputStream>(in, step.actions(), stage.filter_column_names[i]);
+                in = std::make_shared<FilterBlockInputStream>(in, step->actions(), stage.filter_column_names[i]);
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                in = std::make_shared<ExpressionBlockInputStream>(in, step.actions());
+                in = std::make_shared<ExpressionBlockInputStream>(in, step->actions());
             }
         }
 
