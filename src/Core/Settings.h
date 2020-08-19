@@ -490,6 +490,10 @@ struct Settings : public BaseSettings<SettingsTraits>
     /// Adds program options to set the settings from a command line.
     /// (Don't forget to call notify() on the `variables_map` after parsing it!)
     void addProgramOptions(boost::program_options::options_description & options);
+
+    /// Check that there is no user-level settings at the top level in config.
+    /// This is a common source of mistake (user don't know where to write user-level setting).
+    static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 };
 
 }
