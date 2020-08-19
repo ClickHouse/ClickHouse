@@ -1868,7 +1868,7 @@ Default value: `0`.
 
 Defines how many seconds locking request waits before failing. 
 
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the Clickhouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the ClickHouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
 Possible values:
 
