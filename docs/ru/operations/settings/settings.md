@@ -520,31 +520,6 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
-## network_compression_method {#network_compression_method}
-
-Задает метод сжатия данных, используемый при обмене данными между серверами и при обмене между сервером и [clickhouse-client](../../interfaces/cli.md).
-
-Возможные значения:
-
--   `LZ4` — устанавливает метод сжатия LZ4.
--   `ZSTD` — устанавливает метод сжатия ZSTD.
-
-Значение по умолчанию: `LZ4`.
-
-См. также:
-
--   [network_zstd_compression_level](#network_zstd_compression_level)
-
-## network_zstd_compression_level {#network_zstd_compression_level}
-
-Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) имеет значение `ZSTD`.
-
-Возможные значения:
-
--   Положительное целое число от 1 до 15.
-
-Значение по умолчанию: `1`.
-
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
@@ -555,6 +530,24 @@ ClickHouse использует этот параметр при чтении д
 
 ``` text
 log_queries=1
+```
+
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` минимальный уровень логирования.
+
+Возможные значения:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Значение по умолчанию: `QUERY_START`.
+
+Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
 ## log\_query\_threads {#settings-log-query-threads}
@@ -571,7 +564,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-Формировать блоки указанного размера (в количестве строк), при вставке в таблицу.
+Формировать блоки указанного размера, при вставке в таблицу.
 Эта настройка действует только в тех случаях, когда сервер сам формирует такие блоки.
 Например, при INSERT-е через HTTP интерфейс, сервер парсит формат данных, и формирует блоки указанного размера.
 А при использовании clickhouse-client, клиент сам парсит данные, и настройка max\_insert\_block\_size на сервере не влияет на размер вставляемых блоков.
@@ -669,17 +662,6 @@ log_query_threads=1
 
 Значение по умолчанию: 256 Кб.
 
-## max\_parser\_depth {#max_parser_depth}
-
-Ограничивает максимальную глубину рекурсии в парсере рекурсивного спуска. Позволяет контролировать размер стека.
-
-Возможные значения:
-
-- Положительное целое число.
-- 0 — Глубина рекурсии не ограничена.
-
-Значение по умолчанию: 1000.
-
 ## interactive\_delay {#interactive-delay}
 
 Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса.
@@ -725,17 +707,6 @@ log_query_threads=1
 
 Значение по умолчанию: 50.
 
-## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
-
-Время ожидания соединения в миллисекундах, когда пул соединений заполнен.
-
-Возможные значения:
-
-- Положительное целое число.
-- 0 — Бесконечный таймаут.
-
-Значение по умолчанию: 0.
-
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 Максимальное количество попыток соединения с каждой репликой, для движка таблиц Distributed.
@@ -746,21 +717,6 @@ log_query_threads=1
 
 Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
 Подробнее смотрите раздел «Экстремальные значения».
-
-## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
-
-Время ожидания в миллисекундах для чтения сообщений из [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) перед повторной попыткой.
-
-Возможные значения:
-
-- Положительное целое число.
-- 0 — Бесконечный таймаут.
-
-Значение по умолчанию: 5000.
-
-См. также:
-
--   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -780,17 +736,6 @@ log_query_threads=1
 `1` - отменить старый запрос и начать выполнять новый.
 
 Эта настройка, выставленная в 1, используется в Яндекс.Метрике для реализации suggest-а значений для условий сегментации. После ввода очередного символа, если старый запрос ещё не выполнился, его следует отменить.
-
-## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
-
-Время ожидания завершения выполнения запроса с тем же `query_id`, когда активирована настройка [replace_running_query](#replace-running-query).
-
-Возможные значения:
-
-- Положительное целое число.
-- 0 — Создание исключения, которое не позволяет выполнить новый запрос, если сервер уже выполняет запрос с тем же `query_id`.
-
-Значение по умолчанию: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -908,105 +853,6 @@ load_balancing = first_or_random
 
 Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
 
-## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
-
-При выводе данных в формате [JSON](../../interfaces/formats.md#json) включает отображение значений `+nan`, `-nan`, `+inf`, `-inf`.
-
-Возможные значения:
-
--   0 — выключена.
--   1 — включена.
-
-Значение по умолчанию: 0.
-
-**Пример**
-
-Рассмотрим следующую таблицу `account_orders`:
-
-```text
-┌─id─┬─name───┬─duration─┬─period─┬─area─┐
-│  1 │ Andrew │       20 │      0 │  400 │
-│  2 │ John   │       40 │      0 │    0 │
-│  3 │ Bob    │       15 │      0 │ -100 │
-└────┴────────┴──────────┴────────┴──────┘
-```
-
-Когда `output_format_json_quote_denormals = 0`, следующий запрос возвращает значения `null`.
-
-```sql
-SELECT area/period FROM account_orders FORMAT JSON;
-```
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "divide(area, period)",
-                        "type": "Float64"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "divide(area, period)": null
-                },
-                {
-                        "divide(area, period)": null
-                },
-                {
-                        "divide(area, period)": null
-                }
-        ],
-
-        "rows": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.003648093,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
-Если `output_format_json_quote_denormals = 1`, то запрос вернет:
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "divide(area, period)",
-                        "type": "Float64"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "divide(area, period)": "inf"
-                },
-                {
-                        "divide(area, period)": "-nan"
-                },
-                {
-                        "divide(area, period)": "-inf"
-                }
-        ],
-
-        "rows": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.000070241,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
@@ -1111,15 +957,15 @@ ClickHouse генерирует исключение
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
+Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count).
 
 Возможные значения:
 
--   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
--   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
--   [uniqExact](../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 Значение по умолчанию: `uniqExact`.
 
@@ -1326,7 +1172,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1349,9 +1195,9 @@ Default value: 1000000000 nanoseconds.
 
 See also:
 
--   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## allow_introspection_functions {#settings-allow_introspection_functions}
+## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
 Enables of disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
 
@@ -1365,9 +1211,9 @@ Default value: 0.
 **See Also**
 
 -   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
--   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## background_pool_size {#background_pool_size}
+## background\_pool\_size {#background_pool_size}
 
 Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пулл, тем ниже нагрузка на CPU и диск, при этом фоновые процессы замедляются, что может повлиять на скорость выполнения запроса.
 
@@ -1376,64 +1222,6 @@ Default value: 0.
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
-
-## parallel_distributed_insert_select {#parallel_distributed_insert_select}
-
-Включает параллельную обработку распределённых запросов `INSERT ... SELECT`.
-
-Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде. 
-
-Допустимые значения:
-
--   0 — выключена.
--   1 — включена.
-
-Значение по умолчанию: 0.
-
-## insert_distributed_sync {#insert_distributed_sync}
-
-Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
-
-По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).  
-
-Возможные значения:
-
--   0 — Данные добавляются в асинхронном режиме.
--   1 — Данные добавляются в синхронном режиме.
-
-Значение по умолчанию: `0`.
-
-**См. также**
-
--   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
--   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
-## validate\_polygons {#validate_polygons}
-
-Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
-
-Допустимые значения:
-
-- 0 — генерирование исключения отключено. `pointInPolygon` принимает недопустимые многоугольники и возвращает для них, возможно, неверные результаты.
-- 1 — генерирование исключения включено.
-
-Значение по умолчанию: 1.
-
-## always_fetch_merged_part {#always_fetch_merged_part}
-
-Запрещает слияние данных для таблиц семейства [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md).
-
-Если слияние запрещено, реплика никогда не выполняет слияние отдельных кусков данных, а всегда загружает объединённые данные из других реплик. Если объединённых данных пока нет, реплика ждет их появления. Нагрузка на процессор и диски на реплике уменьшается, но нагрузка на сеть в кластере возрастает. Настройка может быть полезна на репликах с относительно слабыми процессорами или медленными дисками, например, на репликах для хранения архивных данных.
-
-Возможные значения:
-
--   0 — таблицы семейства `Replicated*MergeTree` выполняют слияние данных на реплике.
--   1 — таблицы семейства `Replicated*MergeTree` не выполняют слияние данных на реплике, а загружают объединённые данные из других реплик.
-
-Значение по умолчанию: 0.
-
-**См. также:** 
-
--   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md)
 
 ## transform_null_in {#transform_null_in}
 
@@ -1448,7 +1236,7 @@ Possible values:
 
 Значение по умолчанию: 0.
 
-**Пример** 
+**Пример**
 
 Рассмотрим таблицу `null_in`:
 
@@ -1499,7 +1287,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 └──────┴───────┘
 ```
 
-**См. также** 
+**См. также**
 
 -   [Обработка значения NULL в операторе IN](../../sql-reference/operators/in.md#in-null-processing)
 
@@ -1543,25 +1331,9 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Значение по умолчанию: 16.
 
-## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
-
-Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
-
-Значение по умолчанию: `Пустая строка`.
-
-## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
-Позволяет использовать данные, которых не нашлось в схеме формата [Avro](../../interfaces/formats.md#data-format-avro) или [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent). Если поле не найдено в схеме, ClickHouse подставит значение по умолчанию вместо исключения.
-
-Возможные значения:
-
--   0 — Выключена.
--   1 — Включена.
-
-Значение по умолчанию: `0`.
-
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 
-Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create/view.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
 
 Допустимые значения:
 
@@ -1576,7 +1348,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
 
-Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create/view.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
+Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
 
 Допустимые значения:
 
@@ -1588,38 +1360,5 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 **См. также:**
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
-
-## optimize_read_in_order {#optimize_read_in_order}
-
-Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) при работе с таблицами семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
-
-Возможные значения:
-
--   0 — оптимизация отключена.
--   1 — оптимизация включена.
-
-Значение по умолчанию: `1`.
-
-**См. также**
-
--   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
-
-## mutations_sync {#mutations_sync}
-
-Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
-
-Возможные значения:
-
--   0 - мутации выполняются асинхронно. 
--   1 - запрос ждет завершения всех мутаций на текущем сервере. 
--   2 - запрос ждет завершения всех мутаций на всех репликах (если они есть).
-
-Значение по умолчанию: `0`.
-
-**См. также**
-
--   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
--   [Мутации](../../sql-reference/statements/alter.md#mutations)
-
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
