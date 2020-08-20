@@ -262,14 +262,17 @@
               with the following parameters:
                 server - one of LDAP server names defined in 'ldap_servers' config section above.
                         This parameter is mandatory and cannot be empty.
-                user_template - name of a locally defined user that will be used as a template for all users retrieved from the LDAP server.
-                        Each LDAP user will inherit all parameters from 'user_template' user, except for the authentication method,
-                         which will be set to 'ldap' and the 'server' defined above will be used as a LDAP server for authentication.
-                        This parameter is optional, if not specified, 'default' user will be used as a template.
+                roles - section with a list of locally defined roles that will be granted to each user retrieved from the LDAP server.
+                        If no roles are specified, user will not be able to perform any actions after authentication.
+                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attept
+                         will fail as if the provided password was incorrect.
              Example:
                 <ldap>
                     <server>my_ldap_server</server>
-                    <user_template>my_user</user_template>
+                    <roles>
+                        <my_local_role1 />
+                        <my_local_role2 />
+                    </roles>
                 </ldap>
         -->
     </user_directories>
