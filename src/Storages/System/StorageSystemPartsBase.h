@@ -55,7 +55,7 @@ private:
 class StorageSystemPartsBase : public IStorage
 {
 public:
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -72,7 +72,7 @@ private:
 protected:
     const FormatSettings format_settings;
 
-    StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_);
+    StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 
     virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;
 };

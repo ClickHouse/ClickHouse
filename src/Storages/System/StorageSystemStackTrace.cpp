@@ -126,8 +126,8 @@ namespace
 }
 
 
-StorageSystemStackTrace::StorageSystemStackTrace(const String & name_)
-    : IStorageSystemOneBlock<StorageSystemStackTrace>(name_)
+StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
+    : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
 {
     notification_pipe.open();
 
