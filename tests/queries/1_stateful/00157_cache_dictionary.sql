@@ -2,7 +2,7 @@ CREATE DATABASE IF NOT EXISTS db_dict;
 DROP DICTIONARY IF EXISTS db_dict.cache_hits;
 
 CREATE DICTIONARY db_dict.cache_hits 
-(WatchID UInt64 DEFAULT 13, UserID UInt64 DEFAULT 42, SearchPhrase String DEFAULT 'clickhouse') 
+(WatchID UInt64, UserID UInt64, SearchPhrase String) 
 PRIMARY KEY WatchID 
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'hits' PASSWORD '' DB 'test')) 
 LIFETIME(MIN 1 MAX 10) 
