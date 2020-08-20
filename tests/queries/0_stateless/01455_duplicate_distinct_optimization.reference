@@ -97,6 +97,18 @@ FROM
         FROM numbers(100)
     )
 )
+SELECT DISTINCT a
+FROM 
+(
+    SELECT a
+    FROM 
+    (
+        SELECT DISTINCT 
+            number % 2 AS a,
+            number % 3 AS b
+        FROM numbers(100)
+    )
+)
 SELECT DISTINCT number
 FROM 
 (
