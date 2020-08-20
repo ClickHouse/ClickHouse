@@ -332,12 +332,12 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
     if (column_indexes_for_input_fields[file_column])
     {
         // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
-        if(!type->isNullable() && !in.eof())
+        if (!type->isNullable() && !in.eof())
         {
-            if(*in.position() == '\\' && in.available() >= 2)
+            if (*in.position() == '\\' && in.available() >= 2)
             {
                 ++in.position();
-                if(*in.position() == 'N')
+                if (*in.position() == 'N')
                 {
                     ++in.position();
                     throw Exception("unexpected Null value of not Nullable type", ErrorCodes::INCORRECT_DATA);
