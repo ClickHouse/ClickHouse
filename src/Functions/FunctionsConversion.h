@@ -994,6 +994,18 @@ DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
 
+template<typename Name, typename ToDataType>
+static inline bool isDateTime64(const ColumnsWithTypeAndName &arguments)
+{
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        return true;
+    else if constexpr (std::is_same_v<Name, NameToDateTime>)
+    {
+        return (arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3;
+    }
+
+    return false;
+}
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
@@ -1024,16 +1036,14 @@ public:
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
         FunctionArgumentDescriptors optional_args;
 
-        if constexpr (to_decimal || to_datetime64)
+        if constexpr (to_decimal)
         {
             mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
         }
 
-        if constexpr (std::is_same_v<Name, NameToDateTime>)
+        if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
         {
-            /// toDateTime(value, scale:Integer)
-            if ((arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3)
-                mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
@@ -1079,29 +1089,22 @@ public:
             UInt32 scale [[maybe_unused]] = DataTypeDateTime64::default_scale;
 
             // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
-            if constexpr (to_datetime64)
+            if (isDateTime64<Name, ToDataType>(arguments))
             {
                 timezone_arg_position += 1;
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
-            }
 
-            if constexpr (std::is_same_v<Name, NameToDateTime>)
-            {
-                /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
-                if ((arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3)
-                {
-                    timezone_arg_position += 1;
-                    scale = static_cast<UInt32>(arguments[1].column->get64(0));
-                    if (scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
-                        return std::make_shared<DataTypeDateTime64>(
-                            scale, extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
-                }
+                if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
+                    return std::make_shared<DataTypeDateTime64>(scale,
+                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
-            else if constexpr (to_datetime64)
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
             else
                 return std::make_shared<ToDataType>();
         }
@@ -1201,22 +1204,19 @@ private:
             return true;
         };
 
-        if constexpr (std::is_same_v<Name, NameToDateTime>)
+        if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName()))
         {
             /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
-            if ((arguments.size() == 2 && isUnsignedInteger(block.getByPosition(arguments[1]).type)) || arguments.size() == 3)
+            const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
+            UInt32 scale = extractToDecimalScale(scale_column);
+
+            if (scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
-                const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
-                UInt32 scale = extractToDecimalScale(scale_column);
+                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
+                    throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                if (scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
-                {
-                    if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
-                        throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
-                                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-                    return;
-                }
+                return;
             }
         }
 
