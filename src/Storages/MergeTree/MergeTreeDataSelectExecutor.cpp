@@ -23,6 +23,7 @@
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
 // https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
+#if 0
 #if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
 namespace std
 {
@@ -39,6 +40,7 @@ namespace std
         static constexpr __uint128_t max () { return __uint128_t(0) - 1; } // used in boost 1.68.0+
     };
 }
+#endif
 #endif
 
 #include <DataStreams/CreatingSetsBlockInputStream.h>
