@@ -124,11 +124,11 @@ initdb()
         CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR
     fi
 
-    if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
+    if ! getent passwd ${CLICKHOUSE_USER} >/dev/null; then
         echo "Can't chown to non-existing user ${CLICKHOUSE_USER}"
         return
     fi
-    if ! getent passwd ${CLICKHOUSE_GROUP} >/dev/null; then
+    if ! getent group ${CLICKHOUSE_GROUP} >/dev/null; then
         echo "Can't chown to non-existing group ${CLICKHOUSE_GROUP}"
         return
     fi
