@@ -1,5 +1,7 @@
 #include <Access/LDAPAccessStorage.h>
+#include <Access/AccessControlManager.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
@@ -20,39 +22,42 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_)
 }
 
 
-void LDAPAccessStorage::setConfiguration(IAccessStorage * top_enclosing_storage_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
+void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
+    // TODO: switch to passing config as a ConfigurationView and remove this extra prefix once a version of Poco with proper implementation is available.
     const String prefix_str = (prefix.empty() ? "" : prefix + ".");
 
     std::scoped_lock lock(mutex);
 
     const bool has_server = config.has(prefix_str + "server");
-    const bool has_user_template = config.has(prefix_str + "user_template");
+    const bool has_roles = config.has(prefix_str + "roles");
 
     if (!has_server)
         throw Exception("Missing 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
     const auto ldap_server_cfg = config.getString(prefix_str + "server");
-    String user_template_cfg;
-
     if (ldap_server_cfg.empty())
         throw Exception("Empty 'server' field for LDAP user directory.", ErrorCodes::BAD_ARGUMENTS);
 
-    if (has_user_template)
-        user_template_cfg = config.getString(prefix_str + "user_template");
+    std::set<String> roles_cfg;
+    if (has_roles)
+    {
+        Poco::Util::AbstractConfiguration::Keys role_names;
+        config.keys(prefix_str + "roles", role_names);
 
-    if (user_template_cfg.empty())
-        user_template_cfg = "default";
+        // Currently, we only extract names of roles from the section names and assign them directly and unconditionally.
+        roles_cfg.insert(role_names.begin(), role_names.end());
+    }
 
     ldap_server = ldap_server_cfg;
-    user_template = user_template_cfg;
-    top_enclosing_storage = top_enclosing_storage_;
+    roles.swap(roles_cfg);
+    access_control_manager = access_control_manager_;
 }
 
 
 bool LDAPAccessStorage::isConfiguredNoLock() const
 {
-    return !ldap_server.empty() && !user_template.empty() && top_enclosing_storage;
+    return !ldap_server.empty() &&/* !roles.empty() &&*/ access_control_manager;
 }
 
 
@@ -74,13 +79,6 @@ std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & 
     {
         std::scoped_lock lock(mutex);
 
-        // Detect and avoid loops/duplicate creations.
-        if (helper_lookup_in_progress)
-            return {};
-
-        helper_lookup_in_progress = true;
-        SCOPE_EXIT({ helper_lookup_in_progress = false; });
-
         // Return the id immediately if we already have it.
         const auto id = memory_storage.find(type, name);
         if (id.has_value())
@@ -89,31 +87,38 @@ std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & 
         if (!isConfiguredNoLock())
             return {};
 
-        // Stop if entity exists anywhere else, to avoid duplicates.
-        if (top_enclosing_storage->find(type, name))
-            return {};
+        // Stop if entity exists anywhere else, to avoid generating duplicates.
+        auto * this_base = dynamic_cast<const IAccessStorage *>(this);
+        const auto storages = access_control_manager->getStoragesPtr();
+        for (const auto & storage : *storages)
+        {
+            if (storage.get() != this_base && storage->find(type, name))
+                return {};
+        }
 
         // Entity doesn't exist. We are going to create one.
-
-        // Retrieve the template first.
-        std::shared_ptr<const User> user_tmp;
-        try
-        {
-            user_tmp = top_enclosing_storage->read<User>(user_template);
-            if (!user_tmp)
-                throw Exception("Retrieved user is empty", IAccessEntity::TypeInfo::get(IAccessEntity::Type::USER).not_found_error_code);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger(), "Unable to retrieve user template '" + user_template + "' from access storage '" + top_enclosing_storage->getStorageName() + "'");
-            return {};
-        }
-
-        // Build the new entity based on the existing template.
-        const auto user = std::make_shared<User>(*user_tmp);
+        const auto user = std::make_shared<User>();
         user->setName(name);
         user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
         user->authentication.setServerName(ldap_server);
+
+        for (const auto& role_name : roles) {
+            std::optional<UUID> role_id;
+
+            try
+            {
+                role_id = access_control_manager->find<Role>(role_name);
+                if (!role_id)
+                    throw Exception("Retrieved role info is empty", IAccessEntity::TypeInfo::get(IAccessEntity::Type::ROLE).not_found_error_code);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger(), "Unable to retrieve role '" + role_name + "' info from access storage '" + access_control_manager->getStorageName() + "'");
+                return {};
+            }
+
+            user->granted_roles.grant(role_id.value());
+        }
 
         return memory_storage.insert(user);
     }

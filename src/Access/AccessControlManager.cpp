@@ -157,7 +157,6 @@ void AccessControlManager::addUsersConfigStorage(const Poco::Util::AbstractConfi
     addUsersConfigStorage(UsersConfigAccessStorage::STORAGE_TYPE, users_config_);
 }
 
-
 void AccessControlManager::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_)
 {
     auto check_setting_name_function = [this](const std::string_view & setting_name) { checkSettingNameIsAllowed(setting_name); };

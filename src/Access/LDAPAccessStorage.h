@@ -3,6 +3,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Core/Types.h>
 #include <mutex>
+#include <set>
 
 
 namespace Poco
@@ -16,6 +17,8 @@ namespace Poco
 
 namespace DB
 {
+class AccessControlManager;
+
 /// Implementation of IAccessStorage which allows attaching users from a remote LDAP server.
 /// Currently, any user name will be treated as a name of an existing remote user,
 /// a user info entity will be created, with LDAP_SERVER authentication type.
@@ -27,7 +30,7 @@ public:
     explicit LDAPAccessStorage(const String & storage_name_ = STORAGE_TYPE);
     virtual ~LDAPAccessStorage() override = default;
 
-    void setConfiguration(IAccessStorage * top_enclosing_storage_, const Poco::Util::AbstractConfiguration & config, const String & prefix = "");
+    void setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix = "");
 
 public: // IAccessStorage implementations.
     virtual const char * getStorageType() const override;
@@ -53,9 +56,8 @@ private:
 
     mutable std::recursive_mutex mutex;
     String ldap_server;
-    String user_template;
-    IAccessStorage * top_enclosing_storage = nullptr;
-    mutable bool helper_lookup_in_progress = false;
+    std::set<String> roles;
+    AccessControlManager * access_control_manager = nullptr;
     mutable MemoryAccessStorage memory_storage;
 };
 }
