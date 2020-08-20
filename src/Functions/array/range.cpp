@@ -145,7 +145,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
@@ -200,7 +206,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_data[row_idx]; st < ed; st += step)
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step)
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
@@ -255,7 +267,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
@@ -313,7 +331,13 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
+            {
                 out_data[offset++] = st;
+
+                if (st > st + step_data[row_idx])
+                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
 
             out_offsets[row_idx] = offset;
         }
