@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace ActionLocks
@@ -138,7 +139,6 @@ void StorageMergeTree::shutdown()
         mutation_wait_event.notify_all();
     }
 
-
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
@@ -147,7 +147,6 @@ void StorageMergeTree::shutdown()
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
-
 
     try
     {
@@ -220,7 +219,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, cons
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.merges_blocker.cancel();
+        auto merge_blocker = stopMergesAndWait();
 
         /// NOTE: It's assumed that this method is called under lockForAlter.
 
@@ -1140,12 +1139,38 @@ Pipes StorageMergeTree::alterPartition(
     return { };
 }
 
+
+ActionLock StorageMergeTree::stopMergesAndWait()
+{
+    /// Asks to complete merges and does not allow them to start.
+    /// This protects against "revival" of data for a removed partition after completion of merge.
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
+
+    {
+        std::unique_lock lock(currently_processing_in_background_mutex);
+        while (!currently_merging_mutating_parts.empty())
+        {
+            LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now)",
+                currently_merging_mutating_parts.size());
+
+            if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+                lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+            {
+                throw Exception("Timeout while waiting for already running merges", ErrorCodes::TIMEOUT_EXCEEDED);
+            }
+        }
+    }
+
+    return merge_blocker;
+}
+
+
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
 {
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.merges_blocker.cancel();
+        auto merge_blocker = stopMergesAndWait();
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
         String partition_id = getPartitionIDFromQuery(partition, context);
