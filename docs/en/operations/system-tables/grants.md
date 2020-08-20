@@ -3,132 +3,22 @@
 Privileges granted to ClickHouse user accounts.
 
 Columns:
--    `user_name` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — User name.
+-    `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.
 
--    `role_name` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Role assigned to user account.
+-    `role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Role assigned to user account.
 
--    `access_type` (Enum8('SHOW DATABASES' = 0, 
-'SHOW TABLES' = 1, 
-'SHOW COLUMNS' = 2, 
-'SHOW DICTIONARIES' = 3, 
-'SHOW' = 4,
-'SELECT' = 5,
-'INSERT' = 6, 
-'ALTER UPDATE' = 7, 
-'ALTER DELETE' = 8, 
-'ALTER ADD COLUMN' = 9, 
-'ALTER MODIFY COLUMN' = 10, 
-'ALTER DROP COLUMN' = 11, 
-'ALTER COMMENT COLUMN' = 12, 
-'ALTER CLEAR COLUMN'= 13, 
-'ALTER RENAME COLUMN' = 14, 
-'ALTER COLUMN' = 15, 
-'ALTER ORDER BY' = 16, 
-'ALTER ADD INDEX' = 17, 
-'ALTER DROP INDEX' = 18, 
-'ALTER MATERIALIZE INDEX' = 19, '
-ALTER CLEAR INDEX' = 20, 
-'ALTER INDEX' = 21, 
-'ALTER ADD CONSTRAINT' = 22, 
-'ALTER DROP CONSTRAINT' = 23, 
-'ALTER  CONSTRAINT' = 24, 
-'ALTER TTL' = 25, 
-'ALTER MATERIALIZE TTL' = 26, 
-'ALTER SETTINGS' = 27, 
-'ALTER MOVE PARTITION' = 28, 
-'ALTER FETCH PARTITION' = 29, 
-'ALTER FREEZE PARTITION' = 30, 
-'ALTER TABLE' = 31, 
-'ALTER VIEW REFRESH' = 32, 
-'ALTER VIEW MODIFY QUERY' = 33, 
-'ALTER VIEW' = 34, 
-'ALTER' = 35, 
-'CREATE DATABASE' = 36, 
-'CREATE TABLE' = 37, 
-'CREATE VIEW' = 38, 
-'CREATE DICTIONARY' = 39, 
-'CREATE TEMPORARY TABLE' = 40, 
-'CREATE' = 41, 
-'DROP DATABASE' = 42, 
-'DROP TABLE' = 43, 
-'DROP VIEW' = 44, 
-'DROP DICTIONARY' = 45, 
-'DROP' = 46, 
-'TRUNCATE' = 47, 
-'OPTIMIZE' = 48, 
-'KILL QUERY' = 49, 
-'CREATE USER' = 50, 
-'ALTER USER' = 51, 
-'DROP USER' = 52, 
-'CREATE ROLE' = 53, 
-'ALTER ROLE' = 54, 
-'DROP ROLE' = 55, 
-'ROLE ADMIN' = 56, 
-'CREATE ROW POLICY' = 57, 
-'ALTER ROW POLICY' = 58, 
-'DROP ROW POLICY' = 59, 
-'CREATE QUOTA' = 60, 
-'ALTER QUOTA' = 61, 
-'DROP QUOTA' = 62, 
-'CREATE SETTINGS PROFILE' = 63, 
-'ALTER SETTINGS PROFILE' = 64, 
-'DROP SETTINGS PROFILE' = 65, 
-'SHOW USERS' = 66, 
-'SHOW ROLES' = 67, 
-'SHOW ROW POLICIES' = 68, 
-'SHOW QUOTAS' = 69, 
-'SHOW SETTINGS PROFILES' = 70, 
-'SHOW ACCESS' = 71, 
-'ACCESS MANAGEMENT' = 72, 
-'SYSTEM SHUTDOWN' = 73, 
-'SYSTEM DROP DNS CACHE' = 74, 
-'SYSTEM DROP MARK CACHE' = 75, 
-'SYSTEM DROP UNCOMPRESSED CACHE' = 76, 
-'SYSTEM DROP COMPILED EXPRESSION CACHE' = 77, 
-'SYSTEM DROP CACHE' = 78, 
-'SYSTEM RELOAD CONFIG' = 79, 
-'SYSTEM RELOAD DICTIONARY' = 80, 
-'SYSTEM RELOAD EMBEDDED DICTIONARIES' = 81, 
-'SYSTEMRELOAD' = 82, 
-'SYSTEM MERGES' = 83, 
-'SYSTEM TTL MERGES' = 84, 
-'SYSTEM FETCHES' = 85, 
-'SYSTEM MOVES' = 86, 
-'SYSTEM DISTRIBUTED SENDS' = 87, 
-'SYSTEM REPLICATED SENDS' = 88, 
-'SYSTEM SENDS' = 89, 
-'SYSTEM REPLICATION QUEUES' = 90, 
-'SYSTEM SYNC REPLICA' = 91, 
-'SYSTEM RESTART REPLICA' = 92, 
-'SYSTEM FLUSH DISTRIBUTED' = 93, 
-'SYSTEM FLUSH LOGS' = 94, 
-'SYSTEM FLUSH' = 95, 
-'SYSTEM' = 96, 
-'dictGet' = 97, 
-'addressToLine' = 98, 
-'addressToSymbol' = 99, 
-'demangle' = 100, 
-'INTROSPECTION' = 101, 
-'FILE' = 102, 
-'URL' = 103, 
-'REMOTE' = 104, 
-'MYSQL' = 105, 
-'ODBC' = 106, 
-'JDBC' = 107, 
-'HDFS' = 108, 
-'S3' = 109, 
-'SOURCES' = 110, 
-'ALL' = 111, 
-'NONE' = 112)) — Access parameters for ClickHouse user account.
+-    `access_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Access parameters for ClickHouse user account.
 
--    `database` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Name of a remote database.
+-    `database` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a database.
 
--    `table` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Name of a remote table.
+-    `table` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a table.
 
--    `column` ([Nullable](../sql-reference/data-types/nullable.md)([String](../sql-reference/data-types/string.md))) — Name of a column to which access is granted.
+-    `column` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a column to which access is granted.
 
--    `is_partial_revoke` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether some privileges have been revoked.
+-    `is_partial_revoke` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Logical value. It shows whether some privileges have been revoked. Possible values:
+- `0` — The row describes a partial revoke.
+- `1` — The row describes a grant.
 
--    `grant_option` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — The user is granted permission to execute the GRANT query. Users can grant privileges of the same scope they have and less.
+-    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Permission is granted `WITH GRANT OPTION`, see [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/grants) <!--hide-->
