@@ -994,14 +994,22 @@ DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
 
+struct NameParseDateTimeBestEffort;
+struct NameParseDateTimeBestEffortOrZero;
+struct NameParseDateTimeBestEffortOrNull;
+
 template<typename Name, typename ToDataType>
-static inline bool isDateTime64(const ColumnsWithTypeAndName &arguments)
+static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments, const ColumnNumbers & arguments_index = {})
 {
     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         return true;
-    else if constexpr (std::is_same_v<Name, NameToDateTime>)
+    else if constexpr (std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
+        || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
     {
-        return (arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3;
+        if (arguments_index.empty())
+            return (arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3;
+        else
+            return (arguments_index.size() == 2 && isUnsignedInteger(arguments[arguments_index[1]].type)) || arguments_index.size() == 3;
     }
 
     return false;
@@ -1204,7 +1212,7 @@ private:
             return true;
         };
 
-        if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName()))
+        if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
         {
             /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
             const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
@@ -1273,7 +1281,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypePtr res;
-        if constexpr (to_datetime64)
+
+        if (isDateTime64<Name, ToDataType>(arguments))
         {
             validateFunctionArgumentTypes(*this, arguments,
                 FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
@@ -1283,11 +1292,12 @@ public:
                     {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
                 });
 
-            UInt64 scale = DataTypeDateTime64::default_scale;
+            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
-            res = std::make_shared<DataTypeDateTime64>(scale, timezone);
+
+            res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -1334,6 +1344,8 @@ public:
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
@@ -1358,42 +1370,53 @@ public:
         return res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    template <typename ConvertToDataType>
+    bool executeInternal(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, UInt32 scale = 0) const
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
-        bool ok = true;
-        if constexpr (to_decimal || to_datetime64)
+        if (checkAndGetDataType<DataTypeString>(from_type))
         {
-            const UInt32 scale = assert_cast<const ToDataType &>(*removeNullable(block.getByPosition(result).type)).getScale();
-
-            if (checkAndGetDataType<DataTypeString>(from_type))
-            {
-                ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
-                    block, arguments, result, input_rows_count, scale);
-            }
-            else if (checkAndGetDataType<DataTypeFixedString>(from_type))
-            {
-                ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
-                    block, arguments, result, input_rows_count, scale);
-            }
-            else
-                ok = false;
+            ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
+                block, arguments, result, input_rows_count, scale);
+            return true;
         }
+        else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+        {
+            ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
+                block, arguments, result, input_rows_count, scale);
+            return true;
+        }
+
+        return false;
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    {
+        bool ok = true;
+
+        if constexpr (to_decimal)
+            ok = executeInternal<ToDataType>(block, arguments, result, input_rows_count,
+                assert_cast<const ToDataType &>(*removeNullable(block.getByPosition(result).type)).getScale());
         else
         {
-            if (checkAndGetDataType<DataTypeString>(from_type))
+            if (isDateTime64<Name, ToDataType>(block.getColumnsWithTypeAndName(), arguments))
             {
-                ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
-                    block, arguments, result, input_rows_count);
-            }
-            else if (checkAndGetDataType<DataTypeFixedString>(from_type))
-            {
-                ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
-                    block, arguments, result, input_rows_count);
+                UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+                if (arguments.size() > 1)
+                    scale = extractToDecimalScale(block.getColumnsWithTypeAndName()[arguments[1]]);
+
+                if (scale == 0)
+                    ok = executeInternal<DataTypeDateTime>(block, arguments, result, input_rows_count);
+                else
+                {
+                    ok = executeInternal<DataTypeDateTime64>(block, arguments, result, input_rows_count, static_cast<UInt32>(scale));
+                }
             }
             else
-                ok = false;
+            {
+                ok = executeInternal<ToDataType>(block, arguments, result, input_rows_count);
+            }
         }
 
         if (!ok)
@@ -1757,6 +1780,9 @@ struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTime
 struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
 struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
+struct NameParseDateTime32BestEffort { static constexpr auto name = "parseDateTime32BestEffort"; };
+struct NameParseDateTime32BestEffortOrZero { static constexpr auto name = "parseDateTime32BestEffortOrZero"; };
+struct NameParseDateTime32BestEffortOrNull { static constexpr auto name = "parseDateTime32BestEffortOrNull"; };
 struct NameParseDateTime64BestEffort { static constexpr auto name = "parseDateTime64BestEffort"; };
 struct NameParseDateTime64BestEffortOrZero { static constexpr auto name = "parseDateTime64BestEffortOrZero"; };
 struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parseDateTime64BestEffortOrNull"; };
