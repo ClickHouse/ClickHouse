@@ -47,16 +47,10 @@ public:
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        const IDataType & type = *block.getByPosition(arguments[0]).type;
+        const IDataType & type = *block.getByPosition(result).type;
         block.getByPosition(result).column = type.createColumnConst(input_rows_count, type.getDefault());
-    }
-
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
-    {
-        const IDataType & type = *block.getByPosition(arguments[0]).type;
-        return type.createColumnConst(1, type.getDefault());
     }
 };
 
