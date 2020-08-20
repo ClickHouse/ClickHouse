@@ -705,7 +705,7 @@ Ama diğer şeyler eşit olmak, çapraz platform veya taşınabilir kod tercih e
 
 **3.** Derleyici: `gcc`. Şu anda (Ağustos 2020), kod sürüm 9.3 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 8`.)
 
-Standart kütüphane kullanılır (`libstdc++` veya `libc++`).
+Standart kütüphane kullanılır (`libc++`).
 
 **4.**OS: Linux UB .untu, daha eski değil.
 
