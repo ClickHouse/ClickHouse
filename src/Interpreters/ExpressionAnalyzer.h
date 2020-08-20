@@ -34,6 +34,9 @@ struct ASTTablesInSelectQueryElement;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
+class ArrayJoinAction;
+using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
+
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
@@ -43,9 +46,12 @@ struct ExpressionAnalyzerData
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
 
+    /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
+    NamesAndTypesList columns_after_array_join;
+    /// Columns after Columns after ARRAY JOIN and JOIN. If there is no JOIN, it's columns_after_array_join.
+    NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
-    NamesAndTypesList array_join_columns;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
@@ -128,12 +134,10 @@ protected:
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
-    NamesAndTypesList sourceWithJoinedColumns() const;
-
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global);
 
-    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
+    ArrayJoinActionPtr addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
@@ -175,6 +179,8 @@ struct ExpressionAnalysisResult
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
 
+    ExpressionActionsPtr before_array_join;
+    ArrayJoinActionPtr array_join;
     ExpressionActionsPtr before_join;
     ExpressionActionsPtr join;
     ExpressionActionsPtr before_where;
@@ -305,7 +311,7 @@ private:
       */
 
     /// Before aggregation:
-    bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
+    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
