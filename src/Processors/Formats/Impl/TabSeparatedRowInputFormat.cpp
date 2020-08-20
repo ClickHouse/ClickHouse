@@ -331,22 +331,22 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
 {
     if (column_indexes_for_input_fields[file_column])
     {
-        // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case 
-        if(!type->isNullable() && !in.eof()) 
-        { 
-            if(*in.position() == '\\' && in.available() >= 2) 
-            { 
-                ++in.position(); 
-                if(*in.position() == 'N') 
-                { 
-                    ++in.position(); 
-                    throw Exception("unexpected Null value of not Nullable type", ErrorCodes::INCORRECT_DATA); 
-                } 
-                else 
-                { 
-                    --in.position(); 
-                } 
-            } 
+        // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
+        if(!type->isNullable() && !in.eof())
+        {
+            if(*in.position() == '\\' && in.available() >= 2)
+            {
+                ++in.position();
+                if(*in.position() == 'N')
+                {
+                    ++in.position();
+                    throw Exception("unexpected Null value of not Nullable type", ErrorCodes::INCORRECT_DATA);
+                }
+                else
+                {
+                    --in.position();
+                }
+            }
         }
         const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
         readField(column, type, is_last_file_column);
