@@ -90,20 +90,24 @@ struct Impl
                     /// By the way, there is padding in columns and pointer dereference is Ok.
                     || (token.type == TokenType::BareWord && *token.end != '('))
                 {
-                    /// Identifier is complex if it contains whitespace or more than two digits.
+                    /// Identifier is complex if it contains whitespace or more than two digits
+                    /// or it's at least 36 bytes long (UUID for example).
                     size_t num_digits = 0;
 
                     const char * pos = token.begin;
-                    for (; pos != token.end; ++pos)
+                    if (token.size() < 36)
                     {
-                        if (isWhitespaceASCII(*pos))
-                            break;
-
-                        if (isNumericASCII(*pos))
+                        for (; pos != token.end; ++pos)
                         {
-                            ++num_digits;
-                            if (num_digits > 2)
+                            if (isWhitespaceASCII(*pos))
                                 break;
+
+                            if (isNumericASCII(*pos))
+                            {
+                                ++num_digits;
+                                if (num_digits > 2)
+                                    break;
+                            }
                         }
                     }
 
