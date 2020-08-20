@@ -604,7 +604,6 @@ if (USE_INTERNAL_CCTZ)
         file(APPEND ${SYSTEM_STORAGE_TZ_FILE}  "const char * auto_time_zones[] {\n" )
 
         foreach(TIMEZONE ${TIMEZONES})
-
             file(APPEND ${SYSTEM_STORAGE_TZ_FILE}  "    \"${TIMEZONE}"\",\n)
             string(REPLACE "/" "_" TIMEZONE_ID ${TIMEZONE})
             set(TZ_OBJ ${TIMEZONE_ID}.o)
@@ -618,8 +617,9 @@ if (USE_INTERNAL_CCTZ)
 
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
         endforeach(TIMEZONE)
+
         file(APPEND ${SYSTEM_STORAGE_TZ_FILE}  "    nullptr};\n")
-        
+
         add_library(tzdata STATIC ${TZ_OBJS})
         set_target_properties(tzdata PROPERTIES LINKER_LANGUAGE C)
         # whole-archive prevents symbols from being discarded for unknown reason
