@@ -26,11 +26,13 @@ public:
 
     virtual antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
-
-    virtual antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext *context) = 0;
-
-    virtual antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *context) = 0;
 
@@ -56,13 +58,15 @@ public:
 
     virtual antlrcpp::Any visitEngineExpr(ClickHouseParser::EngineExprContext *context) = 0;
 
-    virtual antlrcpp::Any visitTableElementExprColumnWithType(ClickHouseParser::TableElementExprColumnWithTypeContext *context) = 0;
+    virtual antlrcpp::Any visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext *context) = 0;
 
-    virtual antlrcpp::Any visitTableElementExprColumnWithDefault(ClickHouseParser::TableElementExprColumnWithDefaultContext *context) = 0;
+    virtual antlrcpp::Any visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *context) = 0;
 
     virtual antlrcpp::Any visitTableColumnPropertyExpr(ClickHouseParser::TableColumnPropertyExprContext *context) = 0;
 
     virtual antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext *context) = 0;
+
+    virtual antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *context) = 0;
 

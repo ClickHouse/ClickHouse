@@ -11,48 +11,41 @@ queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
 
 query
-    : checkStmt
+    : alterStmt     // DDL
+    | checkStmt
+    | createStmt    // DDL
     | describeStmt
-    | distributedStmt
+    | dropStmt      // DDL
     | insertStmt
+    | optimizeStmt  // DDL
     | selectUnionStmt
     | setStmt
-    | showTablesStmt
-    | showCreateTableStmt
+    | showStmt
     | useStmt
+    ;
+
+// ALTER statement
+
+alterStmt
+    : ALTER TABLE tableIdentifier alterTableClause  # AlterTableStmt
+    ;
+
+alterTableClause
+    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER identifier)?  # AlterTableAddClause
+    | DROP COLUMN (IF EXISTS)? identifier                              # AlterTableDropClause
     ;
 
 // CHECK statement
 
 checkStmt: CHECK TABLE tableIdentifier;
 
-// DESCRIBE statement
-
-describeStmt: (DESCRIBE | DESC) TABLE tableIdentifier;
-
-// DDL statement
-
-distributedStmt:
-    ( createDatabaseStmt
-    | createTableStmt
-    | dropStmt
-    | optimizeStmt
-    )
-    (ON CLUSTER identifier)?
-    ;
-
 // CREATE statement
 
-createDatabaseStmt: CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?;
-createTableStmt: CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause;
+createStmt
+    : CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?        # createDatabaseStmt
+    | CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause  # createTableStmt
+    ;
 
-/* FIXME: if not a backward-compatibility it could look like:
- *
- *    createTableStmt: CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause engineClause;
- *    schemaClause: LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN | AS tableExpr;
- *    engineClause: … ; // same
- *
- */
 schemaClause
     : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN engineClause?  # SchemaDescriptionClause
     | engineClause? AS selectUnionStmt                                        # SchemaAsSubqueryClause
@@ -75,13 +68,20 @@ ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 
 engineExpr: ENGINE EQ_SINGLE? identifier (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
-    : identifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?  # TableElementExprColumnWithType
-    | identifier columnTypeExpr? tableColumnPropertyExpr /*TODO: codexExpr?*/ (TTL columnExpr)?  # TableElementExprColumnWithDefault
+    : tableColumnDfnt  # TableElementExprColumn
     // TODO: INDEX
     // TODO: CONSTRAINT
     ;
+tableColumnDfnt
+    : identifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?
+    | identifier columnTypeExpr? tableColumnPropertyExpr /*TODO: codexExpr?*/ (TTL columnExpr)?
+    ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
+
+// DESCRIBE statement
+
+describeStmt: (DESCRIBE | DESC) TABLE tableIdentifier;
 
 // DROP statement
 
@@ -139,7 +139,7 @@ groupByClause: GROUP BY columnExprList (WITH TOTALS)?;
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
-limitClause: LIMIT limitExpr;
+limitClause: LIMIT limitExpr (WITH TIES)?;
 settingsClause: SETTINGS settingExprList;
 
 joinExpr
@@ -176,12 +176,16 @@ setStmt: SET settingExprList;
 
 // SHOW statements
 
-showCreateTableStmt: SHOW CREATE TEMPORARY? TABLE tableIdentifier;
-showTablesStmt: SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?;
+showStmt
+    : SHOW CREATE TEMPORARY? TABLE tableIdentifier                                                                # showCreateTableStmt
+    | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
+    ;
 
 // USE statement
 
 useStmt: USE databaseIdentifier;
+
+
 
 // Values
 
@@ -270,13 +274,13 @@ literal
     | identifier LPAREN RPAREN
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
-    : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CHECK | CLUSTER | COLLATE
-    | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT | DROP | ELSE | END
-    | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL
-    | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON
-    | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS
-    | SHOW | TABLE | TABLES | TEMPORARY | THEN | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VOLUME | WEEK | WHEN | WITH
-    | YEAR
+    : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CHECK | CLUSTER
+    | COLLATE | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT | DROP
+    | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER
+    | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT
+    | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND
+    | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES
+    | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

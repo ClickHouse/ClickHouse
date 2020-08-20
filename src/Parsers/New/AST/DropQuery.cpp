@@ -42,12 +42,12 @@ ASTPtr DropQuery::convertToOld() const
     switch(query_type)
     {
         case QueryType::DATABASE:
-            query->database = children[IDENTIFIER]->as<DatabaseIdentifier>()->getName();
+            query->database = children[NAME]->as<DatabaseIdentifier>()->getName();
             break;
         case QueryType::TABLE:
         {
-            query->table = children[IDENTIFIER]->as<TableIdentifier>()->getName();
-            if (auto database = children[IDENTIFIER]->as<TableIdentifier>()->getDatabase())
+            query->table = children[NAME]->as<TableIdentifier>()->getName();
+            if (auto database = children[NAME]->as<TableIdentifier>()->getDatabase())
                 query->database = database->getName();
             break;
         }

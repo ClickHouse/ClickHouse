@@ -17,7 +17,7 @@ class DropQuery : public DDLQuery
     private:
         enum ChildIndex : UInt8
         {
-            IDENTIFIER = 0,
+            NAME = 0,
         };
 
         enum class QueryType

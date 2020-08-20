@@ -1,0 +1,38 @@
+#pragma once
+
+#include <Parsers/New/AST/DDLQuery.h>
+
+
+namespace DB::AST
+{
+
+class AlterTableClause : public INode
+{
+    public:
+        static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createDrop(bool if_exists, PtrTo<Identifier> identifier);
+
+    private:
+        enum class ClauseType
+        {
+            ADD,
+            DROP,
+        };
+
+        const ClauseType clause_type;
+        union
+        {
+            bool if_exists;
+            bool if_not_exists;
+        };
+
+        AlterTableClause(ClauseType type, PtrList exprs);
+};
+
+class AlterTableQuery : public DDLQuery
+{
+    public:
+        AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<AlterTableClause> clause);
+};
+
+}

@@ -21,7 +21,7 @@ ASTPtr CreateDatabaseQuery::convertToOld() const
 
     query->if_not_exists = if_not_exists;
     query->database = children[NAME]->as<DatabaseIdentifier>()->getName();
-    if (cluster) query->cluster = cluster->getName();
+    // TODO: if (cluster) query->cluster = cluster->getName();
     if (children[ENGINE]) query->set(query->storage, children[ENGINE]->convertToOld());
     // TODO: query->uuid
 

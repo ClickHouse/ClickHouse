@@ -37,13 +37,14 @@ class TableElementExpr : public INode
         };
         enum ChildIndex: UInt8
         {
+            // COLUMN
             NAME = 0,
             TYPE = 1,
             PROPERTY = 2,
             TTL = 3,
         };
 
-        ExprType expr_type;
+        const ExprType expr_type;
 
         TableElementExpr(ExprType type, PtrList exprs);
 };

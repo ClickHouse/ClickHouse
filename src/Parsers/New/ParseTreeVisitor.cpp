@@ -1,6 +1,6 @@
-#include <memory>
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/New/AST/AlterTableQuery.h>
 #include <Parsers/New/AST/CheckQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
@@ -49,8 +49,6 @@ antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContex
 
 antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 {
-    if (ctx->distributedStmt())
-        return std::static_pointer_cast<Query>(ctx->distributedStmt()->accept(this).as<PtrTo<DDLQuery>>());
     if (ctx->selectUnionStmt())
         return std::static_pointer_cast<Query>(ctx->selectUnionStmt()->accept(this).as<PtrTo<SelectUnionQuery>>());
     if (ctx->setStmt())
@@ -58,29 +56,14 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     __builtin_unreachable();
 }
 
+antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx)
+{
+    return std::make_shared<AlterTableQuery>(ctx->tableIdentifier()->accept(this), ctx->alterTableClause()->accept(this));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx)
 {
     return std::make_shared<CheckQuery>(ctx->tableIdentifier()->accept(this));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx)
-{
-    return std::make_shared<DescribeQuery>(ctx->tableIdentifier()->accept(this));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx)
-{
-    PtrTo<DDLQuery> query;
-
-    if (ctx->createDatabaseStmt())
-        query = ctx->createDatabaseStmt()->accept(this).as<PtrTo<CreateDatabaseQuery>>();
-    else if (ctx->dropStmt())
-        query = ctx->dropStmt()->accept(this).as<PtrTo<DropQuery>>();
-
-    if (ctx->CLUSTER())
-        query->setOnCluster(ctx->identifier()->accept(this));
-
-    return query;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx)
@@ -97,6 +80,11 @@ antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTab
         !!ctx->TEMPORARY(), !!ctx->IF(), ctx->tableIdentifier()->accept(this), ctx->schemaClause()->accept(this));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx)
+{
+    return std::make_shared<DescribeQuery>(ctx->tableIdentifier()->accept(this));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
 {
     return DropQuery::createDropDatabase(!!ctx->EXISTS(), ctx->databaseIdentifier()->accept(this));
@@ -107,11 +95,6 @@ antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableSt
     return DropQuery::createDropTable(!!ctx->EXISTS(), !!ctx->TEMPORARY(), ctx->tableIdentifier()->accept(this));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx)
-{
-    return OptimizeQuery(ctx->tableIdentifier()->accept(this), ctx->partitionClause()->accept(this), !!ctx->FINAL(), !!ctx->DEDUPLICATE());
-}
-
 antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
 {
     auto list = std::make_shared<ColumnNameList>();
@@ -119,6 +102,11 @@ antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtCont
     for (auto * name : ctx->identifier()) list->append(name->accept(this));
 
     return std::make_shared<InsertQuery>(ctx->tableIdentifier()->accept(this), list, ctx->valuesClause()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx)
+{
+    return OptimizeQuery(ctx->tableIdentifier()->accept(this), ctx->partitionClause()->accept(this), !!ctx->FINAL(), !!ctx->DEDUPLICATE());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx)

@@ -48,26 +48,24 @@ antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyExpr(ClickHouseParser::T
     return std::make_shared<TableColumnPropertyExpr>(type, ctx->columnExpr()->accept(this));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitTableElementExprColumnWithDefault(ClickHouseParser::TableElementExprColumnWithDefaultContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext *ctx)
 {
+    if (ctx->tableColumnDfnt())
+        return ctx->tableColumnDfnt()->accept(this);
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColumnDfntContext *ctx)
+{
+    PtrTo<TableColumnPropertyExpr> property;
     PtrTo<ColumnTypeExpr> type;
     PtrTo<ColumnExpr> ttl;
 
+    if (ctx->tableColumnPropertyExpr()) property = ctx->tableColumnPropertyExpr()->accept(this);
     if (ctx->columnTypeExpr()) type = ctx->columnTypeExpr()->accept(this);
     if (ctx->TTL()) ttl = ctx->columnExpr()->accept(this);
 
-    return TableElementExpr::createColumn(ctx->identifier()->accept(this), type, ctx->tableColumnPropertyExpr()->accept(this), ttl);
-}
-
-antlrcpp::Any ParseTreeVisitor::visitTableElementExprColumnWithType(ClickHouseParser::TableElementExprColumnWithTypeContext *ctx)
-{
-    PtrTo<TableColumnPropertyExpr> property;
-    PtrTo<ColumnExpr> ttl;
-
-    if (ctx->tableColumnPropertyExpr()) property = ctx->tableColumnPropertyExpr()->accept(this);
-    if (ctx->TTL()) ttl = ctx->columnExpr()->accept(this);
-
-    return TableElementExpr::createColumn(ctx->identifier()->accept(this), ctx->columnTypeExpr()->accept(this), property, ttl);
+    return TableElementExpr::createColumn(ctx->identifier()->accept(this), type, property, ttl);
 }
 
 }

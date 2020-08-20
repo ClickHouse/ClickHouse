@@ -7,8 +7,11 @@ INTERVAL_TYPE: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 // Keywords
 // NOTE: don't forget to add new keywords to the parser rule "keyword"!
 
+ADD: A D D;
+AFTER: A F T E R;
 ALIAS: A L I A S;
 ALL: A L L;
+ALTER: A L T E R;
 AND: A N D;
 ANTI: A N T I;
 ANY: A N Y;
@@ -24,6 +27,7 @@ CAST: C A S T;
 CHECK: C H E C K;
 CLUSTER: C L U S T E R;
 COLLATE: C O L L A T E;
+COLUMN: C O L U M N;
 CREATE: C R E A T E;
 CROSS: C R O S S;
 DATABASE: D A T A B A S E;
@@ -98,6 +102,7 @@ TABLE: T A B L E;
 TABLES: T A B L E S;
 TEMPORARY: T E M P O R A R Y;
 THEN: T H E N;
+TIES: T I E S;
 TO: T O;
 TOTALS: T O T A L S;
 TRAILING: T R A I L I N G;
