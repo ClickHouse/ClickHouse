@@ -356,7 +356,6 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
 
     std::unordered_set<String> names;
     std::unordered_set<String> implicit_distinct;
-    std::unordered_set<String> used_implicits;
 
     if (!select.distinct)
     {
@@ -383,9 +382,6 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
                     names.insert(name);
                 else
                     names.insert(alias);
-
-                if (!select.distinct)
-                    used_implicits.insert(name);
             }
         }
         else if (select.distinct && !alias.empty())
@@ -396,7 +392,7 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
     }
 
     /// SELECT a FROM (SELECT DISTINCT a, b FROM ...)
-    if (!select.distinct && used_implicits.size() != implicit_distinct.size())
+    if (!select.distinct && names.size() != implicit_distinct.size())
         return {};
 
     return names;
