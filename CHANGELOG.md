@@ -1889,3 +1889,4 @@ This release contains bug fixes for the previous release 1.1.54276:
 * Previously, a Replicated table could remain in the invalid state after a failed DROP TABLE.
 * Aliases for scalar subqueries with empty results are no longer lost.
 * Now a query that used compilation does not fail with an error if the .so file gets damaged.
+*test git pr
