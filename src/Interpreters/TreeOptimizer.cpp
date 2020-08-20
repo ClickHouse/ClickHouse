@@ -378,7 +378,7 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
 
         if (const auto * identifier = id->as<ASTIdentifier>())
         {
-            String name = identifier->shortName();
+            const String & name = identifier->shortName();
 
             if (select.distinct || implicit_distinct.count(name))
             {
