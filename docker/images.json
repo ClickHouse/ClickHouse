@@ -21,8 +21,8 @@
         "dependent": [
             "docker/test/stateless_with_coverage",
             "docker/test/coverage",
-            "test/stateless_pytest",
-            "test/stateless"
+            "docker/test/stateless_pytest",
+            "docker/test/stateless"
         ]
     },
     "docker/test/coverage": {
