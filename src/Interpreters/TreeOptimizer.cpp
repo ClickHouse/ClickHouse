@@ -319,7 +319,7 @@ void optimizeDuplicateOrderBy(ASTPtr & query, const Context & context)
     DuplicateOrderByVisitor(order_by_data).visit(query);
 }
 
-/// Return simple subselect (without UNIONs or JOINs) if any
+/// Return simple subselect (without UNIONs or JOINs or SETTINGS) if any
 const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
 {
     if (!select.tables())
@@ -346,7 +346,11 @@ const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
         subselect_union->list_of_selects->children.size() != 1)
         return nullptr;
 
-    return subselect_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    const auto & subselect = subselect_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (subselect && subselect->settings())
+        return nullptr;
+
+    return subselect;
 }
 
 std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
@@ -652,7 +656,11 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     if (settings.optimize_duplicate_order_by_and_distinct)
     {
         optimizeDuplicateOrderBy(query, context);
-        optimizeDuplicateDistinct(*select_query);
+
+        /// DISTINCT has special meaning in Distributed query with enabled distributed_group_by_no_merge
+        /// TODO: disable Distributed/remote() tables only
+        if (!settings.distributed_group_by_no_merge)
+            optimizeDuplicateDistinct(*select_query);
     }
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
