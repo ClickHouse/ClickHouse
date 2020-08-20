@@ -88,7 +88,7 @@ std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & 
             return {};
 
         // Stop if entity exists anywhere else, to avoid generating duplicates.
-        auto * this_base = dynamic_cast<const IAccessStorage *>(this);
+        const auto * this_base = dynamic_cast<const IAccessStorage *>(this);
         const auto storages = access_control_manager->getStoragesPtr();
         for (const auto & storage : *storages)
         {
@@ -102,7 +102,8 @@ std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & 
         user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
         user->authentication.setServerName(ldap_server);
 
-        for (const auto& role_name : roles) {
+        for (const auto& role_name : roles)
+        {
             std::optional<UUID> role_id;
 
             try
