@@ -1,6 +1,6 @@
 ---
 toc_priority: 0
-toc_title: 概要
+toc_title: "概要"
 ---
 
 # ClickHouseとは? {#what-is-clickhouse}
