@@ -563,6 +563,16 @@
         <flush_interval_milliseconds>60000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
+    <!--
+        OpenTelemetry log contains OpenTelemetry trace spans.
+    -->
+    <opentelemetry_log>
+        <database>system</database>
+        <table>opentelemetry_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </opentelemetry_log>
+
+
     <!-- Crash log. Stores stack traces for fatal errors.
          This table is normally empty. -->
     <crash_log>

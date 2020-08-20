@@ -199,6 +199,45 @@ StorageFile::StorageFile(CommonArguments args)
     setInMemoryMetadata(storage_metadata);
 }
 
+struct ScopedExceptionHint
+{
+    std::string hint;
+
+    // Format message with fmt::format
+    template <typename ...Fmt>
+    ScopedExceptionHint(Fmt&&... fmt)
+        : hint(fmt::format(std::forward<Fmt>(fmt)...))
+    {
+        fprintf(stderr, "hint %s created\n", hint.c_str());
+    }
+
+    ~ScopedExceptionHint()
+    {
+        fprintf(stderr, "hint %s is being destroyed\n", hint.c_str());
+        std::exception_ptr exception = std::current_exception();
+        if (exception)
+        {
+            try {
+                std::rethrow_exception(exception);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(hint);
+                fprintf(stderr, "added hint %s\n", hint.c_str());
+            }
+            catch (...)
+            {
+                fprintf(stderr, "unknown exception\n");
+                // pass?
+            }
+        }
+        else
+        {
+            fprintf(stderr, "no exception\n");
+        }
+    }
+};
+
 class StorageFileSource : public SourceWithProgress
 {
 public:
@@ -317,10 +356,28 @@ public:
                 if (!column_defaults.empty())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
 
+                ScopedExceptionHint("Reading prefix of file '{}'", current_path);
                 reader->readPrefix();
             }
 
-            if (auto res = reader->read())
+            ScopedExceptionHint("Reader->read() {}", reader->getName());
+
+            Block res;
+            try
+            {
+                res = reader->read();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Error while reading from '{}'", current_path);
+                throw;
+            }
+            catch (...)
+            {
+                throw;
+            }
+
+            if (res)
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
