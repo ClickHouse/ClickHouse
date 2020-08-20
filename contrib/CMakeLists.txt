@@ -311,3 +311,7 @@ if (USE_STATS)
     add_subdirectory (stats-cmake)
     add_subdirectory (gcem)
 endif()
+
+if (OS_FREEBSD)
+    add_subdirectory (libprocstat-cmake)
+endif()

@@ -252,6 +252,7 @@ target_link_libraries(clickhouse_common_io
         PRIVATE
             ${EXECINFO_LIBRARIES}
             cpuid
+            libprocstat
         PUBLIC
             boost::program_options
             boost::system
@@ -381,6 +382,10 @@ if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
 endif ()
+
+if (OS_FREEBSD)
+    dbms_target_link_libraries(PRIVATE libprocstat)
+endif()
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
