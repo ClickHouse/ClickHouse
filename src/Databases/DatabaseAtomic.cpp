@@ -65,6 +65,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(const Context &)
 {
+    assert(tables.empty());
     try
     {
         Poco::File(path_to_metadata_symlink).remove();
@@ -366,6 +367,8 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
             std::lock_guard lock{mutex};
             table_names = table_name_to_path;
         }
+
+        Poco::File(path_to_table_symlinks).createDirectories();
         for (const auto & table : table_names)
             tryCreateSymlink(table.first, table.second);
     }

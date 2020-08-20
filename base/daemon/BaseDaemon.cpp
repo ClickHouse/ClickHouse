@@ -459,6 +459,11 @@ BaseDaemon::~BaseDaemon()
 {
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
+    /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
+    for (int sig : handled_signals)
+    {
+        signal(sig, SIG_DFL);
+    }
     signal_pipe.close();
 }
 
@@ -713,7 +718,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     /// Setup signal handlers.
     auto add_signal_handler =
-        [](const std::vector<int> & signals, signal_function handler)
+        [this](const std::vector<int> & signals, signal_function handler)
         {
             struct sigaction sa;
             memset(&sa, 0, sizeof(sa));
@@ -737,6 +742,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
                 for (auto signal : signals)
                     if (sigaction(signal, &sa, nullptr))
                         throw Poco::Exception("Cannot set signal handler.");
+
+                std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
             }
         };
 

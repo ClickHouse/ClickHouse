@@ -28,14 +28,6 @@ endforeach()
 
 project(ClickHouse)
 
-option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
-      "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy" OFF)
-if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
-    set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
-else()
-    set(RECONFIGURE_MESSAGE_LEVEL STATUS)
-endif()
-
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
@@ -65,7 +57,7 @@ if(ENABLE_IPO)
         message(STATUS "IPO/LTO is supported, enabling")
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     else()
-        message (${RECONFIGURE_MESSAGE_LEVEL} "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+        message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
     endif()
 else()
     message(STATUS "IPO/LTO not enabled.")
@@ -141,8 +133,6 @@ option (ENABLE_TESTS "Enables tests" ON)
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies ENABLE_FASTMEMCPY." ON)
-elseif(GLIBC_COMPATIBILITY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
@@ -212,9 +202,16 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-# cmake < 3.12 doesn't supoprt 20. We'll set CMAKE_CXX_FLAGS for now
+if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
+    # to make numeric_limits<__int128> works for unbundled build
+    set (_CXX_STANDARD "-std=gnu++2a")
+else()
+    set (_CXX_STANDARD "-std=c++2a")
+endif()
+# cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++2a")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
+
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -266,8 +263,6 @@ if (COMPILER_CLANG)
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
-    elseif (ENABLE_THINLTO)
-        message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
@@ -380,7 +375,6 @@ include (cmake/find/icu.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
-include (cmake/find/termcap.cmake)
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)

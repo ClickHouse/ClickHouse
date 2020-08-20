@@ -388,13 +388,14 @@ public:
         {
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
-                if (has_data[j * 256 + k])
+                size_t idx = j * 256 + k;
+                if (has_data[idx])
                 {
                     AggregateDataPtr & place = map[k];
                     if (unlikely(!place))
                         init(place);
 
-                    func.merge(place + place_offset, reinterpret_cast<const char *>(&places[256 * j + k]), arena);
+                    func.merge(place + place_offset, reinterpret_cast<const char *>(&places[idx]), nullptr);
                 }
             }
         }

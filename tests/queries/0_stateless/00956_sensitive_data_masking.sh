@@ -2,9 +2,6 @@
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
-#export CLICKHOUSE_BINARY='../../../../build-vscode/Debug/programs/clickhouse'
-#export CLICKHOUSE_PORT_TCP=59000
-#export CLICKHOUSE_CLIENT_BINARY='../../../../cmake-build-debug/programs/clickhouse client'
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
@@ -20,8 +17,8 @@ $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM numbers(1) FORMAT Null" \
   --log_queries=1 --ignore-error --multiquery >"$tmp_file" 2>&1
 
-grep 'find_me_\[hidden\]' "$tmp_file" >/dev/null || echo 'fail 1a'
-grep 'TOPSECRET' "$tmp_file" && echo 'fail 1b'
+grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 1a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 1b'
 
 rm -f "$tmp_file" >/dev/null 2>&1
 echo 2
@@ -31,8 +28,8 @@ echo "SELECT 'find_me_TOPSECRET=TOPSECRET' FRRRROM numbers" | ${CLICKHOUSE_CURL}
 #cat $tmp_file
 
 ## can't be checked on client side!
-# grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 2a'
-grep 'TOPSECRET' "$tmp_file" && echo 'fail 2b'
+# grep -F 'find_me_[hidden]' $tmp_file >/dev/null || echo 'fail 2a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 2b'
 
 rm -f "$tmp_file" >/dev/null 2>&1
 echo 3
@@ -41,8 +38,8 @@ $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
   --log_queries=1 --ignore-error --multiquery >"$tmp_file" 2>&1
 
-grep 'find_me_\[hidden\]' "$tmp_file" >/dev/null || echo 'fail 3a'
-grep 'TOPSECRET' "$tmp_file" && echo 'fail 3b'
+grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 3a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 3b'
 
 rm -f "$tmp_file" >/dev/null 2>&1
 echo 4
@@ -51,32 +48,36 @@ $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET', intDiv( 100, number - 10) FROM numbers(11) FORMAT Null" \
   --log_queries=1 --ignore-error --max_block_size=2 --multiquery >"$tmp_file" 2>&1
 
-grep 'find_me_\[hidden\]' "$tmp_file" >/dev/null || echo 'fail 4a'
-grep 'TOPSECRET' "$tmp_file" && echo 'fail 4b'
+grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 4a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 4b'
 
 echo 5
 # run in background
 rm -f "$tmp_file2" >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
-  --query=\"select sleepEachRow(0.5) from numbers(4) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
+  --query=\"select sleepEachRow(1) from numbers(10) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
   --log_queries=1 --ignore-error --multiquery >$tmp_file2 2>&1" &
 
-sleep 0.1
-
-# $CLICKHOUSE_CLIENT --query='SHOW PROCESSLIST'
-
 rm -f "$tmp_file" >/dev/null 2>&1
-echo '5.1'
 # check that executing query doesn't expose secrets in processlist
-$CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >"$tmp_file" 2>&1
+echo '5.1'
+
+# wait until the query in background will start (max: 10 seconds as sleepEachRow)
+for _ in {1..100}; do
+    $CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >"$tmp_file" 2>&1
+    grep -q -F 'fwerkh_that_magic_string_make_me_unique' "$tmp_file" && break
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query="KILL QUERY WHERE query LIKE '%fwerkh_that_magic_string_make_me_unique%'" > /dev/null 2>&1
 wait
 grep 'TOPSECRET' "$tmp_file2" && echo 'fail 5d'
 
 rm -f "$tmp_file2" >/dev/null 2>&1
 
-grep 'fwerkh_that_magic_string_make_me_unique' "$tmp_file" >"$tmp_file2" || echo 'fail 5a'
-grep 'find_me_\[hidden\]' "$tmp_file2" >/dev/null  || echo 'fail 5b'
-grep 'TOPSECRET' "$tmp_file" && echo 'fail 5c'
+grep -F 'fwerkh_that_magic_string_make_me_unique' "$tmp_file" >"$tmp_file2" || echo 'fail 5a'
+grep -F 'find_me_[hidden]' "$tmp_file2" >/dev/null  || echo 'fail 5b'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 5c'
 
 
 # instead of disabling send_logs_level=trace (enabled globally for that test) - redir it's output to /dev/null
@@ -95,7 +96,7 @@ echo 7
 # and finally querylog
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where event_time>now() - 10 and query like '%TOPSECRET%';"
+  --query="select * from system.query_log where event_time > now() - 10 and query like '%TOPSECRET%';"
 
 
 rm -f "$tmp_file" >/dev/null 2>&1
@@ -108,17 +109,16 @@ insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' 
 select * from sensitive WHERE value1 = 'find_me_TOPSECRET=TOPSECRET' FORMAT Null;
 drop table sensitive;" --log_queries=1 --ignore-error --multiquery >"$tmp_file" 2>&1
 
-grep 'find_me_\[hidden\]' "$tmp_file" >/dev/null || echo 'fail 8a'
-grep 'TOPSECRET' "$tmp_file" && echo 'fail 8b'
+grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 8a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 8b'
 
 $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS" --server_logs_file=/dev/null
-sleep 0.1;
 
 echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
    --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_time>now() - 60 and message like '%find_me%';
-   select * from system.text_log where event_time>now() - 60 and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
+   select * from system.text_log where event_time > now() - 60 and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
 
 echo 'finish'
 rm -f "$tmp_file" >/dev/null 2>&1
