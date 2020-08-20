@@ -340,7 +340,7 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
                 if (*in.position() == 'N')
                 {
                     ++in.position();
-                    throw Exception("unexpected Null value of not Nullable type", ErrorCodes::INCORRECT_DATA);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
                 }
                 else
                 {
