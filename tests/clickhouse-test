@@ -739,7 +739,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
-        print("Cannot acces the specified directory with queries (" + args.queries + ")", file=sys.stderr)
+        print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
         exit(1)
 
     # Autodetect the directory with queries if not specified

@@ -1,4 +1,9 @@
-## CI checks
+---
+toc_priority: 62
+toc_title: Continuous Integration Checks
+---
+
+# Continuous Integration Checks
 
 When you submit a pull request, some automated checks are ran for your code by
 the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
@@ -22,7 +27,7 @@ git push
 If you are not sure what to do, ask a maintainer for help.
 
 
-### Merge with master
+## Merge With Master
 
 Verifies that the PR can be merged to master. If not, it will fail with the
 message 'Cannot fetch mergecommit'. To fix this check, resolve the conflict as
@@ -31,19 +36,19 @@ documentation](https://docs.github.com/en/github/collaborating-with-issues-and-p
 or merge the `master` branch to your pull request branch using git.
 
 
-### Docs check
+## Docs check
 
 Tries to build the ClickHouse documentation website. It can fail if you changed
 something in the documentation. Most probable reason is that some cross-link in
 the documentation is wrong. Go to the check report and look for `ERROR` and `WARNING` messages.
 
-#### Report details
+### Report Details
 
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check.html)
 - `docs_output.txt` contains the building log. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check/docs_output.txt)
 
 
-### Description check
+## Description Check
 
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
@@ -51,45 +56,46 @@ You have to specify a changelog category for your change (e.g., Bug Fix), and
 write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
-### Push to dockerhub
+## Push To Dockerhub
 
 Builds docker images used for build and tests, then pushes them to DockerHub.
 
-### Marker check
+
+## Marker Check
 
 This check means that the CI system started to process the pull request. When it has 'pending' status, it means that not all checks have been started yet. After all checks have been started, it changes status to 'success'.
 
 
-### Style check
+## Style Check
 
 Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
 If it fails, fix the style errors following the [code style guide](style.md).
 
-#### Report details
+### Report Details
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
 - `output.txt` contains the check resulting errors (invalid tabulation etc), blank page means no errors. [Successful result example](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt).
 
 
-### PVS check
+## PVS Check
 Check the code with [PVS-studio](https://www.viva64.com/en/pvs-studio/), a static analysis tool. Look at the report to see the exact errors. Fix them if you can, if not -- ask a ClickHouse maintainer for help.
 
-#### Report details
+### Report Details
 - [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/pvs_check.html)
 - `test_run.txt.out.log` contains the building and analyzing log file. It includes only parsing or not-found errors.
 - `HTML report` contains the analysis results. For its description visit PVS's [official site](https://www.viva64.com/en/m/0036/#ID14E9A2B2CD).
 
 
-### Fast test
+## Fast Test
 Normally this is the first check that is ran for a PR. It builds ClickHouse and
 runs most of [stateless functional tests](tests.md#functional-tests), omitting
 some. If it fails, further checks are not started until it is fixed. Look at
 the report to see which tests fail, then reproduce the failure locally as
 described [here](tests.md#functional-test-locally).
 
-#### Report details
+### Report Details
 [Status page example](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/fast_test.html)
 
-##### Status page files
+#### Status Page Files
 - `runlog.out.log` is the general log that includes all other logs.
 - `test_log.txt`
 - `submodule_log.txt` contains the messages about cloning and checkouting needed submodules.
@@ -102,18 +108,18 @@ described [here](tests.md#functional-test-locally).
 - `build_log.txt`
 - `cmake_log.txt` contains messages about the C/C++ and Linux flags check.
 
-##### Status page columns:
+#### Status Page Columns
 
 - *Test name* contains the name of the test (without the path e.g. all types of tests will be stripped to the name).
 - *Test status* -- one of _Skipped_, _Success_, or _Fail_.
 - *Test time, sec.* -- empty on this test.
 
 
-### Build check {#build-check}
+## Build Check {#build-check}
 
 Builds ClickHouse in various configurations for use in further steps. You have to fix the builds that fail. Build logs often has enough information to fix the error, but you might have to reproduce the failure locally. The `cmake` options can be found in the build log, grepping for `cmake`. Use these options and follow the [general build process](build.md).
 
-#### Report details
+### Report Details
 
 [Status page example](https://clickhouse-builds.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/clickhouse_build_check/report.html).
 
@@ -139,11 +145,12 @@ Builds ClickHouse in various configurations for use in further steps. You have t
     - `shared_build.tgz`: build with shared libraries.
     - `performance.tgz`: Special package for performance tests.
 
-### Special build check
+
+## Special Build Check
 Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
 
 
-### Functional stateless tests
+## Functional Stateless Tests
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse
 binaries built in various configurations -- release, debug, with sanitizers,
 etc. Look at the report to see which tests fail, then reproduce the failure
@@ -153,19 +160,19 @@ under AddressSanitizer but pass in Debug. Download the binary from [CI build
 checks page](build.md#you-dont-have-to-build-clickhouse), or build it locally.
 
 
-### Functional stateful tests
+## Functional Stateful Tests
 Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) to run.
 
 
-### Integration tests
+## Integration Tests
 Runs [integration tests](tests.md#integration-tests).
 
 
-### Testflows check
+## Testflows Check
 Runs some tests using Testflows test system. See [here](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally) how to run them locally.
 
 
-### Stress test
+## Stress Test
 Runs stateless functional tests concurrently from several clients to detect
 concurrency-related errors. If it fails:
 
@@ -174,7 +181,7 @@ concurrency-related errors. If it fails:
       of error.
 
 
-### Split build smoke test
+## Split Build Smoke Test
 
 Checks that the server build in [split build](build.md#split-build)
 configuration can start and run simple queries.  If it fails:
@@ -184,20 +191,20 @@ configuration can start and run simple queries.  If it fails:
       locally and check whether it can start and run `select 1`.
 
 
-### Compatibility check
+## Compatibility Check
 Checks that `clickhouse` binary runs on distributions with old libc versions. If it fails, ask a maintainer for help.
 
 
-### AST fuzzer
+## AST Fuzzer
 Runs randomly generated queries to catch program errors. If it fails, ask a maintainer for help.
 
 
-### Performance tests.
+## Performance Tests
 Measure changes in query performance. This is the longest check that takes just below 6 hours to run. The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).
 
 
 
-## QA
+# QA
 
 > What is a `Task (private network)` item on status pages?
 
