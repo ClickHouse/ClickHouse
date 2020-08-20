@@ -145,7 +145,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         {
             std::rethrow_exception(exception);
         }
-        catch (DB::Exception e)
+        catch (const DB::Exception & e)
         {
             out << e.what();
         }
