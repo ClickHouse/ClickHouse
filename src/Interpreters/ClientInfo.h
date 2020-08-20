@@ -57,6 +57,11 @@ public:
     String initial_user;
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
+    
+    
+    UInt128 trace_id;
+    UInt64 span_id;
+    UInt64 parent_span_id;
 
     /// All below are parameters related to initial query.
 

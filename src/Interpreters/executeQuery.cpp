@@ -584,6 +584,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
+
+                if (auto opentelemetry_log = context.getOpenTelemetryLog())
+                {
+                }
             };
 
             auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota),

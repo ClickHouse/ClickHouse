@@ -1075,35 +1075,37 @@ void Context::setCurrentQueryId(const String & query_id)
     if (!client_info.current_query_id.empty())
         throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
 
-    String query_id_to_set = query_id;
+    /// Generate random UUID, but using lower quality RNG,
+    ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
+    /// NOTE: Actually we don't need to use UUIDs for query identifiers.
+    /// We could use any suitable string instead.
+    union
+    {
+        char bytes[16];
+        struct
+        {
+            UInt64 a;
+            UInt64 b;
+        } words;
+        UInt128 uuid;
+    } random;
 
+    random.words.a = thread_local_rng(); //-V656
+    random.words.b = thread_local_rng(); //-V656
+    
+    trace_id = random.uuid;
+
+
+    String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
     {
-        /// Generate random UUID, but using lower quality RNG,
-        ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
-        /// NOTE: Actually we don't need to use UUIDs for query identifiers.
-        /// We could use any suitable string instead.
-
-        union
-        {
-            char bytes[16];
-            struct
-            {
-                UInt64 a;
-                UInt64 b;
-            } words;
-        } random;
-
-        random.words.a = thread_local_rng(); //-V656
-        random.words.b = thread_local_rng(); //-V656
-
         /// Use protected constructor.
         struct QueryUUID : Poco::UUID
         {
             QueryUUID(const char * bytes, Poco::UUID::Version version)
                 : Poco::UUID(bytes, version) {}
         };
-
+    
         query_id_to_set = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
     }
 
@@ -1702,6 +1704,17 @@ std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
         return {};
 
     return shared->system_logs->asynchronous_metric_log;
+}
+
+
+std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetryLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->opentelemetry_log;
 }
 
 
