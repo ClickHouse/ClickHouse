@@ -167,7 +167,7 @@ struct RadixSortIntTraits
     using Result = Element;
     using Key = Element;
     using CountType = uint32_t;
-    using KeyBits = std::make_unsigned_t<Key>;
+    using KeyBits = make_unsigned_t<Key>;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
@@ -186,7 +186,7 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integral_v<T>,
+    is_integer_v<T>,
     std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 

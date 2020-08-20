@@ -28,6 +28,7 @@ function wait_server()
 
 ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
 ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/text_log.xml /etc/clickhouse-server/config.d/
 
 echo "TSAN_OPTIONS='halt_on_error=1 history_size=7 ignore_noninstrumented_modules=1 verbosity=1'" >> /etc/environment
 echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment

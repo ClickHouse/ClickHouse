@@ -88,6 +88,7 @@ SRCS(
     QueryPipeline.cpp
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
+    QueryPlan/ArrayJoinStep.cpp
     QueryPlan/ConvertingStep.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
@@ -124,6 +125,7 @@ SRCS(
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
+    Transforms/ArrayJoinTransform.cpp
     Transforms/ConvertingTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
