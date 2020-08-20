@@ -1422,8 +1422,8 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_outputs_)
-    : Step(std::move(required_outputs_))
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_, Names required_output_)
+    : Step(std::move(required_output_))
     , array_join(std::move(array_join_))
     , result_columns(std::move(required_columns_))
 {
