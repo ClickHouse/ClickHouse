@@ -196,6 +196,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         out.close();
     }
 
+    /// We attach database before loading it's tables, so do not allow concurrent DDL queries
+    auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+
     bool added = false;
     bool renamed = false;
     try
@@ -523,8 +526,10 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             throw Exception("Column " + backQuoteIfNeed(column.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
     }
 
+    const auto & settings = context.getSettingsRef();
+
     /// Check low cardinality types in creating table if it was not allowed in setting
-    if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types && !create.is_materialized_view)
+    if (!create.attach && !settings.allow_suspicious_low_cardinality_types && !create.is_materialized_view)
     {
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
         {
@@ -539,16 +544,32 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         }
     }
 
-    if (!create.attach && !context.getSettingsRef().allow_experimental_geo_types)
+    if (!create.attach && !settings.allow_experimental_geo_types)
     {
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
         {
-            const auto& type = name_and_type_pair.type->getName();
+            const auto & type = name_and_type_pair.type->getName();
             if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
             {
                 String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
                                  + type + "' because experimental geo types are not allowed. "
                                  + "Set setting allow_experimental_geo_types = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    }
+
+    if (!create.attach && !settings.allow_experimental_bigint_types)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            WhichDataType which(*name_and_type_pair.type);
+            if (which.IsBigIntOrDeimal())
+            {
+                const auto & type_name = name_and_type_pair.type->getName();
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type_name + "' because experimental bigint types are not allowed. "
+                                 + "Set 'allow_experimental_bigint_types' setting to enable.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }
@@ -691,13 +712,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
-        database = DatabaseCatalog::instance().getDatabase(create.database);
-        assertOrSetUUID(create, database);
-
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
           */
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
+
+        database = DatabaseCatalog::instance().getDatabase(create.database);
+        assertOrSetUUID(create, database);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(table_name, context))
