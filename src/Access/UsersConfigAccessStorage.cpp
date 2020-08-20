@@ -511,13 +511,14 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
     memory_storage.setAll(all_entities);
 }
 
-void UsersConfigAccessStorage::load(const String & users_config_path,
-          const String & include_from_path,
-          const String & preprocessed_dir,
-          const zkutil::GetZooKeeper & get_zookeeper_function)
+void UsersConfigAccessStorage::load(
+    const String & users_config_path,
+    const String & include_from_path,
+    const String & preprocessed_dir,
+    const zkutil::GetZooKeeper & get_zookeeper_function)
 {
     std::lock_guard lock{load_mutex};
-    path = std::filesystem::canonical(users_config_path);
+    path = std::filesystem::path{users_config_path}.lexically_normal();
     config_reloader.reset();
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,

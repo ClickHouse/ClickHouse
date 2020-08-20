@@ -81,3 +81,7 @@ find $ROOT_PATH -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*'
 
 # There shouldn't be any docker compose files outside docker directory
 #find $ROOT_PATH -not -path $ROOT_PATH'/tests/testflows*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name '*compose*.yml' -type f 2>/dev/null | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to docker directory:"
+
+# Check that ya.make files are auto-generated
+"$ROOT_PATH"/utils/generate-ya-make/generate-ya-make.sh
+git status -uno | grep ya.make && echo "ya.make files should be generated with utils/generate-ya-make/generate-ya-make.sh"
