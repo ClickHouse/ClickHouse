@@ -322,6 +322,9 @@ void optimizeDuplicateOrderBy(ASTPtr & query, const Context & context)
 /// Return simple subselect (without UNIONs or JOINs) if any
 const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
 {
+    if (!select.tables())
+        return nullptr;
+
     const auto & tables = select.tables()->children;
     if (tables.empty() || tables.size() != 1)
         return nullptr;
