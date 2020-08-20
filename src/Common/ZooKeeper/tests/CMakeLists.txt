@@ -21,3 +21,6 @@ target_link_libraries (zk_many_watches_reconnect PRIVATE clickhouse_common_zooke
 
 add_executable (zookeeper_impl zookeeper_impl.cpp)
 target_link_libraries (zookeeper_impl PRIVATE clickhouse_common_zookeeper)
+
+add_executable (etcd_test_trivial etcd_test_trivial.cpp)
+target_link_libraries (etcd_test_trivial PRIVATE clickhouse_common_zookeeper)

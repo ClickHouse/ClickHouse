@@ -11,6 +11,18 @@
 /// Session reconnect can be caused by forbidding packets to the current zookeeper server, e.g.
 /// sudo ip6tables -A OUTPUT -d mtzoo01it.haze.yandex.net -j REJECT
 
+
+/// <yandex>
+///     <zookeeper>
+///         <implementation>zookeeper</implementation>
+///             <node>
+///                 <host>127.0.0.1</host>
+///                 <port>2181</port>
+///             </node>
+///     </zookeeper>
+/// </yandex>
+
+
 const size_t N_THREADS = 100;
 
 int main(int argc, char ** argv)
@@ -31,6 +43,7 @@ int main(int argc, char ** argv)
         /// NOTE: setting watches in multiple threads because doing it in a single thread is too slow.
         size_t watches_per_thread = std::stoull(argv[2]) / N_THREADS;
         std::vector<std::thread> threads;
+        threads.reserve(N_THREADS);
         for (size_t i_thread = 0; i_thread < N_THREADS; ++i_thread)
         {
             threads.emplace_back([&, i_thread]

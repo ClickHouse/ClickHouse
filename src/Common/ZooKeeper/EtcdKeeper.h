@@ -157,8 +157,8 @@ public:
 
     struct AsyncTxnCall final : AsyncCall
     {
-        AsyncTxnCall() {}
-        AsyncTxnCall(const AsyncCall & base) : AsyncCall(base) {}
+        AsyncTxnCall() = default;
+        explicit AsyncTxnCall(const AsyncCall & base) : AsyncCall(base) {}
         ClientContext context;
         TxnResponse response;
         std::unique_ptr<ClientAsyncResponseReader<TxnResponse>> response_reader;
