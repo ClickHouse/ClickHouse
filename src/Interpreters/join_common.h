@@ -20,6 +20,7 @@ Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
+void removeLowCardinalityInplace(Block & block, const Names & names);
 
 /// Split key and other columns by keys name list
 void splitAdditionalColumns(const Block & sample_block, const Names & key_names, Block & block_keys, Block & block_others);

@@ -420,7 +420,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             }
             return [field_skip_fns](avro::Decoder & decoder)
             {
-                for (auto & skip_fn : field_skip_fns)
+                for (const auto & skip_fn : field_skip_fns)
                     skip_fn(decoder);
             };
         }
@@ -555,7 +555,7 @@ private:
                 session->sendRequest(request);
 
                 Poco::Net::HTTPResponse response;
-                auto response_body = receiveResponse(*session, request, response, false);
+                auto *response_body = receiveResponse(*session, request, response, false);
 
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
@@ -584,7 +584,7 @@ private:
         }
     }
 
-private:
+
     Poco::URI base_url;
     LRUCache<uint32_t, avro::ValidSchema> schema_cache;
 };
@@ -643,7 +643,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
         return false;
     }
     SchemaId schema_id = readConfluentSchemaId(in);
-    auto & deserializer = getOrCreateDeserializer(schema_id);
+    const auto & deserializer = getOrCreateDeserializer(schema_id);
     deserializer.deserializeRow(columns, *decoder);
     decoder->drain();
     return true;

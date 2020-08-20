@@ -63,7 +63,7 @@ TEST(MergeTreeSetIndex, checkInRangeTuple)
     {
         auto values = {1, 1, 3, 3, 3, 10};
         auto mut = types[0]->createColumn();
-        for (auto & val : values)
+        for (const auto & val : values)
             mut->insert(val);
         columns.push_back(std::move(mut));
     }
@@ -71,7 +71,7 @@ TEST(MergeTreeSetIndex, checkInRangeTuple)
     {
         auto values = {"a", "b", "a", "a", "b", "c"};
         auto mut = types[1]->createColumn();
-        for (auto & val : values)
+        for (const auto & val : values)
             mut->insert(val);
         columns.push_back(std::move(mut));
     }

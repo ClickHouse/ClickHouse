@@ -21,7 +21,7 @@ void IMergeTreeDataPartWriter::Stream::finalize()
     marks.next();
 }
 
-void IMergeTreeDataPartWriter::Stream::sync()
+void IMergeTreeDataPartWriter::Stream::sync() const
 {
     plain_file->sync();
     marks_file->sync();

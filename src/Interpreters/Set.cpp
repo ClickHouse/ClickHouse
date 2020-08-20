@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
-    extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -128,7 +127,7 @@ void Set::setHeader(const Block & header)
         set_elements_types.emplace_back(header.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
-        if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
@@ -210,97 +209,6 @@ bool Set::insertFromBlock(const Block & block)
     }
 
     return limits.check(getTotalRowCount(), getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-}
-
-
-static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, const Context & context)
-{
-    if (const auto * lit = node->as<ASTLiteral>())
-    {
-        return convertFieldToType(lit->value, type);
-    }
-    else if (node->as<ASTFunction>())
-    {
-        std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
-        return convertFieldToType(value_raw.first, type, value_raw.second.get());
-    }
-    else
-        throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-}
-
-void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
-{
-    /// Will form a block with values from the set.
-
-    Block header;
-    size_t num_columns = types.size();
-    for (size_t i = 0; i < num_columns; ++i)
-        header.insert(ColumnWithTypeAndName(types[i]->createColumn(), types[i], "_" + toString(i)));
-    setHeader(header);
-
-    MutableColumns columns = header.cloneEmptyColumns();
-
-    DataTypePtr tuple_type;
-    Row tuple_values;
-    const auto & list = node->as<ASTExpressionList &>();
-    for (auto & elem : list.children)
-    {
-        if (num_columns == 1)
-        {
-            Field value = extractValueFromNode(elem, *types[0], context);
-
-            if (!value.isNull())
-                columns[0]->insert(value);
-        }
-        else if (const auto * func = elem->as<ASTFunction>())
-        {
-            Field function_result;
-            const Tuple * tuple = nullptr;
-            if (func->name != "tuple")
-            {
-                if (!tuple_type)
-                    tuple_type = std::make_shared<DataTypeTuple>(types);
-
-                function_result = extractValueFromNode(elem, *tuple_type, context);
-                if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
-                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-                tuple = &function_result.get<Tuple>();
-            }
-
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
-            if (tuple_size != num_columns)
-                throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
-                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-            if (tuple_values.empty())
-                tuple_values.resize(tuple_size);
-
-            size_t i = 0;
-            for (; i < tuple_size; ++i)
-            {
-                Field value = tuple ? (*tuple)[i]
-                                    : extractValueFromNode(func->arguments->children[i], *types[i], context);
-
-                /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
-                if (value.isNull())
-                    break;
-
-                tuple_values[i] = value;
-            }
-
-            if (i == tuple_size)
-                for (i = 0; i < tuple_size; ++i)
-                    columns[i]->insert(tuple_values[i]);
-        }
-        else
-            throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-    }
-
-    Block block = header.cloneWithColumns(std::move(columns));
-    insertFromBlock(block);
-    finishInsert();
 }
 
 

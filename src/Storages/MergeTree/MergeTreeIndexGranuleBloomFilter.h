@@ -27,9 +27,9 @@ private:
     size_t hash_functions;
     std::vector<BloomFilterPtr> bloom_filters;
 
-    void assertGranuleBlocksStructure(const Blocks & granule_index_blocks) const;
+    static void assertGranuleBlocksStructure(const Blocks & granule_index_blocks) ;
 
-    void fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column);
+    void fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column) const;
 };
 
 

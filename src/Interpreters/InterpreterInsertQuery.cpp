@@ -62,7 +62,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     return context.getTable(query.database, query.table);
 }
 
-Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
+Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
 {
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns

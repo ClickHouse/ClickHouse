@@ -48,7 +48,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             else
                 fields_count = 0;
         }
-        else if (auto literal = value->as<ASTLiteral>())
+        else if (auto *literal = value->as<ASTLiteral>())
         {
             if (literal->value.getType() == Field::Types::Tuple)
             {

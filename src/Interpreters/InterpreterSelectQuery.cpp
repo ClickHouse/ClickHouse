@@ -541,10 +541,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         Block res;
 
-        for (auto & key : query_analyzer->aggregationKeys())
+        for (const auto & key : query_analyzer->aggregationKeys())
             res.insert({nullptr, header.getByName(key.name).type, key.name});
 
-        for (auto & aggregate : query_analyzer->aggregates())
+        for (const auto & aggregate : query_analyzer->aggregates())
         {
             size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
@@ -705,7 +705,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
 
     if (options.only_analyze)
     {
@@ -1010,6 +1010,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             executeWithFill(pipeline);
 
+            bool has_prelimit = false;
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
             if (query.limit_with_ties)
@@ -1026,7 +1027,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               */
             executeExtremes(pipeline);
 
-            executeLimit(pipeline);
+            if (!has_prelimit)
+                executeLimit(pipeline);
         }
     }
 

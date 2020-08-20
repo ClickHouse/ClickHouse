@@ -458,7 +458,7 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(zookeeper_prefix + "/metadata", &metadata_stat);
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    old_metadata.checkEquals(metadata_from_zk, getColumns(), global_context);
+    old_metadata.checkEquals(metadata_from_zk);
 
     Coordination::Stat columns_stat;
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_prefix + "/columns", &columns_stat));
@@ -3170,7 +3170,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
     size_t res = 0;
     auto max_added_blocks = getMaxAddedBlocks();
     auto lock = lockParts();
-    for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part->isEmpty())
             continue;
@@ -4711,7 +4711,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 
     auto remove_parts_from_filesystem = [log=log] (const DataPartsVector & parts_to_remove)
     {
-        for (auto & part : parts_to_remove)
+        for (const auto & part : parts_to_remove)
         {
             try
             {

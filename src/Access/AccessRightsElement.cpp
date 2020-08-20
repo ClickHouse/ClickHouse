@@ -72,7 +72,7 @@ String AccessRightsElements::toString() const
 {
     String res;
     bool need_comma = false;
-    for (auto & element : *this)
+    for (const auto & element : *this)
     {
         if (std::exchange(need_comma, true))
             res += ", ";

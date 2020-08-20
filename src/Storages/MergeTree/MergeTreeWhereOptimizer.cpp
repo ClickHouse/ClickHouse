@@ -116,7 +116,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPt
 }
 
 /// Transform Conditions list to WHERE or PREWHERE expression.
-ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions) const
+ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions) 
 {
     if (conditions.empty())
         return {};
@@ -205,7 +205,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
 }
 
 
-bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
+bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) 
 {
     const auto * function = condition->as<ASTFunction>();
     if (!function)
@@ -216,8 +216,8 @@ bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
     if (function->name != "equals")
         return false;
 
-    auto left_arg = function->arguments->children.front().get();
-    auto right_arg = function->arguments->children.back().get();
+    auto *left_arg = function->arguments->children.front().get();
+    auto *right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
     if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())

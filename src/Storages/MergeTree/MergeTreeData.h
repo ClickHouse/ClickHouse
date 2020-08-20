@@ -595,8 +595,8 @@ public:
     bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
-    void loadPartAndFixMetadata(MutableDataPartPtr part);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const;
+    static void loadPartAndFixMetadata(MutableDataPartPtr part);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -684,8 +684,8 @@ public:
     ReservationPtr reserveSpace(UInt64 expected_size) const;
 
     /// Reserves space at least 1MB on specific disk or volume.
-    ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space) const;
-    ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space) const;
+    static ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space) ;
+    static ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space) ;
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
@@ -925,7 +925,7 @@ protected:
         const IndicesASTs & old_indices,
         const IndicesASTs & new_indices) const;
 
-    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
+    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
@@ -1000,7 +1000,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
 };
 
 }

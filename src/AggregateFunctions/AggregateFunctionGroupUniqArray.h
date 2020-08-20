@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -139,7 +141,8 @@ static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
  */
 template <bool is_plain_column = false, typename Tlimit_num_elem = std::false_type>
 class AggregateFunctionGroupUniqArrayGeneric
-    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData,
+        AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>
 {
     DataTypePtr & input_data_type;
 
@@ -158,6 +161,7 @@ class AggregateFunctionGroupUniqArrayGeneric
         {
             const char * begin = nullptr;
             StringRef serialized = column.serializeValueIntoArena(row_num, arena, begin);
+            assert(serialized.data != nullptr);
             return SerializedKeyHolder{serialized, arena};
         }
     }
@@ -204,9 +208,7 @@ public:
         //TODO: set.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
-        {
             set.insert(readStringBinaryInto(*arena, buf));
-        }
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -249,9 +251,7 @@ public:
         offsets_to.push_back(offsets_to.back() + set.size());
 
         for (auto & elem : set)
-        {
             deserializeAndInsert(elem.getValue(), data_to);
-        }
     }
 };
 

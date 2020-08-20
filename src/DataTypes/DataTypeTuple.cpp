@@ -393,7 +393,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         settings.path.back().tuple_element_name = names[i];
-        auto & element_col = extractElementColumn(column, i);
+        const auto & element_col = extractElementColumn(column, i);
         elems[i]->serializeBinaryBulkWithMultipleStreams(element_col, offset, limit, settings, tuple_state->states[i]);
     }
     settings.path.pop_back();

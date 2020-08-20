@@ -211,7 +211,7 @@ TestResult check(const TestEntry & entry)
         if (!parse(ast_input, entry.input))
             return TestResult(false, "parse error");
 
-        auto select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
+        auto *select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
 
         DB::LogicalExpressionsOptimizer optimizer(select_query, entry.limit);
         optimizer.perform();
@@ -237,8 +237,8 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 {
     DB::ParserSelectQuery parser;
     std::string message;
-    auto begin = query.data();
-    auto end = begin + query.size();
+    const auto *begin = query.data();
+    const auto *end = begin + query.size();
     ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0);
     return ast != nullptr;
 }
@@ -277,7 +277,7 @@ void reorder(DB::IAST * ast)
     if (ast == nullptr)
         return;
 
-    auto select_query = typeid_cast<DB::ASTSelectQuery *>(ast);
+    auto *select_query = typeid_cast<DB::ASTSelectQuery *>(ast);
     if (select_query == nullptr)
         return;
 

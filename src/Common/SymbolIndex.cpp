@@ -53,6 +53,19 @@ Otherwise you will get only exported symbols from program headers.
 
 */
 
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#endif
+
+#define __msan_unpoison_string(X)
+#if defined(__has_feature)
+#   if __has_feature(memory_sanitizer)
+#       undef __msan_unpoison_string
+#       include <sanitizer/msan_interface.h>
+#   endif
+#endif
+
 
 namespace DB
 {
@@ -105,7 +118,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
          */
 
         size_t sym_cnt = 0;
-        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto *it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             // TODO: this branch leads to invalid address of the hash table. Need further investigation.
             // if (it->d_tag == DT_HASH)
@@ -148,7 +161,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
             continue;
 
         const char * strtab = nullptr;
-        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto *it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_STRTAB)
             {
@@ -160,7 +173,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
         if (!strtab)
             continue;
 
-        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto *it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_SYMTAB)
             {
@@ -264,6 +277,9 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects)
 {
+    /// MSan does not know that the program segments in memory are initialized.
+    __msan_unpoison_string(info->dlpi_name);
+
     std::string object_name = info->dlpi_name;
 
     /// If the name is empty - it's main executable.

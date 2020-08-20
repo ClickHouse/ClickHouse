@@ -129,7 +129,7 @@ private:
         impl.write(working_buffer.begin(), offset());
     }
 
-private:
+
     WriteBufferFromOwnString impl;
     DiskMemory * disk;
     const String path;

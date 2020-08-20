@@ -28,7 +28,7 @@ namespace ErrorCodes
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-        for (auto val : data)
+        for (auto *val : data)
             func->destroy(val);
 }
 
@@ -37,78 +37,50 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
     foreign_arenas.push_back(arena_);
 }
 
-namespace
-{
-
-ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
-{
-    ConstArenas result = array;
-    if (arena)
-        result.push_back(std::move(arena));
-
-    return result;
-}
-
-}
-
-MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
+MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
-      * then you just need to copy pointers to it and also shared ownership of data.
-      *
-      * Also replace the aggregate function with the nested function.
-      * That is, if this column is the states of the aggregate function `aggState`,
-      * then we return the same column, but with the states of the aggregate function `agg`.
-      * These are the same states, changing only the function to which they correspond.
-      *
-      * Further is quite difficult to understand.
-      * Example when this happens:
-      *
-      * SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
-      *
-      * This calculates the aggregate function `quantileTimingState`.
-      * Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
-      * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
-      *  in the ColumnAggregateFunction column of type
-      *  AggregateFunction(quantileTimingState(0.5), UInt64).
-      * Then, in `TotalsHavingTransform`, it will be called `convertToValues` method,
-      *  to get the "ready" values.
-      * But it just converts a column of type
-      *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
-      * into `AggregateFunction(quantileTiming(0.5), UInt64)`
-      * - in the same states.
-      *
-      * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
-      * And this converts a column of type
-      *   AggregateFunction(quantileTiming(0.5), UInt64)
-      * into UInt16 - already finished result of `quantileTiming`.
-      */
-    auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*column);
-    auto & func = column_aggregate_func.func;
-    auto & data = column_aggregate_func.data;
-
-    /// insertResultInto may invalidate states, so we must unshare ownership of them
-    column_aggregate_func.ensureOwnership();
+        * then you just need to copy pointers to it and also shared ownership of data.
+        *
+        * Also replace the aggregate function with the nested function.
+        * That is, if this column is the states of the aggregate function `aggState`,
+        * then we return the same column, but with the states of the aggregate function `agg`.
+        * These are the same states, changing only the function to which they correspond.
+        *
+        * Further is quite difficult to understand.
+        * Example when this happens:
+        *
+        * SELECT k, finalizeAggregation(quantileTimingState(0.5)(x)) FROM ... GROUP BY k WITH TOTALS
+        *
+        * This calculates the aggregate function `quantileTimingState`.
+        * Its return type AggregateFunction(quantileTiming(0.5), UInt64)`.
+        * Due to the presence of WITH TOTALS, during aggregation the states of this aggregate function will be stored
+        *  in the ColumnAggregateFunction column of type
+        *  AggregateFunction(quantileTimingState(0.5), UInt64).
+        * Then, in `TotalsHavingBlockInputStream`, it will be called `convertToValues` method,
+        *  to get the "ready" values.
+        * But it just converts a column of type
+        *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
+        * into `AggregateFunction(quantileTiming(0.5), UInt64)`
+        * - in the same states.
+        *
+        * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
+        * And this converts a column of type
+        *   AggregateFunction(quantileTiming(0.5), UInt64)
+        * into UInt16 - already finished result of `quantileTiming`.
+        */
+    if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+    {
+        auto res = createView();
+        res->set(function_state->getNestedFunction());
+        res->data.assign(data.begin(), data.end());
+        return res;
+    }
 
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
-    /// If there are references to states in final column, we must hold their ownership
-    /// by holding arenas and source.
-
-    auto callback = [&](auto & subcolumn)
-    {
-        if (auto * aggregate_subcolumn = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
-        {
-            aggregate_subcolumn->foreign_arenas = concatArenas(column_aggregate_func.foreign_arenas, column_aggregate_func.my_arena);
-            aggregate_subcolumn->src = column_aggregate_func.getPtr();
-        }
-    };
-
-    callback(res);
-    res->forEachSubcolumn(callback);
-
-    for (auto * val : data)
+    for (auto *val : data)
         func->insertResultInto(val, *res);
 
     return res;
@@ -119,7 +91,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto ML_function = func.get();
+    auto *ML_function = func.get();
     if (ML_function)
     {
         if (data.size() == 1)
@@ -131,7 +103,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         {
             /// Case for non-constant column. Use different aggregate function for each row.
             size_t row_num = 0;
-            for (auto val : data)
+            for (auto *val : data)
             {
                 ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
@@ -432,7 +404,7 @@ void ColumnAggregateFunction::insert(const Field & x)
         throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
                         "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
 
-    auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -580,6 +552,20 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 
     min = serialized;
     max = serialized;
+}
+
+namespace
+{
+
+ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
+{
+    ConstArenas result = array;
+    if (arena)
+        result.push_back(std::move(arena));
+
+    return result;
+}
+
 }
 
 ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const

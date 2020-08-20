@@ -23,7 +23,7 @@ MergingSortedTransform::MergingSortedTransform(
     , have_all_inputs(have_all_inputs_)
     , merged_data(header), source_chunks(num_inputs), cursors(num_inputs)
 {
-    auto & sample = outputs.front().getHeader();
+    const auto & sample = outputs.front().getHeader();
     /// Replace column names in description to positions.
     for (auto & column_description : description)
     {

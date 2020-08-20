@@ -48,7 +48,7 @@ Pipes executeQuery(
     Context new_context = removeUserRestrictionsFromSettings(context, settings);
 
     ThrottlerPtr user_level_throttler;
-    if (auto process_list_element = context.getProcessListElement())
+    if (auto *process_list_element = context.getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.

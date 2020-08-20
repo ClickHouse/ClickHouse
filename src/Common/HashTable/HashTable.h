@@ -77,6 +77,25 @@ void set(T & x) { x = 0; }
 
 }
 
+
+/** Numbers are compared bitwise.
+  * Complex types are compared by operator== as usual (this is important if there are gaps).
+  *
+  * This is needed if you use floats as keys. They are compared by bit equality.
+  * Otherwise the invariants in hash table probing do not met when NaNs are present.
+  */
+template <typename T>
+inline bool bitEquals(T && a, T && b)
+{
+    using RealT = std::decay_t<T>;
+
+    if constexpr (std::is_floating_point_v<RealT>)
+        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
+    else
+        return a == b;
+}
+
+
 /**
   * getKey/Mapped -- methods to get key/"mapped" values from the LookupResult returned by find() and
   * emplace() methods of HashTable. Must not be called for a null LookupResult.
@@ -152,9 +171,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }
 
     /// Are the keys at the cells equal?
-    bool keyEquals(const Key & key_) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return key == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -696,7 +715,7 @@ public:
 
     const_iterator cbegin() const { return begin(); }
 
-    iterator begin()
+    __attribute__((__no_sanitize__("undefined"))) iterator begin()
     {
         if (!buf)
             return end();
@@ -712,9 +731,21 @@ public:
         return iterator(this, ptr);
     }
 
-    const_iterator end() const         { return const_iterator(this, buf + grower.bufSize()); }
-    const_iterator cend() const        { return end(); }
-    iterator end()                     { return iterator(this, buf + grower.bufSize()); }
+    const_iterator end() const
+    {
+        /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
+        return const_iterator(this, buf ? buf + grower.bufSize() : buf);
+    }
+
+    const_iterator cend() const
+    {
+        return end();
+    }
+
+    iterator end()
+    {
+        return iterator(this, buf ? buf + grower.bufSize() : buf);
+    }
 
 
 protected:
@@ -937,6 +968,9 @@ public:
         if (this->hasZero())
             this->zeroValue()->write(wb);
 
+        if (!buf)
+            return;
+
         for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
             if (!ptr->isZero(*this))
                 ptr->write(wb);
@@ -952,6 +986,9 @@ public:
             DB::writeChar(',', wb);
             this->zeroValue()->writeText(wb);
         }
+
+        if (!buf)
+            return;
 
         for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
         {

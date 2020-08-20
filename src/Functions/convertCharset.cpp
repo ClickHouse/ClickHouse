@@ -78,13 +78,13 @@ private:
     /// Separate converter is created for each thread.
     using Pool = ObjectPoolMap<Converter, String>;
 
-    Pool::Pointer getConverter(const String & charset)
+    static Pool::Pointer getConverter(const String & charset)
     {
         static Pool pool;
         return pool.get(charset, [&charset] { return new Converter(charset); });
     }
 
-    void convert(const String & from_charset, const String & to_charset,
+    static void convert(const String & from_charset, const String & to_charset,
         const ColumnString::Chars & from_chars, const ColumnString::Offsets & from_offsets,
         ColumnString::Chars & to_chars, ColumnString::Offsets & to_offsets)
     {

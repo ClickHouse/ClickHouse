@@ -107,7 +107,7 @@ ColumnRawPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
 
     for (size_t i = 0; i < columns; ++i)
     {
-        auto & column = columns_names.empty()
+        const auto & column = columns_names.empty()
             ? block.safeGetByPosition(i).column
             : block.getByName(columns_names[i]).column;
 

@@ -58,6 +58,7 @@ MemoryTracker::~MemoryTracker()
 
 void MemoryTracker::logPeakMemoryUsage() const
 {
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
     LOG_DEBUG(&Logger::get("MemoryTracker"),
         "Peak memory usage" << (description ? " " + std::string(description) : "")
         << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
@@ -98,7 +99,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory tracker";
-        if (description)
+        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
         message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
@@ -123,7 +124,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory limit";
-        if (description)
+        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
@@ -141,7 +142,7 @@ void MemoryTracker::alloc(Int64 size)
             logMemoryUsage(will_be);
     }
 
-    if (auto loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto *loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->alloc(size);
 }
 
@@ -173,7 +174,7 @@ void MemoryTracker::free(Int64 size)
         }
     }
 
-    if (auto loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto *loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
 
     if (metric != CurrentMetrics::end())
@@ -220,7 +221,7 @@ namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+        if (auto *memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
             Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
             untracked += size;
@@ -243,7 +244,7 @@ namespace CurrentMemoryTracker
 
     void free(Int64 size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+        if (auto *memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
             Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
             untracked -= size;
@@ -258,7 +259,7 @@ namespace CurrentMemoryTracker
 
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
 {
-    auto memory_tracker = DB::CurrentThread::getMemoryTracker();
+    auto *memory_tracker = DB::CurrentThread::getMemoryTracker();
     if (!memory_tracker)
         return {};
     return memory_tracker->blocker.cancel();

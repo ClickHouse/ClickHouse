@@ -36,7 +36,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
                 ErrorCodes::CANNOT_OPEN_FILE);
     }
 
-    int read(char * start, size_t size)
+    int read(char * start, size_t size) const
     {
         int bytes_read = hdfsRead(fs.get(), fin, start, size);
         if (bytes_read < 0)

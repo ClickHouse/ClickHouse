@@ -35,7 +35,7 @@ String DB::RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 
     WriteBufferFromOwnString out;
 
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
@@ -158,7 +158,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     return true;
 }
 
-String RowInputFormatWithDiagnosticInfo::alignedName(const String & name, size_t max_length) const
+String RowInputFormatWithDiagnosticInfo::alignedName(const String & name, size_t max_length) 
 {
     size_t spaces_count = max_length >= name.size() ? max_length - name.size() : 0;
     return name + ", " + std::string(spaces_count, ' ');

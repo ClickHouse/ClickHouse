@@ -19,7 +19,7 @@ DelayedPortsProcessor::DelayedPortsProcessor(const Block & header, size_t num_po
         ++output_it;
     }
 
-    for (auto & delayed : delayed_ports)
+    for (const auto & delayed : delayed_ports)
         port_pairs[delayed].is_delayed = true;
 }
 
@@ -63,13 +63,13 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
     bool skip_delayed = (num_finished + num_delayed) < port_pairs.size();
     bool need_data = false;
 
-    for (auto & output_number : updated_outputs)
+    for (const auto & output_number : updated_outputs)
     {
         if (!skip_delayed || !port_pairs[output_number].is_delayed)
             need_data = processPair(port_pairs[output_number]) || need_data;
     }
 
-    for (auto & input_number : updated_inputs)
+    for (const auto & input_number : updated_inputs)
     {
         if (!skip_delayed || !port_pairs[input_number].is_delayed)
             need_data = processPair(port_pairs[input_number]) || need_data;

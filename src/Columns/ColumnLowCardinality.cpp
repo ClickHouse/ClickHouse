@@ -136,7 +136,7 @@ void ColumnLowCardinality::insertDefault()
 
 void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
 {
-    auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
         throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -167,7 +167,7 @@ void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 
 void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
         throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);

@@ -382,7 +382,7 @@ private:
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
     bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
-    bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
+    static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,

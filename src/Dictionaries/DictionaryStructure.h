@@ -113,6 +113,7 @@ struct DictionaryStructure final
     size_t getKeySize() const;
 
 private:
+    /// range_min and range_max have to be parsed before this function call
     std::vector<DictionaryAttribute> getAttributes(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,

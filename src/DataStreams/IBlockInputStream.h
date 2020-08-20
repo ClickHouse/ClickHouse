@@ -254,7 +254,7 @@ protected:
     /** Check limits.
       * But only those that can be checked within each separate stream.
       */
-    bool checkTimeLimit();
+    bool checkTimeLimit() const;
 
 #ifndef NDEBUG
     bool read_prefix_is_called = false;

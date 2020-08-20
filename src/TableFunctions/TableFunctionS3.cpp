@@ -84,7 +84,7 @@ StoragePtr TableFunctionS3::getStorage(
     const ColumnsDescription & columns,
     Context & global_context,
     const std::string & table_name,
-    const String & compression_method) const
+    const String & compression_method) 
 {
     Poco::URI uri (source);
     S3::URI s3_uri (uri);

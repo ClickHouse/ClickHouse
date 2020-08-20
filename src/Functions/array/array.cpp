@@ -105,7 +105,7 @@ private:
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
 
-private:
+
     const Context & context;
 };
 

@@ -45,6 +45,27 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
 }
 
+namespace
+{
+
+/// Rewrite original query removing joined tables from it
+void removeJoin(const ASTSelectQuery & select)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.size() < 2)
+        return;
+
+    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    if (!joined_table.table_join)
+        return;
+
+    /// The most simple temporary solution: leave only the first table in query.
+    /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
+    tables->children.resize(1);
+}
+
+}
+
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
@@ -97,7 +118,7 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
 
     while (iterator->isValid())
     {
-        auto & table = iterator->table();
+        const auto & table = iterator->table();
         if (table.get() != this && predicate(table))
             return table;
 
@@ -146,7 +167,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 
     while (iterator->isValid())
     {
-        auto & table = iterator->table();
+        const auto & table = iterator->table();
         if (table.get() != this)
         {
             ++selected_table_size;
@@ -232,7 +253,7 @@ Pipes StorageMerge::read(
         remaining_streams -= current_streams;
         current_streams = std::max(size_t(1), current_streams);
 
-        auto & storage = std::get<0>(table);
+        const auto & storage = std::get<0>(table);
 
         /// If sampling requested, then check that table supports it.
         if (query_info.query->as<ASTSelectQuery>()->sample_size() && !storage->supportsSampling())
@@ -258,9 +279,12 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
     const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
     bool concat_streams)
 {
-    auto & [storage, struct_lock, table_name] = storage_with_lock;
+    const auto & [storage, struct_lock, table_name] = storage_with_lock;
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
+
+    /// Original query could contain JOIN but we need only the first joined table and its columns.
+    removeJoin(*modified_query_info.query->as<ASTSelectQuery>());
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
@@ -362,7 +386,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 
     while (iterator->isValid())
     {
-        auto & table = iterator->table();
+        const auto & table = iterator->table();
         if (table.get() != this)
             selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
 
@@ -462,9 +486,14 @@ Block StorageMerge::getQueryHeader(
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
+        {
+            auto query = query_info.query->clone();
+            removeJoin(*query->as<ASTSelectQuery>());
+
             return materializeBlock(InterpreterSelectQuery(
-                query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
+                query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
                 SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
+        }
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }

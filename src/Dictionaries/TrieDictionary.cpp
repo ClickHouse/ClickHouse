@@ -406,7 +406,7 @@ void TrieDictionary::calculateBytesAllocated()
     bytes_allocated += btrie_allocated(trie);
 }
 
-void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
+void TrieDictionary::validateKeyTypes(const DataTypes & key_types) 
 {
     if (key_types.size() != 1)
         throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
@@ -607,7 +607,7 @@ bool TrieDictionary::setAttributeValue(Attribute & attribute, const StringRef ke
         case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
-            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto *const string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             setAttributeValueImpl<StringRef>(attribute, key, StringRef{string_in_arena, string.size()});
             return true;
         }

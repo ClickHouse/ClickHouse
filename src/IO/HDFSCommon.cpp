@@ -15,7 +15,7 @@ extern const int NETWORK_ERROR;
 HDFSBuilderPtr createHDFSBuilder(const std::string & uri_str)
 {
     const Poco::URI uri(uri_str);
-    auto & host = uri.getHost();
+    const auto & host = uri.getHost();
     auto port = uri.getPort();
     const std::string path = "//";
     if (host.empty())

@@ -155,7 +155,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         if (id->name.empty())
             throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto range_default_type = "Date";
+        const auto *const range_default_type = "Date";
         if (config.has(config_prefix + ".range_min"))
             range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
 
@@ -193,6 +193,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
     }
 
     attributes = getAttributes(config, config_prefix);
+
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
 }
@@ -302,6 +303,12 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         checkAttributeKeys(attribute_keys);
 
         const auto name = config.getString(prefix + "name");
+
+        /// Don't include range_min and range_max in attributes list, otherwise
+        /// columns will be duplicated
+        if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
+            continue;
+
         const auto type_string = config.getString(prefix + "type");
         const auto type = DataTypeFactory::instance().get(type_string);
         const auto underlying_type = getAttributeUnderlyingType(type_string);

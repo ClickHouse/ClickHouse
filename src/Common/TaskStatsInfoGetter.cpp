@@ -258,7 +258,7 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
 }
 
 
-void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
+void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 {
     NetlinkMessage answer = query(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(tid));
 
@@ -307,7 +307,7 @@ bool TaskStatsInfoGetter::checkPermissions()
 TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
 TaskStatsInfoGetter::~TaskStatsInfoGetter() = default;
 
-void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
+void TaskStatsInfoGetter::getStat(::taskstats &, pid_t) const
 {
 }
 

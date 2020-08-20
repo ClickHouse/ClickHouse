@@ -84,9 +84,9 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     else if (table_expression.table_function)
     {
         const auto table_function = table_expression.table_function;
-        auto query_context = const_cast<Context *>(&context.getQueryContext());
+        auto *query_context = const_cast<Context *>(&context.getQueryContext());
         const auto & function_storage = query_context->executeTableFunction(table_function);
-        auto & columns = function_storage->getColumns();
+        const auto & columns = function_storage->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
@@ -96,7 +96,7 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     {
         DatabaseAndTableWithAlias database_table(table_expression.database_and_table_name);
         const auto & table = context.getTable(database_table.database, database_table.table);
-        auto & columns = table->getColumns();
+        const auto & columns = table->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();

@@ -36,7 +36,7 @@ public:
 private:
     ASTPtr inner_query;
 
-    void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery);
+    static void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery);
 
 protected:
     StorageView(

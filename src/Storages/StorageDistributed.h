@@ -67,7 +67,7 @@ public:
     bool isRemote() const override { return true; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
+    static QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) ;
 
     Pipes read(
         const Names & column_names,
@@ -166,7 +166,7 @@ protected:
         const String & relative_data_path_,
         bool attach);
 
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info) const;
 
     void createStorage();
 
@@ -180,8 +180,8 @@ protected:
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
         ConnectionPoolPtr conneciton_pool;
 
-        void flushAllData();
-        void shutdownAndDropAllData();
+        void flushAllData() const;
+        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     std::mutex cluster_nodes_mutex;

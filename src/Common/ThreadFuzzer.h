@@ -66,7 +66,7 @@ private:
     ThreadFuzzer();
 
     void initConfiguration();
-    void setup();
+    void setup() const;
 
     static void signalHandler(int);
 };

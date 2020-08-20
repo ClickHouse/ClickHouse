@@ -88,7 +88,7 @@ bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings
     if (!settings.enable_early_constant_folding)
         return false;
 
-    for (auto & action : actions.getActions())
+    for (const auto & action : actions.getActions())
     {
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
@@ -1153,7 +1153,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, co
         remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
 }
 
-void ExpressionAnalysisResult::removeExtraColumns()
+void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
         filter_info->actions->prependProjectInput();
@@ -1163,7 +1163,7 @@ void ExpressionAnalysisResult::removeExtraColumns()
         before_having->prependProjectInput();
 }
 
-void ExpressionAnalysisResult::checkActions()
+void ExpressionAnalysisResult::checkActions() const
 {
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (hasPrewhere())

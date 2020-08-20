@@ -650,7 +650,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
-            auto & name = joined_column.name;
+            const auto & name = joined_column.name;
             if (available_columns.count(name))
                 continue;
 
@@ -892,7 +892,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings) const
+void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings) 
 {
     CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
     CustomizeFunctionsVisitor(data).visit(query);

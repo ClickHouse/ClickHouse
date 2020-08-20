@@ -15,7 +15,7 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         bool with_names_)
         : IRowOutputFormat(header_, out_, callback), settings(settings_), with_names(with_names_)
 {
-            auto & sample = getPort(PortKind::Main).getHeader();
+            const auto & sample = getPort(PortKind::Main).getHeader();
             NamesAndTypesList columns(sample.getNamesAndTypesList());
             fields.assign(columns.begin(), columns.end());
 }

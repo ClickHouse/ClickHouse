@@ -59,7 +59,7 @@ void AIOContextPool::waitForCompletion()
 }
 
 
-int AIOContextPool::getCompletionEvents(io_event events[], const int max_events)
+int AIOContextPool::getCompletionEvents(io_event events[], const int max_events) const
 {
     timespec timeout{timeout_sec, 0};
 

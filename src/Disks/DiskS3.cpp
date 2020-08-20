@@ -239,7 +239,7 @@ namespace
             return true;
         }
 
-    private:
+    
         std::shared_ptr<Aws::S3::S3Client> client_ptr;
         const String & bucket;
         Metadata metadata;
@@ -310,7 +310,7 @@ namespace
             impl.swap(*this);
         }
 
-    private:
+    
         WriteBufferFromS3 impl;
         bool finalized = false;
         Metadata metadata;
@@ -570,7 +570,7 @@ void DiskS3::removeRecursive(const String & path)
     }
 }
 
-String DiskS3::getRandomName() const
+String DiskS3::getRandomName() 
 {
     std::uniform_int_distribution<int> distribution('a', 'z');
     String res(32, ' '); /// The number of bits of entropy should be not less than 128.
