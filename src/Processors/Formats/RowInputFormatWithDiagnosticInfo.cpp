@@ -140,6 +140,16 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
             out << "ERROR: Date must be in YYYY-MM-DD format.\n";
         else
             out << "ERROR\n";
+        
+        //print exception msg 
+        try 
+        { 
+            std::rethrow_exception(exception); 
+        } 
+        catch (DB::Exception e) 
+        { 
+            out << e.what(); 
+        }
         return false;
     }
 
