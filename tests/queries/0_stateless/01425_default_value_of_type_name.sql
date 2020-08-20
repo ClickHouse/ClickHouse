@@ -5,4 +5,4 @@ SELECT
     defaultValueOfTypeName('IPv4'),
     defaultValueOfTypeName('IPv6'),
     defaultValueOfTypeName('Decimal128(3)'),
-    defaultValueOfTypeName('Tuple(Date, DateTime, Array(Array(String)), Nullable(UInt8))');
+    defaultValueOfTypeName('Tuple(Date, DateTime(\'UTC\'), Array(Array(String)), Nullable(UInt8))');
