@@ -1,6 +1,4 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
- *
  * Copyright (c) 2007 Ulf Lilleengen
  * All rights reserved.
  *
@@ -31,12 +29,21 @@
 #include <sys/param.h>
 #define _KERNEL
 #include <sys/mount.h>
+#include <sys/taskqueue.h>
 #undef _KERNEL
-#include <sys/queue.h>
-#include <sys/stat.h>
 #include <sys/sysctl.h>
-#include <sys/time.h>
-#include <sys/vnode.h>
+
+#undef lbolt
+#undef lbolt64
+#undef gethrestime_sec
+#include <sys/zfs_context.h>
+#include <sys/spa.h>
+#include <sys/spa_impl.h>
+#include <sys/dmu.h>
+#include <sys/zap.h>
+#include <sys/fs/zfs.h>
+#include <sys/zfs_znode.h>
+#include <sys/zfs_sa.h>
 
 #include <netinet/in.h>
 
@@ -48,15 +55,24 @@
 #define ZFS
 #include "libprocstat.h"
 #include "common_kvm.h"
-#include "zfs_defs.h"
+
+/* 
+ * Offset calculations that are used to get data from znode without having the
+ * definition.
+ */
+#define LOCATION_ZID (2 * sizeof(void *))
+#define LOCATION_ZPHYS(zsize) ((zsize) - (2 * sizeof(void *) + sizeof(struct task)))
 
 int
 zfs_filestat(kvm_t *kd, struct vnode *vp, struct vnstat *vn)
 {
 
+	znode_phys_t zphys;
 	struct mount mount, *mountptr;
-	void *znodeptr;
+	uint64_t *zid;
+	void *znodeptr, *vnodeptr;
 	char *dataptr;
+	void *zphys_addr;
 	size_t len;
 	int size;
 
@@ -65,27 +81,33 @@ zfs_filestat(kvm_t *kd, struct vnode *vp, struct vnstat *vn)
 		warnx("error getting sysctl");
 		return (1);
 	}
-	dataptr = malloc(size);
-	if (dataptr == NULL) {
+	znodeptr = malloc(size);
+	if (znodeptr == NULL) {
 		warnx("error allocating memory for znode storage");
 		return (1);
 	}
-
-	if ((size_t)size < offsetof_z_id + sizeof(uint64_t) ||
-	    (size_t)size < offsetof_z_mode + sizeof(mode_t) ||
-	    (size_t)size < offsetof_z_size + sizeof(uint64_t)) {
-		warnx("znode_t size is too small");
+	/* Since we have problems including vnode.h, we'll use the wrappers. */
+	vnodeptr = getvnodedata(vp);
+	if (!kvm_read_all(kd, (unsigned long)vnodeptr, znodeptr,
+	    (size_t)size)) {
+		warnx("can't read znode at %p", (void *)vnodeptr);
 		goto bad;
 	}
 
-	if ((size_t)size != sizeof_znode_t)
-		warnx("znode_t size mismatch, data could be wrong");
+	/* 
+	 * z_id field is stored in the third pointer. We therefore skip the two
+	 * first bytes. 
+	 *
+	 * Pointer to the z_phys structure is the next last pointer. Therefore
+	 * go back two bytes from the end.
+	 */
+	dataptr = znodeptr;
+	zid = (uint64_t *)(dataptr + LOCATION_ZID);
+	zphys_addr = *(void **)(dataptr + LOCATION_ZPHYS(size));
 
-	/* Since we have problems including vnode.h, we'll use the wrappers. */
-	znodeptr = getvnodedata(vp);
-	if (!kvm_read_all(kd, (unsigned long)znodeptr, dataptr,
-	    (size_t)size)) {
-		warnx("can't read znode at %p", (void *)znodeptr);
+	if (!kvm_read_all(kd, (unsigned long)zphys_addr, &zphys,
+	    sizeof(zphys))) {
+		warnx("can't read znode_phys at %p", zphys_addr);
 		goto bad;
 	}
 
@@ -95,18 +117,18 @@ zfs_filestat(kvm_t *kd, struct vnode *vp, struct vnstat *vn)
 		warnx("can't read mount at %p", (void *)mountptr);
 		goto bad;
 	}
-
-	/*
-	 * XXX Assume that this is a znode, but it can be a special node
-	 * under .zfs/.
-	 */
 	vn->vn_fsid = mount.mnt_stat.f_fsid.val[0];
-	vn->vn_fileid = *(uint64_t *)(void *)(dataptr + offsetof_z_id);
-	vn->vn_mode = *(mode_t *)(void *)(dataptr + offsetof_z_mode);
-	vn->vn_size = *(uint64_t *)(void *)(dataptr + offsetof_z_size);
-	free(dataptr);
+	vn->vn_fileid = *zid;
+	/*
+	 * XXX: Shows up wrong in output, but UFS has this error too. Could
+	 * be that we're casting mode-variables from 64-bit to 8-bit or simply
+	 * error in the mode-to-string function.
+	 */
+	vn->vn_mode = (mode_t)zphys.zp_mode;
+	vn->vn_size = (u_long)zphys.zp_size;
+	free(znodeptr);
 	return (0);
 bad:
-	free(dataptr);
+	free(znodeptr);
 	return (1);
 }

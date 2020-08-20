@@ -36,7 +36,6 @@
 .Nm procstat_freegroups ,
 .Nm procstat_freekstack ,
 .Nm procstat_freeprocs ,
-.Nm procstat_freeptlwpinfo ,
 .Nm procstat_freevmmap ,
 .Nm procstat_get_pipe_info ,
 .Nm procstat_get_pts_info ,
@@ -53,7 +52,6 @@
 .Nm procstat_getosrel ,
 .Nm procstat_getpathname ,
 .Nm procstat_getprocs ,
-.Nm procstat_getptlwpinfo ,
 .Nm procstat_getrlimit ,
 .Nm procstat_getumask ,
 .Nm procstat_getvmmap ,
@@ -104,11 +102,6 @@
 .Fo procstat_freevmmap
 .Fa "struct procstat *procstat"
 .Fa "struct kinfo_vmentry *vmmap"
-.Fc
-.Ft void
-.Fo procstat_freeptlwpinfo
-.Fa "struct procstat *procstat"
-.Fa "struct ptrace_lwpinfo *pl"
 .Fc
 .Ft int
 .Fo procstat_get_pipe_info
@@ -206,11 +199,6 @@
 .Fa "struct procstat *procstat"
 .Fa "int what"
 .Fa "int arg"
-.Fa "unsigned int *count"
-.Fc
-.Ft "struct ptrace_lwpinfo *"
-.Fo procstat_getptlwpinfo
-.Fa "struct procstat *procstat"
 .Fa "unsigned int *count"
 .Fc
 .Ft "int"
@@ -320,20 +308,6 @@ The number of processes found is returned in the reference parameter
 .Fa cnt .
 The caller is responsible to free the allocated memory with a subsequent
 .Fn procstat_freeprocs
-function call.
-.Pp
-The
-.Fn procstat_getptlwpinfo
-function gets a pointer to the
-.Vt procstat
-structure from the
-.Fn procstat_open_core
-function and returns a dynamically allocated set of signals intercepted by a
-process in the process's core file.
-The number of processes found is returned in the reference parameter
-.Fa cnt .
-The caller is responsible to free the allocated memory with a subsequent
-.Fn procstat_freeptlwpinfo
 function call.
 .Pp
 The

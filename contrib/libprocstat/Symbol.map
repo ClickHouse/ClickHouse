@@ -6,6 +6,9 @@ FBSD_1.2 {
 	procstat_freefiles;
 	procstat_freeprocs;
 	procstat_get_pipe_info;
+	procstat_get_pts_info;
+	procstat_get_socket_info;
+	procstat_get_vnode_info;
 	procstat_getfiles;
 	procstat_getprocs;
 	procstat_open_kvm;
@@ -19,6 +22,8 @@ FBSD_1.3 {
 	procstat_freegroups;
 	procstat_freekstack;
 	procstat_freevmmap;
+	procstat_get_sem_info;
+	procstat_get_shm_info;
 	procstat_getargv;
 	procstat_getauxv;
 	procstat_getenvv;
@@ -35,12 +40,4 @@ FBSD_1.3 {
 FBSD_1.5 {
 	procstat_freeptlwpinfo;
 	procstat_getptlwpinfo;
-	procstat_get_sem_info;
-	procstat_get_shm_info;
-	procstat_get_socket_info;
-};
-
-FBSD_1.6 {
-	procstat_get_pts_info;
-	procstat_get_vnode_info;
 };

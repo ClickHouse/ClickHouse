@@ -1,6 +1,4 @@
-/*-
- * SPDX-License-Identifier: BSD-4-Clause
- *
+/* 
  * Copyright (c) 2000 Peter Edwards
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
