@@ -698,7 +698,7 @@ auto s = std::string{"Hello"};
 
 **3.** 编译器： `gcc`。 此时（2017年12月），代码使用7.2版编译。（它也可以使用`clang 4` 编译）
 
-使用标准库 (`libstdc++` 或 `libc++`)。
+使用标准库 (`libc++`)。
 
 **4.** 操作系统：Linux Ubuntu，不比 Precise 早。
 
