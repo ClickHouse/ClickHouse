@@ -195,6 +195,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         out.close();
     }
 
+    /// We attach database before loading it's tables, so do not allow concurrent DDL queries
+    auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+
     bool added = false;
     bool renamed = false;
     try
@@ -690,13 +693,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
-        database = DatabaseCatalog::instance().getDatabase(create.database);
-        assertOrSetUUID(create, database);
-
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
+
+        database = DatabaseCatalog::instance().getDatabase(create.database);
+        assertOrSetUUID(create, database);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(table_name, context))
