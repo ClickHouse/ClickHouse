@@ -252,7 +252,6 @@ target_link_libraries(clickhouse_common_io
         PRIVATE
             ${EXECINFO_LIBRARIES}
             cpuid
-            libprocstat
         PUBLIC
             boost::program_options
             boost::system
