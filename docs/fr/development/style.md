@@ -705,7 +705,7 @@ Mais toutes choses étant égales par ailleurs, le code multi-plateforme ou port
 
 **3.** Compilateur: `gcc`. En ce moment (décembre 2017), le code est compilé en utilisant la version 7.2. (Il peut également être compilé en utilisant `clang 4`.)
 
-La bibliothèque standard est utilisée (`libstdc++` ou `libc++`).
+La bibliothèque standard est utilisée (`libc++`).
 
 **4.**OS: Linux Ubuntu, pas plus vieux que précis.
 
