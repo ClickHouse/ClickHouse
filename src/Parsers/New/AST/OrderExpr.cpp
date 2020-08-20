@@ -36,7 +36,7 @@ antlrcpp::Any ParseTreeVisitor::visitOrderExpr(ClickHouseParser::OrderExprContex
     AST::PtrTo<AST::StringLiteral> collate;
     if (ctx->COLLATE()) collate = AST::Literal::createString(ctx->STRING_LITERAL());
 
-    return std::make_shared<AST::OrderExpr>(ctx->columnExpr()->accept(this), nulls, collate, !ctx->DESCENDING());
+    return std::make_shared<AST::OrderExpr>(ctx->columnExpr()->accept(this), nulls, collate, !ctx->DESCENDING() && !ctx->DESC());
 }
 
 }

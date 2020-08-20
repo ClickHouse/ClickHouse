@@ -41,12 +41,12 @@ SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : clause_type(type)
     (void)clause_type; // TODO
 }
 
-CreateTableQuery::CreateTableQuery(bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause)
-    : if_not_exists(if_not_exists_)
+CreateTableQuery::CreateTableQuery(bool temporary_, bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause)
+    : temporary(temporary_), if_not_exists(if_not_exists_)
 {
     children.push_back(identifier);
     children.push_back(clause);
-    (void)if_not_exists; // TODO
+    (void)if_not_exists, (void)temporary; // TODO
 }
 
 }
@@ -60,7 +60,10 @@ antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::S
 {
     auto elems = std::make_shared<TableElementList>();
     for (auto * elem : ctx->tableElementExpr()) elems->append(elem->accept(this).as<PtrTo<TableElementExpr>>());
-    return SchemaClause::createDescription(elems, ctx->engineClause()->accept(this));
+
+    // TODO: assert(!(ctx->parent->TEMPORARY() ^ ctx->engineClause()))
+    return SchemaClause::createDescription(
+        elems, ctx->engineClause() ? ctx->engineClause()->accept(this).as<PtrTo<EngineClause>>() : nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaAsSubqueryClause(ClickHouseParser::SchemaAsSubqueryClauseContext *ctx)

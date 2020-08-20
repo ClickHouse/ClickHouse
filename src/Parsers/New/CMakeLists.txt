@@ -1,9 +1,11 @@
 set (SRCS
+    AST/CheckQuery.cpp
     AST/ColumnExpr.cpp
     AST/ColumnTypeExpr.cpp
     AST/CreateDatabaseQuery.cpp
     AST/CreateTableQuery.cpp
     AST/DDLQuery.cpp
+    AST/DescribeQuery.cpp
     AST/DropQuery.cpp
     AST/EngineExpr.cpp
     AST/Identifier.cpp
@@ -19,6 +21,7 @@ set (SRCS
     AST/SelectUnionQuery.cpp
     AST/SetQuery.cpp
     AST/SettingExpr.cpp
+    AST/ShowQuery.cpp
     AST/TableElementExpr.cpp
     AST/TableExpr.cpp
     AST/UseQuery.cpp

@@ -26,6 +26,10 @@ public:
 
     virtual antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *context) = 0;
 
+    virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *context) = 0;
@@ -133,6 +137,10 @@ public:
     virtual antlrcpp::Any visitSettingExpr(ClickHouseParser::SettingExprContext *context) = 0;
 
     virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *context) = 0;
 

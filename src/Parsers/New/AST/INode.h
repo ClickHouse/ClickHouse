@@ -6,6 +6,7 @@
 #include <Common/TypePromotion.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <initializer_list>
 #include <iostream>
 
 
@@ -37,6 +38,9 @@ class INode : public TypePromotion<INode>
 template <class T, char Separator>
 class List : public INode {
     public:
+        List() = default;
+        List(std::initializer_list<Ptr> list) { children = list; }
+
         void append(PtrTo<T> node) { children.push_back(node); }
 
         auto begin() const { return children.cbegin(); }

@@ -9,9 +9,10 @@ namespace DB::AST
 {
 
 // static
-PtrTo<Literal> Literal::createNull(antlr4::tree::TerminalNode * literal)
+PtrTo<Literal> Literal::createNull(antlr4::tree::TerminalNode *)
 {
-    return PtrTo<Literal>(new Literal(LiteralType::NULL_LITERAL, literal));
+    // FIXME: check that it's a really Null literal.
+    return PtrTo<Literal>(new Literal(LiteralType::NULL_LITERAL, String()));
 }
 
 // static
@@ -21,12 +22,25 @@ PtrTo<NumberLiteral> Literal::createNumber(antlr4::tree::TerminalNode * literal,
 }
 
 // static
+PtrTo<NumberLiteral> Literal::createNumber(String&& literal)
+{
+    bool has_minus = literal[0] == '-';
+    return std::make_shared<NumberLiteral>(has_minus ? literal.substr(1) : literal, has_minus);
+}
+
+// static
 PtrTo<StringLiteral> Literal::createString(antlr4::tree::TerminalNode * literal)
 {
     return std::make_shared<StringLiteral>(literal);
 }
 
-Literal::Literal(LiteralType type_, antlr4::tree::TerminalNode * literal) : token(literal), type(type_)
+// static
+PtrTo<StringLiteral> Literal::createString(String&& literal)
+{
+    return std::make_shared<StringLiteral>(std::move(literal));
+}
+
+Literal::Literal(LiteralType type_, String&& token_) : token(token_), type(type_)
 {
 }
 

@@ -31,7 +31,7 @@ class SchemaClause : public INode
 class CreateTableQuery : public DDLQuery
 {
     public:
-        CreateTableQuery(bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause);
+        CreateTableQuery(bool temporary, bool if_not_exists, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause);
 
     private:
         enum ChildIndex : UInt8
@@ -40,7 +40,7 @@ class CreateTableQuery : public DDLQuery
             SCHEMA = 1,
         };
 
-        const bool if_not_exists;
+        const bool temporary, if_not_exists;
 };
 
 }

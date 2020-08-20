@@ -1,16 +1,24 @@
+#include <memory>
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/New/AST/CheckQuery.h>
+#include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
 #include <Parsers/New/AST/CreateTableQuery.h>
 #include <Parsers/New/AST/DDLQuery.h>
+#include <Parsers/New/AST/DescribeQuery.h>
 #include <Parsers/New/AST/DropQuery.h>
 #include <Parsers/New/AST/EngineExpr.h>
+#include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/InsertQuery.h>
+#include <Parsers/New/AST/JoinExpr.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/OptimizeQuery.h>
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/SetQuery.h>
+#include <Parsers/New/AST/ShowQuery.h>
+#include <Parsers/New/AST/TableExpr.h>
 #include <Parsers/New/AST/UseQuery.h>
 
 
@@ -50,6 +58,16 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     __builtin_unreachable();
 }
 
+antlrcpp::Any ParseTreeVisitor::visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx)
+{
+    return std::make_shared<CheckQuery>(ctx->tableIdentifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx)
+{
+    return std::make_shared<DescribeQuery>(ctx->tableIdentifier()->accept(this));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx)
 {
     PtrTo<DDLQuery> query;
@@ -75,7 +93,8 @@ antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::Create
 
 antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx)
 {
-    return std::make_shared<CreateTableQuery>(!!ctx->IF(), ctx->tableIdentifier()->accept(this), ctx->schemaClause()->accept(this));
+    return std::make_shared<CreateTableQuery>(
+        !!ctx->TEMPORARY(), !!ctx->IF(), ctx->tableIdentifier()->accept(this), ctx->schemaClause()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
@@ -135,6 +154,49 @@ antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtCont
 antlrcpp::Any ParseTreeVisitor::visitSetStmt(ClickHouseParser::SetStmtContext *ctx)
 {
     return std::make_shared<SetQuery>(ctx->settingExprList()->accept(this).as<PtrTo<SettingExprList>>());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx)
+{
+    return std::make_shared<ShowCreateTableQuery>(!!ctx->TEMPORARY(), ctx->tableIdentifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx)
+{
+    // TODO: don't forget to convert TEMPORARY into 'is_temporary=1' condition.
+
+    auto table_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"), nullptr);
+    auto expr_list = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(table_name)});
+    auto select_stmt = std::make_shared<SelectStmt>(expr_list);
+
+    auto and_args = PtrTo<ColumnExprList>(new ColumnExprList{Literal::createNumber("1")});
+
+    if (ctx->databaseIdentifier())
+    {
+        auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"), nullptr);
+        auto args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database), Literal::createString("db")});
+        and_args->append(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, args));
+    }
+
+    if (ctx->LIKE())
+    {
+        auto args = PtrTo<ColumnExprList>(
+            new ColumnExprList{ColumnExpr::createIdentifier(table_name), Literal::createString(ctx->STRING_LITERAL())});
+        and_args->append(ColumnExpr::createFunction(std::make_shared<Identifier>("like"), nullptr, args));
+    }
+    else if (ctx->whereClause())
+        and_args->append(ctx->whereClause()->columnExpr()->accept(this));
+
+    auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
+    auto tables = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("tables"));
+    auto system_tables = JoinExpr::createTableExpr(TableExpr::createIdentifier(tables));
+
+    select_stmt->setFromClause(std::make_shared<FromClause>(system_tables, false));
+    select_stmt->setWhereClause(
+        std::make_shared<WhereClause>(ColumnExpr::createFunction(std::make_shared<Identifier>("and"), nullptr, and_args)));
+    select_stmt->setLimitClause(ctx->limitClause() ? ctx->limitClause()->accept(this).as<PtrTo<LimitClause>>() : nullptr);
+
+    return select_stmt;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitUseStmt(ClickHouseParser::UseStmtContext *ctx)

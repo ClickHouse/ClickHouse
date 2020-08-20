@@ -17,6 +17,8 @@ public:
     antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext *ctx) override;
     antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx) override;
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *ctx) override;
+    antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx) override;
+    antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx) override;
     antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx) override;
     antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override;
     antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx) override;
@@ -27,6 +29,8 @@ public:
     antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override;
     antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx) override;
     antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override;
+    antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx) override;
+    antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx) override;
     antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *ctx) override;
 
     // CREATE clauses

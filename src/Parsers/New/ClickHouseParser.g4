@@ -11,12 +11,24 @@ queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
 
 query
-    : distributedStmt
+    : checkStmt
+    | describeStmt
+    | distributedStmt
     | insertStmt
     | selectUnionStmt
     | setStmt
+    | showTablesStmt
+    | showCreateTableStmt
     | useStmt
     ;
+
+// CHECK statement
+
+checkStmt: CHECK TABLE tableIdentifier;
+
+// DESCRIBE statement
+
+describeStmt: (DESCRIBE | DESC) TABLE tableIdentifier;
 
 // DDL statement
 
@@ -32,20 +44,20 @@ distributedStmt:
 // CREATE statement
 
 createDatabaseStmt: CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?;
-createTableStmt: CREATE TABLE (IF NOT EXISTS)? tableIdentifier schemaClause;
+createTableStmt: CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause;
 
 /* FIXME: if not a backward-compatibility it could look like:
  *
- *    createTableStmt: CREATE TABLE (IF NOT EXISTS)? tableIdentifier schemaClause engineClause;
+ *    createTableStmt: CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause engineClause;
  *    schemaClause: LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN | AS tableExpr;
  *    engineClause: … ; // same
  *
  */
 schemaClause
-    : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN engineClause  # SchemaDescriptionClause
-    | engineClause? AS selectUnionStmt                                       # SchemaAsSubqueryClause
-    | AS tableIdentifier engineClause?                                       # SchemaAsTableClause
-    | AS identifier LPAREN tableArgList? RPAREN                              # SchemaAsFunctionClause
+    : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN engineClause?  # SchemaDescriptionClause
+    | engineClause? AS selectUnionStmt                                        # SchemaAsSubqueryClause
+    | AS tableIdentifier engineClause?                                        # SchemaAsTableClause
+    | AS identifier LPAREN tableArgList? RPAREN                               # SchemaAsFunctionClause
     ;
 engineClause:
     engineExpr
@@ -153,7 +165,7 @@ joinConstraintClause
 
 limitExpr: INTEGER_LITERAL ((COMMA | OFFSET) INTEGER_LITERAL)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
-orderExpr: columnExpr (ASCENDING | DESCENDING)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
+orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
 ratioExpr: INTEGER_LITERAL (SLASH INTEGER_LITERAL); // TODO: not complete!
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE literal;
@@ -161,6 +173,11 @@ settingExpr: identifier EQ_SINGLE literal;
 // SET statement
 
 setStmt: SET settingExprList;
+
+// SHOW statements
+
+showCreateTableStmt: SHOW CREATE TEMPORARY? TABLE tableIdentifier;
+showTablesStmt: SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?;
 
 // USE statement
 
@@ -253,12 +270,13 @@ literal
     | identifier LPAREN RPAREN
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
-    : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CLUSTER | COLLATE | CREATE
-    | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESCENDING | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS
-    | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS
-    | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR
-    | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | TABLE
-    | TEMPORARY | THEN | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VOLUME | WEEK | WHEN | WITH | YEAR
+    : ALIAS | ALL | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CHECK | CLUSTER | COLLATE
+    | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT | DROP | ELSE | END
+    | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL
+    | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT | NULLS | OFFSET | ON
+    | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS
+    | SHOW | TABLE | TABLES | TEMPORARY | THEN | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VOLUME | WEEK | WHEN | WITH
+    | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

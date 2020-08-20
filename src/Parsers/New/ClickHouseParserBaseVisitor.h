@@ -29,6 +29,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitDistributedStmt(ClickHouseParser::DistributedStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -242,6 +250,14 @@ public:
   }
 
   virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
