@@ -51,7 +51,6 @@ if (USE_INTERNAL_CCTZ)
         file(APPEND ${SYSTEM_STORAGE_TZ_FILE}  "const char * auto_time_zones[] {\n" )
 
         foreach(TIMEZONE ${TIMEZONES})
-
             file(APPEND ${SYSTEM_STORAGE_TZ_FILE}  "    \"${TIMEZONE}"\",\n)
             string(REPLACE "/" "_" TIMEZONE_ID ${TIMEZONE})
             string(REPLACE "+" "_PLUS_" TIMEZONE_ID ${TIMEZONE_ID})
@@ -67,6 +66,7 @@ if (USE_INTERNAL_CCTZ)
 
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
         endforeach(TIMEZONE)
+
         file(APPEND ${SYSTEM_STORAGE_TZ_FILE}  "    nullptr};\n")
 
         add_library(tzdata STATIC ${TZ_OBJS})
