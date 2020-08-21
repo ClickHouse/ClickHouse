@@ -18,6 +18,7 @@ template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
 private:
+    /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
     const size_t MAX_ELEMENTS = 1048576;
 
     AggregateFunctionPtr nested_function;
