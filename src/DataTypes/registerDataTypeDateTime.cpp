@@ -48,7 +48,7 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
             return {};
         else
         {
-            if (argument->value.getType() != field_type)
+            if (argument && argument->value.getType() != field_type)
                 throw Exception(getExceptionMessage(String(" has wrong type: ") + argument->value.getTypeName(),
                     argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
