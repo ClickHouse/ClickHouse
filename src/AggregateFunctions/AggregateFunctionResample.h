@@ -18,7 +18,7 @@ template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
 private:
-    const size_t MAX_ELEMENTS = 4096;
+    const size_t MAX_ELEMENTS = 1048576;
 
     AggregateFunctionPtr nested_function;
 
