@@ -142,7 +142,8 @@ StorageKafka::StorageKafka(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    for (size_t i = 0; i < num_consumers; i++) {
+    for (size_t i = 0; i < num_consumers; i++)
+    {
         auto task = global_context.getSchedulePool().createTask(log->name(), [this, i]{ threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
@@ -270,7 +271,7 @@ void StorageKafka::shutdown()
     LOG_TRACE(log, "Waiting for cleanup");
     for (size_t i = 0; i < num_consumers; i++)
     {
-        tasks[i]->stream_cancelled = false;
+        tasks[i]->stream_cancelled = true;
         tasks[i]->holder->deactivate();
     }
 
