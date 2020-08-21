@@ -76,7 +76,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "small_jbod_with_external",
@@ -86,7 +86,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -96,7 +96,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -106,7 +106,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 0,
+            "disable_merges": 1,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -116,7 +116,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -126,7 +126,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "jbods_with_external",
@@ -136,7 +136,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "jbods_with_external",
@@ -146,7 +146,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -156,7 +156,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -166,7 +166,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -176,7 +176,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -186,7 +186,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -196,7 +196,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -206,7 +206,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -216,7 +216,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -226,7 +226,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
-            "allow_merges": 1,
+            "disable_merges": 0,
         },
     ]
 
@@ -1357,19 +1357,19 @@ def _insert_merge_execute(name, policy, parts, cmds, parts_before_cmds, parts_af
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
-def _get_allow_merges_for_storage_policy(node, storage_policy):
-    return list(map(int, node.query("SELECT allow_merges FROM system.storage_policies WHERE policy_name = '{}' ORDER BY volume_priority".format(storage_policy)).splitlines()))
+def _get_disable_merges_for_storage_policy(node, storage_policy):
+    return list(map(int, node.query("SELECT disable_merges FROM system.storage_policies WHERE policy_name = '{}' ORDER BY volume_priority".format(storage_policy)).splitlines()))
 
 
 def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
     try:
         name = "test_no_merges_in_configuration_allow_from_query_without_reload"
         node1.restart_clickhouse(kill=True)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [1, 0]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 1]
         _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
                 "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external"
             ], 2, 1)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [1, 1]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 0]
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME small_jbod_with_external_no_merges.external")
@@ -1379,12 +1379,12 @@ def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
     try:
         name = "test_no_merges_in_configuration_allow_from_query_with_reload"
         node1.restart_clickhouse(kill=True)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [1, 0]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 1]
         _insert_merge_execute(name, "small_jbod_with_external_no_merges", 2, [
                 "SYSTEM START MERGES ON VOLUME small_jbod_with_external_no_merges.external",
                 "SYSTEM RELOAD CONFIG"
             ], 2, 1)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [1, 1]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external_no_merges") == [0, 0]
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME small_jbod_with_external_no_merges.external")
@@ -1394,12 +1394,12 @@ def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cl
     try:
         name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
         node1.restart_clickhouse(kill=True)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external") == [1, 1]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external") == [0, 0]
         _insert_merge_execute(name, "small_jbod_with_external", 2, [
                 "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
                 "INSERT INTO {name} VALUES (2)".format(name=name)
             ], 1, 2)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external") == [1, 0]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external") == [0, 1]
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME small_jbod_with_external.external")
@@ -1409,13 +1409,13 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
     try:
         name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
         node1.restart_clickhouse(kill=True)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external") == [1, 1]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external") == [0, 0]
         _insert_merge_execute(name, "small_jbod_with_external", 2, [
                 "SYSTEM STOP MERGES ON VOLUME small_jbod_with_external.external",
                 "INSERT INTO {name} VALUES (2)".format(name=name),
                 "SYSTEM RELOAD CONFIG"
             ], 1, 2)
-        assert _get_allow_merges_for_storage_policy(node1, "small_jbod_with_external") == [1, 0]
+        assert _get_disable_merges_for_storage_policy(node1, "small_jbod_with_external") == [0, 1]
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME small_jbod_with_external.external")

@@ -37,7 +37,7 @@
                 </main>
                 <external>
                     <disk>external</disk>
-                    <allow_merges>false</allow_merges>
+                    <disable_merges>true</disable_merges>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>

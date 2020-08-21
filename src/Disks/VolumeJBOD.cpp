@@ -54,7 +54,7 @@ VolumeJBOD::VolumeJBOD(
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
 
-    are_merges_allowed = config.getBool(config_prefix + ".allow_merges", true);
+    are_merges_allowed = config.getBool(config_prefix + ".disable_merges", false);
 }
 
 VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
