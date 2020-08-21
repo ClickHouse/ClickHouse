@@ -1797,6 +1797,13 @@ using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
 using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
+using FunctionParseDateTime32BestEffort = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTime32BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime32BestEffortOrZero = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTime32BestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime32BestEffortOrNull = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTime32BestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
+
 using FunctionParseDateTime64BestEffort = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
 using FunctionParseDateTime64BestEffortOrZero = FunctionConvertFromString<
