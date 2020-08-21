@@ -216,7 +216,7 @@ target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
     target_link_libraries(hdfs3 PRIVATE ${KERBEROS_LIBRARIES})
 endif()
-target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARY})
+target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
 
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})
