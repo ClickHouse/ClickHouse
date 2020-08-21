@@ -56,7 +56,11 @@ endif ()
 
 if (RDKAFKA_LIB AND RDKAFKA_INCLUDE_DIR)
     set (USE_RDKAFKA 1)
-    set (RDKAFKA_LIBRARY ${RDKAFKA_LIB} ${OPENSSL_LIBRARIES})
+    add_library (rdkafka_imp UNKNOWN IMPORTED)
+    set_target_properties (rdkafka_imp PROPERTIES IMPORTED_LOCATION ${RDKAFKA_LIB})
+    set_target_properties (rdkafka_imp PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${RDKAFKA_INCLUDE_DIR})
+
+    set (RDKAFKA_LIBRARY rdkafka_imp ${OPENSSL_LIBRARIES})
     set (CPPKAFKA_LIBRARY cppkafka)
     if (SASL2_LIBRARY)
        list (APPEND RDKAFKA_LIBRARY ${SASL2_LIBRARY})
