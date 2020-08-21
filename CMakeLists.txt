@@ -419,6 +419,7 @@ include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
+include (cmake/find/odbc.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
