@@ -63,6 +63,10 @@ public:
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }
     const Disks & getDisks() const { return disks; }
 
+    virtual bool areMergesAllowed() const { return true; }
+
+    virtual void setAllowMergesFromQuery(bool /*allow*/) {}
+
 protected:
     Disks disks;
     const String name;

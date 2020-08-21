@@ -30,6 +30,18 @@
             </volumes>
         </small_jbod_with_external>
 
+        <small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <allow_merges>false</allow_merges>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
+
         <one_more_small_jbod_with_external>
             <volumes>
                 <m>

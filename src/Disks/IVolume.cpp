@@ -9,7 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int INCONSISTENT_RESERVATIONS;
     extern const int NO_RESERVATIONS_PROVIDED;
     extern const int UNKNOWN_VOLUME_TYPE;
@@ -51,7 +51,7 @@ IVolume::IVolume(
     }
 
     if (disks.empty())
-        throw Exception("Volume must contain at least one disk.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("Volume must contain at least one disk", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 }
 
 UInt64 IVolume::getMaxUnreservedFreeSpace() const
