@@ -23,22 +23,22 @@ public:
     FROM = 44, FULL = 45, GLOBAL = 46, GROUP = 47, HAVING = 48, HOUR = 49, 
     ID = 50, IF = 51, IN = 52, INF = 53, INNER = 54, INSERT = 55, INTERVAL = 56, 
     INTO = 57, IS = 58, JOIN = 59, KEY = 60, LAST = 61, LEADING = 62, LEFT = 63, 
-    LIKE = 64, LIMIT = 65, LOCAL = 66, MATERIALIZED = 67, MINUTE = 68, MONTH = 69, 
-    NAN_SQL = 70, NOT = 71, NULL_SQL = 72, NULLS = 73, OFFSET = 74, ON = 75, 
-    OPTIMIZE = 76, OR = 77, ORDER = 78, OUTER = 79, OUTFILE = 80, PARTITION = 81, 
-    PREWHERE = 82, PRIMARY = 83, QUARTER = 84, RIGHT = 85, SAMPLE = 86, 
-    SECOND = 87, SELECT = 88, SEMI = 89, SET = 90, SETTINGS = 91, SHOW = 92, 
-    TABLE = 93, TABLES = 94, TEMPORARY = 95, THEN = 96, TIES = 97, TO = 98, 
-    TOTALS = 99, TRAILING = 100, TRIM = 101, TTL = 102, UNION = 103, USE = 104, 
-    USING = 105, VALUES = 106, VOLUME = 107, WEEK = 108, WHEN = 109, WHERE = 110, 
-    WITH = 111, YEAR = 112, IDENTIFIER = 113, FLOATING_LITERAL = 114, HEXADECIMAL_LITERAL = 115, 
-    INTEGER_LITERAL = 116, STRING_LITERAL = 117, ARROW = 118, ASTERISK = 119, 
-    BACKQUOTE = 120, BACKSLASH = 121, COLON = 122, COMMA = 123, CONCAT = 124, 
-    DASH = 125, DOT = 126, EQ_DOUBLE = 127, EQ_SINGLE = 128, GE = 129, GT = 130, 
-    LBRACKET = 131, LE = 132, LPAREN = 133, LT = 134, NOT_EQ = 135, PERCENT = 136, 
-    PLUS = 137, QUERY = 138, QUOTE_SINGLE = 139, RBRACKET = 140, RPAREN = 141, 
-    SEMICOLON = 142, SLASH = 143, UNDERSCORE = 144, SINGLE_LINE_COMMENT = 145, 
-    MULTI_LINE_COMMENT = 146, WHITESPACE = 147
+    LIKE = 64, LIMIT = 65, LOCAL = 66, MATERIALIZED = 67, MINUTE = 68, MODIFY = 69, 
+    MONTH = 70, NAN_SQL = 71, NOT = 72, NULL_SQL = 73, NULLS = 74, OFFSET = 75, 
+    ON = 76, OPTIMIZE = 77, OR = 78, ORDER = 79, OUTER = 80, OUTFILE = 81, 
+    PARTITION = 82, PREWHERE = 83, PRIMARY = 84, QUARTER = 85, RIGHT = 86, 
+    SAMPLE = 87, SECOND = 88, SELECT = 89, SEMI = 90, SET = 91, SETTINGS = 92, 
+    SHOW = 93, TABLE = 94, TABLES = 95, TEMPORARY = 96, THEN = 97, TIES = 98, 
+    TO = 99, TOTALS = 100, TRAILING = 101, TRIM = 102, TTL = 103, UNION = 104, 
+    USE = 105, USING = 106, VALUES = 107, VOLUME = 108, WEEK = 109, WHEN = 110, 
+    WHERE = 111, WITH = 112, YEAR = 113, IDENTIFIER = 114, FLOATING_LITERAL = 115, 
+    HEXADECIMAL_LITERAL = 116, INTEGER_LITERAL = 117, STRING_LITERAL = 118, 
+    ARROW = 119, ASTERISK = 120, BACKQUOTE = 121, BACKSLASH = 122, COLON = 123, 
+    COMMA = 124, CONCAT = 125, DASH = 126, DOT = 127, EQ_DOUBLE = 128, EQ_SINGLE = 129, 
+    GE = 130, GT = 131, LBRACKET = 132, LE = 133, LPAREN = 134, LT = 135, 
+    NOT_EQ = 136, PERCENT = 137, PLUS = 138, QUERY = 139, QUOTE_SINGLE = 140, 
+    RBRACKET = 141, RPAREN = 142, SEMICOLON = 143, SLASH = 144, UNDERSCORE = 145, 
+    SINGLE_LINE_COMMENT = 146, MULTI_LINE_COMMENT = 147, WHITESPACE = 148
   };
 
   enum {
@@ -256,6 +256,19 @@ public:
     antlr4::tree::TerminalNode *DROP();
     antlr4::tree::TerminalNode *COLUMN();
     IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *EXISTS();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  AlterTableModifyClauseContext : public AlterTableClauseContext {
+  public:
+    AlterTableModifyClauseContext(AlterTableClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *MODIFY();
+    antlr4::tree::TerminalNode *COLUMN();
+    TableColumnDfntContext *tableColumnDfnt();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
 
@@ -493,6 +506,7 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ENGINE();
     IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *NULL_SQL();
     antlr4::tree::TerminalNode *EQ_SINGLE();
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
@@ -2020,6 +2034,7 @@ public:
     antlr4::tree::TerminalNode *LOCAL();
     antlr4::tree::TerminalNode *MATERIALIZED();
     antlr4::tree::TerminalNode *MINUTE();
+    antlr4::tree::TerminalNode *MODIFY();
     antlr4::tree::TerminalNode *MONTH();
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *NULLS();

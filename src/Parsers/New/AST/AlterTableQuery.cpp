@@ -12,6 +12,7 @@ namespace DB::AST
 // static
 PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after)
 {
+    // TODO: assert(element->getType() == TableElementExpr::ExprType::COLUMN);
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::ADD, {element, after}));
     query->if_not_exists = if_not_exists;
     return query;
@@ -21,6 +22,15 @@ PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<Ta
 PtrTo<AlterTableClause> AlterTableClause::createDrop(bool if_exists, PtrTo<Identifier> identifier)
 {
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::DROP, {identifier}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createModify(bool if_exists, PtrTo<TableElementExpr> element)
+{
+    // TODO: assert(element->getType() == TableElementExpr::ExprType::COLUMN);
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::MODIFY, {element}));
     query->if_exists = if_exists;
     return query;
 }
@@ -53,6 +63,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::Alter
 antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx)
 {
     return AlterTableClause::createDrop(!!ctx->IF(), ctx->identifier()->accept(this));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx)
+{
+    return AlterTableClause::createModify(!!ctx->IF(), ctx->tableColumnDfnt()->accept(this));
 }
 
 }

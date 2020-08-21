@@ -33,6 +33,7 @@ alterStmt
 alterTableClause
     : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER identifier)?  # AlterTableAddClause
     | DROP COLUMN (IF EXISTS)? identifier                              # AlterTableDropClause
+    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                       # AlterTableModifyClause
     ;
 
 // CHECK statement
@@ -66,7 +67,7 @@ primaryKeyClause: PRIMARY KEY columnExpr;
 sampleByClause: SAMPLE BY columnExpr;
 ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 
-engineExpr: ENGINE EQ_SINGLE? identifier (LPAREN columnExprList? RPAREN)?;
+engineExpr: ENGINE EQ_SINGLE? (identifier | NULL_SQL) (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
     : tableColumnDfnt  # TableElementExprColumn
     // TODO: INDEX
@@ -277,10 +278,10 @@ keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CHECK | CLUSTER
     | COLLATE | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT | DROP
     | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER
-    | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MONTH | NOT
-    | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE | SECOND
-    | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES
-    | VOLUME | WEEK | WHEN | WITH | YEAR
+    | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH
+    | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE
+    | SECOND | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE
+    | VALUES | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

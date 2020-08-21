@@ -11,12 +11,14 @@ class AlterTableClause : public INode
     public:
         static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
         static PtrTo<AlterTableClause> createDrop(bool if_exists, PtrTo<Identifier> identifier);
+        static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
 
     private:
         enum class ClauseType
         {
             ADD,
             DROP,
+            MODIFY,
         };
 
         const ClauseType clause_type;
