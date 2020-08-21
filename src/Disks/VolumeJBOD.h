@@ -57,7 +57,7 @@ public:
 
     bool areMergesAllowed() const override;
 
-    void setAllowMergesFromQuery(bool allow) override;
+    void setAllowMergesUserOverride(bool allow) override;
 
     /// True if parts on this volume participate in merges according to configuration.
     bool are_merges_allowed = true;

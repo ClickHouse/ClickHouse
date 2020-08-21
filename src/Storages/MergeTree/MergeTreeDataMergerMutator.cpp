@@ -226,6 +226,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsRanges parts_ranges;
 
+    StoragePolicyPtr storage_policy = data.getStoragePolicy();
+
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
@@ -275,6 +277,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.data = &part;
         part_info.ttl_infos = &part->ttl_infos;
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
+        part_info.can_participate_in_merges = part->canParticipateInMerges(storage_policy);
 
         parts_ranges.back().emplace_back(part_info);
 

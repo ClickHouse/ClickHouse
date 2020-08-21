@@ -64,9 +64,11 @@ public:
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }
     const Disks & getDisks() const { return disks; }
 
+    /// Returns effective value of whether merges are allowed on this volume (true) or not (false).
     virtual bool areMergesAllowed() const { return true; }
 
-    virtual void setAllowMergesFromQuery(bool /*allow*/) {}
+    /// User setting for enabling and disabling merges on volume.
+    virtual void setAllowMergesUserOverride(bool /*allow*/) {}
 
 protected:
     Disks disks;

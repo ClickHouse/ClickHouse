@@ -760,10 +760,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
-bool IMergeTreeDataPart::canParticipateInMerges() const
+bool IMergeTreeDataPart::canParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
-    auto storage_policy = storage.getStoragePolicy();
-
     /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
     /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
     /// Therefore we shall obtain volume by name from storage policy.

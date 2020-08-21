@@ -43,7 +43,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
             if (ttl && !isTTLAlreadySatisfied(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
-                if (only_drop_parts || (*static_cast<const MergeTreeData::DataPartPtr *>(part_it->data))->canParticipateInMerges())
+                if (only_drop_parts || part_it->can_participate_in_merges)
                 {
                     partition_to_merge_min_ttl = ttl;
                     partition_to_merge_index = i;
@@ -67,7 +67,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
         if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge)
-            || (!only_drop_parts && !(*static_cast<const MergeTreeData::DataPartPtr *>(best_begin->data))->canParticipateInMerges()))
+            || (!only_drop_parts && !best_begin->can_participate_in_merges))
         {
             /// This condition can not be satisfied on first iteration.
             ++best_begin;
@@ -88,7 +88,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
         if (!ttl || isTTLAlreadySatisfied(*best_end) || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge)
-            || (!only_drop_parts && !(*static_cast<const MergeTreeData::DataPartPtr *>(best_end->data))->canParticipateInMerges()))
+            || (!only_drop_parts && !best_end->can_participate_in_merges))
             break;
 
         total_size += best_end->size;
