@@ -1,5 +1,5 @@
 if (ENABLE_PROTOBUF AND NOT USE_INTERNAL_PROTOBUF_LIBRARY)
-    option(PROTOBUF_OLD_ABI_COMPAT "Set to ON for compatiability with external protobuf which was compiled old C++ ABI" ON)
+    option(PROTOBUF_OLD_ABI_COMPAT "Set to ON for compatiability with external protobuf which was compiled old C++ ABI" OFF)
 endif()
 
 if (PROTOBUF_OLD_ABI_COMPAT)
