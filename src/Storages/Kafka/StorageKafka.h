@@ -94,7 +94,8 @@ private:
     std::mutex mutex;
 
     // Stream thread
-    struct TaskContext {
+    struct TaskContext
+    {
         BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
         explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
