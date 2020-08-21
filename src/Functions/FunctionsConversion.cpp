@@ -82,6 +82,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTime32BestEffort>();
+    factory.registerFunction<FunctionParseDateTime32BestEffortOrZero>();
+    factory.registerFunction<FunctionParseDateTime32BestEffortOrNull>();
     factory.registerFunction<FunctionParseDateTime64BestEffort>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
