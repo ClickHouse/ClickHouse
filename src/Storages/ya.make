@@ -183,6 +183,7 @@ SRCS(
     System/StorageSystemTableFunctions.cpp
     System/StorageSystemTables.cpp
     System/StorageSystemTimeZones.cpp
+    System/StorageSystemTimeZones.generated.cpp
     System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
     System/StorageSystemZeros.cpp
