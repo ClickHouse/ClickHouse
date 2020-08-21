@@ -1218,7 +1218,7 @@ private:
             const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
             UInt32 scale = extractToDecimalScale(scale_column);
 
-            if (scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
+            if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
                 if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
                     throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
