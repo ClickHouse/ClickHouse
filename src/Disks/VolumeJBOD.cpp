@@ -107,7 +107,7 @@ bool VolumeJBOD::areMergesAllowed() const
         return are_merges_allowed;
 }
 
-void VolumeJBOD::setAllowMergesFromQuery(bool allow)
+void VolumeJBOD::setAllowMergesUserOverride(bool allow)
 {
     are_merges_allowed_user_override = allow;
 }

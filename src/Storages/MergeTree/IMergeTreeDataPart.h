@@ -326,7 +326,7 @@ public:
     /// storage and pass it to this method.
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
 
-    bool canParticipateInMerges() const;
+    bool canParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);

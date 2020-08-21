@@ -43,7 +43,7 @@ VolumePtr createVolumeFromConfig(
     {
         return std::make_shared<VolumeJBOD>(name, config, config_prefix, disk_selector);
     }
-    throw Exception("Unknown raid type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
+    throw Exception("Unknown RAID type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
 VolumePtr updateVolumeFromConfig(
@@ -58,11 +58,11 @@ VolumePtr updateVolumeFromConfig(
     {
         VolumeJBODPtr volume_jbod = std::dynamic_pointer_cast<VolumeJBOD>(volume);
         if (!volume_jbod)
-            throw Exception("Invalid raid type '" + raid_type + "', shall be JBOD", ErrorCodes::INVALID_RAID_TYPE);
+            throw Exception("Invalid RAID type '" + raid_type + "', shall be JBOD", ErrorCodes::INVALID_RAID_TYPE);
 
         return std::make_shared<VolumeJBOD>(*volume_jbod, config, config_prefix, disk_selector);
     }
-    throw Exception("Unknown raid type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
+    throw Exception("Unknown RAID type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
 }
