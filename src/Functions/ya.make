@@ -18,6 +18,7 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
+    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
@@ -293,6 +294,8 @@ SRCS(
     multiSearchFirstPositionUTF8.cpp
     negate.cpp
     neighbor.cpp
+    normalizedQueryHash.cpp
+    normalizeQuery.cpp
     notEmpty.cpp
     notEquals.cpp
     notILike.cpp

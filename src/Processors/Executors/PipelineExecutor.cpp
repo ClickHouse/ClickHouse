@@ -133,7 +133,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     for (uint64_t node = 0; node < graph->nodes.size(); ++node)
     {
         direct_edge_sizes[node] = graph->nodes[node]->direct_edges.size();
-        back_edges_sizes[node] = graph->nodes[node]->direct_edges.size();
+        back_edges_sizes[node] = graph->nodes[node]->back_edges.size();
     }
 
     auto updated_nodes = graph->expandPipeline(processors);

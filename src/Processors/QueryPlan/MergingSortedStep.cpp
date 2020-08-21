@@ -58,9 +58,7 @@ void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
                 sort_description,
                 max_block_size, limit);
 
-        pipeline.addPipe({ std::move(transform) });
-
-        pipeline.enableQuotaForCurrentStreams();
+        pipeline.addTransform(std::move(transform));
     }
 }
 

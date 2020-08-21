@@ -18,14 +18,15 @@ namespace DB
         using ResultType = UInt8;
         static constexpr const bool allow_fixed_string = false;
 
-        static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+        static inline ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
         {
             if constexpr (!std::is_same_v<A, ResultType>)
                 // Should be a logical error, but this function is callable from SQL.
                 // Need to investigate this.
                 throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_ARGUMENTS);
-            return static_cast<ResultType>(
-                    ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
+
+            auto little_bits = littleBits<A>(a);
+            return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));
         }
 
 #if USE_EMBEDDED_COMPILER
@@ -59,5 +60,4 @@ namespace DB
     {
         factory.registerFunction<FunctionBitSwapLastTwo>();
     }
-
 }

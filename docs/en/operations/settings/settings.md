@@ -654,7 +654,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-The size of blocks to form for insertion into a table.
+The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
 But when using clickhouse-client, the client parses the data itself, and the ‘max\_insert\_block\_size’ setting on the server doesn’t affect the size of the inserted blocks.
@@ -1545,6 +1545,17 @@ Default value: 32768 (32 KiB)
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
 
 Default value: `Empty`.
+
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+
+Enables using fields that are not specified in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When a field is not found in the schema, ClickHouse uses the default value instead of throwing an exception.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
 
 ## background\_pool\_size {#background_pool_size}
 
