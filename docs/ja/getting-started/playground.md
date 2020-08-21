@@ -5,8 +5,8 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.tech) では、サーバーやクラスタを設定することなく、即座にクエリを実行して ClickHouse を実験することができます。
-いくつかの例のデータセットは、Playground だけでなく、ClickHouse の機能を示すサンプルクエリとして利用可能です. また、 ClickHouse の LTS リリースで実験することもできます。
+[ClickHouse Playground](https://play.clickhouse.tech) では、サーバーやクラスタを設定することなく、即座にクエリを実行して ClickHouse を試すことができます。
+いくつかの例のデータセットは、Playground だけでなく、ClickHouse の機能を示すサンプルクエリとして利用可能です. また、 ClickHouse の LTS リリースで試すこともできます。
 
 ClickHouse Playground は、[Yandex.Cloud](https://cloud.yandex.com/)にホストされている m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) インスタンス(4 vCPU, 32 GB RAM) で提供されています。クラウドプロバイダの詳細情報については[こちら](../commercial/cloud.md)。
 
@@ -23,7 +23,7 @@ ClickHouse をサポートするソフトウェア製品の詳細情報は[こ�
 | パスワード                    | `clickhouse`                            |
 
 
-特定のClickHouseのリリースで実験するために、追加のエンドポイントがあります。（ポートとユーザー/パスワードは上記と同じです）。
+特定のClickHouseのリリースで試すために、追加のエンドポイントがあります。（ポートとユーザー/パスワードは上記と同じです）。
 
 - 20.3 LTS: `play-api-v20-3.clickhouse.tech`
 - 19.14 LTS: `play-api-v19-14.clickhouse.tech`
