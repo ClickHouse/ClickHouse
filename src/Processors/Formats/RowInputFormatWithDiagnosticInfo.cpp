@@ -141,7 +141,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         else
             out << "ERROR\n";
         // Print exception message
-        out << getExceptionMessage(e, false) << '\n';
+        out << getExceptionMessage(exception, false) << '\n';
         return false;
     }
 
