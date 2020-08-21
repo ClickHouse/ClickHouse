@@ -94,8 +94,14 @@ private:
     std::mutex mutex;
 
     // Stream thread
-    BackgroundSchedulePool::TaskHolder task;
-    std::atomic<bool> stream_cancelled{false};
+    struct TaskContext {
+        BackgroundSchedulePool::TaskHolder holder;
+        std::atomic<bool> stream_cancelled {false};
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        {
+        } 
+    };
+    std::vector<std::shared_ptr<TaskContext>> tasks;
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
@@ -103,7 +109,7 @@ private:
     // Update Kafka configuration with values from CH user configuration.
 
     void updateConfiguration(cppkafka::Configuration & conf);
-    void threadFunc();
+    void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
