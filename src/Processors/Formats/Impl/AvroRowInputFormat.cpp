@@ -702,7 +702,8 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
         readBinaryBigEndian(magic, in);
         readBinaryBigEndian(schema_id, in);
     }
-    catch(Exception & e) {
+    catch (const Exception & e)
+    {
         /* empty or incomplete message without Avro Confluent magic number or schema id */
         throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
     }
