@@ -269,10 +269,12 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         if (settings.graph)
         {
+            auto processors = Pipe::detachProcessors(QueryPipeline::getPipe(std::move(*pipeline)));
+
             if (settings.compact)
-                printPipelineCompact(pipeline->getProcessors(), buffer, settings.query_pipeline_options.header);
+                printPipelineCompact(processors, buffer, settings.query_pipeline_options.header);
             else
-                printPipeline(pipeline->getProcessors(), buffer);
+                printPipeline(processors, buffer);
         }
         else
         {

@@ -154,7 +154,7 @@
     of the time, in which case a higher number of threads might be required.
     -->
 
-     <max_thread_pool_size>10000</max_thread_pool_size>
+    <max_thread_pool_size>10000</max_thread_pool_size>
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->

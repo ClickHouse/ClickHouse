@@ -72,7 +72,7 @@ int main(int argc, char ** argv)
         QueryPipeline pipeline;
         pipeline.init(std::move(source));
 
-        pipeline.addPipe({std::make_shared<MergeSortingTransform>(pipeline.getHeader(), sort_descr, n, 0, 0, 0, nullptr, 0)});
+        pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), sort_descr, n, 0, 0, 0, nullptr, 0));
 
         SortDescription sort_descr_final;
         sort_descr_final.emplace_back("col1", 1, 1);
