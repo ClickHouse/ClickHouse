@@ -889,6 +889,100 @@ load_balancing = first_or_random
 
 Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
 
+## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
+
+При выводе данных в формате [JSON](../../interfaces/formats.md#json) включает отображение значений `+nan`, `-nan`, `+inf`, `-inf`.
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+**Пример**
+
+Рассмотрим следующую таблицу `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+Когда `output_format_json_quote_denormals = 0`, следующий запрос возвращает значения `null`.
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+        "rows": 3,
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+Если `output_format_json_quote_denormals = 1`, то запрос вернет:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+        "rows": 3,
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
@@ -1435,6 +1529,22 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
+
+Задает URL реестра схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html) для использования с форматом [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent).
+
+Значение по умолчанию: `Пустая строка`.
+
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+Позволяет использовать данные, которых не нашлось в схеме формата [Avro](../../interfaces/formats.md#data-format-avro) или [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent). Если поле не найдено в схеме, ClickHouse подставит значение по умолчанию вместо исключения.
+
+Возможные значения:
+
+-   0 — Выключена.
+-   1 — Включена.
+
+Значение по умолчанию: `0`.
 
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 
