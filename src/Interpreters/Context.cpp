@@ -2260,4 +2260,12 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     return StorageID::createEmpty();
 }
 
+#if USE_MYSQL
+DB::MaterializeMySQLSyncThreadPtr getCreateMySQLSyncThreadIfNot(
+        const String & mysql_database_name_,
+        const String & mysql_hostname_and_port,
+        const String & mysql_user_name,
+        const String & mysql_user_password) {}
+#endif
+
 }

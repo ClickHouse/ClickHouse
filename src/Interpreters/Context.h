@@ -24,6 +24,10 @@
 #include <thread>
 #include <Common/RemoteHostFilter.h>
 
+#if USE_MYSQL
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#endif
+
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
@@ -619,6 +623,18 @@ public:
     };
 
     MySQLWireContext mysql;
+
+#if USE_MYSQL
+private:
+    std::optional<DB::MaterializeMySQLSyncThread> mysqlSyncThread;
+
+public:
+    DB::MaterializeMySQLSyncThreadPtr getCreateMySQLSyncThreadIfNot(
+        const String & mysql_database_name_,
+        const String & mysql_hostname_and_port,
+        const String & mysql_user_name,
+        const String & mysql_user_password);
+#endif
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
