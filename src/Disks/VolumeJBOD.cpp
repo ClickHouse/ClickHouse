@@ -57,7 +57,7 @@ VolumeJBOD::VolumeJBOD(
     /// Default value is 'true' due to backward compatibility.
     perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
 
-    are_merges_allowed = config.getBool(config_prefix + ".disable_merges", false);
+    are_merges_allowed = !config.getBool(config_prefix + ".disable_merges", false);
 }
 
 VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
