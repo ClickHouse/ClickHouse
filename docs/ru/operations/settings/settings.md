@@ -550,6 +550,24 @@ log_queries=1
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` минимальный уровень логирования.
+
+Возможные значения:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Значение по умолчанию: `QUERY_START`.
+
+Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## log\_query\_threads {#settings-log-query-threads}
 
 Установка логирования информации о потоках выполнения запроса.
@@ -1088,13 +1106,13 @@ ClickHouse генерирует исключение
 -   1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
 -   2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
 
-Значение по умолчанию: 0.
+Значение по умолчанию: 0
 
 ## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
 
-Сбрасывает [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) для вложенной `Distributed` таблицы.
+Сбрасывает [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) для вложенных `Distributed` таблиц.
 
-Возможные значения:
+Possible values:
 
 -   1 — Включена.
 -   0 — Выключена.
@@ -1234,6 +1252,64 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
+
+Включает параллельную обработку распределённых запросов `INSERT ... SELECT`.
+
+Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде.
+
+Допустимые значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
+
+## insert_distributed_sync {#insert_distributed_sync}
+
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).  
+
+Возможные значения:
+
+-   0 — Данные добавляются в асинхронном режиме.
+-   1 — Данные добавляются в синхронном режиме.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+## validate\_polygons {#validate_polygons}
+
+Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
+
+Допустимые значения:
+
+- 0 — генерирование исключения отключено. `pointInPolygon` принимает недопустимые многоугольники и возвращает для них, возможно, неверные результаты.
+- 1 — генерирование исключения включено.
+
+Значение по умолчанию: 1.
+
+## always_fetch_merged_part {#always_fetch_merged_part}
+
+Запрещает слияние данных для таблиц семейства [Replicated*MergeTree](../../engines/table-engines/mergetree-family/replication.md).
+
+Если слияние запрещено, реплика никогда не выполняет слияние отдельных кусков данных, а всегда загружает объединённые данные из других реплик. Если объединённых данных пока нет, реплика ждет их появления. Нагрузка на процессор и диски на реплике уменьшается, но нагрузка на сеть в кластере возрастает. Настройка может быть полезна на репликах с относительно слабыми процессорами или медленными дисками, например, на репликах для хранения архивных данных.
+
+Возможные значения:
+
+-   0 — таблицы семейства `Replicated*MergeTree` выполняют слияние данных на реплике.
+-   1 — таблицы семейства `Replicated*MergeTree` не выполняют слияние данных на реплике, а загружают объединённые данные из других реплик.
+
+Значение по умолчанию: 0.
+
+**См. также:**
+
+-   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md)
+
 ## transform_null_in {#transform_null_in}
 
 Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
@@ -1371,5 +1447,38 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 **См. также:**
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+
+## optimize_read_in_order {#optimize_read_in_order}
+
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) при работе с таблицами семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `1`.
+
+**См. также**
+
+-   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
+
+## mutations_sync {#mutations_sync}
+
+Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
+
+Возможные значения:
+
+-   0 - мутации выполняются асинхронно.
+-   1 - запрос ждет завершения всех мутаций на текущем сервере.
+-   2 - запрос ждет завершения всех мутаций на всех репликах (если они есть).
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
+-   [Мутации](../../sql-reference/statements/alter.md#mutations)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
