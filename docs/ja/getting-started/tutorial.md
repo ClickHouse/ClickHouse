@@ -87,7 +87,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 ClickHouseサーバーにいくつかのサンプルデータを入れてみましょう。
 このチュートリアルでは、ClickHouseがオープンソースになる以前(詳しくは [歴史について](../introduction/history.md) を参照)に初めて本番用途で使われたサービスである、Yandex.Metricaの匿名化されたデータを使用します。
 
-[Yandex.Metrica データセットをインポートするにはいくつかの方法](../getting-started/example-datasets/metrica.md) がありますが, チュートリアルのために、最もありがちな方法を使用します。
+[Yandex.Metrica データセットをインポートするにはいくつかの方法](../getting-started/example-datasets/metrica.md) がありますが, チュートリアルとして、最もよく使う方法を使用します。
 
 ### テーブルデータのダウンロードと展開 {#download-and-extract-table-data}
 
