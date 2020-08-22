@@ -1,9 +1,7 @@
-#if __has_include("StorageSystemTimeZones.generated.cpp")
+#include "StorageSystemTimeZones.h"
 
-#    include "StorageSystemTimeZones.h"
-
-#    include <algorithm>
-#    include <DataTypes/DataTypeString.h>
+#include <algorithm>
+#include <DataTypes/DataTypeString.h>
 
 
 extern const char * auto_time_zones[];
@@ -23,5 +21,3 @@ void StorageSystemTimeZones::fillData(MutableColumns & res_columns, const Contex
         res_columns[0]->insert(String(*it));
 }
 }
-
-#endif
