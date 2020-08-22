@@ -948,7 +948,7 @@ flatten(array_of_arrays)
 
 **Параметры**
 
--   `array_of_arrays` — [Массивов](../../sql-reference/functions/array-functions.md) массивов. Например, `[[1,2,3], [4,5]]`.
+-   `array_of_arrays` — [Массив](../../sql-reference/functions/array-functions.md) массивов. Например, `[[1,2,3], [4,5]]`.
 
 **Примеры**
 
