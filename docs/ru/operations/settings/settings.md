@@ -568,6 +568,24 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` минимальный уровень логирования.
+
+Возможные значения:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Значение по умолчанию: `QUERY_START`.
+
+Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## log\_query\_threads {#settings-log-query-threads}
 
 Установка логирования информации о потоках выполнения запроса.
