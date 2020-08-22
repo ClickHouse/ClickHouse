@@ -7,10 +7,10 @@ toc_title: hidden
 
 # はじめに {#getting-started}
 
-あなたが ClickHouse は初めてで、そのパフォーマンスを体感するためのハンズオンを行いたい場合は、まずはじめに [インストール](../getting-started/install.md) を行う必要があります。
-その後で、以下ができるようになります:
+あなたが ClickHouse は初めてで、そのパフォーマンスを体感するためのハンズオンを行いたい場合は、最初に [インストール](../getting-started/install.md) を行って下さい。
+そうすると、以下を実施できるようになります。
 
 -   [詳細なチュートリアル](../getting-started/tutorial.md)
 -   [データセット例を用いて試す](../getting-started/example-datasets/ontime.md)
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->
