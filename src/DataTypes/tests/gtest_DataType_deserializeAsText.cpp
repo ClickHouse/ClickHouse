@@ -1,12 +1,11 @@
+#include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/getMostSubtype.h>
-#include <IO/ReadBuffer.h>
-#include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
-#include <Core/Field.h>
-#include <Columns/IColumn.h>
+#include <IO/ReadBuffer.h>
 
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>

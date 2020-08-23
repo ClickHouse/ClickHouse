@@ -21,7 +21,7 @@
 #    include <Common/quoteString.h>
 #    include "registerTableFunctions.h"
 
-#    include <Databases/DatabaseMySQL.h> // for fetchTablesColumnsList
+#    include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
 
 #    include <mysqlxx/Pool.h>
 
@@ -76,7 +76,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     auto parsed_host_port = parseAddress(host_port, 3306);
 
     mysqlxx::Pool pool(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
-    const auto tables_and_columns = fetchTablesColumnsList(pool, remote_database_name, {remote_table_name}, context.getSettings().external_table_functions_use_nulls);
+    const auto settings = context.getSettingsRef();
+    const auto tables_and_columns = fetchTablesColumnsList(pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())

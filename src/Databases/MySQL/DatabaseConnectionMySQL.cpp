@@ -60,7 +60,12 @@ static String toQueryStringWithQuote(const std::vector<String> & quote_list)
     return quote_list_query.str();
 }
 
-std::map<String, NamesAndTypesList> fetchTablesColumnsList(mysqlxx::Pool & pool, const String & database_name, const std::vector<String> & tables_name, bool external_table_functions_use_nulls)
+std::map<String, NamesAndTypesList> fetchTablesColumnsList(
+        mysqlxx::Pool & pool,
+        const String & database_name,
+        const std::vector<String> & tables_name,
+        bool external_table_functions_use_nulls,
+        MultiEnum<MySQLDataTypesSupport> type_support)
 {
     std::map<String, NamesAndTypesList> tables_and_columns;
 
@@ -109,26 +114,27 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(mysqlxx::Pool & pool,
         for (size_t i = 0; i < rows; ++i)
         {
             String table_name = table_name_col[i].safeGet<String>();
-            tables_and_columns[table_name].emplace_back(column_name_col[i].safeGet<String>(),
-                                                        convertMySQLDataType(
-                                                            column_type_col[i].safeGet<String>(),
-                                                            is_nullable_col[i].safeGet<UInt64>() &&
-                                                            external_table_functions_use_nulls,
-                                                            is_unsigned_col[i].safeGet<UInt64>(),
-                                                            char_max_length_col[i].safeGet<UInt64>(),
-                                                            precision_col[i].safeGet<UInt64>(),
-                                                            scale_col[i].safeGet<UInt64>()));
+            tables_and_columns[table_name].emplace_back(
+                    column_name_col[i].safeGet<String>(),
+                    convertMySQLDataType(
+                            type_support,
+                            column_type_col[i].safeGet<String>(),
+                            external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
+                            is_unsigned_col[i].safeGet<UInt64>(),
+                            char_max_length_col[i].safeGet<UInt64>(),
+                            precision_col[i].safeGet<UInt64>(),
+                            scale_col[i].safeGet<UInt64>()));
         }
     }
     return tables_and_columns;
 }
 
 
-DatabaseConnectionMySQL::DatabaseConnectionMySQL((
-    const Context & global_context_, const String & database_name_, const String & metadata_path_,
+DatabaseConnectionMySQL::DatabaseConnectionMySQL(
+    const Context & query_context_, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
-    , global_context(global_context_.getGlobalContext())
+    , query_context(query_context_.getQueryContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
@@ -142,7 +148,7 @@ bool DatabaseConnectionMySQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(query_context);
 
     if (local_tables_cache.empty())
         return true;
@@ -154,12 +160,12 @@ bool DatabaseConnectionMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseConnectionMySQL::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(context);
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.count(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
@@ -173,11 +179,11 @@ bool DatabaseConnectionMySQL::isTableExist(const String & name, const Context & 
     return bool(tryGetTable(name, context));
 }
 
-StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, const Context &) const
+StoragePtr DatabaseConnectionMySQL::tryGetTable(const String & mysql_table_name, const Context & context) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(context);
 
     if (!remove_or_detach_tables.count(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
         return local_tables_cache[mysql_table_name].second;
@@ -221,11 +227,11 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
+ASTPtr DatabaseConnectionMySQL::getCreateTableQueryImpl(const String & table_name, const Context & context, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
@@ -242,7 +248,7 @@ time_t DatabaseConnectionMySQL::getObjectMetadataModificationTime(const String &
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache();
+    fetchTablesIntoLocalCache(query_context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
         throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -258,12 +264,12 @@ ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseConnectionMySQL::fetchTablesIntoLocalCache() const
+void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(const Context & context) const
 {
     const auto & tables_with_modification_time = fetchTablesWithModificationTime();
 
     destroyLocalCacheExtraTables(tables_with_modification_time);
-    fetchLatestTablesStructureIntoCache(tables_with_modification_time);
+    fetchLatestTablesStructureIntoCache(tables_with_modification_time, context);
 }
 
 void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const
@@ -280,7 +286,7 @@ void DatabaseConnectionMySQL::destroyLocalCacheExtraTables(const std::map<String
     }
 }
 
-void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> &tables_modification_time) const
+void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> &tables_modification_time, const Context & context) const
 {
     std::vector<String> wait_update_tables_name;
     for (const auto & table_modification_time : tables_modification_time)
@@ -292,7 +298,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map
             wait_update_tables_name.emplace_back(table_modification_time.first);
     }
 
-    std::map<String, NamesAndTypesList> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name);
+    std::map<String, NamesAndTypesList> tables_and_columns = fetchTablesColumnsList(wait_update_tables_name, context);
 
     for (const auto & table_and_columns : tables_and_columns)
     {
@@ -309,7 +315,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map
 
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
             StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
-            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context));
+            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, query_context));
     }
 }
 
@@ -344,9 +350,16 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
     return tables_with_modification_time;
 }
 
-std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name) const
+std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, const Context & context) const
 {
-    return DB::fetchTablesColumnsList(mysql_pool, database_name_in_mysql, tables_name, global_context.getSettings().external_table_functions_use_nulls);
+    const auto & settings = context.getSettingsRef();
+
+    return DB::fetchTablesColumnsList(
+            mysql_pool,
+            database_name_in_mysql,
+            tables_name,
+            settings.external_table_functions_use_nulls,
+            settings.mysql_datatypes_support_level.value);
 }
 
 void DatabaseConnectionMySQL::shutdown()
@@ -523,7 +536,7 @@ void DatabaseConnectionMySQL::createTable(const Context &, const String & table_
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
     /// we should compare the old and new create_query to make them completely consistent
-    const auto & origin_create_query = getCreateTableQuery(table_name, global_context);
+    const auto & origin_create_query = getCreateTableQuery(table_name, query_context);
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))

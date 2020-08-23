@@ -150,25 +150,31 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
 
 decimal_values = [0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
 timestamp_values = ['2015-05-18 07:40:01.123', '2019-09-16 19:20:11.123']
+timestamp_values_no_subsecond = ['2015-05-18 07:40:01', '2019-09-16 19:20:11']
 
-@pytest.mark.parametrize("case_name, mysql_type, expected_ch_type, mysql_values",
+@pytest.mark.parametrize("case_name, mysql_type, expected_ch_type, mysql_values, setting_mysql_datatypes_support_level",
 [
-    ("decimal_default", "decimal NOT NULL", "Decimal(10, 0)", decimal_values),
-    ("decimal_default_nullable", "decimal", "Nullable(Decimal(10, 0))", decimal_values),
-    ("decimal_18_6", "decimal(18, 6) NOT NULL", "Decimal(18, 6)", decimal_values),
-    ("decimal_38_6", "decimal(38, 6) NOT NULL", "Decimal(38, 6)", decimal_values),
-    # # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
-    ("decimal_40_6", "decimal(40, 6) NOT NULL", "String", decimal_values),
+    ("decimal_default", "decimal NOT NULL", "Decimal(10, 0)", decimal_values, "decimal,datetime64"),
+    ("decimal_default_nullable", "decimal", "Nullable(Decimal(10, 0))", decimal_values, "decimal,datetime64"),
+    ("decimal_18_6", "decimal(18, 6) NOT NULL", "Decimal(18, 6)", decimal_values, "decimal,datetime64"),
+    ("decimal_38_6", "decimal(38, 6) NOT NULL", "Decimal(38, 6)", decimal_values, "decimal,datetime64"),
 
     # Due to python DB driver roundtrip MySQL timestamp and datetime values
     # are printed with 6 digits after decimal point, so to simplify tests a bit,
     # we only validate precision of 0 and 6.
-    ("timestamp_default", "timestamp", "DateTime", timestamp_values),
-    ("timestamp_6", "timestamp(6)", "DateTime64(6)", timestamp_values),
-    ("datetime_default", "DATETIME NOT NULL", "DateTime64(0)", timestamp_values),
-    ("datetime_6", "DATETIME(6) NOT NULL", "DateTime64(6)", timestamp_values),
+    ("timestamp_default", "timestamp", "DateTime", timestamp_values, "decimal,datetime64"),
+    ("timestamp_6", "timestamp(6)", "DateTime64(6)", timestamp_values, "decimal,datetime64"),
+    ("datetime_default", "DATETIME NOT NULL", "DateTime64(0)", timestamp_values, "decimal,datetime64"),
+    ("datetime_6", "DATETIME(6) NOT NULL", "DateTime64(6)", timestamp_values, "decimal,datetime64"),
+
+    # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
+    ("decimal_40_6", "decimal(40, 6) NOT NULL", "String", decimal_values, "decimal,datetime64"),
+    ("decimal_18_6", "decimal(18, 6) NOT NULL", "String", decimal_values, "datetime64"),
+    ("decimal_18_6", "decimal(18, 6) NOT NULL", "String", decimal_values, ""),
+    ("datetime_6", "DATETIME(6) NOT NULL", "DateTime", timestamp_values_no_subsecond, "decimal"),
+    ("datetime_6", "DATETIME(6) NOT NULL", "DateTime", timestamp_values_no_subsecond, ""),
 ])
-def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, mysql_values):
+def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, mysql_values, setting_mysql_datatypes_support_level):
     """ Verify that values written to MySQL can be read on ClickHouse side via DB engine MySQL,
     or Table engine MySQL, or mysql() table function.
     Make sure that type is converted properly and values match exactly.
@@ -181,13 +187,17 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         mysql_values = ', '.join('({})'.format(repr(x)) for x in mysql_values),
         ch_mysql_db = 'mysql_db',
         ch_mysql_table = 'mysql_table_engine_' + case_name,
-        expected_ch_type = expected_ch_type
+        expected_ch_type = expected_ch_type,
     )
 
-    def execute_query(node, query):
+    clickhouse_query_settings = dict(
+        mysql_datatypes_support_level = setting_mysql_datatypes_support_level
+    )
+
+    def execute_query(node, query, **kwargs):
         def do_execute(query):
             query = Template(query).safe_substitute(substitutes)
-            res = node.query(query)
+            res = node.query(query, **kwargs)
             return res if isinstance(res, int) else res.rstrip('\n\r')
 
         if isinstance(query, (str, bytes, unicode)):
@@ -195,7 +205,6 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         else:
             return [do_execute(q) for q in query]
 
-    execute_query(clickhouse_node, "SELECT 'hello world';")
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
         execute_query(mysql_node, [
             "DROP DATABASE IF EXISTS ${mysql_db}",
@@ -213,19 +222,21 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
 
         # MySQL TABLE ENGINE
         execute_query(clickhouse_node, [
-            "DROP TABLE IF EXISTS ${ch_mysql_table}",
+            "DROP TABLE IF EXISTS ${ch_mysql_table};",
             "CREATE TABLE ${ch_mysql_table} (value ${expected_ch_type}) ENGINE = MySQL('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
-        ])
+        ], settings=clickhouse_query_settings)
 
         # Validate type
         assert \
-            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM ${ch_mysql_table} LIMIT 1") \
+            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM ${ch_mysql_table} LIMIT 1",
+                    settings=clickhouse_query_settings) \
             == \
             expected_ch_type
 
         # Validate values
         assert \
-            execute_query(clickhouse_node, "SELECT value FROM ${ch_mysql_table}") \
+            execute_query(clickhouse_node, "SELECT value FROM ${ch_mysql_table}",
+                    settings=clickhouse_query_settings) \
             == \
             execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
 
@@ -234,24 +245,27 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         execute_query(clickhouse_node, [
             "DROP DATABASE IF EXISTS ${ch_mysql_db}",
             "CREATE DATABASE ${ch_mysql_db} ENGINE = MySQL('mysql1:3306', '${mysql_db}', 'root', 'clickhouse')"
-        ])
+        ], settings=clickhouse_query_settings)
 
         # Validate type
         assert \
-            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM ${ch_mysql_db}.${table_name} LIMIT 1") \
+            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM ${ch_mysql_db}.${table_name} LIMIT 1",
+                    settings=clickhouse_query_settings) \
             == \
             expected_ch_type
 
         # Validate values
         assert \
-            execute_query(clickhouse_node, "SELECT value FROM ${ch_mysql_db}.${table_name}") \
+            execute_query(clickhouse_node, "SELECT value FROM ${ch_mysql_db}.${table_name}",
+                    settings=clickhouse_query_settings) \
             == \
             execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
 
         # MySQL TABLE FUNCTION
         # Validate type
         assert \
-            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse') LIMIT 1") \
+            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse') LIMIT 1",
+                    settings=clickhouse_query_settings) \
             == \
             expected_ch_type
 
@@ -259,4 +273,5 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         assert \
             execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}") \
             == \
-            execute_query(clickhouse_node, "SELECT value FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')")
+            execute_query(clickhouse_node, "SELECT value FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
+                    settings=clickhouse_query_settings)
