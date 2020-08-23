@@ -9,18 +9,14 @@ Creates an array of sample argument values. The size of the resulting array is l
 **Syntax**
 
 ``` sql
-groupArraySample(max_size)(x)
-```
-or
-``` sql
-groupArraySample(max_size, seed)(x)
+groupArraySample(max_size[, seed])(x)
 ```
 
 **Parameters**
 
--   `max_size` — Maximum size of the resulting array. Positive [UInt64](../../data-types/int-uint.md).
--   `seed` — Seed for the random number generator. Optional, can be omitted. Positive [UInt64](../../data-types/int-uint.md). Default value: `123456`.
--   `x` — Argument name. [String](../../data-types/string.md).
+-   `max_size` — Maximum size of the resulting array. [UInt64](../../data-types/int-uint.md).
+-   `seed` — Seed for the random number generator. Optional. [UInt64](../../data-types/int-uint.md). Default value: `123456`.
+-   `x` — Argument (column name or expression).
 
 **Returned values**
 
@@ -42,44 +38,44 @@ Consider table `colors`:
 └────┴────────┘
 ```
 
-Select `id`-s query:
+Query with column name as argument:
 
 ``` sql
-SELECT groupArraySample(3)(id) FROM colors;
-```
-
-Result:
-
-``` text
-┌─groupArraySample(3)(id)─┐
-│ [1,2,4]                 │
-└─────────────────────────┘
-```
-
-Select `color`-s query:
-
-``` sql
-SELECT groupArraySample(3)(color) FROM colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
 ```
 
 Result:
 
 ```text
-┌─groupArraySample(3)(color)─┐
+┌─newcolors──────────────────┐
 │ ['white','blue','green']   │
 └────────────────────────────┘
 ```
 
-Select `color`-s query with different seed:
+Query with column name and different seed:
 
 ``` sql
-SELECT groupArraySample(3, 987654321)(color) FROM colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
 ```
 
 Result:
 
 ```text
-┌─groupArraySample(3, 987654321)(color)─┐
-│ ['red','orange','green']              │
-└───────────────────────────────────────┘
+┌─newcolors──────────────────┐
+│ ['red','orange','green']   │
+└────────────────────────────┘
+```
+
+Query with expression as argument:
+
+``` sql
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
+```
+
+Result:
+
+```text
+┌─newcolors───────────────────────────────────┐
+│ ['light-blue','light-orange','light-green'] │
+└─────────────────────────────────────────────┘
 ```
