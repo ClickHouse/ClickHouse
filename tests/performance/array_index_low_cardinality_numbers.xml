@@ -1,5 +1,5 @@
 <test>
-    <create_query>DROP TABLE IF EXISTS perf_lc</create_query>
+    <create_query>DROP TABLE IF EXISTS perf_lc_num</create_query>
     <create_query>CREATE TABLE perf_lc_num(
         num UInt8,
         arr Array(LowCardinality(Int64)) default [num]
