@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <unistd.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -90,7 +91,8 @@ public:
 private:
     Volumes volumes;
     const String name;
-    std::map<String, size_t> volumes_names;
+    std::unordered_map<String, size_t> volume_index_by_volume_name;
+    std::unordered_map<String, size_t> volume_index_by_disk_name;
 
     /// move_factor from interval [0., 1.]
     /// We move something if disk from this policy
