@@ -79,16 +79,10 @@ public:
     /// which should be kept with help of background moves
     double getMoveFactor() const { return move_factor; }
 
-    /// Get volume by index from storage_policy
-    VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
+    /// Get volume by index.
+    VolumePtr getVolume(size_t index) const;
 
-    VolumePtr getVolumeByName(const String & volume_name) const
-    {
-        auto it = volumes_names.find(volume_name);
-        if (it == volumes_names.end())
-            return {};
-        return getVolume(it->second);
-    }
+    VolumePtr getVolumeByName(const String & volume_name) const;
 
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
