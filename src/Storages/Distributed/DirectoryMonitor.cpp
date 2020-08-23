@@ -712,9 +712,8 @@ std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 
 void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path)
 {
-    std::lock_guard lock{mutex};
-
     task_handle->deactivate();
+    std::lock_guard lock{mutex};
 
     path = new_path;
     current_batch_file_path = path + "current_batch.txt";
