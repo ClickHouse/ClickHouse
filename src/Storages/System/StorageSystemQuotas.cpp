@@ -11,7 +11,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
-#include <Access/AccessFlags.h>
+#include <Access/VisibleAccessEntities.h>
 #include <ext/range.h>
 
 
@@ -54,9 +54,9 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
 
 void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_QUOTAS);
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<Quota>();
+    VisibleAccessEntities visible_entries{context.getAccess()};
+    std::vector<UUID> ids = visible_entries.findAll<Quota>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -97,7 +97,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
             column_durations.push_back(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count());
         column_durations_offsets.push_back(column_durations.size());
 
-        auto apply_to_ast = apply_to.toASTWithNames(access_control);
+        auto apply_to_ast = apply_to.toASTWithNames(visible_entries);
         column_apply_to_all.push_back(apply_to_ast->all);
 
         for (const auto & role_name : apply_to_ast->names)

@@ -8,6 +8,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
@@ -27,7 +28,7 @@ namespace
     template <typename T>
     ASTs getGrantQueriesImpl(
         const T & grantee,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const VisibleAccessEntities * visible_entities /* not used if attach_mode == true */,
         bool attach_mode = false)
     {
         ASTs res;
@@ -81,7 +82,7 @@ namespace
             if (attach_mode)
                 grant_query->roles = RolesOrUsersSet{roles}.toAST();
             else
-                grant_query->roles = RolesOrUsersSet{roles}.toASTWithNames(*manager);
+                grant_query->roles = RolesOrUsersSet{roles}.toASTWithNames(*visible_entities);
             res.push_back(std::move(grant_query));
         }
 
@@ -90,13 +91,13 @@ namespace
 
     ASTs getGrantQueriesImpl(
         const IAccessEntity & entity,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const VisibleAccessEntities * visible_entities /* not used if attach_mode == true */,
         bool attach_mode = false)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getGrantQueriesImpl(*user, manager, attach_mode);
+            return getGrantQueriesImpl(*user, visible_entities, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getGrantQueriesImpl(*role, manager, attach_mode);
+            return getGrantQueriesImpl(*role, visible_entities, attach_mode);
         throw Exception(entity.outputTypeAndName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -143,7 +144,8 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
     const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
     const auto & access_control = context.getAccessControlManager();
-    auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    auto ids = RolesOrUsersSet{*show_query.for_roles, visible_entities}.getMatchingIDs(visible_entities);
 
     std::vector<AccessEntityPtr> entities;
     for (const auto & id : ids)
@@ -161,19 +163,20 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = context.getAccessControlManager();
+    VisibleAccessEntities visible_entities{context.getAccess()};
 
     ASTs grant_queries;
     for (const auto & entity : entities)
-        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control));
+        boost::range::push_back(grant_queries, getGrantQueriesImpl(*entity, &visible_entities, false));
 
     return grant_queries;
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControlManager & access_control)
+ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const Context & context)
 {
-    return getGrantQueriesImpl(user_or_role, &access_control, false);
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    return getGrantQueriesImpl(user_or_role, &visible_entities, false);
 }
 
 

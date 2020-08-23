@@ -60,6 +60,7 @@ public:
     const Params & getParams() const { return params; }
 
     /// Returns the current user. The function can return nullptr.
+    std::optional<UUID> getUserID() const { return getParams().user_id; }
     UserPtr getUser() const;
     String getUserName() const;
 
@@ -90,6 +91,9 @@ public:
     /// Returns the settings' constraints.
     /// The function returns nullptr if there are no constraints.
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
+
+    /// Returns the settings profiles which were used to calculate the default settings and the constraints.
+    std::shared_ptr<const boost::container::flat_set<UUID>> getEnabledProfileIDs() const;
 
     /// Returns the current access rights.
     std::shared_ptr<const AccessRights> getAccess() const;
@@ -141,13 +145,12 @@ public:
     void checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
     void checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
-    /// Makes an instance of ContextAccess which provides full access to everything
-    /// without any limitations. This is used for the global context.
-    static std::shared_ptr<const ContextAccess> getFullAccess();
+    const AccessControlManager & getAccessControlManager() const { return manager; }
 
 private:
     friend class AccessControlManager;
-    ContextAccess() {}
+    struct FullAccessTag {};
+    ContextAccess(const AccessControlManager & manager_, FullAccessTag);
     ContextAccess(const AccessControlManager & manager_, const Params & params_);
 
     void setUser(const UserPtr & user_) const;
@@ -188,7 +191,7 @@ private:
     template <typename Container, typename GetNameFunction>
     void checkAdminOptionImpl(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
-    const AccessControlManager * manager = nullptr;
+    const AccessControlManager & manager;
     const Params params;
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;

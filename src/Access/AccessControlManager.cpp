@@ -67,9 +67,18 @@ public:
         return res;
     }
 
+    std::shared_ptr<const ContextAccess> getContextAccessForFullAccess()
+    {
+        std::lock_guard lock{mutex};
+        if (!full_access)
+            full_access = std::make_shared<ContextAccess>(manager, ContextAccess::FullAccessTag{});
+        return full_access;
+    }
+
 private:
     const AccessControlManager & manager;
     Poco::ExpireCache<ContextAccess::Params, std::shared_ptr<const ContextAccess>> cache;
+    std::shared_ptr<const ContextAccess> full_access;
     std::mutex mutex;
 };
 
@@ -383,6 +392,11 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(cons
     return context_access_cache->getContextAccess(params);
 }
 
+
+std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccessForFullAccess() const
+{
+    return context_access_cache->getContextAccessForFullAccess();
+}
 
 std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
     const boost::container::flat_set<UUID> & current_roles,

@@ -11,6 +11,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
+#include <Access/ContextAccess.h>
 #include <Access/RowPolicy.h>
 #include <Access/AccessFlags.h>
 #include <ext/range.h>
@@ -54,9 +56,10 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 
 void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_ROW_POLICIES);
+    auto access = context.getAccess();
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<RowPolicy>();
+    VisibleAccessEntities visible_entities{access};
+    std::vector<UUID> ids = visible_entities.findAll<RowPolicy>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -113,7 +116,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
 
         column_is_restrictive.push_back(is_restrictive);
 
-        auto apply_to_ast = apply_to.toASTWithNames(access_control);
+        auto apply_to_ast = apply_to.toASTWithNames(visible_entities);
         column_apply_to_all.push_back(apply_to_ast->all);
 
         for (const auto & role_name : apply_to_ast->names)

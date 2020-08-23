@@ -15,7 +15,6 @@ NamesAndTypesList StorageSystemQuotasUsage::getNamesAndTypes()
 
 void StorageSystemQuotasUsage::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_QUOTAS);
     auto all_quotas_usage = context.getAccessControlManager().getAllQuotasUsage();
     StorageSystemQuotaUsage::fillDataImpl(res_columns, context, /* add_column_is_current = */ true, all_quotas_usage);
 }

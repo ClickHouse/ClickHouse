@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
@@ -39,11 +40,11 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 
 void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<User>();
-    boost::range::push_back(ids, access_control.findAll<Role>());
-    boost::range::push_back(ids, access_control.findAll<SettingsProfile>());
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    std::vector<UUID> ids = visible_entities.findAll<User>();
+    boost::range::push_back(ids, visible_entities.findAll<Role>());
+    boost::range::push_back(ids, visible_entities.findAll<SettingsProfile>());
 
     size_t i = 0;
     auto & column_profile_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());

@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <Access/User.h>
 #include <Access/AccessFlags.h>
 #include <Poco/JSON/JSON.h>
@@ -54,9 +55,9 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
 
 void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_USERS);
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<User>();
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    auto ids = visible_entities.findAll<User>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -147,7 +148,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         column_host_names_regexp_offsets.push_back(column_host_names_regexp.size());
         column_host_names_like_offsets.push_back(column_host_names_like.size());
 
-        auto default_roles_ast = default_roles.toASTWithNames(access_control);
+        auto default_roles_ast = default_roles.toASTWithNames(visible_entities);
         column_default_roles_all.push_back(default_roles_ast->all);
 
         for (const auto & role_name : default_roles_ast->names)

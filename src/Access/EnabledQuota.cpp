@@ -162,11 +162,12 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
 }
 
 
-std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_clock::time_point current_time) const
+std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(UUID user_id, std::chrono::system_clock::time_point current_time) const
 {
     if (!quota_id)
         return {};
     QuotaUsage usage;
+    usage.user_id = user_id;
     usage.quota_id = *quota_id;
     usage.quota_name = quota_name;
     usage.quota_key = quota_key;
@@ -255,7 +256,7 @@ void EnabledQuota::checkExceeded(ResourceType resource_type) const
 std::optional<QuotaUsage> EnabledQuota::getUsage() const
 {
     auto loaded = intervals.load();
-    return loaded->getUsage(std::chrono::system_clock::now());
+    return loaded->getUsage(params.user_id, std::chrono::system_clock::now());
 }
 
 

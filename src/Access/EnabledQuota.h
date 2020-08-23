@@ -87,7 +87,7 @@ private:
         String quota_name;
         String quota_key;
 
-        std::optional<QuotaUsage> getUsage(std::chrono::system_clock::time_point current_time) const;
+        std::optional<QuotaUsage> getUsage(UUID user_id, std::chrono::system_clock::time_point current_time) const;
     };
 
     struct Impl;

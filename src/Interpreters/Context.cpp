@@ -786,7 +786,7 @@ void Context::checkAccess(const AccessRightsElements & elements) const { return 
 std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
     auto lock = getLock();
-    return access ? access : ContextAccess::getFullAccess();
+    return access ? access : getAccessControlManager().getContextAccessForFullAccess();
 }
 
 ASTPtr Context::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const

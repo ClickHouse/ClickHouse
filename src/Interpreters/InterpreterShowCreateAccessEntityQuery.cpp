@@ -14,6 +14,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
@@ -41,7 +42,7 @@ namespace
 {
     ASTPtr getCreateQueryImpl(
         const User & user,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const VisibleAccessEntities * visible_entities /* not used if attach_mode == true */,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
@@ -57,7 +58,7 @@ namespace
             if (attach_mode)
                 query->default_roles = user.default_roles.toAST();
             else
-                query->default_roles = user.default_roles.toASTWithNames(*manager);
+                query->default_roles = user.default_roles.toASTWithNames(*visible_entities);
         }
 
         if (user.authentication.getType() != Authentication::NO_PASSWORD)
@@ -71,14 +72,14 @@ namespace
             if (attach_mode)
                 query->settings = user.settings.toAST();
             else
-                query->settings = user.settings.toASTWithNames(*manager);
+                query->settings = user.settings.toASTWithNames(visible_entities->getAccessControlManager());
         }
 
         return query;
     }
 
 
-    ASTPtr getCreateQueryImpl(const Role & role, const AccessControlManager * manager, bool attach_mode)
+    ASTPtr getCreateQueryImpl(const Role & role, const VisibleAccessEntities * visible_entities, bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRoleQuery>();
         query->names.emplace_back(role.getName());
@@ -89,14 +90,14 @@ namespace
             if (attach_mode)
                 query->settings = role.settings.toAST();
             else
-                query->settings = role.settings.toASTWithNames(*manager);
+                query->settings = role.settings.toASTWithNames(*visible_entities);
         }
 
         return query;
     }
 
 
-    ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControlManager * manager, bool attach_mode)
+    ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const VisibleAccessEntities * visible_entities, bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
         query->names.emplace_back(profile.getName());
@@ -107,7 +108,7 @@ namespace
             if (attach_mode)
                 query->settings = profile.elements.toAST();
             else
-                query->settings = profile.elements.toASTWithNames(*manager);
+                query->settings = profile.elements.toASTWithNames(visible_entities->getAccessControlManager());
             if (query->settings)
                 query->settings->setUseInheritKeyword(true);
         }
@@ -117,7 +118,7 @@ namespace
             if (attach_mode)
                 query->to_roles = profile.to_roles.toAST();
             else
-                query->to_roles = profile.to_roles.toASTWithNames(*manager);
+                query->to_roles = profile.to_roles.toASTWithNames(*visible_entities);
         }
 
         return query;
@@ -126,7 +127,7 @@ namespace
 
     ASTPtr getCreateQueryImpl(
         const Quota & quota,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const VisibleAccessEntities * visible_entities /* not used if attach_mode == true */,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateQuotaQuery>();
@@ -153,7 +154,7 @@ namespace
             if (attach_mode)
                 query->roles = quota.to_roles.toAST();
             else
-                query->roles = quota.to_roles.toASTWithNames(*manager);
+                query->roles = quota.to_roles.toASTWithNames(*visible_entities);
         }
 
         return query;
@@ -162,7 +163,7 @@ namespace
 
     ASTPtr getCreateQueryImpl(
         const RowPolicy & policy,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const VisibleAccessEntities * visible_entities /* not used if attach_mode == true */,
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
@@ -189,7 +190,7 @@ namespace
             if (attach_mode)
                 query->roles = policy.to_roles.toAST();
             else
-                query->roles = policy.to_roles.toASTWithNames(*manager);
+                query->roles = policy.to_roles.toASTWithNames(*visible_entities);
         }
 
         return query;
@@ -197,19 +198,19 @@ namespace
 
     ASTPtr getCreateQueryImpl(
         const IAccessEntity & entity,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const VisibleAccessEntities * visible_entities /* not used if attach_mode == true */,
         bool attach_mode)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getCreateQueryImpl(*user, manager, attach_mode);
+            return getCreateQueryImpl(*user, visible_entities, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getCreateQueryImpl(*role, manager, attach_mode);
+            return getCreateQueryImpl(*role, visible_entities, attach_mode);
         if (const RowPolicy * policy = typeid_cast<const RowPolicy *>(&entity))
-            return getCreateQueryImpl(*policy, manager, attach_mode);
+            return getCreateQueryImpl(*policy, visible_entities, attach_mode);
         if (const Quota * quota = typeid_cast<const Quota *>(&entity))
-            return getCreateQueryImpl(*quota, manager, attach_mode);
+            return getCreateQueryImpl(*quota, visible_entities, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
-            return getCreateQueryImpl(*profile, manager, attach_mode);
+            return getCreateQueryImpl(*profile, visible_entities, attach_mode);
         throw Exception(entity.outputTypeAndName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
     }
 
@@ -263,13 +264,13 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = context.getAccessControlManager();
-    context.checkAccess(getRequiredAccess());
+    VisibleAccessEntities visible_entities{context.getAccess()};
     show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
     {
-        auto ids = access_control.findAll(show_query.type);
+        auto ids = visible_entities.findAll(show_query.type);
         for (const auto & id : ids)
         {
             if (auto entity = access_control.tryRead(id))
@@ -289,14 +290,14 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.type == EntityType::ROW_POLICY)
     {
-        auto ids = access_control.findAll<RowPolicy>();
         if (show_query.row_policy_names)
         {
             for (const String & name : show_query.row_policy_names->toStrings())
-                entities.push_back(access_control.read<RowPolicy>(name));
+                entities.push_back(visible_entities.read<RowPolicy>(name));
         }
         else
         {
+            auto ids = visible_entities.findAll<RowPolicy>();
             for (const auto & id : ids)
             {
                 auto policy = access_control.tryRead<RowPolicy>(id);
@@ -320,7 +321,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     else
     {
         for (const String & name : show_query.names)
-            entities.push_back(access_control.read(access_control.getID(show_query.type, name)));
+            entities.push_back(access_control.read(visible_entities.getID(show_query.type, name)));
     }
 
     boost::range::sort(entities, IAccessEntity::LessByName{});
@@ -333,17 +334,18 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
     auto entities = getEntities();
 
     ASTs list;
-    const auto & access_control = context.getAccessControlManager();
+    VisibleAccessEntities visible_entities{context.getAccess()};
     for (const auto & entity : entities)
-        list.push_back(getCreateQuery(*entity, access_control));
+        list.push_back(getCreateQueryImpl(*entity, &visible_entities, false));
 
     return list;
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const AccessControlManager & access_control)
+ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const IAccessEntity & entity, const Context & context)
 {
-    return getCreateQueryImpl(entity, &access_control, false);
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    return getCreateQueryImpl(entity, &visible_entities, false);
 }
 
 
@@ -352,20 +354,4 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getAttachQuery(const IAccessEntit
     return getCreateQueryImpl(entity, nullptr, true);
 }
 
-
-AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess() const
-{
-    const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    AccessRightsElements res;
-    switch (show_query.type)
-    {
-        case EntityType::USER: res.emplace_back(AccessType::SHOW_USERS); return res;
-        case EntityType::ROLE: res.emplace_back(AccessType::SHOW_ROLES); return res;
-        case EntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); return res;
-        case EntityType::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); return res;
-        case EntityType::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); return res;
-        case EntityType::MAX: break;
-    }
-    throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
-}
 }

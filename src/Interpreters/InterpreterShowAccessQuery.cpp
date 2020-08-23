@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessFlags.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <ext/range.h>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -50,12 +51,12 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
 std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 {
     const auto & access_control = context.getAccessControlManager();
-    context.checkAccess(AccessType::SHOW_ACCESS);
+    VisibleAccessEntities visible_entities{context.getAccess()};
 
     std::vector<AccessEntityPtr> entities;
     for (auto type : ext::range(EntityType::MAX))
     {
-        auto ids = access_control.findAll(type);
+        auto ids = visible_entities.findAll(type);
         for (const auto & id : ids)
         {
             if (auto entity = access_control.tryRead(id))
@@ -71,14 +72,13 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = context.getAccessControlManager();
 
     ASTs create_queries, grant_queries;
     for (const auto & entity : entities)
     {
-        create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
+        create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, context));
         if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::USER))
-            boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
+            boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, context));
     }
 
     ASTs result = std::move(create_queries);

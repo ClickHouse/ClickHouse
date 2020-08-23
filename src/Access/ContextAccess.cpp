@@ -5,7 +5,6 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
-#include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
@@ -33,6 +32,8 @@ namespace ErrorCodes
 
 namespace
 {
+    using EntityType = IAccessEntity::Type;
+
     AccessRights mixAccessRightsFromUserAndRoles(const User & user, const EnabledRolesInfo & roles_info)
     {
         AccessRights res = user.access;
@@ -156,8 +157,100 @@ namespace
         if (access.isGranted(AccessType::CREATE_TEMPORARY_TABLE))
             access.grant(AccessFlags::allTableFlags() | AccessFlags::allColumnFlags(), DatabaseCatalog::TEMPORARY_DATABASE);
 
-        /// Anyone has access to the "system" database.
-        access.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+        /// Anyone has access to the following system tables.
+        const char * system_tables[] =
+        {
+            "one", "numbers", "numbers_mt", "zeros", "zeros_mt",
+            "databases", "tables", "columns", "functions",
+            "settings", "formats", "table_functions",
+            "aggregate_function_combinators",
+            "data_type_families", "collations", "table_engines",
+            "contributors", "users", "roles", "grants",
+            "role_grants", "current_roles",
+            "enabled_roles", "settings_profiles",
+            "settings_profile_elements", "row_policies", "quotas",
+            "quota_limits", "quota_usage", "privileges",
+            "licenses",
+
+
+            attach<StorageSystemOne>(system_database, "one");
+            attach<StorageSystemNumbers>(system_database, "numbers", false);
+            attach<StorageSystemNumbers>(system_database, "numbers_mt", true);
+            attach<StorageSystemZeros>(system_database, "zeros", false);
+            attach<StorageSystemZeros>(system_database, "zeros_mt", true);
+            attach<StorageSystemDatabases>(system_database, "databases");
+            attach<StorageSystemTables>(system_database, "tables");
+            attach<StorageSystemColumns>(system_database, "columns");
+            attach<StorageSystemFunctions>(system_database, "functions");
+            attach<StorageSystemEvents>(system_database, "events");
+            attach<StorageSystemSettings>(system_database, "settings");
+            attach<SystemMergeTreeSettings>(system_database, "merge_tree_settings");
+            attach<StorageSystemBuildOptions>(system_database, "build_options");
+            attach<StorageSystemFormats>(system_database, "formats");
+            attach<StorageSystemTableFunctions>(system_database, "table_functions");
+            attach<StorageSystemAggregateFunctionCombinators>(system_database, "aggregate_function_combinators");
+            attach<StorageSystemDataTypeFamilies>(system_database, "data_type_families");
+            attach<StorageSystemCollations>(system_database, "collations");
+            attach<StorageSystemTableEngines>(system_database, "table_engines");
+            attach<StorageSystemContributors>(system_database, "contributors");
+            attach<StorageSystemUsers>(system_database, "users");
+            attach<StorageSystemRoles>(system_database, "roles");
+            attach<StorageSystemGrants>(system_database, "grants");
+            attach<StorageSystemRoleGrants>(system_database, "role_grants");
+            attach<StorageSystemCurrentRoles>(system_database, "current_roles");
+            attach<StorageSystemEnabledRoles>(system_database, "enabled_roles");
+            attach<StorageSystemSettingsProfiles>(system_database, "settings_profiles");
+            attach<StorageSystemSettingsProfileElements>(system_database, "settings_profile_elements");
+            attach<StorageSystemRowPolicies>(system_database, "row_policies");
+            attach<StorageSystemQuotas>(system_database, "quotas");
+            attach<StorageSystemQuotaLimits>(system_database, "quota_limits");
+            attach<StorageSystemQuotaUsage>(system_database, "quota_usage");
+            attach<StorageSystemQuotasUsage>(system_database, "quotas_usage");
+            attach<StorageSystemUserDirectories>(system_database, "user_directories");
+            attach<StorageSystemPrivileges>(system_database, "privileges");
+
+        #if !defined(ARCADIA_BUILD)
+            attach<StorageSystemLicenses>(system_database, "licenses");
+        #endif
+        #ifdef OS_LINUX
+            attach<StorageSystemStackTrace>(system_database, "stack_trace");
+        #endif
+        }
+
+        void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
+        {
+            attachSystemTablesLocal(system_database);
+
+            attach<StorageSystemParts>(system_database, "parts");
+            attach<StorageSystemDetachedParts>(system_database, "detached_parts");
+            attach<StorageSystemPartsColumns>(system_database, "parts_columns");
+            attach<StorageSystemDisks>(system_database, "disks");
+            attach<StorageSystemStoragePolicies>(system_database, "storage_policies");
+            attach<StorageSystemProcesses>(system_database, "processes");
+            attach<StorageSystemMetrics>(system_database, "metrics");
+            attach<StorageSystemMerges>(system_database, "merges");
+            attach<StorageSystemMutations>(system_database, "mutations");
+            attach<StorageSystemReplicas>(system_database, "replicas");
+            attach<StorageSystemReplicationQueue>(system_database, "replication_queue");
+            attach<StorageSystemDistributionQueue>(system_database, "distribution_queue");
+            attach<StorageSystemDictionaries>(system_database, "dictionaries");
+            attach<StorageSystemModels>(system_database, "models");
+            attach<StorageSystemClusters>(system_database, "clusters");
+            attach<StorageSystemGraphite>(system_database, "graphite_retentions");
+            attach<StorageSystemMacros>(system_database, "macros");
+
+            if (has_zookeeper)
+                attach<StorageSystemZooKeeper>(system_database, "zookeeper");
+        }
+
+        void attachSystemTablesAsync(IDatabase & system_database, AsynchronousMetrics & async_metrics)
+        {
+            attach<StorageSystemAsynchronousMetrics>(system_database, "asynchronous_metrics", async_metrics);
+
+        }
+
+        for (const auto * system_table : system_tables)
+            access.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, system_table);
     }
 
 
@@ -180,10 +273,10 @@ namespace
 
 
 ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params & params_)
-    : manager(&manager_)
+    : manager(manager_)
     , params(params_)
 {
-    subscription_for_user_change = manager->subscribeForChanges(
+    subscription_for_user_change = manager.subscribeForChanges(
         *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
     {
         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
@@ -191,7 +284,15 @@ ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params
         setUser(changed_user);
     });
 
-    setUser(manager->read<User>(*params.user_id));
+    setUser(manager.read<User>(*params.user_id));
+}
+
+
+ContextAccess::ContextAccess(const AccessControlManager & manager_, FullAccessTag)
+    : manager(manager_),
+      access(std::make_shared<AccessRights>(AccessRights::getFullAccess())),
+      enabled_quota(EnabledQuota::getUnlimitedQuota())
+{
 }
 
 
@@ -243,7 +344,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         std::inserter(current_roles_with_admin_option, current_roles_with_admin_option.end()));
 
     subscription_for_roles_changes = {};
-    enabled_roles = manager->getEnabledRoles(current_roles, current_roles_with_admin_option);
+    enabled_roles = manager.getEnabledRoles(current_roles, current_roles_with_admin_option);
     subscription_for_roles_changes = enabled_roles->subscribeForChanges([this](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
     {
         std::lock_guard lock{mutex};
@@ -258,9 +359,9 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    enabled_row_policies = manager->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
-    enabled_quota = manager->getEnabledQuota(*params.user_id, user_name, roles_info->enabled_roles, params.address, params.quota_key);
-    enabled_settings = manager->getEnabledSettings(*params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
+    enabled_row_policies = manager.getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
+    enabled_quota = manager.getEnabledQuota(*params.user_id, user_name, roles_info->enabled_roles, params.address, params.quota_key);
+    enabled_settings = manager.getEnabledSettings(*params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
     calculateAccessRights();
 }
 
@@ -293,7 +394,7 @@ bool ContextAccess::isCorrectPassword(const String & password) const
     std::lock_guard lock{mutex};
     if (!user)
         return false;
-    return user->authentication.isCorrectPassword(password, user_name, manager->getExternalAuthenticators());
+    return user->authentication.isCorrectPassword(password, user_name, manager.getExternalAuthenticators());
 }
 
 bool ContextAccess::isClientHostAllowed() const
@@ -348,20 +449,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
     return enabled_quota ? enabled_quota->getUsage() : std::optional<QuotaUsage>{};
 }
 
-
-std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
-{
-    static const std::shared_ptr<const ContextAccess> res = []
-    {
-        auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
-        full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->enabled_quota = EnabledQuota::getUnlimitedQuota();
-        return full_access;
-    }();
-    return res;
-}
-
-
 std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
@@ -373,6 +460,13 @@ std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints
 {
     std::lock_guard lock{mutex};
     return enabled_settings ? enabled_settings->getConstraints() : nullptr;
+}
+
+
+std::shared_ptr<const boost::container::flat_set<UUID>> ContextAccess::getEnabledProfileIDs() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_settings ? enabled_settings->getEnabledProfileIDs() : nullptr;
 }
 
 
@@ -627,7 +721,7 @@ void ContextAccess::checkAdminOptionImpl(const Container & role_ids, const GetNa
 
 void ContextAccess::checkAdminOption(const UUID & role_id) const
 {
-    checkAdminOptionImpl(to_array(role_id), [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+    checkAdminOptionImpl(to_array(role_id), [this](const UUID & id, size_t) { return manager.tryReadName(id); });
 }
 
 void ContextAccess::checkAdminOption(const UUID & role_id, const String & role_name) const
@@ -642,7 +736,7 @@ void ContextAccess::checkAdminOption(const UUID & role_id, const std::unordered_
 
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids) const
 {
-    checkAdminOptionImpl(role_ids, [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+    checkAdminOptionImpl(role_ids, [this](const UUID & id, size_t) { return manager.tryReadName(id); });
 }
 
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const

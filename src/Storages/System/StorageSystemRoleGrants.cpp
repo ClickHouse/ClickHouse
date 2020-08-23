@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
@@ -33,10 +34,10 @@ NamesAndTypesList StorageSystemRoleGrants::getNamesAndTypes()
 
 void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<User>();
-    boost::range::push_back(ids, access_control.findAll<Role>());
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    std::vector<UUID> ids = visible_entities.findAll<User>();
+    boost::range::push_back(ids, visible_entities.findAll<Role>());
 
     size_t column_index = 0;
     auto & column_user_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
@@ -82,6 +83,9 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, const Conte
     {
         for (const auto & role_id : granted_roles.roles)
         {
+            if (!visible_entities.isVisible(role_id))
+                continue;
+
             auto role_name = access_control.tryReadName(role_id);
             if (!role_name)
                 continue;

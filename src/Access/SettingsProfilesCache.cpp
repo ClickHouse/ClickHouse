@@ -142,18 +142,19 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     merged_settings.merge(enabled.params.settings_from_enabled_roles);
     merged_settings.merge(enabled.params.settings_from_user);
 
-    substituteProfiles(merged_settings);
+    auto profile_ids = substituteProfiles(merged_settings);
 
     auto settings = merged_settings.toSettings();
     auto constraints = merged_settings.toSettingsConstraints(manager);
     enabled.setSettingsAndConstraints(
         std::make_shared<Settings>(std::move(settings)), std::make_shared<SettingsConstraints>(std::move(constraints)));
+    enabled.setEnabledProfileIDs(std::make_shared<boost::container::flat_set<UUID>>(std::move(profile_ids)));
 }
 
 
-void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & elements) const
+boost::container::flat_set<UUID> SettingsProfilesCache::substituteProfiles(SettingsProfileElements & elements) const
 {
-    boost::container::flat_set<UUID> already_substituted;
+    boost::container::flat_set<UUID> substituted;
     for (size_t i = 0; i != elements.size();)
     {
         auto & element = elements[i];
@@ -165,13 +166,13 @@ void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & element
 
         auto parent_profile_id = *element.parent_profile;
         element.parent_profile.reset();
-        if (already_substituted.count(parent_profile_id))
+        if (substituted.count(parent_profile_id))
         {
-            ++i;
+            ++i; /// already substituted
             continue;
         }
 
-        already_substituted.insert(parent_profile_id);
+        substituted.insert(parent_profile_id);
         auto parent_profile = all_profiles.find(parent_profile_id);
         if (parent_profile == all_profiles.end())
         {
@@ -182,6 +183,7 @@ void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & element
         const auto & parent_profile_elements = parent_profile->second->elements;
         elements.insert(elements.begin() + i, parent_profile_elements.begin(), parent_profile_elements.end());
     }
+    return already_substituted;
 }
 
 

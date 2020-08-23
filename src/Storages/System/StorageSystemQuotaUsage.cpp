@@ -83,7 +83,6 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
 
 void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_QUOTAS);
     auto usage = context.getQuotaUsage();
     if (!usage)
         return;
@@ -98,6 +97,8 @@ void StorageSystemQuotaUsage::fillDataImpl(
     bool add_column_is_current,
     const std::vector<QuotaUsage> & quotas_usage)
 {
+    VisibleAccessEntities visible_entries{context.getAccess()};
+
     size_t column_index = 0;
     auto & column_quota_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_quota_key = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -189,6 +190,9 @@ void StorageSystemQuotaUsage::fillDataImpl(
     };
 
     for (const auto & usage : quotas_usage)
-        add_rows(usage.quota_name, usage.quota_id, usage.quota_key, usage.intervals);
+    {
+        if (visible_entries.exists(usage.user_id))
+            add_rows(usage.quota_name, usage.quota_id, usage.quota_key, usage.intervals);
+    }
 }
 }

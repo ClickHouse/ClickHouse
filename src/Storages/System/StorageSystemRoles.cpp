@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Access/AccessControlManager.h>
+#include <Access/VisibleAccessEntities.h>
 #include <Access/Role.h>
 #include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -25,9 +26,9 @@ NamesAndTypesList StorageSystemRoles::getNamesAndTypes()
 
 void StorageSystemRoles::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_ROLES);
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<Role>();
+    VisibleAccessEntities visible_entities{context.getAccess()};
+    std::vector<UUID> ids = visible_entities.findAll<Role>();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);

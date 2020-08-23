@@ -167,6 +167,7 @@ namespace
         {
             user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
             user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            user->access.grantWithGrantOption(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
             for (const String & database : *databases)
                 user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
         }

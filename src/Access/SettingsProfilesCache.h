@@ -40,7 +40,7 @@ private:
     void profileRemoved(const UUID & profile_id);
     void mergeSettingsAndConstraints();
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
-    void substituteProfiles(SettingsProfileElements & elements) const;
+    boost::container::flat_set<UUID> substituteProfiles(SettingsProfileElements & elements) const;
 
     const AccessControlManager & manager;
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;

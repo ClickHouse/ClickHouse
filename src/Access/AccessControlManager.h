@@ -118,6 +118,10 @@ public:
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
+    /// Makes an instance of ContextAccess which provides full access to everything
+    /// without any limitations. This is used for the global context.
+    std::shared_ptr<const ContextAccess> getContextAccessForFullAccess() const;
+
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
         const boost::container::flat_set<UUID> & current_roles,
         const boost::container::flat_set<UUID> & current_roles_with_admin_option) const;

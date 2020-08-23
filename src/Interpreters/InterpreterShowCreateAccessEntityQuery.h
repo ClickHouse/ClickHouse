@@ -26,14 +26,13 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
-    static ASTPtr getCreateQuery(const IAccessEntity & entity, const AccessControlManager & access_control);
+    static ASTPtr getCreateQuery(const IAccessEntity & entity, const Context & context);
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
 private:
     BlockInputStreamPtr executeImpl();
     std::vector<AccessEntityPtr> getEntities() const;
     ASTs getCreateQueries() const;
-    AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
     const Context & context;

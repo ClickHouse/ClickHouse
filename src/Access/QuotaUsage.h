@@ -27,6 +27,7 @@ struct QuotaUsage
     UUID quota_id;
     String quota_name;
     String quota_key;
+    UUID user_id;
     QuotaUsage();
 };
 }

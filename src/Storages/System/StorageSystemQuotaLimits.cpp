@@ -71,9 +71,9 @@ NamesAndTypesList StorageSystemQuotaLimits::getNamesAndTypes()
 
 void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_QUOTAS);
     const auto & access_control = context.getAccessControlManager();
-    std::vector<UUID> ids = access_control.findAll<Quota>();
+    VisibleAccessEntities visible_entries{context.getAccess()};
+    std::vector<UUID> ids = visible_entries.findAll<Quota>();
 
     size_t column_index = 0;
     auto & column_quota_name = assert_cast<ColumnString &>(*res_columns[column_index++]);

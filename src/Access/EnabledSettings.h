@@ -40,6 +40,9 @@ public:
     /// and the roles passed in the constructor.
     std::shared_ptr<const SettingsConstraints> getConstraints() const;
 
+    /// Returns the profiles used to calculate the default settings and the constraints.
+    std::shared_ptr<const boost::container::flat_set<UUID>> getEnabledProfileIDs() const;
+
 private:
     friend class SettingsProfilesCache;
     EnabledSettings(const Params & params_);
@@ -47,10 +50,13 @@ private:
     void setSettingsAndConstraints(
         const std::shared_ptr<const Settings> & settings_, const std::shared_ptr<const SettingsConstraints> & constraints_);
 
+    void setEnabledProfileIDs(const std::shared_ptr<const boost::container::flat_set<UUID>> & enabled_profile_ids_);
+
     const Params params;
     SettingsProfileElements settings_from_enabled;
     std::shared_ptr<const Settings> settings;
     std::shared_ptr<const SettingsConstraints> constraints;
+    std::shared_ptr<const boost::container::flat_set<UUID>> enabled_profile_ids;
     mutable std::mutex mutex;
 };
 }
