@@ -56,6 +56,18 @@ VolumeJBOD::VolumeJBOD(
 
     /// Default value is 'true' due to backward compatibility.
     perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
+
+    are_merges_allowed = config.getBool(config_prefix + ".allow_merges", true);
+}
+
+VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disk_selector)
+    : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
+{
+    are_merges_allowed_user_override = volume_jbod.are_merges_allowed_user_override;
+    last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
 DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
@@ -85,6 +97,19 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
     }
     return {};
+}
+
+bool VolumeJBOD::areMergesAllowed() const
+{
+    if (are_merges_allowed_user_override)
+        return *are_merges_allowed_user_override;
+    else
+        return are_merges_allowed;
+}
+
+void VolumeJBOD::setAllowMergesFromQuery(bool allow)
+{
+    are_merges_allowed_user_override = allow;
 }
 
 }

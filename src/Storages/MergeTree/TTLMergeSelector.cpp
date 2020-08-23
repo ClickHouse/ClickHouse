@@ -25,6 +25,7 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
     ssize_t partition_to_merge_index = -1;
     time_t partition_to_merge_min_ttl = 0;
 
+    /// Find most old TTL.
     for (size_t i = 0; i < parts_ranges.size(); ++i)
     {
         const auto & mergeable_parts_in_partition = parts_ranges[i];
@@ -42,9 +43,12 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
 
             if (ttl && !isTTLAlreadySatisfied(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
-                partition_to_merge_min_ttl = ttl;
-                partition_to_merge_index = i;
-                best_begin = part_it;
+                if (only_drop_parts || (*static_cast<const MergeTreeData::DataPartPtr *>(part_it->data))->canParticipateInMerges())
+                {
+                    partition_to_merge_min_ttl = ttl;
+                    partition_to_merge_index = i;
+                    best_begin = part_it;
+                }
             }
         }
     }
@@ -56,13 +60,16 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
     Iterator best_end = best_begin + 1;
     size_t total_size = 0;
 
+    /// Find begin of range with most old TTL.
     while (true)
     {
         time_t ttl = getTTLForPart(*best_begin);
 
         if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
-            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
+            || (max_total_size_to_merge && total_size > max_total_size_to_merge)
+            || (!only_drop_parts && !(*static_cast<const MergeTreeData::DataPartPtr *>(best_begin->data))->canParticipateInMerges()))
         {
+            /// This condition can not be satisfied on first iteration.
             ++best_begin;
             break;
         }
@@ -74,12 +81,14 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         --best_begin;
     }
 
+    /// Find end of range with most old TTL.
     while (best_end != best_partition.end())
     {
         time_t ttl = getTTLForPart(*best_end);
 
         if (!ttl || isTTLAlreadySatisfied(*best_end) || ttl > current_time
-            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
+            || (max_total_size_to_merge && total_size > max_total_size_to_merge)
+            || (!only_drop_parts && !(*static_cast<const MergeTreeData::DataPartPtr *>(best_end->data))->canParticipateInMerges()))
             break;
 
         total_size += best_end->size;
