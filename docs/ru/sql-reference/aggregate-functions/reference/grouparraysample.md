@@ -71,7 +71,6 @@ SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
 ``` sql
 SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
 ```
-
 Результат:
 
 ```text
