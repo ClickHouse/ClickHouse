@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
+    extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
 }
 
@@ -130,7 +131,7 @@ StoragePolicy::StoragePolicy(const StoragePolicy & storage_policy,
             catch (Exception & e)
             {
                 /// Default policies are allowed to be missed in configuration.
-                if (e.code() != ErrorCodes::NO_ELEMENTS_IN_CONFIG || !storage_policy.isDefaultPolicy())
+                if (e.code() != ErrorCodes::NO_ELEMENTS_IN_CONFIG || storage_policy.getName() != DEFAULT_STORAGE_POLICY_NAME)
                     throw;
 
                 Poco::Util::AbstractConfiguration::Keys keys;
@@ -246,6 +247,24 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
         }
     }
     return max_disk->reserve(0);
+}
+
+
+VolumePtr StoragePolicy::getVolume(size_t index) const
+{
+    if (index < volumes_names.size())
+        return volumes[index];
+    else
+        throw Exception("No volume with index " + std::to_string(index) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
+}
+
+
+VolumePtr StoragePolicy::getVolumeByName(const String & volume_name) const
+{
+    auto it = volumes_names.find(volume_name);
+    if (it == volumes_names.end())
+        throw Exception("No such volume " + backQuote(volume_name) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
+    return getVolume(it->second);
 }
 
 
