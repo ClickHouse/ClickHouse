@@ -58,34 +58,28 @@ StoragePolicy::StoragePolicy(
             throw Exception(
                 "Volume name can contain only alphanumeric and '_' in storage policy" + backQuote(name) + " (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         volumes.push_back(std::make_shared<VolumeJBOD>(attr_name, config, volumes_prefix + "." + attr_name, disks));
-        if (volumes_names.find(attr_name) != volumes_names.end())
-            throw Exception("Volumes names must be unique in storage policy" + backQuote(name) + " (" + attr_name + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
-        volumes_names[attr_name] = volumes.size() - 1;
+        if (volume_index_by_volume_name.find(attr_name) != volume_index_by_volume_name.end())
+            throw Exception("Volume names must be unique in storage policy " + backQuote(name) + " (" + attr_name + " is duplicated)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        volume_index_by_volume_name[attr_name] = volumes.size() - 1;
+        for (const auto & disk : volumes.back()->getDisks())
+        {
+            const String & disk_name = disk->getName();
+            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+                throw Exception("Disk names must be unique in storage policy " + backQuote(name) + " (" + disk_name + " is duplicated)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            volume_index_by_disk_name[disk_name] = volumes.size() - 1;
+        }
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
         auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME, std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)}, 0, true);
         volumes.emplace_back(std::move(default_volume));
-        volumes_names.emplace(DEFAULT_VOLUME_NAME, 0);
+        volume_index_by_volume_name.emplace(DEFAULT_VOLUME_NAME, 0);
+        volume_index_by_disk_name.emplace(DEFAULT_DISK_NAME, 0);
     }
 
     if (volumes.empty())
         throw Exception("Storage policy " + backQuote(name) + " must contain at least one volume.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-    /// Check that disks are unique in Policy
-    std::set<String> disk_names;
-    for (const auto & volume : volumes)
-    {
-        for (const auto & disk : volume->getDisks())
-        {
-            if (disk_names.find(disk->getName()) != disk_names.end())
-                throw Exception(
-                    "Duplicate disk " + backQuote(disk->getName()) + " in storage policy " + backQuote(name), ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-            disk_names.insert(disk->getName());
-        }
-    }
 
     const double default_move_factor = volumes.size() > 1 ? 0.1 : 0.0;
     move_factor = config.getDouble(config_prefix + ".move_factor", default_move_factor);
@@ -105,9 +99,16 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
 
     for (size_t i = 0; i < volumes.size(); ++i)
     {
-        if (volumes_names.find(volumes[i]->getName()) != volumes_names.end())
-            throw Exception("Volumes names must be unique in storage policy " + backQuote(name) + " (" + volumes[i]->getName() + " duplicated).", ErrorCodes::UNKNOWN_POLICY);
-        volumes_names[volumes[i]->getName()] = i;
+        if (volume_index_by_volume_name.find(volumes[i]->getName()) != volume_index_by_volume_name.end())
+            throw Exception("Volume names must be unique in storage policy " + backQuote(name) + " (" + volumes[i]->getName() + " is duplicated).", ErrorCodes::UNKNOWN_POLICY);
+        volume_index_by_volume_name[volumes[i]->getName()] = i;
+        for (const auto & disk : volumes[i]->getDisks())
+        {
+            const String & disk_name = disk->getName();
+            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+                throw Exception("Disk names must be unique in storage policy " + backQuote(name) + " (" + disk_name + " is duplicated)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            volume_index_by_disk_name[disk_name] = i;
+        }
     }
 }
 
@@ -120,7 +121,7 @@ StoragePolicy::StoragePolicy(const StoragePolicy & storage_policy,
 {
     for (auto & volume : volumes)
     {
-        if (storage_policy.volumes_names.count(volume->getName()) > 0)
+        if (storage_policy.volume_index_by_volume_name.count(volume->getName()) > 0)
         {
             auto old_volume = storage_policy.getVolumeByName(volume->getName());
             try
@@ -252,7 +253,7 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 
 VolumePtr StoragePolicy::getVolume(size_t index) const
 {
-    if (index < volumes_names.size())
+    if (index < volume_index_by_volume_name.size())
         return volumes[index];
     else
         throw Exception("No volume with index " + std::to_string(index) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
@@ -261,8 +262,8 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 
 VolumePtr StoragePolicy::getVolumeByName(const String & volume_name) const
 {
-    auto it = volumes_names.find(volume_name);
-    if (it == volumes_names.end())
+    auto it = volume_index_by_volume_name.find(volume_name);
+    if (it == volume_index_by_volume_name.end())
         throw Exception("No such volume " + backQuote(volume_name) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
     return getVolume(it->second);
 }
@@ -292,14 +293,11 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
 size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 {
-    for (size_t i = 0; i < volumes.size(); ++i)
-    {
-        const auto & volume = volumes[i];
-        for (const auto & disk : volume->getDisks())
-            if (disk->getName() == disk_ptr->getName())
-                return i;
-    }
-    throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
+    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
+    if (it != volume_index_by_disk_name.end())
+        return it->second;
+    else
+        throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
 }
 
 
