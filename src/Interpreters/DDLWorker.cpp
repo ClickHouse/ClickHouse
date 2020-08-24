@@ -874,9 +874,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     String executed_by;
 
     zkutil::EventPtr event = std::make_shared<Poco::Event>();
-    if (zookeeper->exists(is_executed_path, nullptr, event))
+    if (zookeeper->tryGet(is_executed_path, executed_by))
     {
-        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
         return true;
     }
 
@@ -893,10 +893,21 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         /// Any replica which is leader tries to take lock
         if (status.is_leader && lock->tryLock())
         {
+            /// In replicated merge tree we can have multiple leaders. So we can
+            /// be "leader", but another "leader" replica may already execute
+            /// this task.
+            if (zookeeper->tryGet(is_executed_path, executed_by))
+            {
+                LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
+                executed_by_leader = true;
+                break;
+            }
+
             /// Doing it exclusively
             size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
             if (counter > MAX_TRIES_TO_EXECUTE)
                 break;
+
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
             /// If the leader will unexpectedly changed this method will return false
