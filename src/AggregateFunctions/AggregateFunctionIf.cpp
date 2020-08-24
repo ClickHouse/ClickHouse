@@ -46,12 +46,13 @@ public:
   */
 template <bool result_is_nullable, bool serialize_flag>
 class AggregateFunctionIfNullUnary final
-    : public AggregateFunctionNullUnaryBase<result_is_nullable, serialize_flag, true, AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>
+    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
+        AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>
 {
 private:
     size_t num_arguments;
 
-    using Base = AggregateFunctionNullUnaryBase<result_is_nullable, serialize_flag, true,
+    using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>;
 public:
 
@@ -61,16 +62,14 @@ public:
     }
 
     AggregateFunctionIfNullUnary(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullUnaryBase<result_is_nullable, serialize_flag, true,
-        AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>(std::move(nested_function_), arguments, params),
-        num_arguments(arguments.size())
+        : Base(std::move(nested_function_), arguments, params), num_arguments(arguments.size())
     {
         if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    bool singleFilter(const IColumn ** columns, size_t row_num) const override
+    static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
     {
         const IColumn * filter_column = columns[num_arguments - 1];
         if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(filter_column))
@@ -78,18 +77,24 @@ public:
 
         return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num];
     }
+
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        if (!column->isNullAt(row_num) && singleFilter(columns, row_num, num_arguments))
+        {
+            this->setFlag(place);
+            this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+        }
+    }
 };
 
 template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
 class AggregateFunctionIfNullVariadic final
-    : public AggregateFunctionNullVariadicBase<result_is_nullable, serialize_flag, null_is_skipped, true,
+    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
 {
-private:
-    size_t num_arguments;
-
-    using Base = AggregateFunctionNullVariadicBase<result_is_nullable, serialize_flag, null_is_skipped, true,
-        AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
 public:
 
     String getName() const override
@@ -98,16 +103,60 @@ public:
     }
 
     AggregateFunctionIfNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullVariadicBase<result_is_nullable, serialize_flag, null_is_skipped, true,
-        AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
-          num_arguments(arguments.size())
+        : Base(std::move(nested_function_), arguments, params), number_of_arguments(arguments.size())
     {
+        if (number_of_arguments == 1)
+            throw Exception("Logical error: single argument is passed to AggregateFunctionIfNullVariadic", ErrorCodes::LOGICAL_ERROR);
+
+        if (number_of_arguments > MAX_ARGS)
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (size_t i = 0; i < number_of_arguments; ++i)
+            is_nullable[i] = arguments[i]->isNullable();
     }
 
-    bool singleFilter(const IColumn ** columns, size_t row_num) const override
+    static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
     {
         return assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num];
     }
+
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        /// This container stores the columns we really pass to the nested function.
+        const IColumn * nested_columns[number_of_arguments];
+
+        for (size_t i = 0; i < number_of_arguments; ++i)
+        {
+            if (is_nullable[i])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
+                if (null_is_skipped && nullable_col.isNullAt(row_num))
+                {
+                    /// If at least one column has a null value in the current row,
+                    /// we don't process this row.
+                    return;
+                }
+                nested_columns[i] = &nullable_col.getNestedColumn();
+            }
+            else
+                nested_columns[i] = columns[i];
+        }
+
+        if (singleFilter(nested_columns, row_num, number_of_arguments))
+        {
+            this->setFlag(place);
+            this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
+        }
+    }
+
+private:
+    using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
+        AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
+
+    enum { MAX_ARGS = 8 };
+    size_t number_of_arguments = 0;
+    std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
 };
 
 
