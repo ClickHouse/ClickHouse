@@ -164,4 +164,17 @@ Shows parameters that were used at a [settings profile creation](../../sql-refer
 SHOW CREATE [SETTINGS] PROFILE name
 ```
 
+## SHOW USERS
+
+## SHOW [CURRENT|ENABLED] ROLES
+
+## SHOW [SETTINGS] PROFILES
+
+## SHOW [ROW] POLICIES [ON [db.]table]
+
+## SHOW QUOTAS
+
+## SHOW [CURRENT] QUOTA
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
