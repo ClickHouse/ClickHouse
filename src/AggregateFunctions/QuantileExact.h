@@ -17,17 +17,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/** Calculates quantile by collecting all values into array
-  *  and applying n-th element (introselect) algorithm for the resulting array.
-  *
-  * It uses O(N) memory and it is very inefficient in case of high amount of identical values.
-  * But it is very CPU efficient for not large datasets.
-  */
-template <typename Value>
-struct QuantileExact
-{
-    virtual ~QuantileExact() = default;
 
+template <typename Value, typename Derived>
+struct QuantileExactBase
+{
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
     using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;
@@ -46,7 +39,7 @@ struct QuantileExact
         throw Exception("Method add with weight is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void merge(const QuantileExact & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
+    void merge(const QuantileExactBase & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
 
     void serialize(WriteBuffer & buf) const
     {
@@ -63,8 +56,32 @@ struct QuantileExact
         buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
+    Value get(Float64 level)
+    {
+        auto derived = static_cast<Derived*>(this);
+        return derived->getImpl(level);
+    }
+
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    {
+        auto derived = static_cast<Derived*>(this);
+        return derived->getManyImpl(levels, indices, size, result);
+    }
+};
+
+/** Calculates quantile by collecting all values into array
+  *  and applying n-th element (introselect) algorithm for the resulting array.
+  *
+  * It uses O(N) memory and it is very inefficient in case of high amount of identical values.
+  * But it is very CPU efficient for not large datasets.
+  */
+template <typename Value>
+struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
+{
+    using QuantileExactBase<Value, QuantileExact<Value>>::array;
+
     // Get the value of the `level` quantile. The level must be between 0 and 1.
-    virtual Value get(Float64 level)
+    Value getImpl(Float64 level)
     {
         if (!array.empty())
         {
@@ -79,7 +96,7 @@ struct QuantileExact
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    virtual void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getManyImpl(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {
@@ -106,6 +123,7 @@ struct QuantileExact
 
 /// QuantileExactExclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
 template <typename Value>
+/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -173,6 +191,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 
 /// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7, SciPy-(1,1)
 template <typename Value>
+/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactInclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -237,11 +256,11 @@ struct QuantileExactInclusive : public QuantileExact<Value>
 // Implementation is as per "medium_low" function from python:
 // https://docs.python.org/3/library/statistics.html#statistics.median_low
 template <typename Value>
-struct QuantileExactLow : public QuantileExact<Value>
+struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value>>
 {
-    using QuantileExact<Value>::array;
+    using QuantileExactBase<Value, QuantileExactLow<Value>>::array;
 
-    Value get(Float64 level) override
+    Value getImpl(Float64 level)
     {
         if (!array.empty())
         {
@@ -270,7 +289,7 @@ struct QuantileExactLow : public QuantileExact<Value>
         return std::numeric_limits<Value>::quiet_NaN();
     }
 
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) override
+    void getManyImpl(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {
@@ -311,11 +330,11 @@ struct QuantileExactLow : public QuantileExact<Value>
 // Implementation is as per "medium_high function from python:
 // https://docs.python.org/3/library/statistics.html#statistics.median_high
 template <typename Value>
-struct QuantileExactHigh : public QuantileExact<Value>
+struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Value>>
 {
-    using QuantileExact<Value>::array;
+    using QuantileExactBase<Value, QuantileExactHigh<Value>>::array;
 
-    Value get(Float64 level) override
+    Value getImpl(Float64 level)
     {
         if (!array.empty())
         {
@@ -336,7 +355,7 @@ struct QuantileExactHigh : public QuantileExact<Value>
         return std::numeric_limits<Value>::quiet_NaN();
     }
 
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result) override
+    void getManyImpl(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {
