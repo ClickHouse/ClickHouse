@@ -114,6 +114,8 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
+    changed_test_files=""
+
     # Find the directory with test files.
     if [ -v CHPC_TEST_PATH ]
     then
