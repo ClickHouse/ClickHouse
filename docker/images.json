@@ -132,5 +132,16 @@
          "name": "yandex/clickhouse-test-base",
          "dependent": [
          ]
+    },
+    "docker/packager/unbundled": {
+         "name": "yandex/clickhouse-unbundled-builder",
+         "dependent": [
+            "docker/test/stateless_unbundled"
+         ]
+    }
+    "docker/test/stateless_unbundled": {
+         "name": "yandex/clickhouse-stateless-unbundled-test",
+         "dependent": [
+         ]
     }
 }
