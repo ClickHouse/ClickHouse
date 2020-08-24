@@ -1,0 +1,28 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS perf_lc_num</create_query>
+    <create_query>CREATE TABLE perf_lc_num(
+        num UInt8,
+        arr Array(LowCardinality(Int64)) default [num]
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_lc_num (num)
+        SELECT toUInt8(number)
+        FROM numbers(1500000000)
+    </fill_query>
+
+    <query>SELECT count() FROM perf_lc_num WHERE num = 42</query>
+    <query>SELECT count() FROM perf_lc_num WHERE arr[1] = 42</query>
+    <query>SELECT count() FROM perf_lc_num WHERE has(arr, 42)</query>
+    <query>SELECT count() FROM perf_lc_num WHERE indexOf(arr, 42) > 0</query>
+
+    <query>SELECT count() FROM perf_lc_num WHERE arr[1] = num</query>
+    <query>SELECT count() FROM perf_lc_num WHERE has(arr, num)</query>
+    <query>SELECT count() FROM perf_lc_num WHERE indexOf(arr, num) > 0</query>
+
+    <query>SELECT count() FROM perf_lc_num WHERE has(arr, num * 10)</query>
+    <query>SELECT count() FROM perf_lc_num WHERE has(arr, (num * 1000 + 20) % 137)</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_lc_num</drop_query>
+</test>
