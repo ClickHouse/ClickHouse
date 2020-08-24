@@ -8,24 +8,6 @@ dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 dpkg -i package_folder/clickhouse-test_*.deb
 
-function wait_server()
-{
-    counter=0
-    until clickhouse-client --query "SELECT 1"
-    do
-        if [ "$counter" -gt 120 ]
-        then
-            echo "Cannot start clickhouse-server"
-            cat /var/log/clickhouse-server/stdout.log
-            tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
-            break
-        fi
-        sleep 0.5
-        counter=$(($counter + 1))
-    done
-}
-
 function stop()
 {
     timeout 120 service clickhouse-server stop
@@ -40,8 +22,21 @@ function stop()
 
 function start()
 {
-    timeout 120 service clickhouse-server start
-    wait_server
+    counter=0
+    until clickhouse-client --query "SELECT 1"
+    do
+        if [ "$counter" -gt 120 ]
+        then
+            echo "Cannot start clickhouse-server"
+            cat /var/log/clickhouse-server/stdout.log
+            tail -n1000 /var/log/clickhouse-server/stderr.log
+            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
+            break
+        fi
+        timeout 120 service clickhouse-server start
+        sleep 0.5
+        counter=$(($counter + 1))
+    done
 }
 
 ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/
