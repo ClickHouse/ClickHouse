@@ -15,11 +15,14 @@ namespace ErrorCodes
 
 
 ComplexKeyDirectDictionary::ComplexKeyDirectDictionary(
-    const StorageID & dict_id_,
+    const std::string & database_,
+    const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     BlockPtr saved_block_)
-    : IDictionaryBase(dict_id_)
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , saved_block{std::move(saved_block_)}
@@ -36,7 +39,7 @@ ComplexKeyDirectDictionary::ComplexKeyDirectDictionary(
     { \
         dict_struct.validateKeyTypes(key_types); \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -64,7 +67,7 @@ void ComplexKeyDirectDictionary::getString(
 {
     dict_struct.validateKeyTypes(key_types);
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = std::get<StringRef>(attribute.null_values);
     getItemsStringImpl<StringRef, StringRef>(
@@ -84,7 +87,7 @@ void ComplexKeyDirectDictionary::getString(
     { \
         dict_struct.validateKeyTypes(key_types); \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -111,7 +114,7 @@ void ComplexKeyDirectDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsStringImpl<StringRef, StringRef>(
         attribute,
@@ -126,7 +129,7 @@ void ComplexKeyDirectDictionary::getString(
     { \
         dict_struct.validateKeyTypes(key_types); \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -153,7 +156,7 @@ void ComplexKeyDirectDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     ComplexKeyDirectDictionary::getItemsStringImpl<StringRef, StringRef>(
         attribute,
@@ -585,13 +588,14 @@ void registerDictionaryComplexKeyDirect(DictionaryFactory & factory)
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
 
         if (config.has(config_prefix + ".lifetime.min") || config.has(config_prefix + ".lifetime.max"))
             throw Exception{"'lifetime' parameter is redundant for the dictionary' of layout 'direct'", ErrorCodes::BAD_ARGUMENTS};
 
 
-        return std::make_unique<ComplexKeyDirectDictionary>(dict_id, dict_struct, std::move(source_ptr));
+        return std::make_unique<ComplexKeyDirectDictionary>(database, name, dict_struct, std::move(source_ptr));
     };
     factory.registerLayout("complex_key_direct", create_layout, false);
 }

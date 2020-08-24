@@ -1,6 +1,6 @@
 ---
 toc_priority: 69
-toc_title: Testing
+toc_title: How to Run ClickHouse Tests
 ---
 
 # ClickHouse Testing {#clickhouse-testing}
@@ -25,19 +25,12 @@ Tests should use (create, drop, etc) only tables in `test` database that is assu
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively.
-
-### Running a particular test locally {#functional-test-locally}
-
-Start the ClickHouse server locally, listening on the default port (9000). To
-run, for example, the test `01428_hash_set_nan_key`, change to the repository
-folder and run the following command:
-
-```
-PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
-```
-
-For more options, see `tests/clickhouse-test --help`.
+Some tests are marked with `zookeeper`, `shard` or `long` in their names.
+`zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that
+requires server to listen `127.0.0.*`; `distributed` or `global` have the same
+meaning. `long` is for tests that run slightly longer that one second. You can
+disable these groups of tests using `--no-zookeeper`, `--no-shard` and
+`--no-long` options, respectively.
 
 ## Known Bugs {#known-bugs}
 
@@ -160,11 +153,11 @@ Motivation:
 
 Normally we release and run all tests on a single variant of ClickHouse build. But there are alternative build variants that are not thoroughly tested. Examples:
 
--   build on FreeBSD
--   build on Debian with libraries from system packages
--   build with shared linking of libraries
--   build on AArch64 platform
--   build on PowerPc platform
+-   build on FreeBSD;
+-   build on Debian with libraries from system packages;
+-   build with shared linking of libraries;
+-   build on AArch64 platform;
+-   build on PowerPc platform.
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 
@@ -180,26 +173,26 @@ Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall 
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang, `libc++` is used instead of `libstdc++` and when building with debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
 ## Sanitizers {#sanitizers}
 
-### Address sanitizer
+**Address sanitizer**.
 We run functional and integration tests under ASan on per-commit basis.
 
-### Valgrind (Memcheck)
+**Valgrind (Memcheck)**.
 We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
 
-### Undefined behaviour sanitizer
+**Undefined behaviour sanitizer.**
 We run functional and integration tests under ASan on per-commit basis.
 
-### Thread sanitizer
+**Thread sanitizer**.
 We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
 
-### Memory sanitizer
+**Memory sanitizer**.
 Currently we still don’t use MSan.
 
-### Debug allocator
+**Debug allocator.**
 Debug version of `jemalloc` is used for debug build.
 
 ## Fuzzing {#fuzzing}
@@ -234,7 +227,7 @@ If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of t
 
 ## Code Style {#code-style}
 
-Code style rules are described [here](style.md).
+Code style rules are described [here](https://clickhouse.tech/docs/en/development/style/).
 
 To check for some common style violations, you can use `utils/check-style` script.
 

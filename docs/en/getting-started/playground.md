@@ -37,7 +37,6 @@ The queries are executed as a read-only user. It implies some limitations:
 -   INSERT queries are not allowed
 
 The following settings are also enforced:
-
 - [max\_result\_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
 - [max\_result\_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
 - [result\_overflow\_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
@@ -48,13 +47,13 @@ The following settings are also enforced:
 HTTPS endpoint example with `curl`:
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
 ```
 
 TCP endpoint example with [CLI](../interfaces/cli.md):
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse!'"
 ```
 
 ## Implementation Details {#implementation-details}

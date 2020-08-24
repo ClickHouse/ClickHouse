@@ -1097,7 +1097,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "SEMI",
     "ANTI",
-    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
+    "ONLY", /// YQL synonim for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
     "ON",
     "USING",
     "PREWHERE",
@@ -1135,7 +1135,7 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,
-          *  and in the query "SELECT x FR FROM t", the word FR was considered an alias.
+          *  and in the query "SELECT x FRO FROM t", the word FRO was considered an alias.
           */
 
         const String name = getIdentifierName(node);

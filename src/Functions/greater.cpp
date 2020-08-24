@@ -15,7 +15,7 @@ void registerFunctionGreater(FunctionFactory & factory)
 template <>
 void FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                                                                   const ColumnsWithTypeAndName & y, size_t tuple_size,
-                                                                  size_t input_rows_count) const
+                                                                  size_t input_rows_count)
 {
     auto greater = FunctionFactory::instance().get("greater", context);
 

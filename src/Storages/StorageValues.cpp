@@ -21,7 +21,7 @@ StorageValues::StorageValues(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageValues::read(
+Pipes StorageValues::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -32,8 +32,12 @@ Pipe StorageValues::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    Pipes pipes;
+
     Chunk chunk(res_block.getColumns(), res_block.rows());
-    return Pipe(std::make_shared<SourceFromSingleChunk>(res_block.cloneEmpty(), std::move(chunk)));
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(res_block.cloneEmpty(), std::move(chunk)));
+
+    return pipes;
 }
 
 }

@@ -5,7 +5,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -108,7 +108,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result can differ from the number of affected rows (e.g. if there is an UPDATE command that
+    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
     /// changes how many rows satisfy the predicates of the subsequent commands).
     /// But we can be sure that if count = 0, then no rows will be touched.
 
@@ -321,7 +321,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (column.default_desc.kind == ColumnDefaultKind::Materialized)
             {
                 auto query = column.default_desc.expression->clone();
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
@@ -418,7 +418,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
 
             auto query = (*it).expression_list_ast->clone();
-            auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
             for (const auto & column : required_columns)
                 dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -478,9 +478,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
-    /// We care about affected indices because we also need to rewrite them
+    /// We cares about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
-    /// The same about columns, that are needed for calculation of TTL expressions.
+    /// The same about colums, that are needed for calculation of TTL expressions.
     if (!dependencies.empty())
     {
         NameSet changed_columns;
@@ -584,7 +584,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns);
+        auto syntax_result = SyntaxAnalyzer(context).analyze(all_asts, all_columns);
         if (context.hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context.getQueryContext().addScalar(it.first, it.second);
@@ -623,7 +623,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         actions_chain.finalize();
 
         /// Propagate information about columns needed as input.
-        for (const auto & column : actions_chain.steps.front()->actions()->getRequiredColumnsWithTypes())
+        for (const auto & column : actions_chain.steps.front().actions->getRequiredColumnsWithTypes())
             prepared_stages[i - 1].output_columns.insert(column.name);
     }
 
@@ -667,12 +667,12 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
-                in = std::make_shared<FilterBlockInputStream>(in, step->actions(), stage.filter_column_names[i]);
+                in = std::make_shared<FilterBlockInputStream>(in, step.actions, stage.filter_column_names[i]);
             }
             else
             {
                 /// Execute UPDATE or final projection.
-                in = std::make_shared<ExpressionBlockInputStream>(in, step->actions());
+                in = std::make_shared<ExpressionBlockInputStream>(in, step.actions);
             }
         }
 

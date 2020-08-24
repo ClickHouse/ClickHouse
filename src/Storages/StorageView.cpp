@@ -6,6 +6,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -14,8 +15,12 @@
 #include <Common/typeid_cast.h>
 
 #include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+
 
 namespace DB
 {
@@ -47,7 +52,7 @@ StorageView::StorageView(
 }
 
 
-Pipe StorageView::read(
+Pipes StorageView::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -86,7 +91,9 @@ Pipe StorageView::read(
                 column_names, getVirtuals(), getStorageID()), ConvertingTransform::MatchColumnsMode::Name);
     });
 
-    return QueryPipeline::getPipe(std::move(pipeline));
+    pipes = std::move(pipeline).getPipes();
+
+    return pipes;
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

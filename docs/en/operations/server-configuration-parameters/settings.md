@@ -397,9 +397,10 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 ``` xml
 <mark_cache_size>5368709120</mark_cache_size>
 ```
+
 ## max\_server\_memory\_usage {#max_server_memory_usage}
 
-Limits total RAM usage by the ClickHouse server.
+Limits total RAM usage by the ClickHouse server. You can specify it only for the default profile.
 
 Possible values:
 
@@ -410,37 +411,11 @@ Default value: `0`.
 
 **Additional Info**
 
-The default `max_server_memory_usage` value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
+On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio > 1`.
 
 **See also**
 
 -   [max\_memory\_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
--   [max_server_memory_usage_to_ram_ratio](#max_server_memory_usage_to_ram_ratio)
-
-## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
-
-Defines the fraction of total physical RAM amount, available to the Clickhouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount. 
-
-Possible values:
-
--   Positive double.
--   0 — The Clickhouse server can use all available RAM.
-
-Default value: `0`.
-
-**Usage**
-
-On hosts with low RAM and swap, you possibly need setting `max_server_memory_usage_to_ram_ratio` larger than 1.
-
-**Example**
-
-``` xml
-<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
-```
-
-**See Also**
-
--   [max_server_memory_usage](#max_server_memory_usage)
 
 ## max\_concurrent\_queries {#max-concurrent-queries}
 

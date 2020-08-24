@@ -10,9 +10,9 @@ services:
       ZOO_MY_ID: 1
     healthcheck:
       test: echo stat | nc localhost 2181
-      interval: 10s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
     security_opt:
       - label:disable

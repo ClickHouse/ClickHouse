@@ -87,7 +87,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         disk->createDirectories(part_path);
 }
 
-// Implementation is split into static functions for ability
+// Implemetation is splitted into static functions for ability
 /// of making unit tests without creation instance of IMergeTreeDataPartWriter,
 /// which requires a lot of dependencies and access to filesystem.
 static size_t computeIndexGranularityImpl(

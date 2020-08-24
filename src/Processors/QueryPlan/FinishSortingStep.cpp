@@ -9,19 +9,13 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(size_t limit)
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
             .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
-            .preserves_sorting = false,
-        },
-        {
-            .preserves_number_of_rows = limit == 0,
-        }
     };
 }
 
@@ -31,24 +25,12 @@ FinishSortingStep::FinishSortingStep(
     SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
-    /// TODO: check input_stream is sorted by prefix_description.
-    output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
-}
-
-void FinishSortingStep::updateLimit(size_t limit_)
-{
-    if (limit_ && (limit == 0 || limit_ < limit))
-    {
-        limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
-    }
 }
 
 void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
@@ -63,8 +45,10 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
                 prefix_description,
                 max_block_size, limit_for_merging);
 
-        pipeline.addTransform(std::move(transform));
+        pipeline.addPipe({ std::move(transform) });
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 
     if (need_finish_sorting)
     {

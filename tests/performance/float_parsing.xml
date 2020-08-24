@@ -22,6 +22,6 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(toFloat64({expr}))</query>
-    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(toFloat64({expr_zero}))</query>
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(toFloat64({expr}))</query>
+    <query>SELECT count() FROM zeros(1000000) WHERE NOT ignore(toFloat64({expr_zero}))</query>
 </test>
