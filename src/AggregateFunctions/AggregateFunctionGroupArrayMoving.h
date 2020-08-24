@@ -154,12 +154,13 @@ public:
         if (unlikely(size > AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        auto & value = this->data(place).value;
-
-        value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
-
-        this->data(place).sum = value.back();
+        if (size > 0)
+        {
+            auto & value = this->data(place).value;
+            value.resize(size, arena);
+            buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+            this->data(place).sum = value.back();
+        }
     }
 
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override
@@ -172,7 +173,7 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        if (size)
+        if (size != 0)
         {
             typename ColumnResult::Container & data_to = assert_cast<ColumnResult &>(arr_to.getData()).getData();
 
