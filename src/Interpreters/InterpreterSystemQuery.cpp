@@ -565,6 +565,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
     const auto & query = query_ptr->as<const ASTSystemQuery &>();
     using Type = ASTSystemQuery::Type;
     AccessRightsElements required_access;
+
     switch (query.type)
     {
         case Type::SHUTDOWN: [[fallthrough]];
@@ -661,6 +662,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.database, query.table);
+            break;
+        }
+        case Type::RESTORE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.database, query.table);
             break;
         }
         case Type::SYNC_REPLICA:
