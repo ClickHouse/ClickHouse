@@ -169,7 +169,7 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        if (size)
+        if (size != 0)
         {
             typename ColVecResult::Container & data_to = static_cast<ColVecResult &>(arr_to.getData()).getData();
 
