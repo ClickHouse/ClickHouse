@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/Macros.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -324,8 +325,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        add_mandatory_param("path in ZooKeeper");
-        add_mandatory_param("replica name");
+        if (is_extended_storage_def)
+        {
+            add_optional_param("path in ZooKeeper");
+            add_optional_param("replica name");
+        }
+        else
+        {
+            add_mandatory_param("path in ZooKeeper");
+            add_mandatory_param("replica name");
+        }
     }
 
     if (!is_extended_storage_def)
@@ -394,28 +403,50 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
-        if (ast && ast->value.getType() == Field::Types::String)
-            zookeeper_path = safeGet<String>(ast->value);
-        else
-            throw Exception(
-                "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::BAD_ARGUMENTS);
-        ++arg_num;
+        bool has_arguments = arg_num + 2 <= arg_cnt
+                          && engine_args[arg_num]->as<ASTLiteral>()
+                          && engine_args[arg_num + 1]->as<ASTLiteral>();
 
-        ast = engine_args[arg_num]->as<ASTLiteral>();
-        if (ast && ast->value.getType() == Field::Types::String)
-            replica_name = safeGet<String>(ast->value);
-        else
-            throw Exception(
-                "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::BAD_ARGUMENTS);
+        if (has_arguments)
+        {
+            const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+                zookeeper_path = safeGet<String>(ast->value);
+            else
+                throw Exception(
+                        "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+            ++arg_num;
 
-        if (replica_name.empty())
-            throw Exception(
-                "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                ErrorCodes::NO_REPLICA_NAME_GIVEN);
-        ++arg_num;
+            ast = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+                replica_name = safeGet<String>(ast->value);
+            else
+                throw Exception(
+                        "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+
+            if (replica_name.empty())
+                throw Exception(
+                        "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::NO_REPLICA_NAME_GIVEN);
+            ++arg_num;
+        }
+        else if (is_extended_storage_def)
+        {
+            /// Try use default values if arguments are not specified.
+            /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
+            zookeeper_path = "/clickhouse/tables/{uuid}/{shard}";
+            replica_name = "{replica}";     /// TODO maybe use hostname if {replica} is not defined?
+        }
+        else
+            throw Exception("Expected zookeper_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
+        bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool allow_uuid_macro = is_on_cluster || args.query.attach;
+        zookeeper_path = args.context.getMacros()->expand(zookeeper_path, args.table_id, allow_uuid_macro);
+        replica_name = args.context.getMacros()->expand(replica_name, args.table_id, false);
     }
 
     /// This merging param maybe used as part of sorting key
@@ -519,7 +550,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context, merging_param_key_arg);
 
-        /// If primary key explicitely defined, than get it from AST
+        /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
@@ -594,7 +625,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.context);
-        /// But it's not explicitely defined, so we evaluate definition to
+        /// But it's not explicitly defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
 
@@ -612,10 +643,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
-
-    if (!args.attach && !metadata.secondary_indices.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
-        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
-                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

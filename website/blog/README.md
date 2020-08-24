@@ -38,10 +38,14 @@ tags: ['meetup','Beijing','China','events']
 ![ClickHouse branded Beijing duck](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/9.jpg)
 ```
 
+## How To Preview My Post?
+
+Use [deploy-to-test.sh](https://github.com/ClickHouse/ClickHouse/blob/master/docs/tools/deploy-to-test.sh) script. Note that on the first use you'll need to follow the steps in its first comment, and [install prerequisites for build.py](https://github.com/ClickHouse/ClickHouse/blob/master/docs/tools/README.md#use-buildpy-use-build-py). Alternatively, you can use `--livereload=N` argument of [build.py](https://github.com/ClickHouse/ClickHouse/blob/master/docs/tools/build.py).
+
 ## How To Add a New Blog Language?
 
 If you want to write a guest post, you are welcome to use your native language or make multiple posts in multiple languages
  
- Unlike documentation, blog languages are independent, i.e. they have partially overlapping sets of posts and it's ok. Most posts are written only in one language because they are not relevant to audiences of other languages.
+Unlike documentation, blog languages are independent, i.e. they have partially overlapping sets of posts and it's ok. Most posts are written only in one language because they are not relevant to audiences of other languages.
 
 At the moment it's not so straightforward to set up a new language for blog and it won't be documented for now, but you can just create a language directory with the first post as described above and we'll configure the website infrastructure to include it during/after merging the pull-request.

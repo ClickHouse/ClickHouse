@@ -51,6 +51,9 @@ namespace ProfileEvents
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
+    extern const Event QueryTimeMicroseconds;
+    extern const Event SelectQueryTimeMicroseconds;
+    extern const Event InsertQueryTimeMicroseconds;
 }
 
 namespace DB
@@ -195,6 +198,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.event_time = current_time;
     elem.query_start_time = current_time;
 
+    elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
@@ -462,6 +466,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.event_time = current_time;
             elem.query_start_time = current_time;
 
+            elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
 
             elem.client_info = context.getClientInfo();
@@ -469,17 +474,50 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             bool log_queries = settings.log_queries && !internal;
 
             /// Log into system table start of query execution, if need.
-            if (log_queries && elem.type >= settings.log_queries_min_type)
+            if (log_queries)
             {
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
-                if (auto query_log = context.getQueryLog())
-                    query_log->add(elem);
+                if (elem.type >= settings.log_queries_min_type)
+                {
+                    if (auto query_log = context.getQueryLog())
+                        query_log->add(elem);
+                }
             }
 
+            /// Common code for finish and exception callbacks
+            auto status_info_to_query_log = [](QueryLogElement &element, const QueryStatusInfo &info, const ASTPtr query_ast) mutable
+            {
+                DB::UInt64 query_time = info.elapsed_seconds * 1000000;
+                ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
+                if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, query_time);
+                }
+                else if (query_ast->as<ASTInsertQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, query_time);
+                }
+
+                element.query_duration_ms = info.elapsed_seconds * 1000;
+
+                element.read_rows = info.read_rows;
+                element.read_bytes = info.read_bytes;
+
+                element.written_rows = info.written_rows;
+                element.written_bytes = info.written_bytes;
+
+                element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
+
+                element.thread_ids = std::move(info.thread_ids);
+                element.profile_counters = std::move(info.profile_counters);
+            };
+
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
+            auto finish_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type,
+                status_info_to_query_log]
+                (IBlockInputStream * stream_in, IBlockOutputStream * stream_out, QueryPipeline * query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context.getProcessListElement();
 
@@ -496,20 +534,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.type = QueryLogElementType::QUERY_FINISH;
 
                 elem.event_time = time(nullptr);
-                elem.query_duration_ms = elapsed_seconds * 1000;
 
-                elem.read_rows = info.read_rows;
-                elem.read_bytes = info.read_bytes;
-
-                elem.written_rows = info.written_rows;
-                elem.written_bytes = info.written_bytes;
+                status_info_to_query_log(elem, info, ast);
 
                 auto progress_callback = context.getProgressCallback();
 
                 if (progress_callback)
                     progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
-
-                elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
                 if (stream_in)
                 {
@@ -526,6 +557,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().read_rows;
                         elem.result_bytes = counting_stream->getProgress().read_bytes;
+                    }
+                }
+                else if (query_pipeline)
+                {
+                    if (const auto * output_format = query_pipeline->getOutputFormat())
+                    {
+                        elem.result_rows = output_format->getResultRows();
+                        elem.result_bytes = output_format->getResultBytes();
                     }
                 }
 
@@ -547,7 +586,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota),
+                    status_info_to_query_log] () mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
@@ -568,16 +608,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (process_list_elem)
                 {
                     QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
-
-                    elem.query_duration_ms = info.elapsed_seconds * 1000;
-
-                    elem.read_rows = info.read_rows;
-                    elem.read_bytes = info.read_bytes;
-
-                    elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
-
-                    elem.thread_ids = std::move(info.thread_ids);
-                    elem.profile_counters = std::move(info.profile_counters);
+                    status_info_to_query_log(elem, info, ast);
                 }
 
                 if (current_settings.calculate_text_stack_trace)
@@ -686,7 +717,7 @@ void executeQuery(
     const char * end;
 
     /// If 'istr' is empty now, fetch next data into buffer.
-    if (istr.buffer().size() == 0)
+    if (!istr.hasPendingData())
         istr.next();
 
     size_t max_query_size = context.getSettingsRef().max_query_size;

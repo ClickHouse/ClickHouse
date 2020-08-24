@@ -25,6 +25,7 @@
 
 #include <Poco/ByteOrder.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -349,7 +350,7 @@ struct MurmurHash3Impl128
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
-///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
+///  but obtain the same result as it is done in signed integers with two's complement arithmetic.
 struct JavaHashImpl
 {
     static constexpr auto name = "javaHash";
@@ -484,7 +485,7 @@ struct ImplXxHash32
     static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
-      *  non-reproducable from outside of CH.
+      *  non-reproducible from outside of CH.
       *
       *  Proper way of combining several input is to use streaming mode of hash function
       *  https://github.com/Cyan4973/xxHash/issues/114#issuecomment-334908566
@@ -507,7 +508,7 @@ struct ImplXxHash64
 
     /*
        With current implementation with more than 1 arguments it will give the results
-       non-reproducable from outside of CH. (see comment on ImplXxHash32).
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
      */
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
@@ -542,7 +543,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -603,13 +604,15 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    void executeType(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
-        if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
+
+        if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnVector<ToType>::create();
 
-            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
+            const typename ColVecType::Container & vec_from = col_from->getData();
             typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
             size_t size = vec_from.size();
@@ -644,7 +647,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
         WhichDataType which(from_type);
@@ -659,6 +662,8 @@ public:
         else if (which.isInt64()) executeType<Int64>(block, arguments, result);
         else if (which.isDate()) executeType<UInt16>(block, arguments, result);
         else if (which.isDateTime()) executeType<UInt32>(block, arguments, result);
+        else if (which.isDecimal32()) executeType<Decimal32>(block, arguments, result);
+        else if (which.isDecimal64()) executeType<Decimal64>(block, arguments, result);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -684,7 +689,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
@@ -710,11 +715,13 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType, bool first>
-    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
+
+        if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
-            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
+            const typename ColVecType::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
@@ -732,13 +739,13 @@ private:
                     h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
                 }
 
-                if (first)
+                if constexpr (first)
                     vec_to[i] = h;
                 else
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (auto col_from_const = checkAndGetColumnConst<ColumnVector<FromType>>(column))
+        else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
@@ -748,7 +755,7 @@ private:
                 hash = IntHash32Impl::apply(ext::bit_cast<UInt32>(value));
 
             size_t size = vec_to.size();
-            if (first)
+            if constexpr (first)
             {
                 vec_to.assign(size, hash);
             }
@@ -764,14 +771,74 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
+    template <typename FromType, bool first>
+    void executeBigIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
+
+        if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
+        {
+            const typename ColVecType::Container & vec_from = col_from->getData();
+            size_t size = vec_from.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                ToType h;
+                if constexpr (OverBigInt<FromType>)
+                {
+                    using NativeT = typename NativeType<FromType>::Type;
+
+                    std::string buffer = BigInt<NativeT>::serialize(vec_from[i]);
+                    h = Impl::apply(buffer.data(), buffer.size());
+                }
+                else
+                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+
+                if constexpr (first)
+                    vec_to[i] = h;
+                else
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
+            }
+        }
+        else if (auto col_from_const = checkAndGetColumnConst<ColVecType>(column))
+        {
+            auto value = col_from_const->template getValue<FromType>();
+
+            ToType h;
+            if constexpr (OverBigInt<FromType>)
+            {
+                using NativeT = typename NativeType<FromType>::Type;
+
+                std::string buffer = BigInt<NativeT>::serialize(value);
+                h = Impl::apply(buffer.data(), buffer.size());
+            }
+            else
+                h = Impl::apply(reinterpret_cast<const char *>(&value), sizeof(value));
+
+            size_t size = vec_to.size();
+            if constexpr (first)
+            {
+                vec_to.assign(size, h);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
+            }
+        }
+        else
+            throw Exception("Illegal column " + column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
+
     template <bool first>
-    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             StringRef bytes = column->getDataAt(i);
             const ToType h = Impl::apply(bytes.data, bytes.size);
-            if (first)
+            if constexpr (first)
                 vec_to[i] = h;
             else
                 vec_to[i] = Impl::combineHashes(vec_to[i], h);
@@ -779,7 +846,7 @@ private:
     }
 
     template <bool first>
-    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
@@ -794,7 +861,7 @@ private:
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1);
 
-                if (first)
+                if constexpr (first)
                     vec_to[i] = h;
                 else
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
@@ -811,7 +878,7 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 const ToType h = Impl::apply(reinterpret_cast<const char *>(&data[i * n]), n);
-                if (first)
+                if constexpr (first)
                     vec_to[i] = h;
                 else
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
@@ -823,7 +890,7 @@ private:
             const ToType hash = Impl::apply(value.data(), value.size());
             const size_t size = vec_to.size();
 
-            if (first)
+            if constexpr (first)
             {
                 vec_to.assign(size, hash);
             }
@@ -842,7 +909,7 @@ private:
     }
 
     template <bool first>
-    void executeArray(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeArray(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
@@ -868,7 +935,7 @@ private:
                 else
                     h = IntHash32Impl::apply(next_offset - current_offset);
 
-                if (first)
+                if constexpr (first)
                     vec_to[i] = h;
                 else
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
@@ -892,7 +959,7 @@ private:
     }
 
     template <bool first>
-    void executeAny(const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to)
+    void executeAny(const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
 
@@ -900,14 +967,23 @@ private:
         else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
         else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
         else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
+        else if (which.isUInt128() || which.isUUID()) executeBigIntType<UInt128, first>(icolumn, vec_to);
+        else if (which.isbUInt256()) executeBigIntType<bUInt256, first>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
+        else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
+        else if (which.isbInt256()) executeBigIntType<bInt256, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
         else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
+        /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
+        else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(icolumn, vec_to);
+        else if (which.isDecimal64()) executeBigIntType<Decimal64, first>(icolumn, vec_to);
+        else if (which.isDecimal128()) executeBigIntType<Decimal128, first>(icolumn, vec_to);
+        else if (which.isDecimal256()) executeBigIntType<Decimal256, first>(icolumn, vec_to);
         else if (which.isFloat32()) executeIntType<Float32, first>(icolumn, vec_to);
         else if (which.isFloat64()) executeIntType<Float64, first>(icolumn, vec_to);
         else if (which.isString()) executeString<first>(icolumn, vec_to);
@@ -917,7 +993,7 @@ private:
             executeGeneric<first>(icolumn, vec_to);
     }
 
-    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
+    void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -965,7 +1041,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -1010,7 +1086,7 @@ public:
     #endif
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
@@ -1133,7 +1209,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 

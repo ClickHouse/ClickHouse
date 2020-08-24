@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
-#include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/Progress.h>
 
@@ -60,6 +60,7 @@ public:
     Context * global_context = nullptr;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
+    std::function<void()> fatal_error_callback;
 
     std::vector<UInt64> thread_ids;
 

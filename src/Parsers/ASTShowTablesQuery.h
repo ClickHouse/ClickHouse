@@ -19,10 +19,14 @@ public:
     bool cluster{false};
     bool dictionaries{false};
     bool temporary{false};
+
     String cluster_str;
     String from;
     String like;
+
     bool not_like{false};
+    bool case_insensitive_like{false};
+
     ASTPtr where_expression;
     ASTPtr limit_length;
 

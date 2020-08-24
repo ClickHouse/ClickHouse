@@ -150,7 +150,7 @@ public:
         data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnFloat64 &>(to).getData().push_back(getBoundingRatio(data(place)));
     }

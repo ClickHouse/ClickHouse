@@ -28,7 +28,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     new_settings.max_concurrent_queries_for_user.changed = false;
     new_settings.max_memory_usage_for_user.changed = false;
 
-    if (settings.force_optimize_skip_unused_shards_nesting)
+    if (settings.force_optimize_skip_unused_shards_nesting && settings.force_optimize_skip_unused_shards)
     {
         if (new_settings.force_optimize_skip_unused_shards_nesting == 1)
         {
@@ -48,7 +48,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
         }
     }
 
-    if (settings.optimize_skip_unused_shards_nesting)
+    if (settings.optimize_skip_unused_shards_nesting && settings.optimize_skip_unused_shards)
     {
         if (new_settings.optimize_skip_unused_shards_nesting == 1)
         {
@@ -74,7 +74,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     return new_context;
 }
 
-Pipes executeQuery(
+Pipe executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster, Poco::Logger * log,
     const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
@@ -106,7 +106,7 @@ Pipes executeQuery(
     for (const auto & shard_info : cluster->getShardsInfo())
         stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
-    return res;
+    return Pipe::unitePipes(std::move(res));
 }
 
 }

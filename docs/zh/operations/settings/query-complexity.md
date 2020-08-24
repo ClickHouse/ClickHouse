@@ -60,7 +60,6 @@ Restrictions on the «maximum amount of something» can take the value 0, which 
 ## max\_rows\_to\_read {#max-rows-to-read}
 
 可以在每个块（而不是每行）上检查以下限制。 也就是说，限制可以打破一点。
-在多个线程中运行查询时，以下限制单独应用于每个线程。
 
 运行查询时可从表中读取的最大行数。
 

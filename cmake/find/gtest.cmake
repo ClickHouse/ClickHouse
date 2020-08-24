@@ -1,3 +1,7 @@
+option (ENABLE_GTEST_LIBRARY "Enable gtest library" ${ENABLE_LIBRARIES})
+
+if (ENABLE_GTEST_LIBRARY)
+
 option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeLists.txt")
@@ -26,6 +30,8 @@ endif ()
 
 if((GTEST_INCLUDE_DIRS AND GTEST_BOTH_LIBRARIES) OR GTEST_SRC_DIR)
     set(USE_GTEST 1)
+endif()
+
 endif()
 
 message (STATUS "Using gtest=${USE_GTEST}: ${GTEST_INCLUDE_DIRS} : ${GTEST_BOTH_LIBRARIES} : ${GTEST_SRC_DIR}")

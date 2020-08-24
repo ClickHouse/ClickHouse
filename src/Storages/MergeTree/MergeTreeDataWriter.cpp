@@ -251,14 +251,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-    /// The name could be non-unique in case of stale files from previous runs.
-    String full_path = new_data_part->getFullRelativePath();
-
-    if (new_data_part->volume->getDisk()->exists(full_path))
+    if (new_data_part->isStoredOnDisk())
     {
-        LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
-        new_data_part->volume->getDisk()->removeRecursive(full_path);
-    }
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getFullRelativePath();
+
+        if (new_data_part->volume->getDisk()->exists(full_path))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
+            new_data_part->volume->getDisk()->removeRecursive(full_path);
+        }
 
     const auto disk = new_data_part->volume->getDisk();
     disk->createDirectories(full_path);

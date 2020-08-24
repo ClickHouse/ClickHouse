@@ -39,6 +39,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
@@ -69,7 +70,6 @@ public:
         if (!(args.size() >= 3 && args.size() % 2 == 1))
             throw Exception{"Invalid number of arguments for function " + getName(),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
 
         for_conditions([&](const DataTypePtr & arg)
         {
@@ -104,7 +104,7 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.

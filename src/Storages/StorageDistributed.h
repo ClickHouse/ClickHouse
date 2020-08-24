@@ -18,8 +18,8 @@ namespace DB
 struct Settings;
 class Context;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -70,7 +70,7 @@ public:
     bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -95,13 +95,14 @@ public:
 
     void startup() override;
     void shutdown() override;
+    void drop() override;
 
     Strings getDataPaths() const override;
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     size_t getShardCount() const;
-    std::pair<const std::string &, const std::string &> getPath();
+    const String & getRelativeDataPath() const { return relative_data_path; }
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
@@ -162,7 +163,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_,
+        const String & storage_policy_name_,
         const String & relative_data_path_,
         bool attach_);
 
@@ -174,16 +175,14 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & storage_policy_,
+        const String & storage_policy_name_,
         const String & relative_data_path_,
         bool attach);
 
-    void createStorage();
-
-    String storage_policy;
     String relative_data_path;
+
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumeJBODPtr volume;
+    StoragePolicyPtr storage_policy;
 
     struct ClusterNodeData
     {

@@ -24,7 +24,7 @@ if (ENABLE_ODBC)
         target_include_directories (_poco_data_odbc SYSTEM PUBLIC ${LIBRARY_DIR}/Data/ODBC/include)
         target_link_libraries (_poco_data_odbc PUBLIC Poco::Data unixodbc)
     else ()
-        add_library (Poco::Data::ODBC UNKNOWN IMPORTED)
+        add_library (Poco::Data::ODBC UNKNOWN IMPORTED GLOBAL)
 
         find_library(LIBRARY_POCO_DATA_ODBC PocoDataODBC)
         find_path(INCLUDE_POCO_DATA_ODBC Poco/Data/ODBC/ODBC.h)

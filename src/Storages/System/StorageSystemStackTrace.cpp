@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
+#include <Common/CurrentThread.h>
 #include <common/getThreadId.h>
 
 
@@ -125,8 +126,8 @@ namespace
 }
 
 
-StorageSystemStackTrace::StorageSystemStackTrace(const String & name_)
-    : IStorageSystemOneBlock<StorageSystemStackTrace>(name_)
+StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
+    : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
 {
     notification_pipe.open();
 
@@ -198,7 +199,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             Array arr;
             arr.reserve(stack_trace_size - stack_trace_offset);
             for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace->getFrames()[i]));
+                arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace->getFramePointers()[i]));
 
             res_columns[0]->insert(tid);
             res_columns[1]->insertData(query_id_data, query_id_size);

@@ -7,6 +7,7 @@ import clickhouse_driver
 import xml.etree.ElementTree as et
 import argparse
 import pprint
+import re
 import string
 import time
 import traceback
@@ -36,21 +37,44 @@ available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
 for e in subst_elems:
     available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
 
-# Take care to keep the order of queries -- sometimes we have DROP IF EXISTS
+# Takes parallel lists of templates, substitutes them with all combos of
+# parameters. The set of parameters is determined based on the first list.
+# Note: keep the order of queries -- sometimes we have DROP IF EXISTS
 # followed by CREATE in create queries section, so the order matters.
-def substitute_parameters(query_templates):
-    result = []
-    for q in query_templates:
+def substitute_parameters(query_templates, other_templates = []):
+    query_results = []
+    other_results = [[]] * (len(other_templates))
+    for i, q in enumerate(query_templates):
         keys = set(n for _, n, _, _ in string.Formatter().parse(q) if n)
         values = [available_parameters[k] for k in keys]
-        result.extend([
-            q.format(**dict(zip(keys, values_combo)))
-                for values_combo in itertools.product(*values)])
-    return result
+        combos = itertools.product(*values)
+        for c in combos:
+            with_keys = dict(zip(keys, c))
+            query_results.append(q.format(**with_keys))
+            for j, t in enumerate(other_templates):
+                other_results[j].append(t[i].format(**with_keys))
+    if len(other_templates):
+        return query_results, other_results
+    else:
+        return query_results
 
-# Build a list of test queries, processing all substitutions
-test_query_templates = [q.text for q in root.findall('query')]
-test_queries = substitute_parameters(test_query_templates)
+
+# Build a list of test queries, substituting parameters to query templates,
+# and reporting the queries marked as short.
+test_queries = []
+for e in root.findall('query'):
+    new_queries = []
+    if 'short' in e.attrib:
+        new_queries, [is_short] = substitute_parameters([e.text], [[e.attrib['short']]])
+        for i, s in enumerate(is_short):
+            # Don't print this if we only need to print the queries.
+            if eval(s) and not args.print_queries:
+                print(f'short\t{i + len(test_queries)}')
+    else:
+        new_queries = substitute_parameters([e.text])
+
+    test_queries += new_queries
+
 
 # If we're only asked to print the queries, do that and exit
 if args.print_queries:
@@ -102,10 +126,11 @@ for s in servers:
 # connection loses the changes in settings.
 drop_query_templates = [q.text for q in root.findall('drop_query')]
 drop_queries = substitute_parameters(drop_query_templates)
-for c in connections:
+for conn_index, c in enumerate(connections):
     for q in drop_queries:
         try:
             c.execute(q)
+            print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
         except:
             pass
 
@@ -117,10 +142,12 @@ for c in connections:
 # configurable). So the end result is uncertain, but hopefully we'll be able to
 # run at least some queries.
 settings = root.findall('settings/*')
-for c in connections:
+for conn_index, c in enumerate(connections):
     for s in settings:
         try:
-            c.execute("set {} = '{}'".format(s.tag, s.text))
+            q = f"set {s.tag} = '{s.text}'"
+            c.execute(q)
+            print(f'set\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
         except:
             print(traceback.format_exc(), file=sys.stderr)
 
@@ -139,18 +166,30 @@ for t in tables:
 # Run create queries
 create_query_templates = [q.text for q in root.findall('create_query')]
 create_queries = substitute_parameters(create_query_templates)
-for c in connections:
+
+# Disallow temporary tables, because the clickhouse_driver reconnects on errors,
+# and temporary tables are destroyed. We want to be able to continue after some
+# errors.
+for q in create_queries:
+    if re.search('create temporary table', q, flags=re.IGNORECASE):
+        print(f"Temporary tables are not allowed in performance tests: '{q}'",
+            file = sys.stderr)
+        sys.exit(1)
+
+for conn_index, c in enumerate(connections):
     for q in create_queries:
         c.execute(q)
+        print(f'create\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
 # Run fill queries
 fill_query_templates = [q.text for q in root.findall('fill_query')]
 fill_queries = substitute_parameters(fill_query_templates)
-for c in connections:
+for conn_index, c in enumerate(connections):
     for q in fill_queries:
         c.execute(q)
+        print(f'fill\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
-# Run test queries
+# Run test queries.
 for query_index, q in enumerate(test_queries):
     query_prefix = f'{test_name}.query{query_index}'
 
@@ -165,32 +204,61 @@ for query_index, q in enumerate(test_queries):
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
-    try:
-        for conn_index, c in enumerate(connections):
+    # A query might not run on the old server if it uses a function added in the
+    # new one. We want to run them on the new server only, so that the PR author
+    # can ensure that the test works properly. Remember the errors we had on
+    # each server.
+    query_error_on_connection = [None] * len(connections);
+    for conn_index, c in enumerate(connections):
+        try:
             prewarm_id = f'{query_prefix}.prewarm0'
             res = c.execute(q, query_id = prewarm_id)
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
-    except KeyboardInterrupt:
-        raise
-    except:
-        # If prewarm fails for some query -- skip it, and try to test the others.
-        # This might happen if the new test introduces some function that the
-        # old server doesn't support. Still, report it as an error.
-        # FIXME the driver reconnects on error and we lose settings, so this might
-        # lead to further errors or unexpected behavior.
-        print(traceback.format_exc(), file=sys.stderr)
+        except KeyboardInterrupt:
+            raise
+        except:
+            # FIXME the driver reconnects on error and we lose settings, so this
+            # might lead to further errors or unexpected behavior.
+            query_error_on_connection[conn_index] = traceback.format_exc();
+            continue
+
+
+    # Report all errors that ocurred during prewarm and decide what to do next.
+    # If prewarm fails for the query on all servers -- skip the query and
+    # continue testing the next query.
+    # If prewarm fails on one of the servers, run the query on the rest of them.
+    no_errors = []
+    for i, e in enumerate(query_error_on_connection):
+        if e:
+            print(e, file = sys.stderr)
+        else:
+            no_errors.append(i)
+
+    if len(no_errors) == 0:
         continue
+    elif len(no_errors) < len(connections):
+        print(f'partial\t{query_index}\t{no_errors}')
 
     # Now, perform measured runs.
-    # Track the time spent by the client to process this query, so that we can notice
-    # out the queries that take long to process on the client side, e.g. by sending
-    # excessive data.
+    # Track the time spent by the client to process this query, so that we can
+    # notice the queries that take long to process on the client side, e.g. by
+    # sending excessive data.
     start_seconds = time.perf_counter()
     server_seconds = 0
     for run in range(0, args.runs):
         run_id = f'{query_prefix}.run{run}'
         for conn_index, c in enumerate(connections):
-            res = c.execute(q, query_id = run_id)
+            if query_error_on_connection[conn_index]:
+                continue
+
+            try:
+                res = c.execute(q, query_id = run_id)
+            except Exception as e:
+                # Add query id to the exception to make debugging easier.
+                e.args = (run_id, *e.args)
+                e.message = run_id + ': ' + e.message
+                raise
+
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
 
@@ -198,8 +266,8 @@ for query_index, q in enumerate(test_queries):
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
 # Run drop queries
-drop_query_templates = [q.text for q in root.findall('drop_query')]
 drop_queries = substitute_parameters(drop_query_templates)
-for c in connections:
+for conn_index, c in enumerate(connections):
     for q in drop_queries:
         c.execute(q)
+        print(f'drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')

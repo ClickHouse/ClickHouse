@@ -278,9 +278,19 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     }
     catch (const Coordination::Exception & e)
     {
+        String existing_replica_host;
+        zookeeper->tryGet(storage.replica_path + "/host", existing_replica_host);
+
+        if (existing_replica_host.empty())
+            existing_replica_host = "without host node";
+        else
+            boost::replace_all(existing_replica_host, "\n", ", ");
+
         if (e.code == Coordination::Error::ZNODEEXISTS)
-            throw Exception("Replica " + storage.replica_path + " appears to be already active. If you're sure it's not, "
-                "try again in a minute or remove znode " + storage.replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
+            throw Exception(ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                "Replica {} appears to be already active ({}). If you're sure it's not, "
+                "try again in a minute or remove znode {}/is_active manually",
+                storage.replica_path, existing_replica_host, storage.replica_path);
 
         throw;
     }

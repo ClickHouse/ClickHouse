@@ -19,7 +19,7 @@ namespace DB
 class IStorageURLBase : public IStorage
 {
 public:
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -83,22 +83,9 @@ public:
         return sample_block;
     }
 
-    void write(const Block & block) override
-    {
-        writer->write(block);
-    }
-
-    void writePrefix() override
-    {
-        writer->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        writer->writeSuffix();
-        writer->flush();
-        write_buf->finalize();
-    }
+    void write(const Block & block) override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
     Block sample_block;

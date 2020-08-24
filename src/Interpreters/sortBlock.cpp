@@ -107,11 +107,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (!block)
         return;
 
-
     /// If only one column to sort by
     if (description.size() == 1)
     {
-
         IColumn::Permutation perm;
         bool reverse = description[0].direction == -1;
 
@@ -181,20 +179,23 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         {
             EqualRanges ranges;
             ranges.emplace_back(0, perm.size());
-            for (const auto& column : columns_with_sort_desc)
+            for (const auto & column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                     ranges.pop_back();
 
-
                 if (ranges.empty())
                     break;
 
+                if (column.column_const)
+                    continue;
 
                 if (isCollationRequired(column.description))
                 {
                     const ColumnString & column_string = assert_cast<const ColumnString &>(*column.column);
-                    column_string.updatePermutationWithCollation(*column.description.collator, column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                    column_string.updatePermutationWithCollation(
+                        *column.description.collator,
+                        column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
                 }
                 else
                 {
@@ -207,7 +208,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         {
             EqualRanges ranges;
             ranges.emplace_back(0, perm.size());
-            for (const auto& column : columns_with_sort_desc)
+            for (const auto & column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                 {

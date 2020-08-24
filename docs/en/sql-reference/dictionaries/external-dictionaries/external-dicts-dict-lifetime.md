@@ -54,8 +54,6 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 
 When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md):
 
-When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md):
-
 -   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
 -   For MyISAM tables, the time of modification is checked using a `SHOW TABLE STATUS` query.
 -   Dictionaries from other sources are updated every time by default.

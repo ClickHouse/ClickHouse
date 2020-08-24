@@ -34,10 +34,10 @@ def cluster():
         cluster.shutdown()
 
 
-def check_proxy_logs(cluster, proxy_instance):
+def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET", "DELETE"}):
     logs = cluster.get_container_logs(proxy_instance)
     # Check that all possible interactions with Minio are present
-    for http_method in ["POST", "PUT", "GET", "DELETE"]:
+    for http_method in http_methods:
         assert logs.find(http_method + " http://minio1") >= 0
 
 
@@ -65,4 +65,4 @@ def test_s3_with_proxy_list(cluster, policy):
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
     for proxy in ["proxy1", "proxy2"]:
-        check_proxy_logs(cluster, proxy)
+        check_proxy_logs(cluster, proxy, ["PUT", "GET", "DELETE"])

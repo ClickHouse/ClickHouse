@@ -24,7 +24,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 </yandex>
 ```
 
-In case of [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query), equal configuration will looks like:
+In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), equal configuration will looks like:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)

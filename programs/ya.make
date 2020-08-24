@@ -9,7 +9,6 @@ CFLAGS(
 PEERDIR(
     clickhouse/base/daemon
     clickhouse/base/loggers
-    clickhouse/programs/client/readpassphrase
     clickhouse/src
 )
 
@@ -17,6 +16,7 @@ SRCS(
     main.cpp
 
     client/Client.cpp
+    client/QueryFuzzer.cpp
     client/ConnectionParameters.cpp
     client/Suggest.cpp
     extract-from-config/ExtractFromConfig.cpp

@@ -4,6 +4,7 @@
     "fields": [
         {"name": "a_date", "type": { "type": "int", "logicalType": "date"}},
         {"name": "b_timestamp_millis", "type": { "type": "long", "logicalType": "timestamp-millis"}},
-        {"name": "c_timestamp_micros", "type": { "type": "long", "logicalType": "timestamp-micros"}}
+        {"name": "c_timestamp_micros", "type": { "type": "long", "logicalType": "timestamp-micros"}},
+        {"name": "d_uuid", "type": { "type": "string", "logicalType": "uuid"}}
     ]
   }

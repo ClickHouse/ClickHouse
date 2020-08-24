@@ -47,7 +47,9 @@ const char * ParserComparisonExpression::operators[] =
     ">",             "greater",
     "=",             "equals",
     "LIKE",          "like",
+    "ILIKE",         "ilike",
     "NOT LIKE",      "notLike",
+    "NOT ILIKE",     "notILike",
     "IN",            "in",
     "NOT IN",        "notIn",
     "GLOBAL IN",     "globalIn",
@@ -715,7 +717,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     auto pair = std::make_shared<ASTPair>(with_brackets);
     pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
-    pair->second = value;
+    pair->set(pair->second, value);
     node = pair;
     return true;
 }

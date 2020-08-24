@@ -18,7 +18,7 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
 }
 
 
-void TabSeparatedRowOutputFormat::writePrefix()
+void TabSeparatedRowOutputFormat::doWritePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
     size_t columns = header.columns();

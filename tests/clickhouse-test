@@ -4,6 +4,7 @@ import sys
 import os
 import os.path
 import re
+import json
 
 from argparse import ArgumentParser
 from argparse import FileType
@@ -48,6 +49,10 @@ def remove_control_characters(s):
     s = re.sub(r"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
 
+def get_db_engine(args):
+    if args.atomic_db_engine:
+        return " ENGINE=Atomic"
+    return ""
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
@@ -68,7 +73,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         database = 'test_{suffix}'.format(suffix=random_str())
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE " + database)
+        clickhouse_proc_create.communicate("CREATE DATABASE " + database + get_db_engine(args))
 
         os.environ["CLICKHOUSE_DATABASE"] = database
 
@@ -201,9 +206,8 @@ def run_tests_array(all_tests_with_params):
         (name, ext) = os.path.splitext(case)
 
         try:
+            sys.stdout.flush()
             sys.stdout.write("{0:72}".format(name + ": "))
-            if run_total == 1:
-                sys.stdout.flush()
 
             if args.skip and any(s in name for s in args.skip):
                 print(MSG_SKIPPED + " - skip")
@@ -277,6 +281,10 @@ def run_tests_array(all_tests_with_params):
 
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
+
+                            if os.path.isfile(stdout_file):
+                                print(", result:\n")
+                                print(open(stdout_file).read())
 
                         elif stderr:
                             failures += 1
@@ -377,6 +385,76 @@ def check_server_started(client, retry_count):
     return False
 
 
+class BuildFlags(object):
+    THREAD = 'thread-sanitizer'
+    ADDRESS = 'address-sanitizer'
+    UNDEFINED = 'ub-sanitizer'
+    MEMORY = 'memory-sanitizer'
+    DEBUG = 'debug-build'
+    UNBUNDLED = 'unbundled-build'
+    RELEASE = 'release-build'
+    DATABASE_ATOMIC = 'database-atomic'
+    POLYMORPHIC_PARTS = 'polymorphic-parts'
+
+
+def collect_build_flags(client):
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    result = []
+
+    if clickhouse_proc.returncode == 0:
+        if '-fsanitize=thread' in stdout:
+            result.append(BuildFlags.THREAD)
+        elif '-fsanitize=address' in stdout:
+            result.append(BuildFlags.ADDRESS)
+        elif '-fsanitize=undefined' in stdout:
+            result.append(BuildFlags.UNDEFINED)
+        elif '-fsanitize=memory' in stdout:
+            result.append(BuildFlags.MEMORY)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
+
+    if clickhouse_proc.returncode == 0:
+        if 'Debug' in stdout:
+            result.append(BuildFlags.DEBUG)
+        elif 'RelWithDebInfo' in stdout or 'Release' in stdout:
+            result.append(BuildFlags.RELEASE)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+
+    if clickhouse_proc.returncode == 0:
+        if 'ON' in stdout or '1' in stdout:
+            result.append(BuildFlags.UNBUNDLED)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.settings WHERE name = 'default_database_engine'")
+
+    if clickhouse_proc.returncode == 0:
+        if 'Atomic' in stdout:
+            result.append(BuildFlags.DATABASE_ATOMIC)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    (stdout, stderr) = clickhouse_proc.communicate("SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
+
+    if clickhouse_proc.returncode == 0:
+        if '10485760' in stdout:
+            result.append(BuildFlags.POLYMORPHIC_PARTS)
+    else:
+        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+
+    return result
+
+
 def main(args):
     global SERVER_DIED
     global exit_code
@@ -392,6 +470,16 @@ def main(args):
 
     if not check_server_started(args.client, args.server_check_retries):
         raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
+    build_flags = collect_build_flags(args.client)
+    if args.use_skip_list:
+        tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
+    else:
+        tests_to_skip_from_list = set([])
+
+    if args.skip:
+        args.skip = set(args.skip) | tests_to_skip_from_list
+    else:
+        args.skip = tests_to_skip_from_list
 
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
@@ -427,10 +515,10 @@ def main(args):
 
     if args.database and args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args))
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args))
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -517,16 +605,14 @@ def main(args):
             if jobs > run_total:
                 run_total = jobs
 
+            batch_size = len(all_tests) / jobs
             all_tests_array = []
-            for n in range(1, 1 + int(run_total)):
-                start = int(tests_n / run_total * (n - 1))
-                end = int(tests_n / run_total * n)
-                all_tests_array.append([all_tests[start : end], suite, suite_dir, suite_tmp_dir, run_total])
+            for i in range(0, len(all_tests), batch_size):
+                all_tests_array.append((all_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
 
             if jobs > 1:
                 with closing(multiprocessing.Pool(processes=jobs)) as pool:
                     pool.map(run_tests_array, all_tests_array)
-                    pool.terminate()
             else:
                 run_tests_array(all_tests_array[int(run_n)-1])
 
@@ -604,6 +690,21 @@ def get_additional_client_options_url(args):
     return ''
 
 
+def collect_tests_to_skip(skip_list_path, build_flags):
+    result = set([])
+    if not os.path.exists(skip_list_path):
+        return result
+
+    with open(skip_list_path, 'r') as skip_list_file:
+        skip_dict = json.load(skip_list_file)
+        for build_flag in build_flags:
+            result |= set(skip_dict[build_flag])
+
+    if len(result) > 0:
+        print("Found file with skip-list {}, {} test will be skipped".format(skip_list_path, len(result)))
+
+    return result
+
 if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
@@ -627,6 +728,9 @@ if __name__ == '__main__':
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
+    parser.add_argument('--skip-list-path', help="Path to skip-list file")
+    parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
+    parser.add_argument('--atomic-db-engine', action='store_true', help='Create databases with Atomic engine by default')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -643,18 +747,37 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.queries is None and os.path.isdir('queries'):
+    if args.queries and not os.path.isdir(args.queries):
+        print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
+        exit(1)
+
+    # Autodetect the directory with queries if not specified
+    if args.queries is None:
         args.queries = 'queries'
-    elif args.queries is None:
-        if (os.path.isdir('/usr/local/share/clickhouse-test/queries')):
-            args.queries = '/usr/local/share/clickhouse-test/queries'
-        if (args.queries is None and os.path.isdir('/usr/share/clickhouse-test/queries')):
-            args.queries = '/usr/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
+        # If we're running from the repo
+        args.queries = os.path.join(os.path.dirname(os.path.abspath( __file__ )), 'queries')
+
+    if not os.path.isdir(args.queries):
+        # Next we're going to try some system directories, don't write 'stdout' files into them.
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
-    if args.queries is None:
+
+        args.queries = '/usr/local/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
+        args.queries = '/usr/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
+
+    print("Using queries from '" + args.queries + "' directory")
+
+    if args.skip_list_path is None:
+        args.skip_list_path = os.path.join(args.queries, 'skip_list.json')
+
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:

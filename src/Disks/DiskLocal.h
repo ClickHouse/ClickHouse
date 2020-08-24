@@ -103,6 +103,10 @@ public:
     void close(int fd) const override;
     void sync(int fd) const override;
 
+    void truncateFile(const String & path, size_t size) override;
+
+    const String getType() const override { return "local"; }
+
 private:
     bool tryReserve(UInt64 bytes);
 

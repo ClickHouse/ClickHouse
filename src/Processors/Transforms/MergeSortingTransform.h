@@ -12,6 +12,8 @@ namespace DB
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
+/// Takes sorted separate chunks of data. Sorts them.
+/// Returns stream with globally sorted data.
 class MergeSortingTransform : public SortingTransform
 {
 public:

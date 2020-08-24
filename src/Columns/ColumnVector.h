@@ -6,10 +6,16 @@
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
+#include <Core/BigInt.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
@@ -105,7 +111,10 @@ private:
 
 public:
     using ValueType = T;
-    using Container = PaddedPODArray<ValueType>;
+    static constexpr bool is_POD = !is_big_int_v<T>;
+    using Container = std::conditional_t<is_POD,
+                                         PaddedPODArray<ValueType>,
+                                         std::vector<ValueType>>;
 
 private:
     ColumnVector() {}
@@ -124,19 +133,17 @@ public:
         return data.size();
     }
 
-    StringRef getDataAt(size_t n) const override
-    {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-    }
-
     void insertFrom(const IColumn & src, size_t n) override
     {
         data.push_back(static_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertData(const char * pos, size_t /*length*/) override
+    void insertData(const char * pos, size_t) override
     {
-        data.push_back(unalignedLoad<T>(pos));
+        if constexpr (is_POD)
+            data.emplace_back(unalignedLoad<T>(pos));
+        else
+            data.emplace_back(BigInt<T>::deserialize(pos));
     }
 
     void insertDefault() override
@@ -144,14 +151,20 @@ public:
         data.push_back(T());
     }
 
-    virtual void insertManyDefaults(size_t length) override
+    void insertManyDefaults(size_t length) override
     {
-        data.resize_fill(data.size() + length, T());
+        if constexpr (is_POD)
+            data.resize_fill(data.size() + length, T());
+        else
+            data.resize(data.size() + length, T());
     }
 
     void popBack(size_t n) override
     {
-        data.resize_assume_reserved(data.size() - n);
+        if constexpr (is_POD)
+            data.resize_assume_reserved(data.size() - n);
+        else
+            data.resize(data.size() - n);
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -162,6 +175,8 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override;
+
     size_t byteSize() const override
     {
         return data.size() * sizeof(data[0]);
@@ -169,12 +184,16 @@ public:
 
     size_t allocatedBytes() const override
     {
-        return data.allocated_bytes();
+        if constexpr (is_POD)
+            return data.allocated_bytes();
+        else
+            return data.capacity() * sizeof(data[0]);
     }
 
     void protect() override
     {
-        data.protect();
+        if constexpr (is_POD)
+            data.protect();
     }
 
     void insertValue(const T value)
@@ -272,13 +291,25 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-
     bool canBeInsideNullable() const override { return true; }
-
-    bool isFixedAndContiguous() const override { return true; }
+    bool isFixedAndContiguous() const override { return is_POD; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
 
+    StringRef getRawData() const override
+    {
+        if constexpr (is_POD)
+            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+        else
+            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    StringRef getDataAt(size_t n) const override
+    {
+        if constexpr (is_POD)
+            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        else
+            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     bool structureEquals(const IColumn & rhs) const override
     {

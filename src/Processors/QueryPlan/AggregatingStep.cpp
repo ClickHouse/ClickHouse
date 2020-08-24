@@ -7,11 +7,19 @@
 namespace DB
 {
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
-            .preserves_distinct_columns = false /// Actually, we may check that distinct names are in aggregation keys
+        {
+            .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
+            .returns_single_stream = true,
+            .preserves_number_of_streams = false,
+            .preserves_sorting = false,
+        },
+        {
+            .preserves_number_of_rows = false,
+        }
     };
 }
 
@@ -25,7 +33,7 @@ AggregatingStep::AggregatingStep(
     bool storage_has_evenly_distributed_read_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_)
-    : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits())
+    : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits(), false)
     , params(std::move(params_))
     , final(std::move(final_))
     , max_block_size(max_block_size_)
@@ -39,6 +47,8 @@ AggregatingStep::AggregatingStep(
 
 void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
 {
+    QueryPipelineProcessorsCollector collector(pipeline, this);
+
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
     pipeline.dropTotalsAndExtremes();
 
@@ -74,6 +84,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_sort_description, max_block_size, many_data, counter++);
                 });
 
+                aggregating_in_order = collector.detachProcessors(0);
+
                 for (auto & column_description : group_by_sort_description)
                 {
                     if (!column_description.column_name.empty())
@@ -89,7 +101,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     group_by_sort_description,
                     max_block_size);
 
-                pipeline.addPipe({ std::move(transform) });
+                pipeline.addTransform(std::move(transform));
+                aggregating_sorted = collector.detachProcessors(1);
             }
             else
             {
@@ -97,6 +110,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                 {
                     return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_sort_description, max_block_size);
                 });
+
+                aggregating_in_order = collector.detachProcessors(0);
             }
 
             pipeline.addSimpleTransform([&](const Block & header)
@@ -104,7 +119,7 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                 return std::make_shared<FinalizingSimpleTransform>(header, transform_params);
             });
 
-            pipeline.enableQuotaForCurrentStreams();
+            finalizing = collector.detachProcessors(2);
             return;
         }
     }
@@ -125,6 +140,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
         });
 
         pipeline.resize(1);
+
+        aggregating = collector.detachProcessors(0);
     }
     else
     {
@@ -134,9 +151,27 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
         {
             return std::make_shared<AggregatingTransform>(header, transform_params);
         });
-    }
 
-    pipeline.enableQuotaForCurrentStreams();
+        aggregating = collector.detachProcessors(0);
+    }
+}
+
+void AggregatingStep::describeActions(FormatSettings & settings) const
+{
+    params.explain(settings.out, settings.offset);
+}
+
+void AggregatingStep::describePipeline(FormatSettings & settings) const
+{
+    if (!aggregating.empty())
+        IQueryPlanStep::describePipeline(aggregating, settings);
+    else
+    {
+        /// Processors are printed in reverse order.
+        IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(aggregating_sorted, settings);
+        IQueryPlanStep::describePipeline(aggregating_in_order, settings);
+    }
 }
 
 }

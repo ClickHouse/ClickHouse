@@ -184,12 +184,12 @@ Checks whether all the elements of array2 appear in array1 in the same exact ord
 hasSubstr(array1, array2)
 ```
 
-In other words, the functions will check whether all the elements of `array2` are contained in `array1` like 
+In other words, the functions will check whether all the elements of `array2` are contained in `array1` like
 the `hasAll` function. In addition, it will check that the elements are observed in the same order in both `array1` and `array2`.
 
-For Example: 
- - `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
- - `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
+For Example:
+- `hasSubstr([1,2,3,4], [2,3])` returns 1. However, `hasSubstr([1,2,3,4], [3,2])` will return `0`.
+- `hasSubstr([1,2,3,4], [1,2,3])` returns 1. However, `hasSubstr([1,2,3,4], [1,2,4])` will return `0`.
 
 **Parameters**
 
@@ -222,7 +222,6 @@ For Example:
 `SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])` returns 0.
 
 `SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])` returns 1.
-
 
 ## indexOf(arr, x) {#indexofarr-x}
 
@@ -875,9 +874,13 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT arrayReduce('max', [1, 2, 3])
 ```
+
+Result:
 
 ``` text
 ┌─arrayReduce('max', [1, 2, 3])─┐
@@ -887,9 +890,13 @@ SELECT arrayReduce('max', [1, 2, 3])
 
 If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
+Query:
+
 ``` sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 ```
+
+Result:
 
 ``` text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
@@ -899,9 +906,13 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 
 Example with a parametric aggregate function:
 
+Query:
+
 ``` sql
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
+
+Result:
 
 ``` text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
@@ -923,11 +934,17 @@ arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
 
 -   `agg_func` — The name of an aggregate function which should be a constant [string](../../sql-reference/data-types/string.md).
 -   `ranges` — The ranges to aggretate which should be an [array](../../sql-reference/data-types/array.md) of [tuples](../../sql-reference/data-types/tuple.md) which containing the index and the length of each range.
--   `arr` — Any number of [array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
+-   `arr` — Any number of [Array](../../sql-reference/data-types/array.md) type columns as the parameters of the aggregation function.
 
 **Returned value**
 
+-   Array containing results of the aggregate function over specified ranges.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
 **Example**
+
+Query:
 
 ``` sql
 SELECT arrayReduceInRanges(
@@ -936,6 +953,8 @@ SELECT arrayReduceInRanges(
     [1000000, 200000, 30000, 4000, 500, 60, 7]
 ) AS res
 ```
+
+Result:
 
 ``` text
 ┌─res─────────────────────────┐
