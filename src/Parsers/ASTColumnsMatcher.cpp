@@ -2,6 +2,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
 #include <re2/re2.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -19,6 +20,13 @@ ASTPtr ASTColumnsMatcher::clone() const
 }
 
 void ASTColumnsMatcher::appendColumnName(WriteBuffer & ostr) const { writeString(original_pattern, ostr); }
+
+void ASTColumnsMatcher::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(original_pattern.size());
+    hash_state.update(original_pattern);
+    IAST::updateTreeHashImpl(hash_state);
+}
 
 void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {

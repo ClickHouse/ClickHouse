@@ -23,6 +23,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void updateTreeHashImpl(SipHash & hash_state) const override;
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
