@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
-#include <ext/shared_ptr_helper.h>
+#if __has_include("StorageSystemTimeZones.generated.cpp")
+
+#    include <Storages/System/IStorageSystemOneBlock.h>
+#    include <ext/shared_ptr_helper.h>
 
 
 namespace DB
@@ -27,3 +29,5 @@ public:
     static NamesAndTypesList getNamesAndTypes();
 };
 }
+
+#endif
