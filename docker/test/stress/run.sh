@@ -17,8 +17,8 @@ function wait_server()
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
-            cat /var/log/clickhouse-server/stderr.log
-            cat /var/log/clickhouse-server/clickhouse-server.err.log
+            tail -n1000 /var/log/clickhouse-server/stderr.log
+            tail -n1000 /var/log/clickhouse-server/clickhouse-server.err.log
             break
         fi
         sleep 0.5
