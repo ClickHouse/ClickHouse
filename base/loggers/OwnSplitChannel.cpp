@@ -91,11 +91,10 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         if (msg.getSourceFile() != nullptr)
             elem.source_file = msg.getSourceFile();
         else
-            elem.source_file = "unknown"
+            elem.source_file = "unknown";
 
 
-                               elem.source_line
-                = msg.getSourceLine();
+        elem.source_line = msg.getSourceLine();
 
         std::lock_guard<std::mutex> lock(text_log_mutex);
         if (auto log = text_log.lock())
