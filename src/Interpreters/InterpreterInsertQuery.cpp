@@ -93,7 +93,8 @@ Block InterpreterInsertQuery::getSampleBlock(
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(),
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
             throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
@@ -104,6 +105,40 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
     return res;
 }
+
+
+/** A query that just reads all data without any complex computations or filetering.
+  * If we just pipe the result to INSERT, we don't have to use too many threads for read.
+  */
+static bool isTrivialSelect(const ASTSelectQuery & select_query)
+{
+    const auto & tables = select_query.tables();
+
+    if (!tables)
+        return false;
+
+    const auto & tables_in_select_query = tables->as<ASTTablesInSelectQuery &>();
+
+    if (tables_in_select_query.children.size() != 1)
+        return false;
+
+    const auto & child = tables_in_select_query.children.front();
+    const auto & table_element = child->as<ASTTablesInSelectQueryElement &>();
+    const auto & table_expr = table_element.table_expression->as<ASTTableExpression &>();
+
+    if (table_expr.subquery)
+        return false;
+
+    /// Note: how to write it in more generic way?
+    return (!select_query.distinct
+        && !select_query.limit_with_ties
+        && !select_query.prewhere()
+        && !select_query.where()
+        && !select_query.groupBy()
+        && !select_query.having()
+        && !select_query.orderBy()
+        && !select_query.limitBy());
+};
 
 
 BlockIO InterpreterInsertQuery::execute()
@@ -201,64 +236,43 @@ BlockIO InterpreterInsertQuery::execute()
         size_t out_streams_size = 1;
         if (query.select)
         {
-            auto optimize_trivial_insert_select = settings.optimize_trivial_insert_select;
-            if (optimize_trivial_insert_select)
+            bool is_trivial_insert_select = false;
+
+            if (settings.optimize_trivial_insert_select)
             {
-                auto is_trivial_select = [](const auto && query_)
-                {
-                    if (query_.tables())
-                    {
-                        const auto & tables_in_select_query = query_.tables()->template as<ASTTablesInSelectQuery &>();
-                        for (const auto & child : tables_in_select_query.children)
-                        {
-                            const auto & table_element = child->template as<ASTTablesInSelectQueryElement &>();
-                            const auto & table_expr = table_element.table_expression->template as<ASTTableExpression &>();
-                            if (table_expr.subquery)
-                            {
-                                return false;
-                            }
-                        }
-                    }
-                    return (!query_.distinct && !query_.limit_with_ties && !query_.prewhere() && !query_.where() && !query_.groupBy()
-                        && !query_.having() && !query_.orderBy() && !query_.limitBy());
-                };
+                const auto & selects = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children;
 
-                const auto & ast = query.select->as<ASTSelectWithUnionQuery &>();
-                size_t num_selects = ast.list_of_selects->children.size();
-                bool is_trivial_query = true;
-                for (size_t query_num = 0; query_num < num_selects; ++query_num)
+                is_trivial_insert_select = std::all_of(selects.begin(), selects.end(), [](const ASTPtr & select)
                 {
-                    const auto & query_select = ast.list_of_selects->children.at(query_num)->as<ASTSelectQuery &>();
-                    if (!is_trivial_select(std::move(query_select)))
-                    {
-                        is_trivial_query = false;
-                        break;
-                    }
-                }
+                    return isTrivialSelect(select->as<ASTSelectQuery &>());
+                });
+            }
 
-                if (is_trivial_query)
-                {
-                    auto new_context = context;
-                    UInt64 max_threads = settings.max_insert_threads;
-                    UInt64 min_insert_block_size_rows = settings.min_insert_block_size_rows;
-                    new_context.setSetting("max_threads", std::max<UInt64>(1, max_threads));
-                    if (min_insert_block_size_rows)
-                        new_context.setSetting("max_block_size", min_insert_block_size_rows);
+            if (is_trivial_insert_select)
+            {
+                /** When doing trivial INSERT INTO ... SELECT ... FROM table,
+                  * don't need to process SELECT with more than max_insert_threads
+                  * and it's reasonable to set block size for SELECT to the desired block size for INSERT
+                  * to avoid unnecessary squashing.
+                  */
 
-                    /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-                    InterpreterSelectWithUnionQuery interpreter_select{
-                        query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                    res = interpreter_select.execute();
-                }
-                else
-                {
-                    InterpreterSelectWithUnionQuery interpreter_select{
-                        query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                    res = interpreter_select.execute();
-                }
+                Settings new_settings = context.getSettings();
+
+                new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
+
+                if (settings.min_insert_block_size_rows)
+                    new_settings.max_block_size = settings.min_insert_block_size_rows;
+
+                Context new_context = context;
+                new_context.setSettings(new_settings);
+
+                InterpreterSelectWithUnionQuery interpreter_select{
+                    query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+                res = interpreter_select.execute();
             }
             else
             {
+                /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
                 res = interpreter_select.execute();
