@@ -140,24 +140,16 @@ void TabSeparatedRowInputFormat::readPrefix()
         if (format_settings.with_names_use_header)
         {
             String column_name;
-            for (;;)
+            do
             {
                 readEscapedString(column_name, in);
-                if (!checkChar('\t', in))
-                {
-                    /// Check last column for \r before adding it, otherwise an error will be:
-                    ///     "Unknown field found in TSV header"
-                    checkForCarriageReturn(in);
-                    addInputColumn(column_name);
-                    break;
-                }
-                else
-                    addInputColumn(column_name);
+                addInputColumn(column_name);
             }
-
+            while (checkChar('\t', in));
 
             if (!in.eof())
             {
+                checkForCarriageReturn(in);
                 assertChar('\n', in);
             }
         }

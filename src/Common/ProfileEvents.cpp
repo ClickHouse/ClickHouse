@@ -11,9 +11,6 @@
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
-    M(QueryTimeMicroseconds, "Total time of all queries.") \
-    M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.") \
-    M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.") \
     M(FileOpen, "Number of files opened.") \
     M(Seek, "Number of times the 'lseek' function was called.") \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.") \

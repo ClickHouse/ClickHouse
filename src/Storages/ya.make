@@ -115,7 +115,6 @@ SRCS(
     StorageLog.cpp
     StorageLogSettings.cpp
     StorageMaterializedView.cpp
-    StorageMaterializeMySQL.cpp
     StorageMemory.cpp
     StorageMerge.cpp
     StorageMergeTree.cpp
@@ -182,7 +181,6 @@ SRCS(
     System/StorageSystemTableEngines.cpp
     System/StorageSystemTableFunctions.cpp
     System/StorageSystemTables.cpp
-    System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp

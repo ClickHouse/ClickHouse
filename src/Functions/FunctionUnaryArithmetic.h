@@ -92,19 +92,15 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
-            DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
             DataTypeInt32,
             DataTypeInt64,
-            DataTypeInt128,
-            DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
-            DataTypeDecimal<Decimal256>,
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }

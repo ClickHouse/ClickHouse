@@ -49,10 +49,6 @@ def remove_control_characters(s):
     s = re.sub(r"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
 
-def get_db_engine(args):
-    if args.atomic_db_engine:
-        return " ENGINE=Atomic"
-    return ""
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
@@ -73,7 +69,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         database = 'test_{suffix}'.format(suffix=random_str())
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE " + database + get_db_engine(args))
+        clickhouse_proc_create.communicate("CREATE DATABASE " + database)
 
         os.environ["CLICKHOUSE_DATABASE"] = database
 
@@ -281,10 +277,6 @@ def run_tests_array(all_tests_with_params):
 
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
-
-                            if os.path.isfile(stdout_file):
-                                print(", result:\n")
-                                print(open(stdout_file).read())
 
                         elif stderr:
                             failures += 1
@@ -515,10 +507,10 @@ def main(args):
 
     if args.database and args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args))
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args))
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -730,7 +722,6 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--skip-list-path', help="Path to skip-list file")
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
-    parser.add_argument('--atomic-db-engine', action='store_true', help='Create databases with Atomic engine by default')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -747,33 +738,18 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.queries and not os.path.isdir(args.queries):
-        print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
-        exit(1)
-
-    # Autodetect the directory with queries if not specified
-    if args.queries is None:
+    if args.queries is None and os.path.isdir('queries'):
         args.queries = 'queries'
-
-    if not os.path.isdir(args.queries):
-        # If we're running from the repo
-        args.queries = os.path.join(os.path.dirname(os.path.abspath( __file__ )), 'queries')
-
-    if not os.path.isdir(args.queries):
-        # Next we're going to try some system directories, don't write 'stdout' files into them.
+    elif args.queries is None:
+        if (os.path.isdir('/usr/local/share/clickhouse-test/queries')):
+            args.queries = '/usr/local/share/clickhouse-test/queries'
+        if (args.queries is None and os.path.isdir('/usr/share/clickhouse-test/queries')):
+            args.queries = '/usr/share/clickhouse-test/queries'
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
-
-        args.queries = '/usr/local/share/clickhouse-test/queries'
-
-    if not os.path.isdir(args.queries):
-        args.queries = '/usr/share/clickhouse-test/queries'
-
-    if not os.path.isdir(args.queries):
+    if args.queries is None:
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
-
-    print("Using queries from '" + args.queries + "' directory")
 
     if args.skip_list_path is None:
         args.skip_list_path = os.path.join(args.queries, 'skip_list.json')

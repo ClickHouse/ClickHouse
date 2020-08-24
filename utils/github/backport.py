@@ -44,7 +44,7 @@ class Backport:
         # pull-requests are sorted by ancestry from the least recent.
         for pr in prs:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
-                logging.info("PR #{} is already inside {}. Dropping this branch for further PRs".format(pr['number'], branches[-1][0]))
+                logging.info("PR #{} is already inside {}. Dropping this branch for futher PRs".format(pr['number'], branches[-1][0]))
                 branches.pop()
 
             logging.info("Processing PR #{}".format(pr['number']))

@@ -92,7 +92,7 @@ class ClickHouseNode(Node):
                     name, value = setting
                     command += f" --{name} \"{value}\""
                 description = f"""
-                    echo -e \"{sql[:100]}...\" > {query.name}
+                    echo -e \"{sql[:100]}...\" > {query.name} 
                     {command}
                 """
                 with step("executing command", description=description) if steps else NullStep():
@@ -128,12 +128,12 @@ class ClickHouseNode(Node):
 class Cluster(object):
     """Simple object around docker-compose cluster.
     """
-    def __init__(self, local=False,
-            clickhouse_binary_path=None, configs_dir=None,
+    def __init__(self, local=False, 
+            clickhouse_binary_path=None, configs_dir=None, 
             nodes=None,
-            docker_compose="docker-compose", docker_compose_project_dir=None,
+            docker_compose="docker-compose", docker_compose_project_dir=None, 
             docker_compose_file="docker-compose.yml"):
-
+        
         self._bash = {}
         self.clickhouse_binary_path = clickhouse_binary_path
         self.configs_dir = configs_dir
@@ -159,7 +159,7 @@ class Cluster(object):
             if os.path.exists(caller_project_dir):
                 docker_compose_project_dir = caller_project_dir
 
-        docker_compose_file_path = os.path.join(docker_compose_project_dir or "", docker_compose_file)
+        docker_compose_file_path = os.path.join(docker_compose_project_dir or "", docker_compose_file) 
 
         if not os.path.exists(docker_compose_file_path):
             raise TypeError("docker compose file '{docker_compose_file_path}' does not exist")
@@ -237,7 +237,7 @@ class Cluster(object):
         finally:
             return self.command(None, f"{self.docker_compose} down", timeout=timeout)
 
-    def up(self, timeout=30*60):
+    def up(self):
         if self.local:
             with Given("I am running in local mode"):
                 with Then("check --clickhouse-binary-path is specified"):
@@ -245,28 +245,20 @@ class Cluster(object):
                 with And("path should exist"):
                     assert os.path.exists(self.clickhouse_binary_path)
 
-            with And("I set all the necessary environment variables"):
-                os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
-                os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
-                    os.path.dirname(self.clickhouse_binary_path), "clickhouse-odbc-bridge")
-                os.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
+            os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
+            os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(os.path.dirname(self.clickhouse_binary_path),
+                                                                               "clickhouse-odbc-bridge")
+            os.environ["CLICKHOUSE_TESTS_DIR"] = self.configs_dir
 
-            with And("I list environment variables to show their values"):
+            with Given("docker-compose"):
                 self.command(None, "env | grep CLICKHOUSE")
-
-        with Given("docker-compose"):
-            with By("pulling images for all the services"):
-                self.command(None, f'{self.docker_compose} pull 2>&1 | tee', exitcode=0, timeout=timeout)
-            with And("executing docker-compose down just in case it is up"):
-                self.command(None, f'{self.docker_compose} down 2>&1 | tee', exitcode=0, timeout=timeout)
-            with And("executing docker-compose up"):
-                cmd = self.command(None, f'{self.docker_compose} up -d 2>&1 | tee', timeout=timeout)
+                cmd = self.command(None, f'{self.docker_compose} up -d 2>&1 | tee', timeout=30 * 60)
+        else:
+            with Given("docker-compose"):
+                cmd = self.command(None, f'{self.docker_compose} up -d --no-recreate 2>&1 | tee')
 
         with Then("check there are no unhealthy containers"):
-            if "is unhealthy" in cmd.output:
-                self.command(None, f'{self.docker_compose} ps | tee')
-                self.command(None, f'{self.docker_compose} logs | tee')
-                fail("found unhealthy containers")
+            assert "is unhealthy" not in cmd.output, error()
 
         with Then("wait all nodes report healhy"):
             for name in self.nodes["clickhouse"]:

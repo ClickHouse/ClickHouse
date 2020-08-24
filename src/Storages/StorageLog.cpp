@@ -318,7 +318,6 @@ void LogBlockOutputStream::writeSuffix()
 
     /// Finish write.
     marks_stream->next();
-    marks_stream->finalize();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();
@@ -605,7 +604,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
     return it->second.marks;
 }
 
-Pipe StorageLog::read(
+Pipes StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -648,7 +647,7 @@ Pipe StorageLog::read(
             max_read_buffer_size));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

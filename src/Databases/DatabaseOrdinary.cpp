@@ -105,7 +105,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -141,6 +141,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             throw;
         }
     };
+
 
     iterateMetadataFiles(context, process_metadata);
 

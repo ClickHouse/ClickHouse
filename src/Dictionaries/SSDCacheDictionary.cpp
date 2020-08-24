@@ -1191,7 +1191,7 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
 
             if (update_error_count)
             {
-                /// TODO: use old values
+                /// TODO: юзать старые значения.
 
                 /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
                 std::rethrow_exception(last_update_exception);

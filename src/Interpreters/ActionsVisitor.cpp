@@ -1,5 +1,6 @@
-#include <Common/quoteString.h>
+#include "Common/quoteString.h"
 #include <Common/typeid_cast.h>
+#include <Common/PODArray.h>
 #include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
@@ -8,6 +9,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -19,6 +21,7 @@
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Storages/StorageSet.h>
 
@@ -543,14 +546,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
         {
             String result_name = column_name.get(ast);
-            /// Here we copy argument because arrayJoin removes source column.
-            /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
-
-            /// It could have been possible to implement arrayJoin which keeps source column,
-            /// but in this case it will always be replicated (as many arrays), which is expensive.
-            String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
-            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
-            data.addAction(ExpressionAction::arrayJoin(tmp_name, result_name));
+            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
+            NameSet joined_columns;
+            joined_columns.insert(result_name);
+            data.addAction(ExpressionAction::arrayJoin(joined_columns, false, data.context));
         }
 
         return;

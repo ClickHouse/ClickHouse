@@ -34,7 +34,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -861,25 +860,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
-            }
-
-            if (expressions.before_array_join)
-            {
-                QueryPlanStepPtr before_array_join_step = std::make_unique<ExpressionStep>(
-                        query_plan.getCurrentDataStream(),
-                        expressions.before_array_join);
-                before_array_join_step->setStepDescription("Before ARRAY JOIN");
-                query_plan.addStep(std::move(before_array_join_step));
-            }
-
-            if (expressions.array_join)
-            {
-                QueryPlanStepPtr array_join_step = std::make_unique<ArrayJoinStep>(
-                        query_plan.getCurrentDataStream(),
-                        expressions.array_join);
-
-                array_join_step->setStepDescription("ARRAY JOIN");
-                query_plan.addStep(std::move(array_join_step));
             }
 
             if (expressions.before_join)

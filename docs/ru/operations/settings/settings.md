@@ -571,7 +571,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-Формировать блоки указанного размера (в количестве строк), при вставке в таблицу.
+Формировать блоки указанного размера, при вставке в таблицу.
 Эта настройка действует только в тех случаях, когда сервер сам формирует такие блоки.
 Например, при INSERT-е через HTTP интерфейс, сервер парсит формат данных, и формирует блоки указанного размера.
 А при использовании clickhouse-client, клиент сам парсит данные, и настройка max\_insert\_block\_size на сервере не влияет на размер вставляемых блоков.
@@ -907,105 +907,6 @@ load_balancing = first_or_random
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
-
-## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
-
-При выводе данных в формате [JSON](../../interfaces/formats.md#json) включает отображение значений `+nan`, `-nan`, `+inf`, `-inf`.
-
-Возможные значения:
-
--   0 — выключена.
--   1 — включена.
-
-Значение по умолчанию: 0.
-
-**Пример**
-
-Рассмотрим следующую таблицу `account_orders`:
-
-```text
-┌─id─┬─name───┬─duration─┬─period─┬─area─┐
-│  1 │ Andrew │       20 │      0 │  400 │
-│  2 │ John   │       40 │      0 │    0 │
-│  3 │ Bob    │       15 │      0 │ -100 │
-└────┴────────┴──────────┴────────┴──────┘
-```
-
-Когда `output_format_json_quote_denormals = 0`, следующий запрос возвращает значения `null`.
-
-```sql
-SELECT area/period FROM account_orders FORMAT JSON;
-```
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "divide(area, period)",
-                        "type": "Float64"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "divide(area, period)": null
-                },
-                {
-                        "divide(area, period)": null
-                },
-                {
-                        "divide(area, period)": null
-                }
-        ],
-
-        "rows": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.003648093,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
-Если `output_format_json_quote_denormals = 1`, то запрос вернет:
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "divide(area, period)",
-                        "type": "Float64"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "divide(area, period)": "inf"
-                },
-                {
-                        "divide(area, period)": "-nan"
-                },
-                {
-                        "divide(area, period)": "-inf"
-                }
-        ],
-
-        "rows": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.000070241,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
@@ -1549,16 +1450,6 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Значение по умолчанию: `Пустая строка`.
 
-## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
-Позволяет использовать данные, которых не нашлось в схеме формата [Avro](../../interfaces/formats.md#data-format-avro) или [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent). Если поле не найдено в схеме, ClickHouse подставит значение по умолчанию вместо исключения.
-
-Возможные значения:
-
--   0 — Выключена.
--   1 — Включена.
-
-Значение по умолчанию: `0`.
-
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 
 Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create/view.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
@@ -1589,21 +1480,6 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
-## optimize_read_in_order {#optimize_read_in_order}
-
-Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) при работе с таблицами семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
-
-Возможные значения:
-
--   0 — оптимизация отключена.
--   1 — оптимизация включена.
-
-Значение по умолчанию: `1`.
-
-**См. также**
-
--   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
-
 ## mutations_sync {#mutations_sync}
 
 Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
@@ -1620,6 +1496,5 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 -   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
 -   [Мутации](../../sql-reference/statements/alter.md#mutations)
-
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

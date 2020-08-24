@@ -11,15 +11,11 @@ SRCS(
     DatabaseFactory.cpp
     DatabaseLazy.cpp
     DatabaseMemory.cpp
+    DatabaseMySQL.cpp
     DatabaseOnDisk.cpp
     DatabaseOrdinary.cpp
     DatabasesCommon.cpp
     DatabaseWithDictionaries.cpp
-    MySQL/DatabaseConnectionMySQL.cpp
-    MySQL/DatabaseMaterializeMySQL.cpp
-    MySQL/MaterializeMetadata.cpp
-    MySQL/MaterializeMySQLSettings.cpp
-    MySQL/MaterializeMySQLSyncThread.cpp
 
 )
 

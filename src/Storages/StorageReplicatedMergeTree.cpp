@@ -268,28 +268,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             bool is_first_replica = createTableIfNotExists(metadata_snapshot);
 
-            try
-            {
-                /// NOTE If it's the first replica, these requests to ZooKeeper look redundant, we already know everything.
+            /// We have to check granularity on other replicas. If it's fixed we
+            /// must create our new replica with fixed granularity and store this
+            /// information in /replica/metadata.
+            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 
-                /// We have to check granularity on other replicas. If it's fixed we
-                /// must create our new replica with fixed granularity and store this
-                /// information in /replica/metadata.
-                other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            checkTableStructure(zookeeper_path, metadata_snapshot);
 
-                checkTableStructure(zookeeper_path, metadata_snapshot);
-
-                Coordination::Stat metadata_stat;
-                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-                metadata_version = metadata_stat.version;
-            }
-            catch (Coordination::Exception & e)
-            {
-                if (!is_first_replica && e.code == Coordination::Error::ZNONODE)
-                    throw Exception("Table " + zookeeper_path + " was suddenly removed.", ErrorCodes::ALL_REPLICAS_LOST);
-                else
-                    throw;
-            }
+            Coordination::Stat metadata_stat;
+            current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+            metadata_version = metadata_stat.version;
 
             if (!is_first_replica)
                 createReplica(metadata_snapshot);
@@ -303,6 +291,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
+
         /// In old tables this node may missing or be empty
         String replica_metadata;
         bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
@@ -406,7 +395,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         }
 
         /// It maybe already removed from zk, but local in-memory mutations
-        /// state was not updated.
+        /// state was not update.
         if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id))
         {
             throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
@@ -769,9 +758,9 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
 }
 
 
-/** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/metadata).
-  * If not, throw an exception.
-  */
+/** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/ metadata).
+    * If not, throw an exception.
+    */
 void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
@@ -3290,7 +3279,7 @@ void StorageReplicatedMergeTree::startup()
         /// In this thread replica will be activated.
         restarting_thread.start();
 
-        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
+        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
         startup_event.wait();
 
         /// If we don't separate create/start steps, race condition will happen
@@ -3435,7 +3424,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
     return max_added_blocks;
 }
 
-Pipe StorageReplicatedMergeTree::read(
+Pipes StorageReplicatedMergeTree::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -3881,7 +3870,7 @@ void StorageReplicatedMergeTree::alter(
     }
 }
 
-Pipe StorageReplicatedMergeTree::alterPartition(
+Pipes StorageReplicatedMergeTree::alterPartition(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,

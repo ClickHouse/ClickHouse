@@ -1070,6 +1070,7 @@ void Context::setCurrentDatabase(const String & name)
     calculateAccessRights();
 }
 
+
 void Context::setCurrentQueryId(const String & query_id)
 {
     if (!client_info.current_query_id.empty())
@@ -1795,7 +1796,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 
