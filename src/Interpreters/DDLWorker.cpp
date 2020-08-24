@@ -28,7 +28,6 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -196,12 +195,101 @@ struct DDLTask
 };
 
 
-static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
-    const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+namespace
 {
-    auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
-    zookeeper_holder->initFromInstance(zookeeper);
-    return std::make_unique<zkutil::Lock>(std::move(zookeeper_holder), lock_prefix, lock_name, lock_message);
+
+/** Caveats: usage of locks in ZooKeeper is incorrect in 99% of cases,
+  *  and highlights your poor understanding of distributed systems.
+  *
+  * It's only correct if all the operations that are performed under lock
+  *  are atomically checking that the lock still holds
+  *  or if we ensure that these operations will be undone if lock is lost
+  *  (due to ZooKeeper session loss) that's very difficult to achieve.
+  *
+  * It's Ok if every operation that we perform under lock is actually operation in ZooKeeper.
+  *
+  * In 1% of cases when you can correctly use Lock, the logic is complex enough, so you don't need this class.
+  *
+  * TLDR: Don't use this code.
+  * We only have a few cases of it's usage and it will be removed.
+  */
+class ZooKeeperLock
+{
+public:
+    /// lock_prefix - path where the ephemeral lock node will be created
+    /// lock_name - the name of the ephemeral lock node
+    ZooKeeperLock(
+        const zkutil::ZooKeeperPtr & zookeeper_,
+        const std::string & lock_prefix_,
+        const std::string & lock_name_,
+        const std::string & lock_message_ = "")
+    :
+        zookeeper(zookeeper_),
+        lock_path(lock_prefix_ + "/" + lock_name_),
+        lock_message(lock_message_),
+        log(&Poco::Logger::get("zkutil::Lock"))
+    {
+        zookeeper->createIfNotExists(lock_prefix_, "");
+    }
+
+    ~ZooKeeperLock()
+    {
+        try
+        {
+            unlock();
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void unlock()
+    {
+        Coordination::Stat stat;
+        std::string dummy;
+        bool result = zookeeper->tryGet(lock_path, dummy, &stat);
+
+        if (result && stat.ephemeralOwner == zookeeper->getClientID())
+            zookeeper->remove(lock_path, -1);
+        else
+            LOG_WARNING(log, "Lock is lost. It is normal if session was expired. Path: {}/{}", lock_path, lock_message);
+    }
+
+    bool tryLock()
+    {
+        std::string dummy;
+        Coordination::Error code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
+
+        if (code == Coordination::Error::ZNODEEXISTS)
+        {
+            return false;
+        }
+        else if (code == Coordination::Error::ZOK)
+        {
+            return true;
+        }
+        else
+        {
+            throw Coordination::Exception(code);
+        }
+    }
+
+private:
+    zkutil::ZooKeeperPtr zookeeper;
+
+    std::string lock_path;
+    std::string lock_message;
+    Poco::Logger * log;
+
+};
+
+std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+{
+    return std::make_unique<ZooKeeperLock>(zookeeper, lock_prefix, lock_name, lock_message);
+}
+
 }
 
 
@@ -688,7 +776,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
             task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
 
-        /// We need to distinguish ZK errors occured before and after query executing
+        /// We need to distinguish ZK errors occurred before and after query executing
         task.was_executed = true;
     }
 
@@ -910,8 +998,8 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
 
             /// Deleting
             {
-                Strings childs = zookeeper->getChildren(node_path);
-                for (const String & child : childs)
+                Strings children = zookeeper->getChildren(node_path);
+                for (const String & child : children)
                 {
                     if (child != "lock")
                         zookeeper->tryRemoveRecursive(node_path + "/" + child);
@@ -922,13 +1010,11 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
                 ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
-
-                lock->unlockAssumeLockNodeRemovedManually();
             }
         }
         catch (...)
         {
-            LOG_INFO(log, "An error occured while checking and cleaning task {} from queue: {}", node_name, getCurrentExceptionMessage(false));
+            LOG_INFO(log, "An error occurred while checking and cleaning task {} from queue: {}", node_name, getCurrentExceptionMessage(false));
         }
     }
 }

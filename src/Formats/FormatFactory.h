@@ -134,7 +134,6 @@ public:
     }
 
 private:
-    /// FormatsDictionary dict;
     FormatsDictionary dict;
 
     FormatFactory();

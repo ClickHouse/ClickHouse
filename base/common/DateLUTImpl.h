@@ -404,7 +404,7 @@ public:
         a date at start of january) In this case one can get 53 for the
         first week of next year.  This flag ensures that the week is
         relevant for the given year. Note that this flag is only
-        releveant if WeekModeFlag::JANUARY is not set.
+        relevant if WeekModeFlag::JANUARY is not set.
 
                   If set Week is in range 1-53.
 

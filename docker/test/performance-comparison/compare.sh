@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -exu
 set -o pipefail
 trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
@@ -7,6 +7,29 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+function wait_for_server # port, pid
+{
+    for _ in {1..60}
+    do
+        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
+        then
+            break
+        fi
+        sleep 1
+    done
+
+    if ! clickhouse-client --port "$1" --query "select 1"
+    then
+        echo "Cannot connect to ClickHouse server at $1"
+        return 1
+    fi
+
+    if ! kill -0 "$2"
+    then
+        echo "Server pid '$2' is not running"
+        return 1
+    fi
+}
 
 function configure
 {
@@ -27,8 +50,9 @@ function configure
     kill -0 $left_pid
     disown $left_pid
     set +m
-    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
-    echo server for setup started
+
+    wait_for_server 9001 $left_pid
+    echo Server for setup started
 
     clickhouse-client --port 9001 --query "create database test" ||:
     clickhouse-client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
@@ -67,9 +91,10 @@ function restart
 
     set +m
 
-    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
+    wait_for_server 9001 $left_pid
     echo left ok
-    while ! clickhouse-client --port 9002 --query "select 1" && kill -0 $right_pid ; do echo . ; sleep 1 ; done
+
+    wait_for_server 9002 $right_pid
     echo right ok
 
     clickhouse-client --port 9001 --query "select * from system.tables where database != 'system'"
@@ -117,6 +142,7 @@ function run_tests
     if [ -v CHPC_TEST_GREP ]
     then
         # Run only explicitly specified tests, if any.
+        # shellcheck disable=SC2010
         test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     elif [ "$changed_test_files" != "" ]
     then
@@ -130,7 +156,7 @@ function run_tests
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
-    for test in $test_files; do echo $test; done | sed -n '/website/p' > benchmarks-to-run.txt
+    for test in $test_files; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
 
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
@@ -178,7 +204,7 @@ function run_benchmark
     mkdir benchmark ||:
 
     # The list is built by run_tests.
-    for file in $(cat benchmarks-to-run.txt)
+    while IFS= read -r file
     do
         name=$(basename "$file" ".xml")
 
@@ -190,7 +216,7 @@ function run_benchmark
 
         "${command[@]}" --port 9001 --json "benchmark/$name-left.json" < "benchmark/$name-queries.txt"
         "${command[@]}" --port 9002 --json "benchmark/$name-right.json" < "benchmark/$name-queries.txt"
-    done
+    done < benchmarks-to-run.txt
 }
 
 function get_profiles_watchdog
@@ -273,8 +299,7 @@ mkdir analyze analyze/tmp ||:
 build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
-IFS=$'\n'
-for test_file in $(find . -maxdepth 1 -name "*-raw.tsv" -print)
+for test_file in *-raw.tsv
 do
     test_name=$(basename "$test_file" "-raw.tsv")
     sed -n "s/^query\t/$test_name\t/p" < "$test_file" >> "analyze/query-runs.tsv"
@@ -285,7 +310,6 @@ do
     sed -n "s/^short\t/$test_name\t/p" < "$test_file" >> "analyze/marked-short-queries.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
 done
-unset IFS
 
 # for each query run, prepare array of metrics from query log
 clickhouse-local --query "
@@ -318,10 +342,10 @@ create view right_query_log as select *
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
-        query_duration_ms from left_query_log
+        query_duration_ms, memory_usage from left_query_log
     union all
     select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
-        query_duration_ms from right_query_log
+        query_duration_ms, memory_usage from right_query_log
     ;
 
 -- This is a single source of truth on all metrics we have for query runs. The
@@ -345,10 +369,11 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                             arrayMap(x->toFloat64(x), ProfileEvents.Values))]
                     ),
                     arrayReduce('sumMapState', [(
-                        ['client_time', 'server_time'],
+                        ['client_time', 'server_time', 'memory_usage'],
                         arrayMap(x->if(x != 0., x, -0.), [
                             toFloat64(query_runs.time),
-                            toFloat64(query_duration_ms / 1000.)]))])
+                            toFloat64(query_duration_ms / 1000.),
+                            toFloat64(memory_usage)]))])
                 ]
             )) as metrics_tuple).1 metric_names,
         metrics_tuple.2 metric_values
@@ -393,7 +418,7 @@ create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-n
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics-for-stats.tsv" | sort | uniq)
 do
-    file="analyze/tmp/$(echo "$prefix" | sed 's/\t/_/g').tsv"
+    file="analyze/tmp/${prefix//	/_}.tsv"
     grep "^$prefix	" "analyze/query-run-metrics-for-stats.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
@@ -830,15 +855,13 @@ wait
 unset IFS
 
 # Create differential flamegraphs.
-IFS=$'\n'
-for query_file in $(cat report/query-files.txt)
+while IFS= read -r query_file
 do
     ~/fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
         | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
-done
-unset IFS
+done < report/query-files.txt
 wait
 
 # Create per-query files with metrics. Note that the key is different from flamegraphs.
@@ -905,8 +928,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv') as
     )
     order by diff desc
     ;
-"
-2> >(tee -a metrics/errors.log 1>&2)
+" 2> >(tee -a metrics/errors.log 1>&2)
 
 IFS=$'\n'
 for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
@@ -980,7 +1002,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || restart && get_profiles ||: )
+    ( get_profiles || restart && get_profiles ) ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

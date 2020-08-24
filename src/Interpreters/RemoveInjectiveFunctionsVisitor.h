@@ -8,7 +8,7 @@ namespace DB
 
 class ASTFunction;
 
-/// Removes unneded injective functions inside `uniq*()`.
+/// Removes unneeded injective functions inside `uniq*()`.
 class RemoveInjectiveFunctionsMatcher
 {
 public:
