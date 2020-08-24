@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -31,6 +32,8 @@ SRCS(
     AggregateFunctionNull.cpp
     AggregateFunctionOrFill.cpp
     AggregateFunctionQuantile.cpp
+    AggregateFunctionRankCorr.cpp
+    AggregateFunctionRankCorrelationSpearman.cpp
     AggregateFunctionResample.cpp
     AggregateFunctionRetention.cpp
     AggregateFunctionSequenceMatch.cpp
@@ -42,7 +45,6 @@ SRCS(
     AggregateFunctionSumMap.cpp
     AggregateFunctionTimeSeriesGroupSum.cpp
     AggregateFunctionTopK.cpp
-    AggregateFunctionUniq.cpp
     AggregateFunctionUniqCombined.cpp
     AggregateFunctionUniq.cpp
     AggregateFunctionUniqUpTo.cpp
@@ -51,7 +53,7 @@ SRCS(
     registerAggregateFunctions.cpp
     UniqCombinedBiasData.cpp
     UniqVariadicHash.cpp
-    AggregateFunctionRankCorrelationSpearman.cpp
+
 )
 
 END()
