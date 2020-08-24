@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -250,7 +251,8 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         String prefix = key + "." + key_in_user_directories;
 
         String type = key_in_user_directories;
-        if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
+        const size_t bracket_pos = type.find('[');
+        if (bracket_pos != String::npos)
             type.resize(bracket_pos);
         if ((type == "users_xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
@@ -280,6 +282,8 @@ void AccessControlManager::addStoragesFromUserDirectoriesConfig(
         }
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
+            if (bracket_pos != String::npos)
+                throw Exception("Duplicate storage type '" + type + "' at " + prefix + " in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             addLDAPStorage(name, config, prefix);
         }
         else
