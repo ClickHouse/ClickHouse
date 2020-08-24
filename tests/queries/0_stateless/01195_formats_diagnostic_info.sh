@@ -28,6 +28,7 @@ echo -e '2020-04-21 12:34:567\tHello\t123456789' | "${PARSER[@]}" 2>&1| grep "ER
 echo -e '2020-04-21 12:34:56\tHello\t12345678\t1' | "${PARSER[@]}" 2>&1| grep "ERROR"
 echo -e '2020-04-21 12:34:56\t\t123Hello' | "${PARSER[@]}" 2>&1| grep "ERROR"
 echo -e '2020-04-21 12:34:56\tHello\t12345678\n' | "${PARSER[@]}" 2>&1| grep "ERROR"
+echo -e '\N\tHello\t12345678' | "${PARSER[@]}" 2>&1| grep -o "Unexpected NULL value"
 
 PARSER=(${CLICKHOUSE_LOCAL} --query 'SELECT t, s, d FROM table' --structure 't DateTime, s String, d Decimal64(10)' --input-format CustomSeparated)
 echo -e '2020-04-21 12:34:56\tHello\t12345678' | "${PARSER[@]}"  2>&1| grep "ERROR" || echo -e "\nCustomSeparated"
