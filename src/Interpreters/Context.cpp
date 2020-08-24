@@ -62,6 +62,12 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 
+#if USE_MYSQL
+#    include <Common/parseAddress.h>
+#    include <mysqlxx/Pool.h>
+#    include <Core/MySQL/MySQLClient.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event ContextLock;
@@ -2262,10 +2268,19 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
 #if USE_MYSQL
 DB::MaterializeMySQLSyncThreadPtr getCreateMySQLSyncThreadIfNot(
-        const String & mysql_database_name_,
+        const String & mysql_database_name,
         const String & mysql_hostname_and_port,
         const String & mysql_user_name,
-        const String & mysql_user_password) {}
+        const String & mysql_user_password) {
+    const auto & [mysql_host, mysql_port] = parseAddress(mysql_hostname_and_port, 3306);
+    if (!mysqlSyncThread[{mysql_host, mysql_database_name}]) {
+        auto mysql_ppol = mysqlxx::Pool(mysql_database_name, mysql_host, mysql_user_name, mysql_user_password, mysql_port);
+        MySQLClient client(mysql_host, mysql_port, mysql_user_name, mysql_user_password);
+        mysqlSyncThread[{mysql_host, mysql_port}] = DB::MaterializeMySQLSyncThread(*this, mysql_database_name, std::move(ppol), std::move(client));
+    }
+
+    return &(*mysqlSyncThread[{mysql_host, mysql_database_name}]);
+}
 #endif
 
 }

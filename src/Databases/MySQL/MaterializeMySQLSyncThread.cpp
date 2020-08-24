@@ -158,6 +158,19 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
+MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
+    const Context & context,
+    const String & mysql_database_name_,
+    mysqlxx::Pool && pool_,
+    MySQLClient && client_)
+    : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
+    , global_context(context.getGlobalContext())
+    , mysql_database_name(mysql_database_name_)
+    , pool(std::move(pool_))
+    , client(std::move(client_))
+{
+}
+
 void MaterializeMySQLSyncThread::synchronization(const String & mysql_version)
 {
     setThreadName(MYSQL_BACKGROUND_THREAD_NAME);

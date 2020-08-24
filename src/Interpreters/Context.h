@@ -626,7 +626,7 @@ public:
 
 #if USE_MYSQL
 private:
-    std::optional<DB::MaterializeMySQLSyncThread> mysqlSyncThread;
+    std::unordered_map<std::pair<std::string, std::string>, std::optional<DB::MaterializeMySQLSyncThread>> mysqlSyncThread;
 
 public:
     DB::MaterializeMySQLSyncThreadPtr getCreateMySQLSyncThreadIfNot(
