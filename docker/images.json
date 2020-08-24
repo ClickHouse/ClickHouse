@@ -138,7 +138,7 @@
          "dependent": [
             "docker/test/stateless_unbundled"
          ]
-    }
+    },
     "docker/test/stateless_unbundled": {
          "name": "yandex/clickhouse-stateless-unbundled-test",
          "dependent": [
