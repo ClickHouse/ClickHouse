@@ -76,7 +76,7 @@ is_supported_command()
 
 is_running()
 {
-    pgrep --pidfile "$CLICKHOUSE_PIDFILE" 1> /dev/null 2> /dev/null
+    pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo \"${PROGRAM}\" | cut -c1-15) 1> /dev/null 2> /dev/null
 }
 
 
