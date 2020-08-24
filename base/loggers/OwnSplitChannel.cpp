@@ -8,8 +8,8 @@
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <common/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
+#include <common/getThreadId.h>
 
 namespace DB
 {
@@ -29,7 +29,6 @@ void OwnSplitChannel::log(const Poco::Message & msg)
             logSplit({msg, message_text}); // we will continue with the copy of original message with text modified
             return;
         }
-
     }
 
     logSplit(msg);
@@ -91,11 +90,12 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         if (msg.getSourceFile() != nullptr)
             elem.source_file = msg.getSourceFile();
-        else 
+        else
             elem.source_file = "unknown"
 
 
-        elem.source_line = msg.getSourceLine();
+                               elem.source_line
+                = msg.getSourceLine();
 
         std::lock_guard<std::mutex> lock(text_log_mutex);
         if (auto log = text_log.lock())

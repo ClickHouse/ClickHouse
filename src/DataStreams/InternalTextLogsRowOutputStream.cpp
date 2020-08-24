@@ -9,7 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <common/terminalColors.h>
 
-
 namespace DB
 {
 Block InternalTextLogsRowOutputStream::getHeader() const
@@ -102,7 +101,7 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         writeString(source_file, wb);
         if (color)
             writeCString(resetColor(), wb);
-        
+
         writeCString(":", wb);
         Int32 source_line = array_source_line[row_num];
         writeIntText(source_line, wb);
@@ -114,5 +113,4 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         writeChar('\n', wb);
     }
 }
-
 }
