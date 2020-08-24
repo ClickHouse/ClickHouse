@@ -15,6 +15,7 @@ namespace
     template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
 }
 
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
@@ -31,12 +32,8 @@ namespace
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
         if (auto channel = (logger)->getChannel())                                \
         {                                                                         \
-            std::string file_function;                                            \
-            file_function += __FILE__;                                            \
-            file_function += "; ";                                                \
-            file_function += __PRETTY_FUNCTION__;                                 \
             Poco::Message poco_message((logger)->name(), formatted_message,       \
-                                 (PRIORITY), file_function.c_str(), __LINE__);    \
+                                 (PRIORITY), __FILENAME__, __LINE__);    \
             channel->log(poco_message);                                           \
         }                                                                         \
     }                                                                             \

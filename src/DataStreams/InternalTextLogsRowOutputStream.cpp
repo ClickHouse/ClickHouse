@@ -28,6 +28,7 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
     const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
     const auto & array_priority = typeid_cast<const ColumnInt8 &>(*block.getByName("priority").column).getData();
     const auto & column_source = typeid_cast<const ColumnString &>(*block.getByName("source").column);
+    const auto & column_source_file = typeid_cast<const ColumnString &>(*block.getByName("source_file").column);
     const auto & array_source_line = typeid_cast<const ColumnInt32 &>(*block.getByName("source_line").column).getData();
     const auto & column_text = typeid_cast<const ColumnString &>(*block.getByName("text").column);
 
@@ -94,14 +95,18 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         if (color)
             writeCString(resetColor(), wb);
 
-        Int32 source_line = array_source_line[row_num];
-        writeCString("[", wb);
+        writeCString(", ", wb);
+        auto source_file = column_source_file.getDataAt(row_num);
         if (color)
-            writeString(setColor(intHash64(source_line)), wb);
-        writeIntText(source_line, wb);
+            writeString(setColor(StringRefHash()(source_file)), wb);
+        writeString(source_file, wb);
         if (color)
             writeCString(resetColor(), wb);
-        writeCString("]: ", wb);
+        
+        writeCString(":", wb);
+        Int32 source_line = array_source_line[row_num];
+        writeIntText(source_line, wb);
+        writeCString(": ", wb);
 
         auto text = column_text.getDataAt(row_num);
         writeString(text, wb);

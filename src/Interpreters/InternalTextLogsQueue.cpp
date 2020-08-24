@@ -26,6 +26,7 @@ Block InternalTextLogsQueue::getSampleBlock()
         {std::make_shared<DataTypeUInt64>(),   "thread_id"},
         {std::make_shared<DataTypeInt8>(),     "priority"},
         {std::make_shared<DataTypeString>(),   "source"},
+        {std::make_shared<DataTypeString>(),   "source_file"},
         {std::make_shared<DataTypeInt32>(),    "source_line"},
         {std::make_shared<DataTypeString>(),   "text"}
     };

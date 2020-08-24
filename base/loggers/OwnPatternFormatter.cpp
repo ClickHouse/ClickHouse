@@ -82,14 +82,18 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     if (color)
         writeCString(resetColor(), wb);
 
-    Int32 source_line = msg.getSourceLine();
-    writeCString("[", wb);
+    writeCString(", ", wb);
+    String source_file(msg.getSourceFile() ? msg.getSourceFile() : "unknown");
     if (color)
-        writeString(setColor(intHash64(source_line)), wb);
-    DB::writeIntText(source_line, wb);
+        writeString(setColor(std::hash<std::string>()(source_file)), wb);
+    DB::writeString(source_file, wb);
     if (color)
         writeCString(resetColor(), wb);
-    writeCString("]: ", wb);
+    writeCString(":", wb);
+    Int32 source_line = msg.getSourceLine();
+    DB::writeIntText(source_line, wb);
+
+    writeCString(": ", wb);
     DB::writeString(msg.getText(), wb);
 }
 

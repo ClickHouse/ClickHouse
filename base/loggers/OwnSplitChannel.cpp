@@ -64,6 +64,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg_ext.thread_id);
         columns[i++]->insert(Int64(msg.getPriority()));
         columns[i++]->insert(msg.getSource());
+        columns[i++]->insert(msg.getSourceFile() ? msg.getSourceFile() : "unknown");
         columns[i++]->insert(msg.getSourceLine());
         columns[i++]->insert(msg.getText());
 
@@ -90,6 +91,9 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         if (msg.getSourceFile() != nullptr)
             elem.source_file = msg.getSourceFile();
+        else 
+            elem.source_file = "unknown"
+
 
         elem.source_line = msg.getSourceLine();
 
