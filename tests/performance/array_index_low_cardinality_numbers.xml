@@ -8,8 +8,8 @@
 
     <fill_query>
         INSERT INTO perf_lc_num (num)
-        SELECT number % 1000
-        FROM numbers(5000000000)
+        SELECT toUInt8(number)
+        FROM numbers(1500000000)
     </fill_query>
 
     <query>SELECT count() FROM perf_lc_num WHERE num = 42</query>
