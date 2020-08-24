@@ -44,7 +44,8 @@ public:
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
             throw Exception("Function " + getName() + " accepts one const string argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
-        scalar = context.getScalar(scalar_name).getByPosition(0);
+        const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
+        scalar = query_context.getScalar(scalar_name).getByPosition(0);
         return scalar.type;
     }
 
