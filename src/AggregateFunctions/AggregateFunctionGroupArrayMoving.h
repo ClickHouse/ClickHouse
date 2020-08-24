@@ -173,7 +173,7 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        if (size)
+        if (size != 0)
         {
             typename ColumnResult::Container & data_to = assert_cast<ColumnResult &>(arr_to.getData()).getData();
 
