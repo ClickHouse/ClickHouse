@@ -62,8 +62,8 @@ Block CheckSortedBlockInputStream::readImpl()
             else if (res > 0)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Sort order of blocks violated for column {}, left: {}, right: {}.",
-                    backQuoteIfNeed(elem.column_name),
+                    "Sort order of blocks violated for column number {}, left: {}, right: {}.",
+                    column_number,
                     applyVisitor(FieldVisitorDump(), (*left_col)[left_index]),
                     applyVisitor(FieldVisitorDump(), (*right_col)[right_index]));
             }

@@ -43,8 +43,8 @@ private:
     std::shared_ptr<MergeTreeReadPool> pool;
     size_t min_marks_to_read;
 
-    /// Last part readed in this thread
-    std::string last_readed_part_path;
+    /// Last part read in this thread
+    std::string last_readed_part_name;
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
 };

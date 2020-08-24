@@ -33,6 +33,10 @@ void registerDictionaries()
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
+#if defined(OS_LINUX) || defined(__FreeBSD__)
+        registerDictionarySSDCache(factory);
+        registerDictionarySSDComplexKeyCache(factory);
+#endif
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
     }

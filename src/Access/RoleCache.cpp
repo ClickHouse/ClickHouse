@@ -43,8 +43,7 @@ namespace
             roles_info.enabled_roles_with_admin_option.emplace(role_id);
 
         roles_info.names_of_roles[role_id] = role->getName();
-        roles_info.access.merge(role->access.access);
-        roles_info.access_with_grant_option.merge(role->access.access_with_grant_option);
+        roles_info.access.makeUnion(role->access);
         roles_info.settings_from_enabled_roles.merge(role->settings);
 
         for (const auto & granted_role : role->granted_roles.roles)

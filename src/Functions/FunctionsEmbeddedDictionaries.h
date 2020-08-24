@@ -183,7 +183,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -279,7 +279,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -415,7 +415,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -620,7 +620,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         RegionsNames::Language language = RegionsNames::Language::ru;
 

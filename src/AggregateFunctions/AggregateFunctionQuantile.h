@@ -138,7 +138,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
         auto & data = this->data(place);

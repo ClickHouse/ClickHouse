@@ -22,7 +22,7 @@ The Distributed engine accepts parameters:
 
     See also:
 
-    -   `insert_distributed_sync` setting
+    -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
     -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 Example:
@@ -50,6 +50,8 @@ Clusters are set like this:
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
             <internal_replication>false</internal_replication>
             <replica>
+                <!-- Optional. Priority of the replica for load balancing (see also load_balancing setting). Default: 1 (less value has more priority). -->
+                <priority>1</priority>
                 <host>example01-01-1</host>
                 <port>9000</port>
             </replica>

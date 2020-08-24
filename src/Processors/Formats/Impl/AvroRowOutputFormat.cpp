@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -205,6 +206,18 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 auto enum_value = assert_cast<const DataTypeEnum16::ColumnType &>(column).getElement(row_num);
                 encoder.encodeEnum(enum_mapping.at(enum_value));
+            }};
+        }
+        case TypeIndex::UUID:
+        {
+            auto schema = avro::StringSchema();
+            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::UUID));
+            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
+                std::array<UInt8, 36> s;
+                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), s.data());
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
         case TypeIndex::Array:

@@ -174,7 +174,7 @@ PCG_DEFINE_CONSTANT(pcg128_t, default, increment,
  *                       period
  *     specific stream - the constant can be changed at any time, selecting
  *                       a different random sequence
- *     unique stream   - the constant is based on the memory addresss of the
+ *     unique stream   - the constant is based on the memory address of the
  *                       object, thus every RNG has its own unique sequence
  *
  * This variation is provided though mixin classes which define a function
@@ -352,7 +352,7 @@ protected:
  * (reducing register pressure).
  *
  * Given the high level of parameterization, the code has to use some
- * template-metaprogramming tricks to handle some of the suble variations
+ * template-metaprogramming tricks to handle some of the subtle variations
  * involved.
  */
 

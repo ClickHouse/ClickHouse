@@ -17,11 +17,11 @@ It’s also worth noting that ClickHouse is a database management system, not a 
 
 Some column-oriented DBMSs do not use data compression. However, data compression does play a key role in achieving excellent performance.
 
-In addition to efficient general-purpose compression codecs with different trade-offs between disk space and CPU consumption, ClickHouse provides [specialized codecs](../sql-reference/statements/create.md#create-query-specialized-codecs) for specific kinds of data, which allow ClickHouse to compete with and outperform more niche databases, like time-series ones.
+In addition to efficient general-purpose compression codecs with different trade-offs between disk space and CPU consumption, ClickHouse provides [specialized codecs](../sql-reference/statements/create/table.md#create-query-specialized-codecs) for specific kinds of data, which allow ClickHouse to compete with and outperform more niche databases, like time-series ones.
 
 ## Disk Storage of Data {#disk-storage-of-data}
 
-Keeping data physically sorted by primary key makes it possible to extract data for its specific values or value ranges with low latency, less than a few dozen milliseconds. Some column-oriented DBMSs (such as SAP HANA and Google PowerDrill) can only work in RAM. This approach encourages the allocation of a larger hardware budget than is necessary for real-time analysis. 
+Keeping data physically sorted by primary key makes it possible to extract data for its specific values or value ranges with low latency, less than a few dozen milliseconds. Some column-oriented DBMSs (such as SAP HANA and Google PowerDrill) can only work in RAM. This approach encourages the allocation of a larger hardware budget than is necessary for real-time analysis.
 
 ClickHouse is designed to work on regular hard drives, which means the cost per GB of data storage is low, but SSD and additional RAM are also fully used if available.
 
@@ -57,11 +57,11 @@ Having a data physically sorted by primary key makes it possible to extract data
 
 ## Secondary Indexes {#secondary-indexes}
 
-Unlike other database management systems, secondary indexes in ClickHouse does not point to specific rows or row ranges. Instead, they allow the database to know in advance that all rows in some data parts wouldn't match the query filtering conditions and do not read them at all, thus they are called [data skipping indexes](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes).
+Unlike other database management systems, secondary indexes in ClickHouse does not point to specific rows or row ranges. Instead, they allow the database to know in advance that all rows in some data parts wouldn’t match the query filtering conditions and do not read them at all, thus they are called [data skipping indexes](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes).
 
 ## Suitable for Online Queries {#suitable-for-online-queries}
 
-Most OLAP database management systems don't aim for online queries with sub-second latencies. In alternative systems, report building time of tens of seconds or even minutes is often considered acceptable. Sometimes it takes even more which forces to prepare reports offline (in advance or by responding with "come back later").
+Most OLAP database management systems don’t aim for online queries with sub-second latencies. In alternative systems, report building time of tens of seconds or even minutes is often considered acceptable. Sometimes it takes even more which forces to prepare reports offline (in advance or by responding with “come back later”).
 
 In ClickHouse low latency means that queries can be processed without delay and without trying to prepare an answer in advance, right at the same moment while the user interface page is loading. In other words, online.
 
@@ -73,9 +73,9 @@ ClickHouse provides various ways to trade accuracy for performance:
 2.  Running a query based on a part (sample) of data and getting an approximated result. In this case, proportionally less data is retrieved from the disk.
 3.  Running an aggregation for a limited number of random keys, instead of for all keys. Under certain conditions for key distribution in the data, this provides a reasonably accurate result while using fewer resources.
 
-## Adaptive Join Algorithm
+## Adaptive Join Algorithm {#adaptive-join-algorithm}
 
-ClickHouse adaptively chooses how to [JOIN](../sql-reference/statements/select/join.md) multiple tables, by preferring hash-join algorithm and falling back to the merge-join algorithm if there's more than one large table.
+ClickHouse adaptively chooses how to [JOIN](../sql-reference/statements/select/join.md) multiple tables, by preferring hash-join algorithm and falling back to the merge-join algorithm if there’s more than one large table.
 
 ## Data Replication and Data Integrity Support {#data-replication-and-data-integrity-support}
 
@@ -83,9 +83,9 @@ ClickHouse uses asynchronous multi-master replication. After being written to an
 
 For more information, see the section [Data replication](../engines/table-engines/mergetree-family/replication.md).
 
-## Role-Based Access Control
+## Role-Based Access Control {#role-based-access-control}
 
-ClickHouse implements user account management using SQL queries and allows for [role-based access control configuration](../operations/access-rights.md) similar to what can be found in ANSI SQL standard and popular relational database management systems. 
+ClickHouse implements user account management using SQL queries and allows for [role-based access control configuration](../operations/access-rights.md) similar to what can be found in ANSI SQL standard and popular relational database management systems.
 
 ## Features that Can Be Considered Disadvantages {#clickhouse-features-that-can-be-considered-disadvantages}
 

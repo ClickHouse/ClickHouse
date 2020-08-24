@@ -17,6 +17,7 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
+    getResource.cpp
 )
 
 if (ENABLE_REPLXX)
@@ -77,10 +78,8 @@ target_link_libraries (common
         Poco::Util
         Poco::Foundation
         replxx
-        fmt
-
-    PRIVATE
         cctz
+        fmt
 )
 
 if (ENABLE_TESTS)

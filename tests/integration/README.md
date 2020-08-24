@@ -25,12 +25,13 @@ To check, that you have access to Docker, run `docker ps`.
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
 By default tests are run with system-wide client binary, server binary and base configs. To change that,
-set the following environment variables:
+set the following environment variables:`
 * `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
   `users.xml`) are taken.
 
+For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
 ### Running with runner script
 

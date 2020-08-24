@@ -152,8 +152,16 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
                 if (!table)
                     continue;
 
-                if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
+                if (!access->isGranted(getRequiredAccessType(action_type), elem.first, iterator->name()))
+                {
+                    LOG_INFO(
+                        log,
+                        "Access {} denied, skipping {}.{}",
+                        toString(getRequiredAccessType(action_type)),
+                        elem.first,
+                        iterator->name());
                     continue;
+                }
 
                 if (start)
                     manager->remove(table, action_type);
@@ -225,7 +233,8 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
         case Type::RELOAD_DICTIONARY:
             context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
+            system_context.getExternalDictionariesLoader().loadOrReload(
+                    DatabaseCatalog::instance().resolveDictionaryName(query.target_dictionary));
             ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_DICTIONARIES:
@@ -384,7 +393,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
             if (auto table = iterator->table())
             {
                 if (dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
-                    replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
+                    replica_names.emplace_back(StorageID{iterator->databaseName(), iterator->name()});
             }
         }
     }

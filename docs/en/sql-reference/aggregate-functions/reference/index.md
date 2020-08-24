@@ -1,10 +1,10 @@
 ---
-toc_priority: 36
-toc_title: Reference
 toc_folder_title: Reference
+toc_priority: 36
+toc_hidden: true
 ---
 
-# Aggregate Function Reference {#aggregate-functions-reference}
+# List of Aggregate Functions {#aggregate-functions-reference}
 
 Standard aggregate functions:
 
@@ -28,7 +28,7 @@ ClickHouse-specific aggregate functions:
 -   [argMin](../../../sql-reference/aggregate-functions/reference/argmin.md)
 -   [argMax](../../../sql-reference/aggregate-functions/reference/argmax.md)
 -   [avgWeighted](../../../sql-reference/aggregate-functions/reference/avgweighted.md)
--   [topK](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
+-   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 -   [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [groupArray](../../../sql-reference/aggregate-functions/reference/grouparray.md)
 -   [groupUniqArray](../../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
@@ -69,7 +69,6 @@ ClickHouse-specific aggregate functions:
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
-
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

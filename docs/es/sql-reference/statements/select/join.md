@@ -12,7 +12,7 @@ Sintaxis:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -34,14 +34,10 @@ Tipos de unión adicionales disponibles en ClickHouse:
 
 -   `LEFT SEMI JOIN` y `RIGHT SEMI JOIN`, una lista blanca en “join keys”, sin producir un producto cartesiano.
 -   `LEFT ANTI JOIN` y `RIGHT ANTI JOIN`, una lista negra sobre “join keys”, sin producir un producto cartesiano.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
+-   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Rigor {#select-join-strictness}
-
-Modifica cómo coincidir por “join keys” se realiza
-
--   `ALL` — The standard `JOIN` comportamiento en SQL como se describió anteriormente. Predeterminado.
--   `ANY` — Partially (for opposite side of `LEFT` y `RIGHT`) o completamente (para `INNER` y `FULL`) deshabilita el producto cartesiano para `JOIN` tipo.
--   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` el uso se describe a continuación.
+## Setting {#join-settings}
 
 !!! note "Nota"
     El valor de rigor predeterminado se puede anular usando [Por favor, introduzca su dirección de correo electrónico](../../../operations/settings/settings.md#settings-join_default_strictness) configuración.

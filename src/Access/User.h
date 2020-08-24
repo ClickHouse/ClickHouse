@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Access/AccessRights.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
-#include <Access/GrantedAccess.h>
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/SettingsProfileElement.h>
@@ -17,7 +17,7 @@ struct User : public IAccessEntity
 {
     Authentication authentication;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
-    GrantedAccess access;
+    AccessRights access;
     GrantedRoles granted_roles;
     RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};
     SettingsProfileElements settings;

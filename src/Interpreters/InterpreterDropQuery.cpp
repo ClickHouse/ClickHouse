@@ -243,6 +243,9 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 }
             }
 
+            /// Protects from concurrent CREATE TABLE queries
+            auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+
             auto * database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
             if (!drop && database_atomic)
                 database_atomic->assertCanBeDetached(true);

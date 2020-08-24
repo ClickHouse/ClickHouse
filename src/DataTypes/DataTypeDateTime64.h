@@ -57,12 +57,12 @@ public:
  * * DateTime64 value and scale factor.
  *
  * Suitable Transfotm-types are commonly used in Date/DateTime manipulation functions,
- * and should implement static (or const) fucntion with following signatures:
+ * and should implement static (or const) function with following signatures:
  *      R execute(UInt32 whole_value, ... , const TimeZoneImpl &)
  * OR
  *      R execute(DateTime64 value, Int64 scale_factor, ... , const TimeZoneImpl &)
  *
- * Wehere R and T could be arbitrary types.
+ * Where R and T could be arbitrary types.
 */
 template <typename Transform>
 class TransformDateTime64 : public Transform

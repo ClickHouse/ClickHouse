@@ -6,8 +6,8 @@
 #include <cstring>
 #include <algorithm>
 #include <sstream>
-#include <iostream>
 #include <functional>
+#include <filesystem>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -15,6 +15,8 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/Exception.h>
+#include <common/getResource.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -23,6 +25,11 @@ using namespace Poco::XML;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FILE_DOESNT_EXIST;
+}
 
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
@@ -441,9 +448,27 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
+    XMLDocumentPtr config;
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
-    XMLDocumentPtr config = dom_parser.parse(path);
+    if (std::filesystem::exists(path))
+    {
+        config = dom_parser.parse(path);
+    }
+    else
+    {
+        /// When we can use config embedded in binary.
+        if (path == "config.xml")
+        {
+            auto resource = getResource("embedded.xml");
+            if (resource.empty())
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
+            LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
+            config = dom_parser.parseMemory(resource.data(), resource.size());
+        }
+        else
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
+    }
 
     std::vector<std::string> contributing_files;
     contributing_files.push_back(path);

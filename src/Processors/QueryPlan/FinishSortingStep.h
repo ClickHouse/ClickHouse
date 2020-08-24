@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Finish sorting of pre-sorted data. See FinishSortingTransform.
 class FinishSortingStep : public ITransformingStep
 {
 public:
@@ -18,6 +19,11 @@ public:
     String getName() const override { return "FinishSorting"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
+
+    /// Add limit or change it to lower value.
+    void updateLimit(size_t limit_);
 
 private:
     SortDescription prefix_description;

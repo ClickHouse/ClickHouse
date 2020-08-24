@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_CLOSE_FILE;
+    extern const int CANNOT_TRUNCATE_FILE;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -263,6 +264,13 @@ Poco::Timestamp DiskLocal::getLastModified(const String & path)
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
     DB::createHardLink(disk_path + src_path, disk_path + dst_path);
+}
+
+void DiskLocal::truncateFile(const String & path, size_t size)
+{
+    int res = truncate((disk_path + path).c_str(), size);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void DiskLocal::createFile(const String & path)

@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -61,7 +62,8 @@ static void likeStringToBloomFilter(
         bloom_filter.add(token.c_str(), token.size());
 }
 /// Unified condition for equals, startsWith and endsWith
-bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor)
+bool MergeTreeConditionFullText::createFunctionEqualsCondition(
+    RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor)
 {
     out.function = RPNElement::FUNCTION_EQUALS;
     out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -640,7 +642,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 
     while (*pos < len)
     {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calcualted mask
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
         // NOTE: we assume that `data` string is padded from the right with 15 bytes.
         const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
         const size_t haystack_length = 16;
@@ -661,7 +663,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
         const auto zero  =             _mm_set1_epi8(0);
 
-        // every bit represents if `haystack` character `c` statisfies condition:
+        // every bit represents if `haystack` character `c` satisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
         // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
         const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
@@ -774,12 +776,10 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     if (index.type == NgramTokenExtractor::getName())
     {
         size_t n = index.arguments[0].get<size_t>();
-        BloomFilterParameters params
-        {
-            .filter_size = index.arguments[1].get<size_t>(),
-            .filter_hashes = index.arguments[2].get<size_t>(),
-            .seed = index.arguments[3].get<size_t>(),
-        };
+        BloomFilterParameters params(
+            index.arguments[1].get<size_t>(),
+            index.arguments[2].get<size_t>(),
+            index.arguments[3].get<size_t>());
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
@@ -787,12 +787,10 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     }
     else if (index.type == SplitTokenExtractor::getName())
     {
-        BloomFilterParameters params
-        {
-            .filter_size = index.arguments[0].get<size_t>(),
-            .filter_hashes = index.arguments[1].get<size_t>(),
-            .seed = index.arguments[2].get<size_t>(),
-        };
+        BloomFilterParameters params(
+            index.arguments[0].get<size_t>(),
+            index.arguments[1].get<size_t>(),
+            index.arguments[2].get<size_t>());
 
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
 
@@ -826,6 +824,18 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
     }
+
+    assert(index.arguments.size() >= 3);
+
+    for (const auto & arg : index.arguments)
+        if (arg.getType() != Field::Types::UInt64)
+            throw Exception("All parameters to *bf_v1 index must be unsigned integers", ErrorCodes::BAD_ARGUMENTS);
+
+    /// Just validate
+    BloomFilterParameters params(
+        index.arguments[0].get<size_t>(),
+        index.arguments[1].get<size_t>(),
+        index.arguments[2].get<size_t>());
 }
 
 }

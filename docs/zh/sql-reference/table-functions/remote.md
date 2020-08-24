@@ -14,6 +14,8 @@ toc_title: "\u8FDC\u7A0B"
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`，或者只是 `host`. 主机可以指定为服务器名称，也可以指定为IPv4或IPv6地址。 IPv6地址在方括号中指定。 端口是远程服务器上的TCP端口。 如果省略端口，它使用 `tcp_port` 从服务器的配置文件（默认情况下，9000）。

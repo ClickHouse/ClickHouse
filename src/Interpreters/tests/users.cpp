@@ -218,7 +218,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
 
         try
         {
-            res = acl_manager.read<DB::User>(entry.user_name)->access.access.isGranted(DB::AccessType::ALL, entry.database_name);
+            res = acl_manager.read<DB::User>(entry.user_name)->access.isGranted(DB::AccessType::ALL, entry.database_name);
         }
         catch (const Poco::Exception &)
         {

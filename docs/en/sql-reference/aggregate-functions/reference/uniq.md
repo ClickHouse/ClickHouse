@@ -34,7 +34,7 @@ We recommend using this function in almost all scenarios.
 
 **See Also**
 
--   [uniqCombined](uniqcombined.md#agg_function-uniqcombined)
--   [uniqCombined64](uniqcombined64.md#agg_function-uniqcombined64)
--   [uniqHLL12](uniqhll12.md#agg_function-uniqhll12)
--   [uniqExact](uniqexact.md#agg_function-uniqexact)
+-   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+-   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)

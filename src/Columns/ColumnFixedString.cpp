@@ -124,6 +124,12 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
+void ColumnFixedString::updateHashFast(SipHash & hash) const
+{
+    hash.update(n);
+    hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
+}
+
 template <bool positive>
 struct ColumnFixedString::less
 {
@@ -183,7 +189,7 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
-            if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n) != 0)
+            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -204,7 +210,7 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
-            if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n)  != 0)
+            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -215,7 +221,7 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         auto new_last = limit;
         for (auto j = limit; j < last; ++j)
         {
-            if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n)  == 0)
+            if (memcmpSmallAllowOverflow15(chars.data() + res[j] * n, chars.data() + res[new_first] * n, n)  == 0)
             {
                 std::swap(res[new_last], res[j]);
                 ++new_last;

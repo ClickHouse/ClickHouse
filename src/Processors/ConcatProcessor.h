@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Has arbitary non zero number of inputs and one output.
+/** Has arbitrary non zero number of inputs and one output.
   * All of them have the same structure.
   *
   * Pulls all data from first input, then all data from second input, etc...

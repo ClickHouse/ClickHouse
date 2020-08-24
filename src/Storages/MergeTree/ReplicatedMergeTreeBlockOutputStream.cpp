@@ -250,6 +250,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     log_entry.new_part_name = part_name;
     log_entry.quorum = quorum;
     log_entry.block_id = block_id;
+    log_entry.new_part_type = part->getType();
 
     /// Simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
 

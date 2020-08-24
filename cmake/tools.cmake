@@ -22,7 +22,7 @@ elseif (COMPILER_CLANG)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "AppleClang compiler version must be at least ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
         elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0.0)
-            # char8_t is available staring (upstream vanilla) Clang 7, but prior to Clang 8,
+            # char8_t is available starting (upstream vanilla) Clang 7, but prior to Clang 8,
             # it is not enabled by -std=c++20 and can be enabled with an explicit -fchar8_t.
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fchar8_t")
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")

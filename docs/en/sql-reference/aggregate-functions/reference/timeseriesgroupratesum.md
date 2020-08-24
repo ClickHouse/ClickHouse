@@ -6,7 +6,7 @@ toc_priority: 171
 
 Syntax: `timeSeriesGroupRateSum(uid, ts, val)`
 
-Similarly to [timeSeriesGroupSum](timeseriesgroupsum.md), `timeSeriesGroupRateSum` calculates the rate of time-series and then sum rates together.
+Similarly to [timeSeriesGroupSum](../../../sql-reference/aggregate-functions/reference/timeseriesgroupsum.md), `timeSeriesGroupRateSum` calculates the rate of time-series and then sum rates together.
 Also, timestamp should be in ascend order before use this function.
 
 Applying this function to the data from the `timeSeriesGroupSum` example, you get the following result:

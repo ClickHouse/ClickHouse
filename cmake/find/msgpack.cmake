@@ -1,3 +1,7 @@
+option (ENABLE_MSGPACK "Enable msgpack library" ${ENABLE_LIBRARIES})
+
+if (ENABLE_MSGPACK)
+
 option (USE_INTERNAL_MSGPACK_LIBRARY "Set to FALSE to use system msgpack library instead of bundled" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_MSGPACK_LIBRARY)
@@ -14,4 +18,10 @@ else()
     find_path(MSGPACK_INCLUDE_DIR NAMES msgpack.hpp PATHS ${MSGPACK_INCLUDE_PATHS})
 endif()
 
-message(STATUS "Using msgpack: ${MSGPACK_INCLUDE_DIR}")
+if (MSGPACK_INCLUDE_DIR)
+    set(USE_MSGPACK 1)
+endif()
+
+endif()
+
+message(STATUS "Using msgpack=${USE_MSGPACK}: ${MSGPACK_INCLUDE_DIR}")
