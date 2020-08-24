@@ -474,25 +474,28 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             bool log_queries = settings.log_queries && !internal;
 
             /// Log into system table start of query execution, if need.
-            if (log_queries && elem.type >= settings.log_queries_min_type)
+            if (log_queries)
             {
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
-                if (auto query_log = context.getQueryLog())
-                    query_log->add(elem);
+                if (elem.type >= settings.log_queries_min_type)
+                {
+                    if (auto query_log = context.getQueryLog())
+                        query_log->add(elem);
+                }
             }
 
             /// Common code for finish and exception callbacks
-            auto status_info_to_query_log = [ast](QueryLogElement &element, const QueryStatusInfo &info) mutable
+            auto status_info_to_query_log = [](QueryLogElement &element, const QueryStatusInfo &info, const ASTPtr query_ast) mutable
             {
                 DB::UInt64 query_time = info.elapsed_seconds * 1000000;
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
-                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
                 {
                     ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, query_time);
                 }
-                else if (ast->as<ASTInsertQuery>())
+                else if (query_ast->as<ASTInsertQuery>())
                 {
                     ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, query_time);
                 }
@@ -532,7 +535,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.event_time = time(nullptr);
 
-                status_info_to_query_log(elem, info);
+                status_info_to_query_log(elem, info, ast);
 
                 auto progress_callback = context.getProgressCallback();
 
@@ -605,7 +608,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (process_list_elem)
                 {
                     QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
-                    status_info_to_query_log(elem, info);
+                    status_info_to_query_log(elem, info, ast);
                 }
 
                 if (current_settings.calculate_text_stack_trace)

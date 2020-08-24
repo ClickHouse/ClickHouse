@@ -6,6 +6,9 @@
 
 #include <Storages/StorageMaterializeMySQL.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -41,6 +44,7 @@ Pipe StorageMaterializeMySQL::read(
     database->rethrowExceptionIfNeed();
 
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
+    auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
     Block nested_header = nested_metadata->getSampleBlock();
@@ -85,7 +89,10 @@ Pipe StorageMaterializeMySQL::read(
         auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
         ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
 
-        pipe.addTransform(std::make_shared<FilterTransform>(pipe.getHeader(), expression_actions, filter_column_name, false));
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(header, expression_actions, filter_column_name, false);
+        });
     }
 
     return pipe;

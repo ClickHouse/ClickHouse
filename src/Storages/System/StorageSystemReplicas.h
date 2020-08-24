@@ -28,7 +28,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemReplicas(const std::string & name_);
+    StorageSystemReplicas(const StorageID & table_id_);
 };
 
 }

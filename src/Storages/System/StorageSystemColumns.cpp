@@ -23,8 +23,8 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-StorageSystemColumns::StorageSystemColumns(const std::string & name_)
-    : IStorage({"system", name_})
+StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(

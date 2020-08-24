@@ -98,10 +98,8 @@ SRCS(
     UTF8Helpers.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
-    ZooKeeper/Lock.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/ZooKeeper.cpp
-    ZooKeeper/ZooKeeperHolder.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
 

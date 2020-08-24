@@ -17,6 +17,7 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
+    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
