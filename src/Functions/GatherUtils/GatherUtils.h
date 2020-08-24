@@ -57,7 +57,6 @@ void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType searc
 void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 
 void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column);
-
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size);
 
 }

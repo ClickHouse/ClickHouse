@@ -5,7 +5,7 @@
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
-#include <Core/MySQLClient.h>
+#include <Core/MySQL/MySQLClient.h>
 #include <Databases/IDatabase.h>
 #include <Databases/MySQL/MaterializeMySQLSettings.h>
 #include <Databases/MySQL/MaterializeMySQLSyncThread.h>

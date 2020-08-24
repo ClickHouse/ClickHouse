@@ -176,7 +176,7 @@ Ana ClickHouse kodu (bu `dbms` dizin) ile inşa edilmiştir `-Wall -Wextra -Werr
 
 Clang daha yararlı uyarılar vardır-Sen ile onları arayabilirsiniz `-Weverything` ve varsayılan oluşturmak için bir şey seçin.
 
-Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken, `libc++` yerine kullanılır `libstdc++` ve hata ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
+Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
 
 ## Dezenfektanlar {#sanitizers}
 

@@ -17,8 +17,8 @@ namespace ErrorCodes
 }
 
 
-StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & name_)
-        : IStorage({"system", name_})
+StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & table_id_)
+        : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(

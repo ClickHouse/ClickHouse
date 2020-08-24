@@ -258,8 +258,8 @@ Pipe StorageSystemPartsBase::read(
 }
 
 
-StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : IStorage(StorageID{"system", name_})
+StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_)
+    : IStorage(table_id_)
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 

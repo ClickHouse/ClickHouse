@@ -27,7 +27,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemColumns(const std::string & name_);
+    StorageSystemColumns(const StorageID & table_id_);
 };
 
 }

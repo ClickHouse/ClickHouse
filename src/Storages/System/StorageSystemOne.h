@@ -31,7 +31,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemOne(const std::string & name_);
+    StorageSystemOne(const StorageID & table_id_);
 };
 
 }
