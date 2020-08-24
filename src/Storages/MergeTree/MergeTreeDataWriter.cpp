@@ -251,6 +251,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
+    std::optional<FileSyncGuard> sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
@@ -262,12 +263,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             new_data_part->volume->getDisk()->removeRecursive(full_path);
         }
 
-    const auto disk = new_data_part->volume->getDisk();
-    disk->createDirectories(full_path);
+        const auto disk = new_data_part->volume->getDisk();
+        disk->createDirectories(full_path);
 
-    std::optional<FileSyncGuard> sync_guard;
-    if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, full_path);
+        if (data.getSettings()->fsync_part_directory)
+            sync_guard.emplace(disk, full_path);
+    }
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
