@@ -51,7 +51,7 @@ struct ComparePairSecond final
 };
 
 template <typename X = Float64, typename Y = Float64>
-struct AggregateFunctionRankCorrData final
+struct AggregateFunctionRankCorrelationSpearmanData final
 {
     size_t size_x = 0;
 
@@ -61,37 +61,29 @@ struct AggregateFunctionRankCorrData final
     Array values;
 };
 
-template <typename X = Float64, typename Y = Float64>
-class AggregateFunctionRankCorr : public
-                                         IAggregateFunctionDataHelper<
-                                             AggregateFunctionRankCorrData<X, Y>,
-                                             AggregateFunctionRankCorr<X, Y>
-                                         >
+template <typename X, typename Y>
+class AggregateFunctionRankCorrelationSpearman :
+    public IAggregateFunctionDataHelper<AggregateFunctionRankCorrelationSpearmanData<X, Y>, AggregateFunctionRankCorrelationSpearman<X, Y>>
 {
-    using Data = AggregateFunctionRankCorrData<X, Y>;
+    using Data = AggregateFunctionRankCorrelationSpearmanData<X, Y>;
     using Allocator = MixedAlignedArenaAllocator<alignof(std::pair<Float64, Float64>), 4096>;
     using Array = PODArray<std::pair<Float64, Float64>, 32, Allocator>;
 
 public:
-    AggregateFunctionRankCorr(
-        const DataTypes & arguments
-    ):
-        IAggregateFunctionDataHelper<
-            AggregateFunctionRankCorrData<X, Y>,
-            AggregateFunctionRankCorr<X, Y>
-        > ({arguments}, {})
+    explicit AggregateFunctionRankCorrelationSpearman(const DataTypes & arguments)
+        :IAggregateFunctionDataHelper<AggregateFunctionRankCorrelationSpearmanData<X, Y>,AggregateFunctionRankCorrelationSpearman<X, Y>> ({arguments}, {})
     {
         // notice: arguments has been in factory
     }
 
     String getName() const override
     {
-        return "RankCorr";
+        return "rankCorrelationSpearman";
     }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNumber<Int8>>();
+        return std::make_shared<DataTypeNumber<Float64>>();
     }
 
     void insert(Data & a, const std::pair<X, Y> & x, Arena * arena) const
@@ -100,12 +92,7 @@ public:
         a.values.push_back(x, arena);
     }
 
-    void add(
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        size_t row_num,
-        Arena * arena
-    ) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & a = this->data(place);
 
@@ -119,11 +106,7 @@ public:
         a.values.push_back(new_arg, arena);
     }
 
-    void merge(
-        AggregateDataPtr place,
-        ConstAggregateDataPtr rhs,
-        Arena * arena
-    ) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
         auto & b = this->data(rhs);
@@ -135,10 +118,7 @@ public:
         }
     }
 
-    void serialize(
-        ConstAggregateDataPtr place,
-        WriteBuffer & buf
-    ) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         const auto & value = this->data(place).values;
         size_t size = this->data(place).size_x;
@@ -146,11 +126,7 @@ public:
         buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void deserialize(
-        AggregateDataPtr place,
-        ReadBuffer & buf,
-        Arena * arena
-    ) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -161,10 +137,7 @@ public:
         buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void insertResultInto(
-        AggregateDataPtr place,
-        IColumn & to
-    ) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * /*arena*/) const override
     {
         const auto & value = this->data(place).values;
         size_t size = this->data(place).size_x;
@@ -256,30 +229,20 @@ public:
         }
 
         //count d^2 sum
-        Float64 answ = static_cast<Float64>(0);
+        Float64 answer = static_cast<Float64>(0);
         for (size_t j = 0; j < size; ++ j)
         {
-            answ += (tmp_values[j].first - tmp_values[j].second) * (tmp_values[j].first - tmp_values[j].second);
+            answer += (tmp_values[j].first - tmp_values[j].second) * (tmp_values[j].first - tmp_values[j].second);
         }
 
-        answ *= 6;
-        answ /= size * (size * size - 1);
+        answer *= 6;
+        answer /= size * (size * size - 1);
 
-        answ = 1 - answ;
+        answer = 1 - answer;
 
-        auto & column = static_cast<ColumnVector<Int8> &>(to);
-        if (answ > 0)
-        {
-            column.getData().push_back(static_cast<Int8>(1));
-        }
-        else if (answ < 0)
-        {
-            column.getData().push_back(static_cast<Int8>(-1));
-        }
-        else
-        {
-            column.getData().push_back(static_cast<Int8>(0));
-        }
+        auto & column = static_cast<ColumnVector<Float64> &>(to);
+        column.getData().push_back(answer);
+        std::cout << "AAAA" << std::endl;
     }
 
 };
