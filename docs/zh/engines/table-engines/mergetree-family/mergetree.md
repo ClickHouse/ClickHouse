@@ -60,7 +60,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
 -   `PARTITION BY` — [分区键](custom-partitioning-key.md) 。
 
-     要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table_engines/mergetree_family/mergetree.md) 类型的列。分区名的格式会是 `"YYYYMM"` 。
+     要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table-engines/mergetree-family/mergetree.md) 类型的列。分区名的格式会是 `"YYYYMM"` 。
 
 -   `PRIMARY KEY` - 主键，如果要设成 [跟排序键不相同](#xuan-ze-gen-pai-xu-jian-bu-yi-yang-zhu-jian)，可选。
 
