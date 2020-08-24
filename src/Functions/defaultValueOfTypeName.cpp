@@ -38,7 +38,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
+        const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
         if (!col_type_const || !isString(arguments.front().type))
             throw Exception("The argument of function " + getName() + " must be a constant string describing type. "
                     "Instead there is a column with the following structure: " + arguments.front().column->dumpStructure(),
