@@ -697,7 +697,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     uint8_t magic;
     uint32_t schema_id;
 
-    try 
+    try
     {
         readBinaryBigEndian(magic, in);
         readBinaryBigEndian(schema_id, in);
