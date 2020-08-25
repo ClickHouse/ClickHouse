@@ -6,7 +6,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_EXCEPTION;
+    extern const int LOGICAL_ERROR;
 }
 
 void GTIDSet::tryMerge(size_t i)
@@ -57,7 +57,7 @@ void GTIDSets::parse(const String gtid_format)
                     break;
                 }
                 default:
-                    throw Exception("GTIDParse: Invalid GTID interval: " + server_ids[k], ErrorCodes::UNKNOWN_EXCEPTION);
+                    throw Exception("GTIDParse: Invalid GTID interval: " + server_ids[k], ErrorCodes::LOGICAL_ERROR);
             }
             set.intervals.emplace_back(val);
         }
@@ -73,14 +73,14 @@ void GTIDSets::update(const GTID & other)
         {
             for (auto i = 0U; i < set.intervals.size(); i++)
             {
-                auto current = set.intervals[i];
+                auto & current = set.intervals[i];
 
                 /// Already Contained.
                 if (other.seq_no >= current.start && other.seq_no < current.end)
                 {
                     throw Exception(
                         "GTIDSets updates other: " + std::to_string(other.seq_no) + " invalid successor to " + std::to_string(current.end),
-                        ErrorCodes::UNKNOWN_EXCEPTION);
+                        ErrorCodes::LOGICAL_ERROR);
                 }
 
                 /// Sequence, extend the interval.
@@ -158,6 +158,7 @@ String GTIDSets::toPayload() const
 
     for (const auto & set : sets)
     {
+        // Write as Big-Endian.
         writeBinaryBigEndian(set.uuid.toUnderType().high, buffer);
         writeBinaryBigEndian(set.uuid.toUnderType().low, buffer);
 
