@@ -36,7 +36,7 @@ void GTIDSets::parse(const String gtid_format)
         boost::split(server_ids, gset, [](char c) { return c == ':'; });
 
         GTIDSet set;
-        parseUUID(reinterpret_cast<const UInt8 *>(server_ids[0].data()), set.uuid);
+        set.uuid = stringToUUID(server_ids[0].data());
 
         for (size_t k = 1; k < server_ids.size(); k++)
         {
@@ -69,7 +69,7 @@ void GTIDSets::update(const GTID & other)
 {
     for (GTIDSet & set : sets)
     {
-        if (std::equal(std::begin(set.uuid), std::end(set.uuid), std::begin(other.uuid)))
+        if (set.uuid == other.uuid)
         {
             for (auto i = 0U; i < set.intervals.size(); i++)
             {
@@ -108,8 +108,8 @@ void GTIDSets::update(const GTID & other)
     }
 
     GTIDSet set;
-    memcpy(set.uuid, other.uuid, 16);
     GTIDSet::Interval interval{other.seq_no, other.seq_no + 1};
+    set.uuid = other.uuid;
     set.intervals.emplace_back(interval);
     sets.emplace_back(set);
 }
@@ -121,11 +121,7 @@ String GTIDSets::toString() const
     for (size_t i = 0; i < sets.size(); i++)
     {
         GTIDSet set = sets[i];
-
-        String dst36;
-        dst36.resize(36);
-        formatUUID(set.uuid, reinterpret_cast<UInt8 *>(dst36.data()));
-        writeString(dst36, buffer);
+        writeUUIDText(set.uuid, buffer);
 
         for (const auto & interval : set.intervals)
         {
@@ -162,7 +158,8 @@ String GTIDSets::toPayload() const
 
     for (const auto & set : sets)
     {
-        buffer.write(reinterpret_cast<const char *>(set.uuid), sizeof(set.uuid));
+        writeBinaryBigEndian(set.uuid.toUnderType().high, buffer);
+        writeBinaryBigEndian(set.uuid.toUnderType().low, buffer);
 
         UInt64 intervals_size = set.intervals.size();
         buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);
