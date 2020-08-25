@@ -55,10 +55,9 @@ Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_nam
 {
     Tables tables;
     auto load_results = global_context.getExternalDictionariesLoader().getLoadResults(filter_by_name);
-    String db_name = getDatabaseName();
     for (auto & load_result : load_results)
     {
-        auto storage = createStorageDictionary(db_name, load_result);
+        auto storage = createStorageDictionary(getDatabaseName(), load_result);
         if (storage)
             tables.emplace(storage->getStorageID().table_name, storage);
     }
@@ -78,7 +77,7 @@ StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, const Cont
 
 DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
 {
-    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name));
 }
 
 bool DatabaseDictionary::empty() const
@@ -101,7 +100,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, co
         }
 
         auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
-        buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
+        buffer << "CREATE TABLE " << backQuoteIfNeed(database_name) << '.' << backQuoteIfNeed(table_name) << " (";
         buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types);
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
@@ -124,7 +123,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     String query;
     {
         WriteBufferFromString buffer(query);
-        buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
+        buffer << "CREATE DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
     }
     auto settings = global_context.getSettingsRef();
     ParserCreateQuery parser;

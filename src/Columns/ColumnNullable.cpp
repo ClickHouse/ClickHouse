@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
@@ -63,12 +64,6 @@ void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
             hash_data[row] = old_hash_data[row];
 }
 
-void ColumnNullable::updateHashFast(SipHash & hash) const
-{
-    null_map->updateHashFast(hash);
-    nested_column->updateHashFast(hash);
-}
-
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
     MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
@@ -102,6 +97,11 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
+}
+
+StringRef ColumnNullable::getDataAt(size_t /*n*/) const
+{
+    throw Exception{"Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
 }
 
 void ColumnNullable::insertData(const char * pos, size_t length)

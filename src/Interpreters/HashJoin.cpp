@@ -33,12 +33,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
-    extern const int SYNTAX_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
 }
@@ -121,8 +121,81 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
+static void changeNullability(MutableColumnPtr & mutable_column)
+{
+    ColumnPtr column = std::move(mutable_column);
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        column = nullable->getNestedColumnPtr();
+    else
+        column = makeNullable(column);
 
-HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
+    mutable_column = IColumn::mutate(std::move(column));
+}
+
+static ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
+{
+    if (column->isNullable())
+        return checkAndGetColumn<ColumnNullable>(*column)->getNestedColumnPtr()->cloneEmpty();
+    return column->cloneEmpty();
+}
+
+static ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_sample)
+{
+    if (dst_sample->lowCardinality())
+    {
+        MutableColumnPtr lc = dst_sample->cloneEmpty();
+        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column, 0, column->size());
+        return lc;
+    }
+
+    return column->convertToFullColumnIfLowCardinality();
+}
+
+/// Change both column nullability and low cardinality
+static void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_column)
+{
+    bool nullable_src = src_column->isNullable();
+    bool nullable_dst = dst_column->isNullable();
+
+    ColumnPtr dst_not_null = emptyNotNullableClone(dst_column);
+    bool lowcard_src = emptyNotNullableClone(src_column)->lowCardinality();
+    bool lowcard_dst = dst_not_null->lowCardinality();
+    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
+
+    if (nullable_src && !nullable_dst)
+    {
+        const auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column);
+        if (change_lowcard)
+            dst_column = changeLowCardinality(nullable->getNestedColumnPtr(), dst_column);
+        else
+            dst_column = nullable->getNestedColumnPtr();
+    }
+    else if (!nullable_src && nullable_dst)
+    {
+        if (change_lowcard)
+            dst_column = makeNullable(changeLowCardinality(src_column, dst_not_null));
+        else
+            dst_column = makeNullable(src_column);
+    }
+    else /// same nullability
+    {
+        if (change_lowcard)
+        {
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column))
+            {
+                dst_column = makeNullable(changeLowCardinality(nullable->getNestedColumnPtr(), dst_not_null));
+                assert_cast<ColumnNullable &>(*dst_column->assumeMutable()).applyNullMap(nullable->getNullMapColumn());
+            }
+            else
+                dst_column = changeLowCardinality(src_column, dst_not_null);
+        }
+        else
+            dst_column = src_column;
+    }
+}
+
+
+HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -132,59 +205,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
-    LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
-
-    table_join->splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
-    required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
-
-    JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    initRightBlockStructure(data->sample_block);
-
-    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
-
-    JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
-    if (nullable_right_side)
-        JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
-
-    if (table_join->dictionary_reader)
-    {
-        data->type = Type::DICT;
-        std::get<MapsOne>(data->maps).create(Type::DICT);
-        chooseMethod(key_columns, key_sizes); /// init key_sizes
-    }
-    else if (strictness == ASTTableJoin::Strictness::Asof)
-    {
-        /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
-        /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
-        if (!isLeft(kind) && !isInner(kind))
-            throw Exception("Wrong ASOF JOIN type. Only ASOF and LEFT ASOF joins are supported", ErrorCodes::NOT_IMPLEMENTED);
-
-        if (key_columns.size() <= 1)
-            throw Exception("ASOF join needs at least one equi-join column", ErrorCodes::SYNTAX_ERROR);
-
-        if (right_table_keys.getByName(key_names_right.back()).type->isNullable())
-            throw Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
-
-        size_t asof_size;
-        asof_type = AsofRowRefs::getTypeSize(*key_columns.back(), asof_size);
-        key_columns.pop_back();
-
-        /// this is going to set up the appropriate hash table for the direct lookup part of the join
-        /// However, this does not depend on the size of the asof join key (as that goes into the BST)
-        /// Therefore, add it back in such that it can be extracted appropriately from the full stored
-        /// key_columns and key_sizes
-        init(chooseMethod(key_columns, key_sizes));
-        key_sizes.push_back(asof_size);
-    }
-    else
-    {
-        /// Choose data structure to use for JOIN.
-        init(chooseMethod(key_columns, key_sizes));
-    }
+    setSampleBlock(right_sample_block);
 }
+
 
 HashJoin::Type HashJoin::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
@@ -241,6 +266,11 @@ HashJoin::Type HashJoin::chooseMethod(const ColumnRawPtrs & key_columns, Sizes &
 
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
     return Type::hashed;
+}
+
+static const IColumn * extractAsofColumn(const ColumnRawPtrs & key_columns)
+{
+    return key_columns.back();
 }
 
 template<typename KeyGetter, bool is_asof_join>
@@ -389,6 +419,70 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+void HashJoin::setSampleBlock(const Block & block)
+{
+    /// You have to restore this lock if you call the function outside of ctor.
+    //std::unique_lock lock(rwlock);
+
+    LOG_DEBUG(log, "setSampleBlock: {}", block.dumpStructure());
+
+    if (!empty())
+        return;
+
+    JoinCommon::splitAdditionalColumns(block, key_names_right, right_table_keys, sample_block_with_columns_to_add);
+
+    initRequiredRightKeys();
+
+    JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    initRightBlockStructure(data->sample_block);
+
+    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
+
+    JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
+    if (nullable_right_side)
+        JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
+
+    if (table_join->dictionary_reader)
+    {
+        data->type = Type::DICT;
+        std::get<MapsOne>(data->maps).create(Type::DICT);
+        chooseMethod(key_columns, key_sizes); /// init key_sizes
+    }
+    else if (strictness == ASTTableJoin::Strictness::Asof)
+    {
+        if (kind != ASTTableJoin::Kind::Left and kind != ASTTableJoin::Kind::Inner)
+            throw Exception("ASOF only supports LEFT and INNER as base joins", ErrorCodes::NOT_IMPLEMENTED);
+
+        const IColumn * asof_column = key_columns.back();
+        size_t asof_size;
+
+        asof_type = AsofRowRefs::getTypeSize(asof_column, asof_size);
+        if (!asof_type)
+        {
+            std::string msg = "ASOF join not supported for type: ";
+            msg += asof_column->getFamilyName();
+            throw Exception(msg, ErrorCodes::BAD_TYPE_OF_FIELD);
+        }
+
+        key_columns.pop_back();
+
+        if (key_columns.empty())
+            throw Exception("ASOF join cannot be done without a joining column", ErrorCodes::LOGICAL_ERROR);
+
+        /// this is going to set up the appropriate hash table for the direct lookup part of the join
+        /// However, this does not depend on the size of the asof join key (as that goes into the BST)
+        /// Therefore, add it back in such that it can be extracted appropriately from the full stored
+        /// key_columns and key_sizes
+        init(chooseMethod(key_columns, key_sizes));
+        key_sizes.push_back(asof_size);
+    }
+    else
+    {
+        /// Choose data structure to use for JOIN.
+        init(chooseMethod(key_columns, key_sizes));
+    }
+}
+
 namespace
 {
     /// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
@@ -418,15 +512,14 @@ namespace
         }
 
         static ALWAYS_INLINE void insertAsof(HashJoin & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool,
-                                             const IColumn & asof_column)
+                                             const IColumn * asof_column)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
             typename Map::mapped_type * time_series_map = &emplace_result.getMapped();
 
-            TypeIndex asof_type = *join.getAsofType();
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) typename Map::mapped_type(asof_type);
-            time_series_map->insert(asof_type, asof_column, stored_block, i);
+                time_series_map = new (time_series_map) typename Map::mapped_type(join.getAsofType());
+            time_series_map->insert(join.getAsofType(), asof_column, stored_block, i);
         }
     };
 
@@ -442,7 +535,7 @@ namespace
 
         const IColumn * asof_column [[maybe_unused]] = nullptr;
         if constexpr (is_asof_join)
-            asof_column = key_columns.back();
+            asof_column = extractAsofColumn(key_columns);
 
         auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
@@ -452,7 +545,7 @@ namespace
                 continue;
 
             if constexpr (is_asof_join)
-                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, *asof_column);
+                Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, asof_column);
             else if constexpr (mapped_one)
                 Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
             else
@@ -482,7 +575,7 @@ namespace
         {
             case HashJoin::Type::EMPTY: break;
             case HashJoin::Type::CROSS: break; /// Do nothing. We have already saved block, and it is enough.
-            case HashJoin::Type::DICT:  break; /// No one should call it with Type::DICT.
+            case HashJoin::Type::DICT:  break; /// Noone should call it with Type::DICT.
 
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \
@@ -491,6 +584,25 @@ namespace
                     break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
+        }
+    }
+}
+
+void HashJoin::initRequiredRightKeys()
+{
+    const Names & left_keys = table_join->keyNamesLeft();
+    const Names & right_keys = table_join->keyNamesRight();
+    NameSet required_keys(table_join->requiredRightKeys().begin(), table_join->requiredRightKeys().end());
+
+    for (size_t i = 0; i < right_keys.size(); ++i)
+    {
+        const String & right_key_name = right_keys[i];
+
+        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
+        {
+            const auto & right_key = right_table_keys.getByName(right_key_name);
+            required_right_keys.insert(right_key);
+            required_right_keys_sources.push_back(left_keys[i]);
         }
     }
 }
@@ -605,22 +717,21 @@ class AddedColumns
 public:
     using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
 
-    AddedColumns(const Block & block_with_columns_to_add,
+    AddedColumns(const Block & sample_block_with_columns_to_add,
+                 const Block & block_with_columns_to_add,
                  const Block & block,
                  const Block & saved_block_sample,
-                 const HashJoin & join,
+                 const ColumnsWithTypeAndName & extras,
+                 const HashJoin & join_,
                  const ColumnRawPtrs & key_columns_,
-                 const Sizes & key_sizes_,
-                 bool is_asof_join)
-        : key_columns(key_columns_)
+                 const Sizes & key_sizes_)
+        : join(join_)
+        , key_columns(key_columns_)
         , key_sizes(key_sizes_)
         , rows_to_add(block.rows())
-        , asof_type(join.getAsofType())
-        , asof_inequality(join.getAsofInequality())
+        , need_filter(false)
     {
-        size_t num_columns_to_add = block_with_columns_to_add.columns();
-        if (is_asof_join)
-            ++num_columns_to_add;
+        size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
         columns.reserve(num_columns_to_add);
         type_name.reserve(num_columns_to_add);
@@ -633,12 +744,8 @@ public:
                 addColumn(src_column);
         }
 
-        if (is_asof_join)
-        {
-            const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
-            addColumn(right_asof_column);
-            left_asof_key = key_columns.back();
-        }
+        for (const auto & extra : extras)
+            addColumn(extra);
 
         for (auto & tn : type_name)
             right_indexes.push_back(saved_block_sample.getPositionByName(tn.second));
@@ -676,25 +783,18 @@ public:
         }
     }
 
-    TypeIndex asofType() const { return *asof_type; }
-    ASOF::Inequality asofInequality() const { return asof_inequality; }
-    const IColumn & leftAsofKey() const { return *left_asof_key; }
-
+    const HashJoin & join;
     const ColumnRawPtrs & key_columns;
     const Sizes & key_sizes;
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
-    bool need_filter = false;
+    bool need_filter;
 
 private:
     TypeAndNames type_name;
     MutableColumns columns;
     std::vector<size_t> right_indexes;
     size_t lazy_defaults_count = 0;
-    /// for ASOF
-    std::optional<TypeIndex> asof_type;
-    ASOF::Inequality asof_inequality;
-    const IColumn * left_asof_key = nullptr;
 
     void addColumn(const ColumnWithTypeAndName & src_column)
     {
@@ -763,6 +863,10 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
     if constexpr (need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
+    const IColumn * asof_column [[maybe_unused]] = nullptr;
+    if constexpr (is_asof_join)
+        asof_column = extractAsofColumn(added_columns.key_columns);
+
     auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(added_columns.key_columns, added_columns.key_sizes);
 
     IColumn::Offset current_offset = 0;
@@ -789,11 +893,8 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
 
             if constexpr (is_asof_join)
             {
-                TypeIndex asof_type = added_columns.asofType();
-                ASOF::Inequality asof_inequality = added_columns.asofInequality();
-                const IColumn & left_asof_key = added_columns.leftAsofKey();
-
-                if (const RowRef * found = mapped.findAsof(asof_type, asof_inequality, left_asof_key, i))
+                const HashJoin & join = added_columns.join;
+                if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofInequality(), asof_column, i))
                 {
                     setUsed<need_filter>(filter, i);
                     mapped.setUsed();
@@ -934,11 +1035,11 @@ void HashJoin::joinBlockImpl(
 
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
     Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
-    ColumnRawPtrs left_key_columns = JoinCommon::getRawPointers(materialized_keys);
+    ColumnRawPtrs key_columns = JoinCommon::getRawPointers(materialized_keys);
 
     /// Keys with NULL value in any column won't join to anything.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(left_key_columns, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     size_t existing_columns = block.columns();
 
@@ -959,8 +1060,12 @@ void HashJoin::joinBlockImpl(
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
       * For ASOF, the last column is used as the ASOF column
       */
+    ColumnsWithTypeAndName extras;
+    if constexpr (is_asof_join)
+        extras.push_back(right_table_keys.getByName(key_names_right.back()));
 
-    AddedColumns added_columns(block_with_columns_to_add, block, savedBlockSample(), *this, left_key_columns, key_sizes, is_asof_join);
+    AddedColumns added_columns(sample_block_with_columns_to_add, block_with_columns_to_add, block, savedBlockSample(),
+                               extras, *this, key_columns, key_sizes);
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = need_filter || has_required_right_keys;
 
@@ -1266,20 +1371,73 @@ struct AdderNonJoined
 
 
 /// Stream from not joined earlier rows of the right table.
-class NonJoinedBlockInputStream : private NotJoined, public IBlockInputStream
+class NonJoinedBlockInputStream : public IBlockInputStream
 {
 public:
     NonJoinedBlockInputStream(const HashJoin & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
-        : NotJoined(*parent_.table_join,
-                    parent_.savedBlockSample(),
-                    parent_.right_sample_block,
-                    result_sample_block_)
-        , parent(parent_)
+        : parent(parent_)
         , max_block_size(max_block_size_)
-    {}
+        , result_sample_block(materializeBlock(result_sample_block_))
+    {
+        bool remap_keys = parent.table_join->hasUsing();
+        std::unordered_map<size_t, size_t> left_to_right_key_remap;
+
+        for (size_t i = 0; i < parent.table_join->keyNamesLeft().size(); ++i)
+        {
+            const String & left_key_name = parent.table_join->keyNamesLeft()[i];
+            const String & right_key_name = parent.table_join->keyNamesRight()[i];
+
+            size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
+            size_t right_key_pos = parent.savedBlockSample().getPositionByName(right_key_name);
+
+            if (remap_keys && !parent.required_right_keys.has(right_key_name))
+                left_to_right_key_remap[left_key_pos] = right_key_pos;
+        }
+
+        /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys
+        size_t left_columns_count = result_sample_block.columns() -
+            parent.sample_block_with_columns_to_add.columns() - parent.required_right_keys.columns();
+
+        for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
+        {
+            /// We need right 'x' for 'RIGHT JOIN ... USING(x)'.
+            if (left_to_right_key_remap.count(left_pos))
+            {
+                size_t right_key_pos = left_to_right_key_remap[left_pos];
+                setRightIndex(right_key_pos, left_pos);
+            }
+            else
+                column_indices_left.emplace_back(left_pos);
+        }
+
+        const auto & saved_block_sample = parent.savedBlockSample();
+        for (size_t right_pos = 0; right_pos < saved_block_sample.columns(); ++right_pos)
+        {
+            const String & name = saved_block_sample.getByPosition(right_pos).name;
+            if (!result_sample_block.has(name))
+                continue;
+
+            size_t result_position = result_sample_block.getPositionByName(name);
+
+            /// Don't remap left keys twice. We need only qualified right keys here
+            if (result_position < left_columns_count)
+                continue;
+
+            setRightIndex(right_pos, result_position);
+        }
+
+        if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != result_sample_block.columns())
+            throw Exception("Error in columns mapping in RIGHT|FULL JOIN. Left: " + toString(column_indices_left.size()) +
+                            ", right: " + toString(column_indices_right.size()) +
+                            ", same: " + toString(same_result_keys.size()) +
+                            ", result: " + toString(result_sample_block.columns()),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
 
     String getName() const override { return "NonJoined"; }
+
     Block getHeader() const override { return result_sample_block; }
+
 
 protected:
     Block readImpl() override
@@ -1293,12 +1451,54 @@ private:
     const HashJoin & parent;
     UInt64 max_block_size;
 
+    Block result_sample_block;
+    /// Indices of columns in result_sample_block that should be generated
+    std::vector<size_t> column_indices_left;
+    /// Indices of columns that come from the right-side table: right_pos -> result_pos
+    std::unordered_map<size_t, size_t> column_indices_right;
+    ///
+    std::unordered_map<size_t, size_t> same_result_keys;
+    /// Which right columns (saved in parent) need nullability change before placing them in result block
+    std::vector<size_t> right_nullability_adds;
+    std::vector<size_t> right_nullability_removes;
+    /// Which right columns (saved in parent) need LowCardinality change before placing them in result block
+    std::vector<std::pair<size_t, ColumnPtr>> right_lowcard_changes;
+
     std::any position;
     std::optional<HashJoin::BlockNullmapList::const_iterator> nulls_position;
 
+    void setRightIndex(size_t right_pos, size_t result_position)
+    {
+        if (!column_indices_right.count(right_pos))
+        {
+            column_indices_right[right_pos] = result_position;
+            extractColumnChanges(right_pos, result_position);
+        }
+        else
+            same_result_keys[result_position] = column_indices_right[right_pos];
+    }
+
+    void extractColumnChanges(size_t right_pos, size_t result_pos)
+    {
+        const auto & src = parent.savedBlockSample().getByPosition(right_pos).column;
+        const auto & dst = result_sample_block.getByPosition(result_pos).column;
+
+        if (!src->isNullable() && dst->isNullable())
+            right_nullability_adds.push_back(right_pos);
+
+        if (src->isNullable() && !dst->isNullable())
+            right_nullability_removes.push_back(right_pos);
+
+        ColumnPtr src_not_null = emptyNotNullableClone(src);
+        ColumnPtr dst_not_null = emptyNotNullableClone(dst);
+
+        if (src_not_null->lowCardinality() != dst_not_null->lowCardinality())
+            right_lowcard_changes.push_back({right_pos, dst_not_null});
+    }
+
     Block createBlock()
     {
-        MutableColumns columns_right = saved_block_sample.cloneEmptyColumns();
+        MutableColumns columns_right = parent.savedBlockSample().cloneEmptyColumns();
 
         size_t rows_added = 0;
 
@@ -1311,15 +1511,44 @@ private:
             throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
 
         fillNullsFromBlocks(columns_right, rows_added);
+
         if (!rows_added)
             return {};
 
-        correctLowcardAndNullability(columns_right);
+        for (size_t pos : right_nullability_removes)
+            changeNullability(columns_right[pos]);
+
+        for (auto & [pos, dst_sample] : right_lowcard_changes)
+            columns_right[pos] = changeLowCardinality(std::move(columns_right[pos]), dst_sample)->assumeMutable();
+
+        for (size_t pos : right_nullability_adds)
+            changeNullability(columns_right[pos]);
 
         Block res = result_sample_block.cloneEmpty();
-        addLeftColumns(res, rows_added);
-        addRightColumns(res, columns_right);
-        copySameKeys(res);
+
+        /// @note it's possible to make ColumnConst here and materialize it later
+        for (size_t pos : column_indices_left)
+            res.getByPosition(pos).column = res.getByPosition(pos).column->cloneResized(rows_added);
+
+        for (auto & pr : column_indices_right)
+        {
+            auto & right_column = columns_right[pr.first];
+            auto & result_column = res.getByPosition(pr.second).column;
+#ifndef NDEBUG
+            if (result_column->getName() != right_column->getName())
+                throw Exception("Wrong columns assign in RIGHT|FULL JOIN: " + result_column->getName() +
+                                " " + right_column->getName(), ErrorCodes::LOGICAL_ERROR);
+#endif
+            result_column = std::move(right_column);
+        }
+
+        for (auto & pr : same_result_keys)
+        {
+            auto & src_column = res.getByPosition(pr.second).column;
+            auto & dst_column = res.getByPosition(pr.first).column;
+            changeColumnRepresentation(src_column, dst_column);
+        }
+
         return res;
     }
 
@@ -1409,6 +1638,16 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
     if (isRightOrFull(table_join->kind()))
         return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
     return {};
+}
+
+
+bool HashJoin::hasStreamWithNonJoinedRows() const
+{
+     if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
+        table_join->strictness() == ASTTableJoin::Strictness::Semi)
+        return false;
+
+    return isRightOrFull(table_join->kind());
 }
 
 }

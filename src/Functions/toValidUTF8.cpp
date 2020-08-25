@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8Encoding.h>
 

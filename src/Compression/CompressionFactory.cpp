@@ -1,11 +1,15 @@
 #include <Compression/CompressionFactory.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <IO/ReadBuffer.h>
 #include <Parsers/queryToString.h>
 #include <Compression/CompressionCodecMultiple.h>
+#include <Compression/CompressionCodecLZ4.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -142,28 +146,24 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 
 
 void registerCodecNone(CompressionCodecFactory & factory);
-void registerCodecLZ4(CompressionCodecFactory & factory);
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
-void registerCodecMultiple(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
+    default_codec = std::make_shared<CompressionCodecLZ4>();
     registerCodecLZ4(*this);
     registerCodecNone(*this);
     registerCodecZSTD(*this);
+    registerCodecMultiple(*this);
     registerCodecLZ4HC(*this);
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
-    registerCodecMultiple(*this);
-
-    default_codec = get("LZ4", {}, false);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()

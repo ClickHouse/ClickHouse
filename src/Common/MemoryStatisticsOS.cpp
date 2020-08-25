@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -103,5 +101,3 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 }
 
 }
-
-#endif

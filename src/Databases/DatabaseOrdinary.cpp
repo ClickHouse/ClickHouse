@@ -1,10 +1,9 @@
-#include <filesystem>
+#include <iomanip>
 
 #include <Core/Settings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -12,23 +11,29 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <TableFunctions/TableFunctionFactory.h>
+
 #include <Parsers/queryToString.h>
+
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Event.h>
 #include <Common/Stopwatch.h>
+#include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
+
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -54,15 +59,18 @@ namespace
         }
         catch (Exception & e)
         {
-            e.addMessage(
-                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table) + " from metadata file " + metadata_path
+            e.addMessage("Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table)
+                + " from metadata file " + metadata_path
                 + " from query " + serializeAST(query));
             throw;
         }
     }
 
 
-    void tryAttachDictionary(const ASTPtr & query, DatabaseOrdinary & database, const String & metadata_path)
+    void tryAttachDictionary(
+        const ASTPtr & query,
+        DatabaseOrdinary & database,
+        const String & metadata_path)
     {
         auto & create_query = query->as<ASTCreateQuery &>();
         assert(create_query.is_dictionary);
@@ -75,9 +83,9 @@ namespace
         }
         catch (Exception & e)
         {
-            e.addMessage(
-                "Cannot attach dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(create_query.table)
-                + " from metadata file " + metadata_path + " from query " + serializeAST(*query));
+            e.addMessage("Cannot attach dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(create_query.table) +
+                         " from metadata file " + metadata_path +
+                         " from query " + serializeAST(*query));
             throw;
         }
     }
@@ -99,13 +107,14 @@ DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata
 {
 }
 
-DatabaseOrdinary::DatabaseOrdinary(
-    const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
-    : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
+        : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseOrdinary::loadStoredObjects(
+    Context & context,
+    bool has_force_restore_data_flag)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -119,17 +128,13 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     auto process_metadata = [&context, &file_names, &total_dictionaries, &file_names_mutex, this](const String & file_name)
     {
-        fs::path path(getMetadataPath());
-        fs::path file_path(file_name);
-        fs::path full_path = path / file_path;
-
+        String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(log, context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->database = database_name;
                 std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
@@ -137,9 +142,10 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot parse definition from metadata file " + full_path.string());
+            e.addMessage("Cannot parse definition from metadata file " + full_path);
             throw;
         }
+
     };
 
     iterateMetadataFiles(context, process_metadata);
@@ -152,7 +158,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     std::atomic<size_t> tables_processed{0};
     std::atomic<size_t> dictionaries_processed{0};
 
-    ThreadPool pool;
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
@@ -161,13 +167,7 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
         if (!create_query.is_dictionary)
             pool.scheduleOrThrowOnError([&]()
             {
-                tryAttachTable(
-                    context,
-                    create_query,
-                    *this,
-                    database_name,
-                    getMetadataPath() + name_with_query.first,
-                    has_force_restore_data_flag);
+                tryAttachTable(context, create_query, *this, getDatabaseName(), getMetadataPath() + name_with_query.first, has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -211,7 +211,6 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
 
-
     try
     {
         for (const auto & table : tables)
@@ -225,7 +224,10 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     thread_pool.wait();
 }
 
-void DatabaseOrdinary::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOrdinary::alterTable(
+    const Context & context,
+    const StorageID & table_id,
+    const StorageInMemoryMetadata & metadata)
 {
     String table_name = table_id.table_name;
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -234,18 +236,14 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
     String statement;
 
     {
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
+        char in_buf[METADATA_FILE_BUFFER_SIZE];
+        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
         readStringUntilEOF(statement, in);
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(
-        parser,
-        statement.data(),
-        statement.data() + statement.size(),
-        "in file " + table_metadata_path,
-        0,
-        context.getSettingsRef().max_parser_depth);
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path,
+        0, context.getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 

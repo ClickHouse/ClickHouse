@@ -31,11 +31,6 @@ INSERT INTO replicated_constraints1 VALUES (10, 10);
 INSERT INTO replicated_constraints2 VALUES (10, 10);
 
 ALTER TABLE replicated_constraints1 ADD CONSTRAINT b_constraint CHECK b > 10;
-
--- Otherwise "Metadata on replica is not up to date with common metadata in Zookeeper. Cannot alter." is possible.
-SYSTEM SYNC REPLICA replicated_constraints1;
-SYSTEM SYNC REPLICA replicated_constraints2;
-
 ALTER TABLE replicated_constraints2 ADD CONSTRAINT a_constraint CHECK a < 10;
 
 SYSTEM SYNC REPLICA replicated_constraints1;

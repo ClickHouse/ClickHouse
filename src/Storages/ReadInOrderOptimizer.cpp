@@ -16,7 +16,7 @@ namespace ErrorCodes
 ReadInOrderOptimizer::ReadInOrderOptimizer(
     const ManyExpressionActions & elements_actions_,
     const SortDescription & required_sort_description_,
-    const TreeRewriterResultPtr & syntax_result)
+    const SyntaxAnalyzerResultPtr & syntax_result)
     : elements_actions(elements_actions_)
     , required_sort_description(required_sort_description_)
 {
@@ -30,20 +30,20 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
 {
     Names sorting_key_columns;
-    if (dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
     {
-        if (!metadata_snapshot->hasSortingKey())
+        if (!merge_tree->hasSortingKey())
             return {};
-        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+        sorting_key_columns = merge_tree->getSortingKeyColumns();
     }
-    else if (dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
+    else if (const auto * part = dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
     {
-        if (!metadata_snapshot->hasSortingKey())
+        if (!part->hasSortingKey())
             return {};
-        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+        sorting_key_columns = part->getSortingKeyColumns();
     }
     else /// Inapplicable storage type
     {

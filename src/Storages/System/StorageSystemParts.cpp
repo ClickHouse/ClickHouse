@@ -15,8 +15,8 @@
 namespace DB
 {
 
-StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
-    : StorageSystemPartsBase(table_id_,
+StorageSystemParts::StorageSystemParts(const std::string & name_)
+    : StorageSystemPartsBase(name_,
     {
         {"partition",                                   std::make_shared<DataTypeString>()},
         {"name",                                        std::make_shared<DataTypeString>()},
@@ -119,16 +119,8 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(info.database);
         columns_[i++]->insert(info.table);
         columns_[i++]->insert(info.engine);
-        if (part->isStoredOnDisk())
-        {
-            columns_[i++]->insert(part->volume->getDisk()->getName());
-            columns_[i++]->insert(part->getFullPath());
-        }
-        else
-        {
-            columns_[i++]->insertDefault();
-            columns_[i++]->insertDefault();
-        }
+        columns_[i++]->insert(part->volume->getDisk()->getName());
+        columns_[i++]->insert(part->getFullPath());
 
         if (has_state_column)
             columns_[i++]->insert(part->stateString());

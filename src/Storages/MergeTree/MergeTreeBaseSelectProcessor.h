@@ -22,7 +22,6 @@ public:
     MergeTreeBaseSelectProcessor(
         Block header,
         const MergeTreeData & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
@@ -55,7 +54,6 @@ protected:
 
 protected:
     const MergeTreeData & storage;
-    StorageMetadataPtr metadata_snapshot;
 
     PrewhereInfoPtr prewhere_info;
 

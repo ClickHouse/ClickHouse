@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Path.h>
+#include <Common/ShellCommand.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Processors/Pipe.h>
@@ -49,9 +50,7 @@ std::string StorageXDBC::getReadMethod() const
     return Poco::Net::HTTPRequest::HTTP_POST;
 }
 
-std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -60,22 +59,20 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
     NamesAndTypesList cols;
     for (const String & name : column_names)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
+        auto column_data = getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     return bridge_helper->getURLParams(cols.toString(), max_block_size);
 }
 
-std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
-    const Names & /*column_names*/,
-    const StorageMetadataPtr & metadata_snapshot,
+std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
     String query = transformQueryForExternalDatabase(query_info,
-        metadata_snapshot->getColumns().getOrdinary(),
+        getColumns().getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
         remote_table_name,
@@ -84,31 +81,29 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     return [query](std::ostream & os) { os << "query=" << query; };
 }
 
-Pipe StorageXDBC::read(
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+Pipes StorageXDBC::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     bridge_helper->startBridgeSync();
-    return IStorageURLBase::read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context & context)
 {
     bridge_helper->startBridgeSync();
 
     NamesAndTypesList cols;
     Poco::URI request_uri = uri;
     request_uri.setPath("/write");
-    for (const String & name : metadata_snapshot->getSampleBlock().getNames())
+    for (const String & name : getSampleBlock().getNames())
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
+        auto column_data = getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     auto url_params = bridge_helper->getURLParams(cols.toString(), 65536);
@@ -119,17 +114,14 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
     request_uri.addQueryParameter("format_name", format_name);
 
     return std::make_shared<StorageURLBlockOutputStream>(
-        request_uri,
-        format_name,
-        metadata_snapshot->getSampleBlock(),
-        context,
-        ConnectionTimeouts::getHTTPTimeouts(context),
-        chooseCompressionMethod(uri.toString(), compression_method));
+            request_uri, format_name, getSampleBlock(), context,
+            ConnectionTimeouts::getHTTPTimeouts(context),
+            chooseCompressionMethod(uri.toString(), compression_method));
 }
 
-Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
+Block StorageXDBC::getHeaderBlock(const Names & column_names) const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    return getSampleBlockForColumns(column_names);
 }
 
 std::string StorageXDBC::getName() const

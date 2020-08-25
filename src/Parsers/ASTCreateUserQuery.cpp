@@ -33,32 +33,27 @@ namespace
         }
 
         String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
-        std::optional<String> by_value;
+        std::optional<String> password;
 
-        if (show_password || authentication_type == Authentication::LDAP_SERVER)
+        if (show_password)
         {
             switch (authentication_type)
             {
                 case Authentication::PLAINTEXT_PASSWORD:
                 {
-                    by_value = authentication.getPassword();
+                    password = authentication.getPassword();
                     break;
                 }
                 case Authentication::SHA256_PASSWORD:
                 {
                     authentication_type_name = "sha256_hash";
-                    by_value = authentication.getPasswordHashHex();
+                    password = authentication.getPasswordHashHex();
                     break;
                 }
                 case Authentication::DOUBLE_SHA1_PASSWORD:
                 {
                     authentication_type_name = "double_sha1_hash";
-                    by_value = authentication.getPasswordHashHex();
-                    break;
-                }
-                case Authentication::LDAP_SERVER:
-                {
-                    by_value = authentication.getServerName();
+                    password = authentication.getPasswordHashHex();
                     break;
                 }
 
@@ -70,9 +65,9 @@ namespace
 
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
-        if (by_value)
+        if (password)
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << (settings.hilite ? IAST::hilite_none : "")
-                << quoteString(*by_value);
+                << quoteString(*password);
     }
 
 

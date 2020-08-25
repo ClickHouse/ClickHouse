@@ -28,8 +28,7 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
             const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_remote,
-            bool secure = false, Int64 priority = 1);
+            UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -45,7 +44,7 @@ public:
         * <node>
         *     <host>example01-01-1</host>
         *     <port>9000</port>
-        *     <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *     <!-- <user>, <password>, <default_database> if needed -->
         * </node>
         * ...
         * or in <shard> and inside in <replica> elements:
@@ -53,7 +52,7 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database>, <compression>, <priority>. <secure> if needed -->
+        *         <!-- <user>, <password>, <default_database>. <secure> if needed -->
         *    </replica>
         * </shard>
         */
@@ -74,8 +73,6 @@ public:
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
-        Int64 priority = 1;
-
         Address() = default;
         Address(
             const Poco::Util::AbstractConfiguration & config,
@@ -87,8 +84,7 @@ public:
             const String & user_,
             const String & password_,
             UInt16 clickhouse_port,
-            bool secure_ = false,
-            Int64 priority_ = 1);
+            bool secure_ = false);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;

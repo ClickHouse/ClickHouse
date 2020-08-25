@@ -52,7 +52,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// lazy initialization in getReturnTypeImpl
@@ -123,7 +123,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
 }
 
 
-void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -377,7 +377,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
             }
 
             if (!res_col_aggregate_function)
-                agg_func.insertResultInto(place, result_data, arena.get());
+                agg_func.insertResultInto(place, result_data);
             else
                 res_col_aggregate_function->insertFrom(place);
         }

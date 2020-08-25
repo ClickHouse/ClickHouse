@@ -32,6 +32,8 @@ private:
     mutable LZ4::PerformanceStatistics lz4_stat;
 };
 
+class CompressionCodecFactory;
+void registerCodecLZ4(CompressionCodecFactory & factory);
 
 class CompressionCodecLZ4HC : public CompressionCodecLZ4
 {
@@ -47,5 +49,8 @@ protected:
 private:
     const int level;
 };
+
+class CompressionCodecFactory;
+void registerCodecLZ4HC(CompressionCodecFactory & factory);
 
 }

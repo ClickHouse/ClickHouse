@@ -16,15 +16,7 @@ struct PlusImpl
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
-        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-        {
-            using CastA = std::conditional_t<std::is_same_v<A, UInt8>, uint8_t, std::conditional_t<std::is_floating_point_v<B>, B, A>>;
-            using CastB = std::conditional_t<std::is_same_v<B, UInt8>, uint8_t, std::conditional_t<std::is_floating_point_v<A>, A, B>>;
-
-            return static_cast<Result>(static_cast<CastA>(a)) + static_cast<Result>(static_cast<CastB>(b));
-        }
-        else
-            return static_cast<Result>(a) + b;
+        return static_cast<Result>(a) + b;
     }
 
     /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.

@@ -5,10 +5,8 @@
 #include <Formats/FormatFactory.h>
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
-#include <arrow/result.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
-
 
 namespace DB
 {
@@ -37,8 +35,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     auto status = writer->WriteTable(*arrow_table, format_settings.arrow.row_group_size);
 
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while writing a table: {}", status.ToString());
+        throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void ArrowBlockOutputFormat::finalize()
@@ -58,19 +55,16 @@ void ArrowBlockOutputFormat::finalize()
 
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
 {
-    arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
+    arrow::Status status;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
     if (stream)
-        writer_status = arrow::ipc::NewStreamWriter(arrow_ostream.get(), schema);
+        status = arrow::ipc::RecordBatchStreamWriter::Open(arrow_ostream.get(), schema, &writer);
     else
-        writer_status = arrow::ipc::NewFileWriter(arrow_ostream.get(), schema);
+        status = arrow::ipc::RecordBatchFileWriter::Open(arrow_ostream.get(), schema, &writer);
 
-    if (!writer_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while opening a table writer: {}", writer_status.status().ToString());
-
-    writer = *writer_status;
+    if (!status.ok())
+        throw Exception{"Error while opening a table writer: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void registerOutputFormatProcessorArrow(FormatFactory & factory)

@@ -26,7 +26,7 @@
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -167,7 +167,7 @@ static auto getNameRange(const ColumnsDescription::Container & columns, const St
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -175,9 +175,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
 
     auto insert_it = columns.cend();
 
-    if (first)
-        insert_it = columns.cbegin();
-    else if (!after_column.empty())
+    if (!after_column.empty())
     {
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
@@ -213,38 +211,6 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     });
 }
 
-void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
-{
-    const auto & reorder_column = [&](auto get_new_pos)
-    {
-        auto column_range = getNameRange(columns, column_name);
-
-        if (column_range.first == column_range.second)
-            throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        std::vector<ColumnDescription> moving_columns;
-        for (auto list_it = column_range.first; list_it != column_range.second;)
-        {
-            moving_columns.emplace_back(*list_it);
-            list_it = columns.get<0>().erase(list_it);
-        }
-
-        columns.get<0>().insert(get_new_pos(), moving_columns.begin(), moving_columns.end());
-    };
-
-    if (first)
-        reorder_column([&]() { return columns.cbegin(); });
-    else if (!after_column.empty() && column_name != after_column)
-    {
-        /// Checked first
-        auto range = getNameRange(columns, after_column);
-        if (range.first == range.second)
-            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        reorder_column([&]() { return getNameRange(columns, after_column).second; });
-    }
-}
 
 void ColumnsDescription::flattenNested()
 {
@@ -477,7 +443,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 
     try
     {
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
+        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)

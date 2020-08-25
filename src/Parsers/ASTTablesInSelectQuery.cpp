@@ -1,7 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -19,13 +18,6 @@ do \
 while (false)
 
 
-void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(final);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
-
 ASTPtr ASTTableExpression::clone() const
 {
     auto res = std::make_shared<ASTTableExpression>(*this);
@@ -40,14 +32,6 @@ ASTPtr ASTTableExpression::clone() const
     return res;
 }
 
-void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(locality);
-    hash_state.update(strictness);
-    hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
 ASTPtr ASTTableJoin::clone() const
 {
     auto res = std::make_shared<ASTTableJoin>(*this);
@@ -57,12 +41,6 @@ ASTPtr ASTTableJoin::clone() const
     CLONE(on_expression);
 
     return res;
-}
-
-void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(kind);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 ASTPtr ASTArrayJoin::clone() const
