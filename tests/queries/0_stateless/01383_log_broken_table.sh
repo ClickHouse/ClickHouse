@@ -2,7 +2,7 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 function test()
@@ -18,13 +18,13 @@ function test()
     while true; do
         MAX_MEM=$((2 * $MAX_MEM))
 
-        $CLICKHOUSE_CLIENT --query "INSERT INTO log SELECT number, number, number FROM numbers(1000000)" --max_memory_usage $MAX_MEM > ${CLICKHOUSE_TMP}/insert_result 2>&1
+        $CLICKHOUSE_CLIENT --query "INSERT INTO log SELECT number, number, number FROM numbers(1000000)" --max_memory_usage $MAX_MEM > "${CLICKHOUSE_TMP}"/insert_result 2>&1
 
-        grep -o -F 'Memory limit' ${CLICKHOUSE_TMP}/insert_result || cat ${CLICKHOUSE_TMP}/insert_result
+        grep -o -F 'Memory limit' "${CLICKHOUSE_TMP}"/insert_result || cat "${CLICKHOUSE_TMP}"/insert_result
 
-        $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x + y + z) FROM log" > ${CLICKHOUSE_TMP}/select_result 2>&1;
+        $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x + y + z) FROM log" > "${CLICKHOUSE_TMP}"/select_result 2>&1;
 
-        grep -o -F 'File not found' ${CLICKHOUSE_TMP}/select_result || cat ${CLICKHOUSE_TMP}/select_result
+        grep -o -F 'File not found' "${CLICKHOUSE_TMP}"/select_result || cat "${CLICKHOUSE_TMP}"/select_result
 
         [[ $MAX_MEM -gt 200000000 ]] && break;
     done

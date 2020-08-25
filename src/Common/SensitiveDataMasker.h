@@ -22,7 +22,7 @@ namespace Util
 
 /// It looks like the singleton is the best option here, as
 /// two users of that object (OwnSplitChannel & Interpreters/executeQuery)
-/// can't own/share that Masker properly without syncronization & locks,
+/// can't own/share that Masker properly without synchronization & locks,
 /// and we can't afford setting global locks for each logged line.
 
 /// I've considered singleton alternatives, but it's unclear who should own the object,

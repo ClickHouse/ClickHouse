@@ -19,3 +19,6 @@ Columns:
 - `1` — The quota applies to all users except those listed in `apply_to_except`.
 - `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of user names/[roles](../../operations/access-rights.md#role-management) that the quota should be applied to.
 - `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of user names/roles that the quota should not apply to.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/quotas) <!--hide-->
+

@@ -48,8 +48,9 @@ then
     mkdir /output/ch
     git -C /output/ch init --bare
     git -C /output/ch remote add origin /build
-    git -C /output/ch fetch --no-tags --depth 50 origin HEAD
-    git -C /output/ch reset --soft FETCH_HEAD
+    git -C /output/ch fetch --no-tags --depth 50 origin HEAD:pr
+    git -C /output/ch fetch --no-tags --depth 50 origin master:master
+    git -C /output/ch reset --soft pr
     git -C /output/ch log -5
 fi
 

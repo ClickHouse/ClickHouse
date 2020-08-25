@@ -124,15 +124,7 @@ def adjust_markdown_html(content):
 
 
 def minify_html(content):
-    return htmlmin.minify(content,
-                          remove_comments=False,
-                          remove_empty_space=False,
-                          remove_all_empty_space=False,
-                          reduce_empty_attributes=True,
-                          reduce_boolean_attributes=False,
-                          remove_optional_attribute_quotes=True,
-                          convert_charrefs=False,
-                          keep_pre=True)
+    return htmlmin.minify(content)
 
 
 def build_website(args):

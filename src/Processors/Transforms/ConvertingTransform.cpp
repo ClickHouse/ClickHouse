@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -35,9 +35,11 @@ static ColumnPtr castColumnWithDiagnostic(
 ConvertingTransform::ConvertingTransform(
     Block source_header_,
     Block result_header_,
-    MatchColumnsMode mode_)
+    MatchColumnsMode mode_,
+    bool ignore_constant_values_)
     : ISimpleTransform(std::move(source_header_), std::move(result_header_), false)
     , conversion(getOutputPort().getHeader().columns())
+    , ignore_constant_values(ignore_constant_values_)
 {
     const auto & source = getInputPort().getHeader();
     const auto & result = getOutputPort().getHeader();
@@ -79,15 +81,15 @@ ConvertingTransform::ConvertingTransform(
         {
             if (const auto * src_const = typeid_cast<const ColumnConst *>(src_elem.column.get()))
             {
-                if (res_const->getField() != src_const->getField())
+                if (!ignore_constant_values && res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                                    ErrorCodes::ILLEGAL_COLUMN);
             }
             else
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                                ErrorCodes::ILLEGAL_COLUMN);
         }
 
         /// Check conversion by dry run CAST function.
@@ -114,6 +116,12 @@ void ConvertingTransform::transform(Chunk & chunk)
         auto src_elem = source.getByPosition(conversion[res_pos]);
         src_elem.column = src_columns[conversion[res_pos]];
         auto res_elem = result.getByPosition(res_pos);
+
+        if (ignore_constant_values && isColumnConst(*res_elem.column))
+        {
+            res_columns.emplace_back(res_elem.column->cloneResized(num_rows));
+            continue;
+        }
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem);
 

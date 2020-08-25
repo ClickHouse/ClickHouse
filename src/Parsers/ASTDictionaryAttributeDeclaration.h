@@ -18,7 +18,7 @@ public:
     ASTPtr default_value;
     /// Attribute expression
     ASTPtr expression;
-    /// Is atribute mirrored to the parent identifier
+    /// Is attribute mirrored to the parent identifier
     bool hierarchical;
     /// Flag that shows whether the id->attribute image is injective
     bool injective;

@@ -8,7 +8,7 @@ namespace DB
 
 class ASTSelectQuery;
 struct SettingChange;
-using SettingsChanges = std::vector<SettingChange>;
+class SettingsChanges;
 
 /// Pushdown SETTINGS clause that goes after FORMAT to the SELECT query:
 /// (since settings after FORMAT parsed separatelly not in the ParserSelectQuery but in ParserQueryWithOutput)

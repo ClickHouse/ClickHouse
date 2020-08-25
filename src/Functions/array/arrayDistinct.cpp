@@ -55,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -85,7 +85,7 @@ private:
 };
 
 
-void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     ColumnPtr array_ptr = block.getByPosition(arguments[0]).column;
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());

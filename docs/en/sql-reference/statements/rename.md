@@ -1,5 +1,6 @@
 ---
 toc_priority: 50
+toc_title: RENAME
 ---
 
 # RENAME Statement {#misc_operations-rename}

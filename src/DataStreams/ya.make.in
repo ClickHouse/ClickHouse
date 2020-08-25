@@ -1,0 +1,14 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/poco/MongoDB
+)
+
+NO_COMPILER_WARNINGS()
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+)
+
+END()
