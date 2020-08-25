@@ -6,7 +6,7 @@
 
 Столбцы:
 
--   `partition` ([String](../../sql-reference/data-types/string.md)) – имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../../sql-reference/statements/alter.md#query_language_queries_alter).
+-   `partition` ([String](../../sql-reference/data-types/string.md)) – имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter).
 
     Форматы:
 
@@ -66,7 +66,7 @@
 
 -   `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – объём памяти (в байтах) выделенный для размещения первичных ключей.
 
--   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../../sql-reference/statements/alter.md#alter_freeze-partition).
+-   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition).
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) – имя базы данных.
 
