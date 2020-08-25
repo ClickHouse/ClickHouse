@@ -39,6 +39,10 @@
         "name": "yandex/clickhouse-performance-comparison",
         "dependent": []
     },
+    "docker/test/pvs": {
+        "name": "yandex/clickhouse-pvs-test",
+        "dependent": []
+    },
     "docker/test/stateful": {
         "name": "yandex/clickhouse-stateful-test",
         "dependent": [
