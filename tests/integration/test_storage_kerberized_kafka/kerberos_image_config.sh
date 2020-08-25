@@ -1,11 +1,10 @@
 #!/bin/bash
 
-# based on confluent kerberos, which is not provided as image any more
 
 [[ "TRACE" ]] && set -x
 
-: ${REALM:=TEST.CONFLUENT.IO}
-: ${DOMAIN_REALM:=test.confluent.io}
+: ${REALM:=TEST.CLICKHOUSE.TECH}
+: ${DOMAIN_REALM:=test.clickhouse.tech}
 : ${KERB_MASTER_KEY:=masterkey}
 : ${KERB_ADMIN_USER:=admin}
 : ${KERB_ADMIN_PASS:=admin}
@@ -92,23 +91,19 @@ create_admin_user() {
 
 create_keytabs() {
 
-  kadmin.local -q "addprinc -randkey zookeeper/kafka_kerberized_zookeeper@TEST.CONFLUENT.IO"
-  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kafka_kerberized_zookeeper.keytab zookeeper/kafka_kerberized_zookeeper@TEST.CONFLUENT.IO"
+  kadmin.local -q "addprinc -randkey zookeeper/kafka_kerberized_zookeeper@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kafka_kerberized_zookeeper.keytab zookeeper/kafka_kerberized_zookeeper@${REALM}"
 
-  kadmin.local -q "addprinc -randkey kafka/kerberized_kafka1@TEST.CONFLUENT.IO"
-  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kerberized_kafka.keytab kafka/kerberized_kafka1@TEST.CONFLUENT.IO"
-  # kadmin.local -q "addprinc -randkey kafka/localhost@TEST.CONFLUENT.IO"
-  # kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kerberized_kafka.keytab kafka/localhost@TEST.CONFLUENT.IO"
+  kadmin.local -q "addprinc -randkey kafka/kerberized_kafka1@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kerberized_kafka.keytab kafka/kerberized_kafka1@${REALM}"
 
-	kadmin.local -q "addprinc -randkey zkclient@TEST.CONFLUENT.IO"
-  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/zkclient.keytab zkclient@TEST.CONFLUENT.IO"
-	
-	# kadmin.local -q "addprinc -randkey kafkauser@TEST.CONFLUENT.IO"
-  # kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab kafkauser@TEST.CONFLUENT.IO"
+	kadmin.local -q "addprinc -randkey zkclient@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/zkclient.keytab zkclient@${REALM}"
 
-	kadmin.local -q "addprinc -randkey kafkauser/instance@TEST.CONFLUENT.IO"
-  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab kafkauser/instance@TEST.CONFLUENT.IO"
-	
+
+	kadmin.local -q "addprinc -randkey kafkauser/instance@${REALM}"
+  kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab kafkauser/instance@${REALM}"
+
 	chmod g+r /tmp/keytab/clickhouse.keytab
 
 }

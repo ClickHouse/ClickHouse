@@ -619,10 +619,10 @@ class ClickHouseCluster:
                 self.wait_schema_registry_to_start(120)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
-                env = os.environ.copy()
-                self.kerberized_kafka_instance_path = instance.path
-                env['KERBERIZED_KAFKA_DIR'] = self.kerberized_kafka_instance_path + '/'
-                subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
+                env_var = {}
+                env_var['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
+                _create_env_file(self.base_dir, env_var, ".env")
+                subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
                 self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
@@ -1211,7 +1211,6 @@ class ClickHouseInstance:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
         if self.with_kerberized_kafka:
-            # shutil.copytree(p.abspath(p.join(self.base_dir, 'secrets')), p.abspath(p.join(self.path, 'secrets')))
             secrets_dir = p.abspath(p.join(self.custom_config_dir, os.pardir, 'secrets'))
             distutils.dir_util.copy_tree(secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 

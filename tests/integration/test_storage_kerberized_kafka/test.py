@@ -17,37 +17,20 @@ from kafka.admin import NewTopic
 from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 import socket
-from google.protobuf.internal.encoder import _VarintBytes
-
-"""
-protoc --version
-libprotoc 3.0.0
-
-# to create kafka_pb2.py
-protoc --python_out=. kafka.proto
-"""
-import kafka_pb2
-
-
-# TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
-# TODO: add test for SELECT LIMIT is working.
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kerberized_kafka=True,
-                                # with_zookeeper=True,
-                                clickhouse_path_dir='clickhouse_path')
+                                )
 kafka_id = ''    # instance.cluster.kafka_docker_id
-
 
 # Helpers
 
 def check_kafka_is_available():
 
-    # credentials are needed
-    
+    # plaintext
     p = subprocess.Popen(('docker',
                           'exec',
                           '-i',
@@ -102,12 +85,11 @@ def kafka_setup_teardown():
     instance.query('DROP DATABASE IF EXISTS test; CREATE DATABASE test;')
     wait_kafka_is_available()
     print("kafka is available - running test")
-    time.sleep(60)
     yield  # run test
 
 # Tests
 
-@pytest.mark.timeout(1000)  # wait to build containers
+@pytest.mark.timeout(180)  # wait to build containers
 def test_kafka_json_as_string(kafka_cluster):
     kafka_produce('kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
@@ -129,6 +111,30 @@ def test_kafka_json_as_string(kafka_cluster):
 '''
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log("Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows")
+
+def test_kafka_json_as_string_no_kdc(kafka_cluster):
+    kafka_produce('kafka_json_as_string_no_kdc', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
+
+    kafka_cluster.pause_container('kafka_kerberos')
+
+    instance.query('''
+        CREATE TABLE test.kafka_no_kdc (field String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
+                     kafka_topic_list = 'kafka_json_as_string_no_kdc',
+                     kafka_group_name = 'kafka_json_as_string_no_kdc',
+                     kafka_format = 'JSONAsString',
+                     kafka_flush_interval_ms=1000;
+        ''')
+
+    result = instance.query('SELECT * FROM test.kafka_no_kdc;')
+    expected = ''
+
+    kafka_cluster.unpause_container('kafka_kerberos')
+
+
+    assert TSV(result) == TSV(expected)
+    assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
 
 
 if __name__ == '__main__':
