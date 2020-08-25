@@ -72,6 +72,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
@@ -704,8 +706,14 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     }
     catch (const Exception & e)
     {
-        /* empty or incomplete message without Avro Confluent magic number or schema id */
-        throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+        if (e.code() == CANNOT_READ_ALL_DATA
+           || e.code() == ATTEMPT_TO_READ_AFTER_EOF)
+        {
+            /* empty or incomplete message without Avro Confluent magic number or schema id */
+            throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+        }
+        else
+            throw;
     }
 
     if (magic != 0x00)
