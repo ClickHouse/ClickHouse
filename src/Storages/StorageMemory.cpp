@@ -57,11 +57,12 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            ++current_it;
             ++current_block_idx;
 
             if (current_block_idx == num_blocks)
                 is_finished = true;
+            else
+                ++current_it;
 
             return Chunk(std::move(columns), src.rows());
         }
