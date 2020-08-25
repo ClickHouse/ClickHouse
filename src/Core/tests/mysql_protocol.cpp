@@ -288,16 +288,7 @@ int main(int argc, char ** argv)
 
             /// Connect to the master.
             slave.connect();
-
-            ///  start to dump binlog.
-            if (gtid_sets.empty())
-            {
-                slave.startBinlogDump(slave_id, replicate_db, "", 4);
-            }
-            else
-            {
-                slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
-            }
+            slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
 
             /// Read one binlog event on by one.
             while (true)
