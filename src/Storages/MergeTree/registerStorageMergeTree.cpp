@@ -592,6 +592,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
+
+        size_t index_granularity_bytes = 0;
+        size_t min_index_granularity_bytes = 0;
+
+         index_granularity_bytes = storage_settings-> index_granularity_bytes;
+         min_index_granularity_bytes = storage_settings-> min_index_granularity_bytes;
+
+        if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
+        {
+            throw Exception(
+                "index_granularity_bytes " + std::to_string(min_index_granularity_bytes)
+                + " is lesser than specified min_index_granularity_bytes" + std::to_string(min_index_granularity_bytes),
+                ErrorCodes::BAD_ARGUMENTS);
+        }
     }
     else
     {
