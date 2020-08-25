@@ -10,8 +10,8 @@ toc_title: Playground
 
 ClickHouse Playground は、[Yandex.Cloud](https://cloud.yandex.com/)にホストされている m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) インスタンス(4 vCPU, 32 GB RAM) で提供されています。クラウドプロバイダの詳細情報については[こちら](../commercial/cloud.md)。
 
-任意の HTTP クライアントを使用してプレイグラウンドへのクエリを作成することができます。例えば[curl](https://curl.haxx.se)、[wget](https://www.gnu.org/software/wget/)、[JDBC](./interfaces/jdbc.md)または[ODBC](./interfaces/odbc.md)ドライバを使用して接続を設定します。
-ClickHouse をサポートするソフトウェア製品の詳細情報は[こちら](<(../interfaces/index.md)>)をご覧ください。
+任意の HTTP クライアントを使用してプレイグラウンドへのクエリを作成することができます。例えば[curl](https://curl.haxx.se)、[wget](https://www.gnu.org/software/wget/)、[JDBC](../interfaces/jdbc.md)または[ODBC](../interfaces/odbc.md)ドライバを使用して接続を設定します。
+ClickHouse をサポートするソフトウェア製品の詳細情報は[こちら](../interfaces/index.md)をご覧ください。
 
 ## 資格情報 {#credentials}
 

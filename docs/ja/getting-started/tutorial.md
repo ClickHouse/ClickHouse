@@ -107,7 +107,7 @@ curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unx
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-テーブルを作成するための構文はデータベースに比べてはるかに複雑です([参照](../sql-reference/statements/create/table.md))。通常、`CREATE TABLE` 文は3つのキーを指定しなければなりません。
+テーブルを作成するための構文はデータベースに比べてはるかに複雑です([参照](../sql-reference/statements/create.md))。通常、`CREATE TABLE` 文は3つのキーを指定しなければなりません。
 
 1.  作成するテーブルの名前。
 2.  テーブルのスキーマ。つまり、カラムと [データ型](../sql-reference/data-types/index.md) のリスト。
@@ -461,7 +461,7 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-これらのクエリは、`clickhouse-client` の対話型モード(事前にクエリを指定せずにターミナルで起動するだけです)を使って実行するか、いくつかの [代替インターフェイス](./interfaces/index.md) の好きな方で実行できます。
+これらのクエリは、`clickhouse-client` の対話型モード(事前にクエリを指定せずにターミナルで起動するだけです)を使って実行するか、[代替インターフェイス](../interfaces/index.md) で実行できます。
 
 見ての通り、 `hits_v1` は [基本的な MergeTree エンジン](../engines/table-engines/mergetree-family/mergetree.md) を使っており、`visits_v1` は [Collapsing MergeTree](../engines/table-engines/mergetree-family/collapsingmergetree.md) という変種を使っています。
 
@@ -487,7 +487,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-必要に応じて、インポート後のテーブルを[OPTIMIZE](./sql-reference/statements/optimize.md)することができます。
+必要に応じて、インポート後のテーブルを[OPTIMIZE](../../en/sql-reference/statements/optimize.md)することができます。
 MergeTree-familyのエンジンで設定されているテーブルは、常にバックグラウンドでデータ部分のマージを行い、データストレージを最適化します(あるいは、少なくともそれが意味のあるものかどうかをチェックします)。
 
 以下のクエリは、テーブルエンジンがストレージの最適化を後で行うのではなく、今すぐに行うように強制します:
