@@ -3484,10 +3484,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytes() const
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
     if (is_readonly)
-    {
-        auto err = "Table is in readonly mode (zookeeper path: " + zookeeper_path + ")";
-        throw Exception(err, ErrorCodes::TABLE_IS_READ_ONLY);
-    }
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (zookeeper path: {})", zookeeper_path);
 }
 
 
