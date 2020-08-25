@@ -282,6 +282,10 @@ def run_tests_array(all_tests_with_params):
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
 
+                            if os.path.isfile(stdout_file):
+                                print(", result:\n")
+                                print(open(stdout_file).read())
+
                         elif stderr:
                             failures += 1
                             failures_chain += 1
@@ -743,18 +747,33 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.queries is None and os.path.isdir('queries'):
+    if args.queries and not os.path.isdir(args.queries):
+        print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
+        exit(1)
+
+    # Autodetect the directory with queries if not specified
+    if args.queries is None:
         args.queries = 'queries'
-    elif args.queries is None:
-        if (os.path.isdir('/usr/local/share/clickhouse-test/queries')):
-            args.queries = '/usr/local/share/clickhouse-test/queries'
-        if (args.queries is None and os.path.isdir('/usr/share/clickhouse-test/queries')):
-            args.queries = '/usr/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
+        # If we're running from the repo
+        args.queries = os.path.join(os.path.dirname(os.path.abspath( __file__ )), 'queries')
+
+    if not os.path.isdir(args.queries):
+        # Next we're going to try some system directories, don't write 'stdout' files into them.
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
-    if args.queries is None:
+
+        args.queries = '/usr/local/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
+        args.queries = '/usr/share/clickhouse-test/queries'
+
+    if not os.path.isdir(args.queries):
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
+
+    print("Using queries from '" + args.queries + "' directory")
 
     if args.skip_list_path is None:
         args.skip_list_path = os.path.join(args.queries, 'skip_list.json')
