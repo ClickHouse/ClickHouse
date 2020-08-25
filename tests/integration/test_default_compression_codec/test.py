@@ -47,7 +47,7 @@ def test_default_codec_single(start_cluster):
         node.query("""
         CREATE TABLE compression_table (
             key UInt64,
-            data1 String CODEC(DefaultCompression)
+            data1 String CODEC(Default)
         ) ENGINE = ReplicatedMergeTree('/t', '{}') ORDER BY tuple() PARTITION BY key;
         """.format(i))
 
@@ -83,7 +83,7 @@ def test_default_codec_multiple(start_cluster):
         node.query("""
         CREATE TABLE compression_table_multiple (
             key UInt64,
-            data1 String CODEC(NONE, DefaultCompression)
+            data1 String CODEC(NONE, Default)
         ) ENGINE = ReplicatedMergeTree('/d', '{}') ORDER BY tuple() PARTITION BY key;
         """.format(i), settings={"allow_suspicious_codecs": 1})
 
