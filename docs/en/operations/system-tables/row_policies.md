@@ -7,7 +7,7 @@ Columns:
 
 -    `short_name` ([String](../../sql-reference/data-types/string.md)) — Short name of a row policy. Names of row policies are compound, for example: myfilter ON mydb.mytable. Here "myfilter ON mydb.mytable" is the name of the row policy, "myfilter" is it's short name.
 
--    `database` ([String](../../sql-reference/data-types/string.md)) — Name of a database.
+-    `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 
 -    `table` ([String](../../sql-reference/data-types/string.md)) — Name of a table.
 
