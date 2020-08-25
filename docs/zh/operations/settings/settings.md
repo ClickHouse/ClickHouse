@@ -1255,7 +1255,7 @@ ClickHouse生成异常
 
 ## transform\_null\_in {#transform_null_in}
 
-为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](../../sql-reference/syntax.md＃null-literal) 值的相等性。
+为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](../../sql-reference/syntax.md#null-literal) 值的相等性。
 
 默认情况下，无法比较 `NULL` 值，因为 `NULL` 表示未定义的值。 因此，比较 `expr = NULL` 必须始终返回 `false`。 在此设置下，`NULL = NULL` 为IN运算符返回 `true`.
 
