@@ -118,30 +118,28 @@ Pipe StorageMemory::read(
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     std::lock_guard lock(mutex);
+    const std::size_t size = data.size();
 
-    size_t size = data.size();
-
-    if (num_streams > size)
+    if (num_streams > size) {
         num_streams = size;
-
-    Pipes pipes;
-
-    for (size_t stream = 0; stream < num_streams; ++stream)
-    {
-        BlocksList::iterator first = data.begin();
-        BlocksList::iterator last = data.begin();
-
-        std::advance(first, stream * size / num_streams);
-        std::advance(last, (stream + 1) * size / num_streams);
-
-        if (first == last)
-            continue;
-        else
-            --last;
-
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this, metadata_snapshot));
     }
 
+    Pipes pipes;
+    auto       it   = data.begin();
+
+    for (const auto end = data.end(); it != end;) {
+        auto     upto = it;
+        std::size_t i = 0;
+
+        do {
+            ++upto;
+            ++i;
+        } while (upto != end && i < step);
+
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, upto, *this, metadata_snapshot));
+        it = upto;
+    }
+    
     return Pipe::unitePipes(std::move(pipes));
 }
 
