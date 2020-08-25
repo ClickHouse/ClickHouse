@@ -15,7 +15,7 @@ Columns:
 
 -    `value` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Setting value.
 
--    `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The minimum value of the setting. NULL if not set.
+-    `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The minimum value of the setting. `NULL` if not set.
 
 -    `max` ([Nullable](../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The maximum value of the setting. NULL if not set.
 
