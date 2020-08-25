@@ -322,11 +322,6 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
-void CompressionCodecGorilla::useInfoAboutType(const DataTypePtr & data_type)
-{
-    data_bytes_size = getDataBytesSize(data_type);
-}
-
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
@@ -336,7 +331,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         if (arguments)
             throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     });
 }

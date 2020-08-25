@@ -214,7 +214,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert("CODEC(" + column.codec->getCodecDesc() + ")");
+                        res_columns[res_index++]->insert("CODEC(" + column.codec->description + ")");
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -282,7 +282,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (column.codec)
         {
-            String codec_desc = column.codec->getCodecDesc();
+            String codec_desc = column.codec->description;
             codec_desc = "CODEC(" + codec_desc + ")";
             const char * codec_desc_pos = codec_desc.data();
             const char * codec_desc_end = codec_desc_pos + codec_desc.size();
@@ -422,7 +422,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
-            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type, sanity_check_compression_codecs);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetDescription(col_decl.codec, column.type, sanity_check_compression_codecs);
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;

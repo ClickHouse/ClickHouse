@@ -406,11 +406,6 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     }
 }
 
-void CompressionCodecDoubleDelta::useInfoAboutType(const DataTypePtr & data_type)
-{
-    data_bytes_size = getDataBytesSize(data_type);
-}
-
 void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::DoubleDelta);
@@ -420,7 +415,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         if (arguments)
             throw Exception("Codec DoubleDelta does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }

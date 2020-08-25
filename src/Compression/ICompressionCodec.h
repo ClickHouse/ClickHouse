@@ -17,7 +17,6 @@ using Codecs = std::vector<CompressionCodecPtr>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
 */
@@ -58,9 +57,6 @@ public:
 
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
-
-    /// Some codecs may use information about column type which appears after codec creation
-    virtual void useInfoAboutType(const DataTypePtr & /* data_type */) {}
 
     /// Return true if this codec actually compressing something. Otherwise it can be just transformation that helps compression (e.g. Delta).
     virtual bool isCompression() const = 0;
