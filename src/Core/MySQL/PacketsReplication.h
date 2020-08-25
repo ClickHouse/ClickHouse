@@ -43,7 +43,6 @@ class BinlogDumpGTID : public IMySQLWritePacket
 public:
     UInt16 flags;
     UInt32 server_id;
-    String binlog_file_name;
     String gtid_datas;
 
 protected:

@@ -37,11 +37,11 @@ void RegisterSlave::writePayloadImpl(WriteBuffer & buffer) const
 }
 
 BinlogDumpGTID::BinlogDumpGTID(UInt32 server_id_, String gtid_datas_)
-    : flags(0x04), server_id(server_id_), binlog_file_name(""), gtid_datas(std::move(gtid_datas_))
+    : flags(0x04), server_id(server_id_), gtid_datas(std::move(gtid_datas_))
 {
 }
 
-size_t BinlogDumpGTID::getPayloadSize() const { return 1 + 2 + 4 + 4 + binlog_file_name.size() + 8 + 4 + gtid_datas.size(); }
+size_t BinlogDumpGTID::getPayloadSize() const { return 1 + 2 + 4 + 4 + 0 + 8 + 4 + gtid_datas.size(); }
 
 void BinlogDumpGTID::writePayloadImpl(WriteBuffer & buffer) const
 {
@@ -49,10 +49,10 @@ void BinlogDumpGTID::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(reinterpret_cast<const char *>(&flags), 2);
     buffer.write(reinterpret_cast<const char *>(&server_id), 4);
 
-    UInt32 file_size = binlog_file_name.size();
+    // Binlog file.
+    UInt32 file_size = 0;
     buffer.write(reinterpret_cast<const char *>(&file_size), 4);
-
-    buffer.write(binlog_file_name.data(), binlog_file_name.size());
+    buffer.write("", 0);
 
     const UInt64 position = 4;
     buffer.write(reinterpret_cast<const char *>(&position), 8);
