@@ -1,7 +1,7 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -67,7 +67,7 @@ TTLBlockInputStream::TTLBlockInputStream(
 
     if (!default_expr_list->children.empty())
     {
-        auto syntax_result = SyntaxAnalyzer(storage.global_context).analyze(default_expr_list, metadata_snapshot->getColumns().getAllPhysical());
+        auto syntax_result = TreeRewriter(storage.global_context).analyze(default_expr_list, metadata_snapshot->getColumns().getAllPhysical());
         defaults_expression = ExpressionAnalyzer{default_expr_list, syntax_result, storage.global_context}.getActions(true);
     }
 
@@ -91,8 +91,7 @@ TTLBlockInputStream::TTLBlockInputStream(
         const Settings & settings = storage.global_context.getSettingsRef();
 
         Aggregator::Params params(header, keys, aggregates,
-            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-            SettingUInt64(0), SettingUInt64(0),
+            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
             settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
             storage.global_context.getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
         aggregator = std::make_unique<Aggregator>(params);

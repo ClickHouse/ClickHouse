@@ -70,6 +70,25 @@ Running a query may use more memory than `max_bytes_before_external_sort`. For t
 
 External sorting works much less effectively than sorting in RAM.
 
+## Optimization of Data Reading {#optimize_read_in_order}
+
+ If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.  
+ 
+ When the `optimize_read_in_order` setting is enabled, the Clickhouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
+
+Optimization works with both `ASC` and `DESC` and doesn't work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+When the `optimize_read_in_order` setting is disabled, the Clickhouse server does not use the table index while processing `SELECT` queries.
+
+Consider disabling `optimize_read_in_order` manually, when running queries that have `ORDER BY` clause, large `LIMIT` and [WHERE](../../../sql-reference/statements/select/where.md) condition that requires to read huge amount of records before queried data is found.
+
+Optimization is supported in the following table engines:
+
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
+- [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) table engines over `MergeTree`-engine tables
+
+In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query doesn't have the `ORDER BY` clause.
+
 ## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
 This modifier also can be combined with [LIMIT … WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
@@ -158,11 +177,11 @@ returns
 ``` text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
-│ 0000-00-00 │ 1970-01-03 │          │
-│ 0000-00-00 │ 1970-01-04 │          │
+│ 1970-01-01 │ 1970-01-03 │          │
+│ 1970-01-01 │ 1970-01-04 │          │
 │ 1970-02-10 │ 1970-01-05 │ original │
-│ 0000-00-00 │ 1970-01-06 │          │
-│ 0000-00-00 │ 1970-01-07 │          │
+│ 1970-01-01 │ 1970-01-06 │          │
+│ 1970-01-01 │ 1970-01-07 │          │
 │ 1970-03-12 │ 1970-01-08 │ original │
 └────────────┴────────────┴──────────┘
 ```
@@ -188,17 +207,17 @@ returns
 ``` text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
-│ 1970-01-16 │ 0000-00-00 │          │
-│ 1970-01-21 │ 0000-00-00 │          │
-│ 1970-01-26 │ 0000-00-00 │          │
-│ 1970-01-31 │ 0000-00-00 │          │
-│ 1970-02-05 │ 0000-00-00 │          │
+│ 1970-01-16 │ 1970-01-01 │          │
+│ 1970-01-21 │ 1970-01-01 │          │
+│ 1970-01-26 │ 1970-01-01 │          │
+│ 1970-01-31 │ 1970-01-01 │          │
+│ 1970-02-05 │ 1970-01-01 │          │
 │ 1970-02-10 │ 1970-01-05 │ original │
-│ 1970-02-15 │ 0000-00-00 │          │
-│ 1970-02-20 │ 0000-00-00 │          │
-│ 1970-02-25 │ 0000-00-00 │          │
-│ 1970-03-02 │ 0000-00-00 │          │
-│ 1970-03-07 │ 0000-00-00 │          │
+│ 1970-02-15 │ 1970-01-01 │          │
+│ 1970-02-20 │ 1970-01-01 │          │
+│ 1970-02-25 │ 1970-01-01 │          │
+│ 1970-03-02 │ 1970-01-01 │          │
+│ 1970-03-07 │ 1970-01-01 │          │
 │ 1970-03-12 │ 1970-01-08 │ original │
 └────────────┴────────────┴──────────┘
 ```

@@ -19,7 +19,7 @@ namespace DB
 class IStorageURLBase : public IStorage
 {
 public:
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

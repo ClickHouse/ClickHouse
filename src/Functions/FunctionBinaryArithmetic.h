@@ -209,7 +209,8 @@ struct DecimalBinaryOperation
     using ArrayC = typename ColumnDecimal<ResultType>::Container;
     using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
-    static void vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c,
+                             NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             vectorVector(a, b, c, scale_a, scale_b);
@@ -217,7 +218,8 @@ struct DecimalBinaryOperation
             SelfNoOverflow::vectorVector(a, b, c, scale_a, scale_b);
     }
 
-    static void vectorConstant(const ArrayA & a, B b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void vectorConstant(const ArrayA & a, B b, ArrayC & c,
+                               NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             vectorConstant(a, b, c, scale_a, scale_b);
@@ -225,7 +227,8 @@ struct DecimalBinaryOperation
             SelfNoOverflow::vectorConstant(a, b, c, scale_a, scale_b);
     }
 
-    static void constantVector(A a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void constantVector(A a, const ArrayB & b, ArrayC & c,
+                               NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             constantVector(a, b, c, scale_a, scale_b);
@@ -233,7 +236,7 @@ struct DecimalBinaryOperation
             SelfNoOverflow::constantVector(a, b, c, scale_a, scale_b);
     }
 
-    static ResultType constantConstant(A a, B b, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static ResultType constantConstant(A a, B b, NativeResultType scale_a, NativeResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
             return constantConstant(a, b, scale_a, scale_b);
@@ -242,7 +245,7 @@ struct DecimalBinaryOperation
     }
 
     static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c,
-                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+                                       NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
         if constexpr (is_plus_minus_compare)
@@ -273,7 +276,7 @@ struct DecimalBinaryOperation
     }
 
     static void NO_INLINE vectorConstant(const ArrayA & a, B b, ArrayC & c,
-                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+                                         NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
         if constexpr (is_plus_minus_compare)
@@ -304,7 +307,7 @@ struct DecimalBinaryOperation
     }
 
     static void NO_INLINE constantVector(A a, const ArrayB & b, ArrayC & c,
-                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+                                         NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = b.size();
         if constexpr (is_plus_minus_compare)
@@ -334,7 +337,7 @@ struct DecimalBinaryOperation
             c[i] = apply(a, b[i]);
     }
 
-    static ResultType constantConstant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    static ResultType constantConstant(A a, B b, NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         if constexpr (is_plus_minus_compare)
         {
@@ -349,8 +352,68 @@ struct DecimalBinaryOperation
     }
 
 private:
+    template <typename T, typename U>
+    static NativeResultType apply(const T & a, const U & b)
+    {
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
+        {
+            if constexpr (IsDecimalNumber<T>)
+                return apply(a.value, b);
+            else if constexpr (IsDecimalNumber<U>)
+                return apply(a, b.value);
+            else if constexpr (std::is_same_v<T, UInt8>)
+                return apply(UInt16(a), b);
+            else if constexpr (std::is_same_v<U, UInt8>)
+                return apply(a, UInt16(b));
+            else
+                return applyNative(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b));
+        }
+        else
+            return applyNative(a, b);
+    }
+
+    template <bool scale_left, typename T, typename U>
+    static NativeResultType applyScaled(const T & a, const U & b, NativeResultType scale)
+    {
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
+        {
+            if constexpr (IsDecimalNumber<T>)
+                return applyScaled<scale_left>(a.value, b, scale);
+            else if constexpr (IsDecimalNumber<U>)
+                return applyScaled<scale_left>(a, b.value, scale);
+            else if constexpr (std::is_same_v<T, UInt8>)
+                return applyScaled<scale_left>(UInt16(a), b, scale);
+            else if constexpr (std::is_same_v<U, UInt8>)
+                return applyScaled<scale_left>(a, UInt16(b), scale);
+            else
+                return applyNativeScaled<scale_left>(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+        }
+        else
+            return applyNativeScaled<scale_left>(a, b, scale);
+    }
+
+    template <typename T, typename U>
+    static NativeResultType applyScaledDiv(const T & a, const U & b, NativeResultType scale)
+    {
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
+        {
+            if constexpr (IsDecimalNumber<T>)
+                return applyScaledDiv(a.value, b, scale);
+            else if constexpr (IsDecimalNumber<U>)
+                return applyScaledDiv(a, b.value, scale);
+            else if constexpr (std::is_same_v<T, UInt8>)
+                return applyScaledDiv(UInt16(a), b, scale);
+            else if constexpr (std::is_same_v<U, UInt8>)
+                return applyScaledDiv(a, UInt16(b), scale);
+            else
+                return applyNativeScaledDiv(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+        }
+        else
+            return applyNativeScaledDiv(a, b, scale);
+    }
+
     /// there's implicit type convertion here
-    static NativeResultType apply(NativeResultType a, NativeResultType b)
+    static NativeResultType applyNative(NativeResultType a, NativeResultType b)
     {
         if constexpr (can_overflow && _check_overflow)
         {
@@ -364,7 +427,7 @@ private:
     }
 
     template <bool scale_left>
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyNativeScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_plus_minus_compare)
         {
@@ -399,7 +462,7 @@ private:
         }
     }
 
-    static NO_SANITIZE_UNDEFINED NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyNativeScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_division)
         {
@@ -443,6 +506,14 @@ template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
 template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
 template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
+template <typename DataType> constexpr bool IsExtended = false;
+template <> inline constexpr bool IsExtended<DataTypeUInt256> = true;
+template <> inline constexpr bool IsExtended<DataTypeInt128> = true;
+template <> inline constexpr bool IsExtended<DataTypeInt256> = true;
+
+template <typename DataType> constexpr bool IsIntegralOrExtended = IsIntegral<DataType> || IsExtended<DataType>;
+template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal = IsIntegralOrExtended<DataType> || IsDataTypeDecimal<DataType>;
+
 template <typename DataType> constexpr bool IsFloatingPoint = false;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
@@ -452,6 +523,9 @@ template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal32>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
@@ -484,11 +558,11 @@ public:
         Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
-        Case<IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && IsIntegral<RightDataType>, LeftDataType>,
-        Case<!IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && IsIntegral<LeftDataType>, RightDataType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
+        Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && !IsIntegral<RightDataType>, InvalidType>,
-        Case<!IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && !IsIntegral<LeftDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
         /// number <op> number -> see corresponding impl
         Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
             DataTypeFromFieldType<typename Op::ResultType>>,
@@ -506,10 +580,11 @@ public:
         /// greatest(Date, Date) -> Date
         Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastBaseImpl<T0, T1>> || std::is_same_v<Op, GreatestBaseImpl<T0, T1>>),
             LeftDataType>,
-        /// Date % Int32 -> int32
+        /// Date % Int32 -> Int32
+        /// Date % Float -> Float64
         Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
             Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
-            Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeInt32>>>>;
+            Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
 };
 
 
@@ -527,10 +602,13 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+            DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
             DataTypeInt32,
             DataTypeInt64,
+            DataTypeInt128,
+            DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeDate,
@@ -538,6 +616,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
+            DataTypeDecimal<Decimal256>,
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }
@@ -862,7 +941,7 @@ public:
         return type_res;
     }
 
-    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeFixedString(Block & block, const ColumnNumbers & arguments, size_t result) const
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
 
@@ -940,7 +1019,7 @@ public:
     }
 
     template <typename A, typename B>
-    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right)
+    bool executeNumeric(Block & block, const ColumnNumbers & arguments, size_t result [[maybe_unused]], const A & left, const B & right) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -1073,7 +1152,7 @@ public:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))

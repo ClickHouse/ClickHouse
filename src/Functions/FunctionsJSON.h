@@ -286,7 +286,7 @@ public:
         return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
@@ -513,7 +513,7 @@ public:
             if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
-        else if (element.isBool() && is_integral_v<NumberType> && convert_bool_to_integer)
+        else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
             value = static_cast<NumberType>(element.getBool());
         else
             return false;

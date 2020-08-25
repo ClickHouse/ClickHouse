@@ -1,4 +1,4 @@
-# system.trace\_log {#system_tables-trace_log}
+# system.trace_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
@@ -46,3 +46,5 @@ thread_number: 48
 query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
 trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
 ```
+
+ [Original article](https://clickhouse.tech/docs/en/operations/system_tables/trace_log) <!--hide-->

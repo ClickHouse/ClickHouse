@@ -601,7 +601,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 В таблицах `MergeTree` данные попадают на диск несколькими способами:
 
 -   В результате вставки (запрос `INSERT`).
--   В фоновых операциях слияний и [мутаций](../../../engines/table-engines/mergetree-family/mergetree.md#alter-mutations).
+-   В фоновых операциях слияний и [мутаций](../../../sql-reference/statements/alter.md#mutations).
 -   При скачивании данных с другой реплики.
 -   В результате заморозки партиций [ALTER TABLE … FREEZE PARTITION](../../../engines/table-engines/mergetree-family/mergetree.md#alter_freeze-partition).
 

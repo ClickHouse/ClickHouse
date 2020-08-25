@@ -76,20 +76,20 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override
-    {
-        if (number_of_arguments > 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 0 or 1.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
-
     static FunctionOverloadResolverImplPtr create(const Context &)
     {
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
 
-    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
+    DataTypePtr getReturnType(const DataTypes & data_types) const override
+    {
+        size_t number_of_arguments = data_types.size();
+        if (number_of_arguments > 1)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(number_of_arguments) + ", should be 0 or 1.",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        return std::make_shared<DataTypeNumber<ToType>>();
+    }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {

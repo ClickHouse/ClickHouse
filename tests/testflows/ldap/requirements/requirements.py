@@ -1,6 +1,6 @@
 # These requirements were auto generated
 # from software requirements specification (SRS)
-# document by TestFlows v1.6.200623.1103543.
+# document by TestFlows v1.6.200811.1124123.
 # Do not edit by hand but re-generate instead
 # using 'tfs requirements generate' command.
 from testflows.core import Requirement
@@ -243,7 +243,7 @@ RQ_SRS_007_LDAP_Authentication_PasswordChanged = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL return an error and prohibit authentication if the password \n'
+        '[ClickHouse] SHALL return an error and prohibit authentication if the password\n'
         'for the user is changed on the [LDAP] server.\n'
         ),
         link=None
@@ -296,8 +296,8 @@ RQ_SRS_007_LDAP_Authentication_Parallel_ValidAndInvalid = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support authentication of valid users and \n'
-        'prohibit authentication of invalid users using [LDAP] server \n'
+        '[ClickHouse] SHALL support authentication of valid users and\n'
+        'prohibit authentication of invalid users using [LDAP] server\n'
         'in parallel without having invalid attempts affecting valid authentications.\n'
         ),
         link=None
@@ -338,7 +338,7 @@ RQ_SRS_007_LDAP_Configuration_Server_Host = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL support `<host>` parameter to specify [LDAP]\n'
-        'server hostname or IP, this parameter SHALL be mandatory and SHALL not be empty. \n'
+        'server hostname or IP, this parameter SHALL be mandatory and SHALL not be empty.\n'
         ),
         link=None
     )
@@ -391,7 +391,7 @@ RQ_SRS_007_LDAP_Configuration_Server_AuthDN_Suffix = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support `<auth_dn_suffix>` parameter to specify the suffix \n'
+        '[ClickHouse] SHALL support `<auth_dn_suffix>` parameter to specify the suffix\n'
         'of value used to construct the DN to bound to during authentication via [LDAP] server.\n'
         ),
         link=None
@@ -420,7 +420,7 @@ RQ_SRS_007_LDAP_Configuration_Server_EnableTLS = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support `<enable_tls>` parameter to trigger the use of secure connection to the [LDAP] server. \n'
+        '[ClickHouse] SHALL support `<enable_tls>` parameter to trigger the use of secure connection to the [LDAP] server.\n'
         ),
         link=None
     )
@@ -434,7 +434,7 @@ RQ_SRS_007_LDAP_Configuration_Server_EnableTLS_Options_Default = Requirement(
         uid=None,
         description=(
         '[ClickHouse] SHALL use `yes` value as the default for `<enable_tls>` parameter\n'
-        'to enable SSL/TLS `ldaps://` protocol. \n'
+        'to enable SSL/TLS `ldaps://` protocol.\n'
         ),
         link=None
     )
@@ -447,7 +447,7 @@ RQ_SRS_007_LDAP_Configuration_Server_EnableTLS_Options_No = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying `no` as the value of `<enable_tls>` parameter to enable \n'
+        '[ClickHouse] SHALL support specifying `no` as the value of `<enable_tls>` parameter to enable\n'
         'plain text `ldap://` protocol.\n'
         ),
         link=None
@@ -461,7 +461,7 @@ RQ_SRS_007_LDAP_Configuration_Server_EnableTLS_Options_Yes = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying `yes` as the value of `<enable_tls>` parameter to enable \n'
+        '[ClickHouse] SHALL support specifying `yes` as the value of `<enable_tls>` parameter to enable\n'
         'SSL/TLS `ldaps://` protocol.\n'
         ),
         link=None
@@ -475,7 +475,7 @@ RQ_SRS_007_LDAP_Configuration_Server_EnableTLS_Options_StartTLS = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support specifying `starttls` as the value of `<enable_tls>` parameter to enable \n'
+        '[ClickHouse] SHALL support specifying `starttls` as the value of `<enable_tls>` parameter to enable\n'
         'legacy `StartTLS` protocol that used plain text `ldap://` protocol, upgraded to [TLS].\n'
         ),
         link=None
@@ -489,7 +489,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSMinimumProtocolVersion = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support `<tls_minimum_protocol_version>` parameter to specify \n'
+        '[ClickHouse] SHALL support `<tls_minimum_protocol_version>` parameter to specify\n'
         'the minimum protocol version of SSL/TLS.\n'
         ),
         link=None
@@ -517,7 +517,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSMinimumProtocolVersion_Default = Require
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL set `tls1.2` as the default value of the `<tls_minimum_protocol_version>` parameter. \n'
+        '[ClickHouse] SHALL set `tls1.2` as the default value of the `<tls_minimum_protocol_version>` parameter.\n'
         ),
         link=None
     )
@@ -530,7 +530,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSRequireCert = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support `<tls_require_cert>` parameter to specify [TLS] peer \n'
+        '[ClickHouse] SHALL support `<tls_require_cert>` parameter to specify [TLS] peer\n'
         'certificate verification behavior.\n'
         ),
         link=None
@@ -574,7 +574,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSRequireCert_Options_Allow = Requirement(
         description=(
         '[ClickHouse] SHALL support specifying `allow` as the value of `<tls_require_cert>` parameter to\n'
         'enable requesting of client certificate. If no\n'
-        'certificate is provided, the session SHALL proceed normally.  \n'
+        'certificate is provided, the session SHALL proceed normally.\n'
         'If a bad certificate is provided, it SHALL be ignored and the session SHALL proceed normally.\n'
         ),
         link=None
@@ -590,7 +590,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSRequireCert_Options_Try = Requirement(
         description=(
         '[ClickHouse] SHALL support specifying `try` as the value of `<tls_require_cert>` parameter to\n'
         'enable requesting of client certificate. If no certificate is provided, the session\n'
-        'SHALL proceed  normally.  If a bad certificate is provided, the session SHALL be \n'
+        'SHALL proceed  normally.  If a bad certificate is provided, the session SHALL be\n'
         'immediately terminated.\n'
         ),
         link=None
@@ -646,7 +646,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSCACertDir = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support `<tls_ca_cert_dir>` parameter to specify to a path to \n'
+        '[ClickHouse] SHALL support `<tls_ca_cert_dir>` parameter to specify to a path to\n'
         'the directory containing [CA] certificates used to verify certificates provided by the [LDAP] server.\n'
         ),
         link=None
@@ -660,7 +660,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSCACertFile = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL support `<tls_ca_cert_file>` parameter to specify a path to a specific \n'
+        '[ClickHouse] SHALL support `<tls_ca_cert_file>` parameter to specify a path to a specific\n'
         '[CA] certificate file used to verify certificates provided by the [LDAP] server.\n'
         ),
         link=None
@@ -677,7 +677,7 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSCipherSuite = Requirement(
         '[ClickHouse] SHALL support `tls_cipher_suite` parameter to specify allowed cipher suites.\n'
         'The value SHALL use the same format as the `ciphersuites` in the [OpenSSL Ciphers].\n'
         '\n'
-        'For example, \n'
+        'For example,\n'
         '\n'
         '```xml\n'
         '<tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>\n'
@@ -717,6 +717,24 @@ RQ_SRS_007_LDAP_Configuration_Server_Syntax = Requirement(
         '        <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>\n'
         '    </my_ldap_server>\n'
         '</yandex>\n'
+        '```\n'
+        ),
+        link=None
+    )
+
+RQ_SRS_007_LDAP_Configuration_User_RBAC = Requirement(
+        name='RQ.SRS-007.LDAP.Configuration.User.RBAC',
+        version='1.0',
+        priority=None,
+        group=None,
+        type=None,
+        uid=None,
+        description=(
+        '[ClickHouse] SHALL support creating users identified using an [LDAP] server using\n'
+        'the following RBAC command\n'
+        '\n'
+        '```sql\n'
+        "CREATE USER name IDENTIFIED WITH ldap_server BY 'server_name'\n"
         '```\n'
         ),
         link=None
@@ -769,7 +787,7 @@ RQ_SRS_007_LDAP_Configuration_User_BothPasswordAndLDAP = Requirement(
         type=None,
         uid=None,
         description=(
-        '[ClickHouse] SHALL throw an error if `<ldap>` is specified for the user and at the same \n'
+        '[ClickHouse] SHALL throw an error if `<ldap>` is specified for the user and at the same\n'
         'time user configuration contains any of the `<password*>` entries.\n'
         ),
         link=None
@@ -784,8 +802,8 @@ RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_NotDefined = Requireme
         uid=None,
         description=(
         '[ClickHouse] SHALL throw an error during any authentification attempt\n'
-        'if the name of the [LDAP] server used inside the `<ldap>` entry \n'
-        'is not defined in the `<ldap_servers>` section. \n'
+        'if the name of the [LDAP] server used inside the `<ldap>` entry\n'
+        'is not defined in the `<ldap_servers>` section.\n'
         ),
         link=None
     )
@@ -800,7 +818,7 @@ RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_Empty = Requirement(
         description=(
         '[ClickHouse] SHALL throw an error during any authentification attempt\n'
         'if the name of the [LDAP] server used inside the `<ldap>` entry\n'
-        'is empty. \n'
+        'is empty.\n'
         ),
         link=None
     )

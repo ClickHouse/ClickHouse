@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-. $CURDIR/mergetree_mutations.lib
+. "$CURDIR"/mergetree_mutations.lib
 
 function wait_mutation_to_start()
 {
-    query_wait=`$CLICKHOUSE_CLIENT --query="SELECT length(parts_to_do_names) FROM system.mutations where table = '$1'" 2>&1`
+    query_wait=$($CLICKHOUSE_CLIENT --query="SELECT length(parts_to_do_names) FROM system.mutations where table = '$1'" 2>&1)
 
     while [ "$query_wait" == "0" ] || [ -z "$query_wait" ]
     do
-        query_wait=`$CLICKHOUSE_CLIENT --query="SELECT length(parts_to_do_names) FROM system.mutations where table = '$1'" 2>&1`
+        query_wait=$($CLICKHOUSE_CLIENT --query="SELECT length(parts_to_do_names) FROM system.mutations where table = '$1'" 2>&1)
         sleep 0.5
     done
 }
