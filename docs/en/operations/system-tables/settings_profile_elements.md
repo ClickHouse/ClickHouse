@@ -3,7 +3,7 @@
 Contains settings and constraints, as well as a list of roles and/or users to which this profile is applied.
 
 Columns:
--    `profile_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of setting profile.
+-    `profile_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Setting profile name.
 
 -    `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.
 
