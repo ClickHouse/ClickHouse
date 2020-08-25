@@ -13,7 +13,7 @@ The supported formats are:
 | Format                                                          | Input | Output |
 |-----------------------------------------------------------------|-------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✔     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✗     | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔     | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔     | ✔      |
 | [Template](#format-template)                                    | ✔     | ✔      |
