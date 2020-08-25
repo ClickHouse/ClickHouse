@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int BAD_ARGUMENTS;
 }
 
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
