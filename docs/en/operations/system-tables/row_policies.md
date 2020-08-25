@@ -5,7 +5,7 @@ Contains filters for one particular table, as well as a list of roles and/or use
 Columns:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — Name of a row policy.
 
--    `short_name` ([String](../../sql-reference/data-types/string.md)) — Short name of a row policy. Names of row policies are compound, for example: myfilter ON mydb.mytable. Here "myfilter ON mydb.mytable" is the name of the row policy, "myfilter" is it`s short name.
+-    `short_name` ([String](../../sql-reference/data-types/string.md)) — Short name of a row policy. Names of row policies are compound, for example: myfilter ON mydb.mytable. Here "myfilter ON mydb.mytable" is the name of the row policy, "myfilter" is it's short name.
 
 -    `database` ([String](../../sql-reference/data-types/string.md)) — Name of a database.
 
