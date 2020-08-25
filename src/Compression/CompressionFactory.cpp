@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
-static constexpr auto DEFAULT_CODEC_NAME = "DefaultCompression";
+static constexpr auto DEFAULT_CODEC_NAME = "Default";
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
