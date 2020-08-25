@@ -4,7 +4,6 @@
 
 namespace DB
 {
-
 void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
     if (pChannel && priority >= msg.base.getPriority())
@@ -28,5 +27,6 @@ void OwnFormattingChannel::log(const Poco::Message & msg)
 }
 
 OwnFormattingChannel::~OwnFormattingChannel() = default;
+
 
 }

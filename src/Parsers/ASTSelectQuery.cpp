@@ -57,17 +57,6 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
-void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(distinct);
-    hash_state.update(group_by_with_totals);
-    hash_state.update(group_by_with_rollup);
-    hash_state.update(group_by_with_cube);
-    hash_state.update(limit_with_ties);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
-
 void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
@@ -164,11 +153,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitLength()->formatImpl(s, state, frame);
         if (limit_with_ties)
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << " WITH TIES" << (s.hilite ? hilite_none : "");
-    }
-    else if (limitOffset())
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "OFFSET " << (s.hilite ? hilite_none : "");
-        limitOffset()->formatImpl(s, state, frame);
     }
 
     if (settings())

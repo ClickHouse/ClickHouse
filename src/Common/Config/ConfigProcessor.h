@@ -116,7 +116,7 @@ private:
 
     bool throw_on_bad_incl;
 
-    Poco::Logger * log;
+    Logger * log;
     Poco::AutoPtr<Poco::Channel> channel_ptr;
 
     Substitutions substitutions;

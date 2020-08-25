@@ -1,6 +1,6 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaCache.h>
-#include <Access/QuotaUsage.h>
+#include <Access/QuotaUsageInfo.h>
 #include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUOTA_REQUIRES_CLIENT_KEY;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -73,9 +72,8 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
                 return params.client_key;
             return params.client_address.toString();
         }
-        case KeyType::MAX: break;
     }
-    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
+    __builtin_unreachable();
 }
 
 
@@ -103,7 +101,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     new_intervals->quota_key = key;
     auto & intervals = new_intervals->intervals;
     intervals.reserve(quota->all_limits.size());
-    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+    static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
     for (const auto & limits : quota->all_limits)
     {
         intervals.emplace_back();
@@ -116,8 +114,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         interval.end_of_interval = end_of_interval.time_since_epoch();
         for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
         {
-            if (limits.max[resource_type])
-                interval.max[resource_type] = *limits.max[resource_type];
+            interval.max[resource_type] = limits.max[resource_type];
             interval.used[resource_type] = 0;
         }
     }
@@ -170,7 +167,12 @@ QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
+    const UUID & user_id,
+    const String & user_name,
+    const std::vector<UUID> & enabled_roles,
+    const Poco::Net::IPAddress & client_address,
+    const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -288,20 +290,16 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
 }
 
 
-std::vector<QuotaUsage> QuotaCache::getAllQuotasUsage() const
+std::vector<QuotaUsageInfo> QuotaCache::getUsageInfo() const
 {
     std::lock_guard lock{mutex};
-    std::vector<QuotaUsage> all_usage;
+    std::vector<QuotaUsageInfo> all_infos;
     auto current_time = std::chrono::system_clock::now();
     for (const auto & info : all_quotas | boost::adaptors::map_values)
     {
         for (const auto & intervals : info.key_to_intervals | boost::adaptors::map_values)
-        {
-            auto usage = intervals->getUsage(current_time);
-            if (usage)
-                all_usage.push_back(std::move(usage).value());
-        }
+            all_infos.push_back(intervals->getUsageInfo(current_time));
     }
-    return all_usage;
+    return all_infos;
 }
 }

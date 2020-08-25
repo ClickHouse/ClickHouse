@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -59,8 +58,10 @@ Block PartLogElement::createBlock()
     };
 }
 
-void PartLogElement::appendToBlock(MutableColumns & columns) const
+void PartLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t i = 0;
 
     columns[i++]->insert(event_type);
@@ -91,6 +92,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
+
+    block.setColumns(std::move(columns));
 }
 
 
@@ -139,7 +142,7 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
     }
     catch (...)
     {
-        tryLogCurrentException(part_log ? part_log->log : &Poco::Logger::get("PartLog"), __PRETTY_FUNCTION__);
+        tryLogCurrentException(part_log ? part_log->log : &Logger::get("PartLog"), __PRETTY_FUNCTION__);
         return false;
     }
 

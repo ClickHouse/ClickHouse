@@ -1,6 +1,5 @@
 #include "SchemaAllowedHandler.h"
 
-#if USE_ODBC
 
 #    include <IO/WriteBufferFromHTTPServerResponse.h>
 #    include <IO/WriteHelpers.h>
@@ -37,7 +36,7 @@ namespace
 void SchemaAllowedHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: " << request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
@@ -72,5 +71,3 @@ void SchemaAllowedHandler::handleRequest(Poco::Net::HTTPServerRequest & request,
 }
 
 }
-
-#endif

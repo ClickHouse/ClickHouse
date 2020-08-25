@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
 toc_priority: 69
 toc_title: "ClickHouse testleri nas\u0131l \xE7al\u0131\u015Ft\u0131r\u0131l\u0131\
   r"
@@ -176,7 +176,7 @@ Ana ClickHouse kodu (bu `dbms` dizin) ile inşa edilmiştir `-Wall -Wextra -Werr
 
 Clang daha yararlı uyarılar vardır-Sen ile onları arayabilirsiniz `-Weverything` ve varsayılan oluşturmak için bir şey seçin.
 
-Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
+Üretim yapıları için gcc kullanılır (hala clang'dan biraz daha verimli kod üretir). Geliştirme için, clang genellikle kullanımı daha uygundur. Hata ayıklama modu ile kendi makinenizde inşa edebilirsiniz (dizüstü bilgisayarınızın pilinden tasarruf etmek için), ancak derleyicinin daha fazla uyarı üretebileceğini lütfen unutmayın `-O3` daha iyi kontrol akışı ve prosedürler arası analiz nedeniyle. Clang ile inşa ederken, `libc++` yerine kullanılır `libstdc++` ve hata ayıklama modu ile oluştururken, hata ayıklama sürümü `libc++` çalışma zamanında daha fazla hata yakalamak için izin verir kullanılır.
 
 ## Dezenfektanlar {#sanitizers}
 
@@ -200,23 +200,13 @@ Hata ayıklama sürümü `jemalloc` hata ayıklama oluşturmak için kullanılı
 
 ## Fuzzing {#fuzzing}
 
-ClickHouse fuzzing hem kullanılarak uygulanmaktadır [libFuzzer](https://llvm.org/docs/LibFuzzer.html) ve rastgele SQL sorguları.
-Tüm fuzz testleri sanitizers (Adres ve tanımsız) ile yapılmalıdır.
+Rastgele SQL sorguları oluşturmak ve sunucunun ölmediğini kontrol etmek için basit fuzz testi kullanıyoruz. Fuzz testi Adres dezenfektanı ile yapılır. İçinde bulabilirsiniz `00746_sql_fuzzy.pl`. Bu test sürekli olarak (gece ve daha uzun) çalıştırılmalıdır.
 
-LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “\_fuzzer” adı postfixes.
-Fuzzer örneği bulunabilir `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer özgü yapılandırmalar, sözlükler ve corpus saklanır `tests/fuzz`.
-Kullanıcı girişini işleyen her işlevsellik için fuzz testleri yazmanızı öneririz.
-
-Fuzzers varsayılan olarak oluşturulmaz. Hem fuzzers inşa etmek `-DENABLE_FUZZING=1` ve `-DENABLE_TESTS=1` seçenekler ayarlanmalıdır.
-Fuzzers oluştururken Jemalloc'u devre dışı bırakmanızı öneririz. ClickHouse fuzzing'i entegre etmek için kullanılan yapılandırma
-Google OSS-Fuzz bulunabilir `docker/fuzz`.
-
-Ayrıca rastgele SQL sorguları oluşturmak ve sunucunun bunları çalıştırarak ölmediğini kontrol etmek için basit fuzz testi kullanıyoruz.
-İçinde bulabilirsiniz `00746_sql_fuzzy.pl`. Bu test sürekli olarak (gece ve daha uzun) çalıştırılmalıdır.
+Aralık 2018 itibariyle, hala kütüphane kodunun izole fuzz testini kullanmıyoruz.
 
 ## Güvenlik Denetimi {#security-audit}
 
-Yandex Güvenlik ekibinden insanlar güvenlik açısından ClickHouse yetenekleri bazı temel bakış yapmak.
+Yandex Bulut departmanından insanlar, güvenlik açısından ClickHouse yeteneklerine bazı temel genel bakışlar yaparlar.
 
 ## Statik Analizörler {#static-analyzers}
 

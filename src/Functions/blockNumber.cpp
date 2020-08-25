@@ -12,7 +12,7 @@ namespace DB
 class FunctionBlockNumber : public IFunction
 {
 private:
-    mutable std::atomic<size_t> block_number{0};
+    std::atomic<size_t> block_number{0};
 
 public:
     static constexpr auto name = "blockNumber";
@@ -49,7 +49,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         size_t current_block_number = block_number++;
         block.getByPosition(result).column = ColumnUInt64::create(input_rows_count, current_block_number);

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
 toc_priority: 68
 toc_title: "Comment \xE9crire du Code C++ "
 ---
@@ -701,11 +701,11 @@ auto s = std::string{"Hello"};
 
 Mais toutes choses étant égales par ailleurs, le code multi-plateforme ou portable est préféré.
 
-**2.** Langue: C++20.
+**2.** Langue: C++17.
 
-**3.** Compilateur: `gcc`. En ce moment (août 2020), le code est compilé en utilisant la version 9.3. (Il peut également être compilé en utilisant `clang 8`.)
+**3.** Compilateur: `gcc`. En ce moment (décembre 2017), le code est compilé en utilisant la version 7.2. (Il peut également être compilé en utilisant `clang 4`.)
 
-La bibliothèque standard est utilisée (`libc++`).
+La bibliothèque standard est utilisée (`libstdc++` ou `libc++`).
 
 **4.**OS: Linux Ubuntu, pas plus vieux que précis.
 
@@ -749,7 +749,7 @@ Si votre code dans le `master` la branche n'est pas constructible pourtant, l'ex
 
 ## Bibliothèque {#libraries}
 
-**1.** La bibliothèque standard C++20 est utilisée (les extensions expérimentales sont autorisées), ainsi que `boost` et `Poco` Framework.
+**1.** La bibliothèque standard C++14 est utilisée (les extensions expérimentales sont autorisées), ainsi que `boost` et `Poco` Framework.
 
 **2.** Si nécessaire, vous pouvez utiliser toutes les bibliothèques bien connues disponibles dans le package OS.
 

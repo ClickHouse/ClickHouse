@@ -5,7 +5,6 @@
 #include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
-#include <Storages/StorageS3Settings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -24,7 +23,6 @@
 
 #include <DataTypes/DataTypeString.h>
 
-#include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 
@@ -34,8 +32,6 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-
-#include <sstream>
 
 
 namespace DB
@@ -123,6 +119,7 @@ namespace
                 return Chunk(std::move(columns), num_rows);
             }
 
+            reader->readSuffix();
             reader.reset();
 
             return {};
@@ -153,7 +150,7 @@ namespace
             : sample_block(sample_block_)
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, true), compression_method, 3);
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -198,33 +195,27 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
+    : IStorage(table_id_, ColumnsDescription({
+            {"_path", std::make_shared<DataTypeString>()},
+            {"_file", std::make_shared<DataTypeString>()}
+        }, true))
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , name(uri_.storage_name)
+    , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
-
-    auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
-    Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);
-    if (access_key_id_.empty())
-        credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
-
-    client = S3::ClientFactory::instance().create(
-        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers), context_.getRemoteHostFilter());
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 
 namespace
 {
-    /* "Recursive" directory listing with matched paths as a result.
+
+/* "Recursive" directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
 Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
@@ -254,17 +245,9 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
         {
-            std::ostringstream message;
-            message << "Could not list objects in bucket " << quoteString(request.GetBucket())
-                << " with prefix " << quoteString(request.GetPrefix());
-
-            if (page > 1)
-                message << ", page " << std::to_string(page);
-
-            message << ", S3 exception: " + backQuote(outcome.GetError().GetExceptionName())
-                << ", message: " + quoteString(outcome.GetError().GetMessage());
-
-            throw Exception(message.str(), ErrorCodes::S3_ERROR);
+            throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
+                    + " with prefix " + quoteString(request.GetPrefix())
+                    + ", page " + std::to_string(page), ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
@@ -284,9 +267,8 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 }
 
 
-Pipe StorageS3::read(
+Pipes StorageS3::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -310,31 +292,29 @@ Pipe StorageS3::read(
             need_file_column,
             format_name,
             getName(),
-            metadata_snapshot->getSampleBlock(),
+            getHeaderBlock(column_names),
             context,
-            metadata_snapshot->getColumns().getDefaults(),
+            getColumns().getDefaults(),
             max_block_size,
             chooseCompressionMethod(uri.endpoint, compression_method),
             client,
             uri.bucket,
             key));
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    narrowPipe(pipe, num_streams);
-    return pipe;
+    return narrowPipes(std::move(pipes), num_streams);
 }
 
-BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        format_name, min_upload_part_size, metadata_snapshot->getSampleBlock(),
-        context_global, chooseCompressionMethod(uri.endpoint, compression_method),
+        format_name, min_upload_part_size, getSampleBlock(), context_global,
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client, uri.bucket, uri.key);
 }
 
-void registerStorageS3Impl(const String & name, StorageFactory & factory)
+void registerStorageS3(StorageFactory & factory)
 {
-    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
+    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
@@ -372,24 +352,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
     {
         .source_access_type = AccessType::S3,
     });
-}
-
-void registerStorageS3(StorageFactory & factory)
-{
-    return registerStorageS3Impl("S3", factory);
-}
-
-void registerStorageCOS(StorageFactory & factory)
-{
-    return registerStorageS3Impl("COSN", factory);
-}
-
-NamesAndTypesList StorageS3::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
 }
 
 }

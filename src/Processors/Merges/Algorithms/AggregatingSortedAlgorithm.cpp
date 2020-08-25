@@ -223,7 +223,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
     /// Write the simple aggregation result for the current group.
     for (auto & desc : def.columns_to_simple_aggregate)
     {
-        desc.function->insertResultInto(desc.state.data(), *desc.column, arena.get());
+        desc.function->insertResultInto(desc.state.data(), *desc.column);
         desc.destroyState();
     }
 
@@ -280,19 +280,19 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
 {
 }
 
-void AggregatingSortedAlgorithm::initialize(Inputs inputs)
+void AggregatingSortedAlgorithm::initialize(Chunks chunks)
 {
-    for (auto & input : inputs)
-        if (input.chunk)
-            preprocessChunk(input.chunk, columns_definition);
+    for (auto & chunk : chunks)
+        if (chunk)
+            preprocessChunk(chunk, columns_definition);
 
-    initializeQueue(std::move(inputs));
+    initializeQueue(std::move(chunks));
 }
 
-void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
+void AggregatingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
 {
-    preprocessChunk(input.chunk, columns_definition);
-    updateCursor(input, source_num);
+    preprocessChunk(chunk, columns_definition);
+    updateCursor(std::move(chunk), source_num);
 }
 
 IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
@@ -302,15 +302,6 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
     {
         bool key_differs;
         SortCursor current = queue.current();
-
-        if (current->isLast() && skipLastRowFor(current->order))
-        {
-            /// If we skip this row, it's not equals with any key we process.
-            last_key.reset();
-            /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
-        }
 
         {
             detail::RowRef current_key;

@@ -19,7 +19,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & /* context */,
-                                 const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
@@ -59,7 +58,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const Block & sample_block_)
-    : log(&Poco::Logger::get("MySQLDictionarySource"))
+    : log(&Logger::get("MySQLDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , db{config.getString(config_prefix + ".db", "")}
@@ -78,7 +77,7 @@ MySQLDictionarySource::MySQLDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-    : log(&Poco::Logger::get("MySQLDictionarySource"))
+    : log(&Logger::get("MySQLDictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , db{other.db}
@@ -228,7 +227,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
             if (!update_time_value.isNull())
             {
                 modification_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got modification time: {}", modification_time);
+                LOG_TRACE(log, "Got modification time: " << modification_time);
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error

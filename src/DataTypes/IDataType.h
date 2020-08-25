@@ -307,7 +307,7 @@ public:
     virtual DataTypePtr promoteNumericType() const;
 
     /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
-      * This should be overridden if data type default value differs from column default value (example: Enum data types).
+      * This should be overriden if data type default value differs from column default value (example: Enum data types).
       */
     virtual void insertDefaultInto(IColumn & column) const;
 
@@ -444,10 +444,13 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /// Customize this DataType
+    /** Customize this DataType
+      */
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
-    /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
+private:
+    /** This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
+     */
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
 
@@ -482,8 +485,7 @@ struct WhichDataType
     bool isUInt32() const { return idx == TypeIndex::UInt32; }
     bool isUInt64() const { return idx == TypeIndex::UInt64; }
     bool isUInt128() const { return idx == TypeIndex::UInt128; }
-    bool isbUInt256() const { return idx == TypeIndex::bUInt256; }
-    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isbUInt256(); }
+    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128(); }
     bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
 
     bool isInt8() const { return idx == TypeIndex::Int8; }
@@ -491,15 +493,13 @@ struct WhichDataType
     bool isInt32() const { return idx == TypeIndex::Int32; }
     bool isInt64() const { return idx == TypeIndex::Int64; }
     bool isInt128() const { return idx == TypeIndex::Int128; }
-    bool isbInt256() const { return idx == TypeIndex::bInt256; }
-    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isbInt256(); }
+    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128(); }
     bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
 
     bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
     bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
     bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
-    bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
-    bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
+    bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128(); }
 
     bool isFloat32() const { return idx == TypeIndex::Float32; }
     bool isFloat64() const { return idx == TypeIndex::Float64; }
@@ -528,21 +528,14 @@ struct WhichDataType
     bool isNullable() const { return idx == TypeIndex::Nullable; }
     bool isFunction() const { return idx == TypeIndex::Function; }
     bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
-
-    bool IsBigIntOrDeimal() const { return isInt128() || isbInt256() || isbUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
-template <typename T>
-inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
-template <typename T>
-inline bool isDateOrDateTime(const T & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
-template <typename T>
-inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
-template <typename T>
-inline bool isDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTime64(); }
-
+inline bool isDate(const DataTypePtr & data_type) { return WhichDataType(data_type).isDate(); }
+inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime(); }
+inline bool isDateTime64(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime64(); }
 inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
@@ -644,19 +637,6 @@ inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
-}
-
-template <TypeIndex TYPE_IDX, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    WhichDataType which(data_type);
-    return which.idx == TYPE_IDX;
-}
-
-template <typename ExpectedDataType, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    return isDataType<ExpectedDataType::type_id>(data_type);
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

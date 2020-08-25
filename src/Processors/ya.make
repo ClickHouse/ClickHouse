@@ -1,21 +1,19 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
-    contrib/libs/protobuf
+    contrib/libs/protobuf_std
 )
 
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
-    Executors/ExecutingGraph.cpp
-    Executors/PipelineExecutingBlockInputStream.cpp
+    Executors/ParallelPipelineExecutor.cpp
     Executors/PipelineExecutor.cpp
-    Executors/PullingAsyncPipelineExecutor.cpp
-    Executors/PullingPipelineExecutor.cpp
+    Executors/SequentialPipelineExecutor.cpp
+    Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
@@ -23,7 +21,6 @@ SRCS(
     Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
-    Formats/Impl/JSONAsStringRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowOutputFormat.cpp
     Formats/Impl/JSONCompactRowOutputFormat.cpp
@@ -39,7 +36,6 @@ SRCS(
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
     Formats/Impl/ODBCDriverBlockOutputFormat.cpp
-    Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
     Formats/Impl/PrettySpaceBlockOutputFormat.cpp
@@ -61,7 +57,6 @@ SRCS(
     Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
-    Formats/PullingOutputFormat.cpp
     Formats/RowInputFormatWithDiagnosticInfo.cpp
     IAccumulatingTransform.cpp
     IInflatingTransform.cpp
@@ -70,64 +65,49 @@ SRCS(
     ISink.cpp
     ISource.cpp
     LimitTransform.cpp
+    Merges/AggregatingSortedTransform.h
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
+    Merges/Algorithms/AggregatingSortedAlgorithm.h
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
+    Merges/Algorithms/CollapsingSortedAlgorithm.h
+    Merges/Algorithms/FixedSizeDequeWithGaps.h
+    Merges/Algorithms/Graphite.h
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
+    Merges/Algorithms/GraphiteRollupSortedAlgorithm.h
+    Merges/Algorithms/IMergingAlgorithm.h
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
+    Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
+    Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h
+    Merges/Algorithms/MergedData.h
     Merges/Algorithms/MergingSortedAlgorithm.cpp
+    Merges/Algorithms/MergingSortedAlgorithm.h
     Merges/Algorithms/ReplacingSortedAlgorithm.cpp
+    Merges/Algorithms/ReplacingSortedAlgorithm.h
+    Merges/Algorithms/RowRef.h
     Merges/Algorithms/SummingSortedAlgorithm.cpp
+    Merges/Algorithms/SummingSortedAlgorithm.h
     Merges/Algorithms/VersionedCollapsingAlgorithm.cpp
+    Merges/Algorithms/VersionedCollapsingAlgorithm.h
+    Merges/CollapsingSortedTransform.h
+    Merges/GraphiteRollupSortedTransform.h
     Merges/IMergingTransform.cpp
+    Merges/IMergingTransform.h
     Merges/MergingSortedTransform.cpp
-    OffsetTransform.cpp
+    Merges/MergingSortedTransform.h
+    Merges/ReplacingSortedTransform.h
+    Merges/SummingSortedTransform.h
+    Merges/VersionedCollapsingTransform.h
     Pipe.cpp
     Port.cpp
-    printPipeline.cpp
     QueryPipeline.cpp
-    QueryPlan/AddingDelayedSourceStep.cpp
-    QueryPlan/AggregatingStep.cpp
-    QueryPlan/ArrayJoinStep.cpp
-    QueryPlan/ConvertingStep.cpp
-    QueryPlan/CreatingSetsStep.cpp
-    QueryPlan/CubeStep.cpp
-    QueryPlan/DistinctStep.cpp
-    QueryPlan/ExpressionStep.cpp
-    QueryPlan/ExtremesStep.cpp
-    QueryPlan/FillingStep.cpp
-    QueryPlan/FilterStep.cpp
-    QueryPlan/FinishSortingStep.cpp
-    QueryPlan/IQueryPlanStep.cpp
-    QueryPlan/ISourceStep.cpp
-    QueryPlan/ITransformingStep.cpp
-    QueryPlan/LimitByStep.cpp
-    QueryPlan/LimitStep.cpp
-    QueryPlan/MergeSortingStep.cpp
-    QueryPlan/MergingAggregatedStep.cpp
-    QueryPlan/MergingSortedStep.cpp
-    QueryPlan/OffsetStep.cpp
-    QueryPlan/PartialSortingStep.cpp
-    QueryPlan/QueryPlan.cpp
-    QueryPlan/ReadFromPreparedSource.cpp
-    QueryPlan/ReadFromStorageStep.cpp
-    QueryPlan/ReadNothingStep.cpp
-    QueryPlan/RollupStep.cpp
-    QueryPlan/TotalsHavingStep.cpp
-    QueryPlan/UnionStep.cpp
     ResizeProcessor.cpp
-    Sources/DelayedSource.cpp
-    Sources/RemoteSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
     Transforms/AddingMissedTransform.cpp
-    Transforms/AddingSelectorTransform.cpp
-    Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
-    Transforms/ArrayJoinTransform.cpp
     Transforms/ConvertingTransform.cpp
-    Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
     Transforms/DistinctTransform.cpp
@@ -148,7 +128,6 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-
 )
 
 END()

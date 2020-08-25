@@ -19,7 +19,7 @@ limitations under the License. */
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/BlocksSource.h>
+#include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -111,7 +111,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & conte
 
     InterpreterSelectQuery interpreter(mergeable_query->clone(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
 
-    auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().getInputStream());
+    auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
 
     while (Block this_block = view_mergeable_stream->read())
         base_blocks->push_back(this_block);
@@ -142,15 +142,13 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
-        return StorageBlocks::createStorage(
-            blocks_id_global, parent_table_metadata->getColumns(),
-            std::move(pipes), QueryProcessingStage::WithMergeableState);
+        return StorageBlocks::createStorage(blocks_id_global, getParentStorage()->getColumns(),
+                                            std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(global_context, creator));
 
-    InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
-    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().getInputStream());
+    InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
+    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
@@ -211,18 +209,16 @@ void StorageLiveView::writeIntoLiveView(
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
-            auto parent_metadata = live_view.getParentStorage()->getInMemoryMetadataPtr();
-            return StorageBlocks::createStorage(
-                blocks_id_global, parent_metadata->getColumns(),
-                std::move(pipes), QueryProcessingStage::FetchColumns);
+            return StorageBlocks::createStorage(blocks_id_global, live_view.getParentStorage()->getColumns(),
+                                                std::move(pipes), QueryProcessingStage::FetchColumns);
         };
         TemporaryTableHolder blocks_storage(context, creator);
 
-        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage.getTable(), blocks_storage.getTable()->getInMemoryMetadataPtr(),
+        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage.getTable(),
             QueryProcessingStage::WithMergeableState);
 
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-            select_block.execute().getInputStream());
+            select_block.execute().in);
 
         while (Block this_block = data_mergeable_stream->read())
             new_mergeable_blocks->push_back(this_block);
@@ -249,15 +245,12 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(table_id_)
-    , global_context(local_context.getGlobalContext())
+    : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
 
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -282,6 +275,22 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
+}
+
+NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
+{
+    if (column_name == "_version")
+        return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
+
+    return IStorage::getColumn(column_name);
+}
+
+bool StorageLiveView::hasColumn(const String & column_name) const
+{
+    if (column_name == "_version")
+        return true;
+
+    return IStorage::hasColumn(column_name);
 }
 
 Block StorageLiveView::getHeader() const
@@ -328,14 +337,8 @@ bool StorageLiveView::getNewBlocks()
     BlocksPtr new_blocks = std::make_shared<Blocks>();
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
-    /// can't set mergeable_blocks here or anywhere else outside the writeIntoLiveView function
-    /// as there could be a race codition when the new block has been inserted into
-    /// the source table by the PushingToViewsBlockOutputStream and this method
-    /// called before writeIntoLiveView function is called which can lead to
-    /// the same block added twice to the mergeable_blocks leading to
-    /// inserted data to be duplicated
-    auto new_mergeable_blocks = collectMergeableBlocks(*live_view_context);
-    Pipes from = blocksToPipes(new_mergeable_blocks->blocks, new_mergeable_blocks->sample_block);
+    mergeable_blocks = collectMergeableBlocks(*live_view_context);
+    Pipes from = blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
     BlockInputStreamPtr data = completeQuery(std::move(from));
 
     while (Block block = data->read())
@@ -413,7 +416,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     if (drop_table)
     {
-        if (DatabaseCatalog::instance().tryGetTable(table_id, storage->global_context))
+        if (DatabaseCatalog::instance().tryGetTable(table_id))
         {
             try
             {
@@ -520,7 +523,7 @@ void StorageLiveView::drop()
 
 void StorageLiveView::refresh(const Context & context)
 {
-    auto table_lock = lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = lockAlterIntention(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     {
         std::lock_guard lock(mutex);
         if (getNewBlocks())
@@ -528,15 +531,15 @@ void StorageLiveView::refresh(const Context & context)
     }
 }
 
-Pipe StorageLiveView::read(
+Pipes StorageLiveView::read(
     const Names & /*column_names*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
+    Pipes pipes;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -544,8 +547,9 @@ Pipe StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
-        return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
     }
+    return pipes;
 }
 
 BlockInputStreams StorageLiveView::watch(
@@ -629,13 +633,6 @@ BlockInputStreams StorageLiveView::watch(
 
         return { reader };
     }
-}
-
-NamesAndTypesList StorageLiveView::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
-    };
 }
 
 void registerStorageLiveView(StorageFactory & factory)

@@ -1,4 +1,4 @@
-## functionName {#functionname-in-lower-case}
+## function-name {#function-name-in-lower-case}
 
 Short description.
 

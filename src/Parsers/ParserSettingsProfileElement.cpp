@@ -1,6 +1,5 @@
 #include <Parsers/ParserSettingsProfileElement.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,19 +11,12 @@ namespace DB
 {
 namespace
 {
-    bool parseProfileKeyword(IParserBase::Pos & pos, Expected & expected, bool use_inherit_keyword)
-    {
-        return ParserKeyword{"PROFILE"}.ignore(pos, expected) ||
-            (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected));
-    }
-
-
-    bool parseProfileNameOrID(IParserBase::Pos & pos, Expected & expected, bool id_mode, String & res)
+    bool parseProfileNameOrID(IParserBase::Pos & pos, Expected & expected, bool parse_id, String & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!id_mode)
+            if (!parse_id)
                 return parseIdentifierOrStringLiteral(pos, expected, res);
 
             if (!ParserKeyword{"ID"}.ignore(pos, expected))
@@ -104,98 +96,52 @@ namespace
                 return false;
         });
     }
-
-
-    bool parseSettingNameWithValueOrConstraints(
-        IParserBase::Pos & pos,
-        Expected & expected,
-        String & setting_name,
-        Field & value,
-        Field & min_value,
-        Field & max_value,
-        std::optional<bool> & readonly)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            ASTPtr name_ast;
-            if (!ParserCompoundIdentifier{}.parse(pos, name_ast, expected))
-                return false;
-
-            String res_setting_name = getIdentifierName(name_ast);
-            Field res_value;
-            Field res_min_value;
-            Field res_max_value;
-            std::optional<bool> res_readonly;
-
-            bool has_value_or_constraint = false;
-            while (parseValue(pos, expected, res_value) || parseMinMaxValue(pos, expected, res_min_value, res_max_value)
-                   || parseReadonlyOrWritableKeyword(pos, expected, res_readonly))
-            {
-                has_value_or_constraint = true;
-            }
-
-            if (!has_value_or_constraint)
-                return false;
-
-            setting_name = std::move(res_setting_name);
-            value = std::move(res_value);
-            min_value = std::move(res_min_value);
-            max_value = std::move(res_max_value);
-            readonly = res_readonly;
-            return true;
-        });
-    }
-
-
-    bool parseSettingsProfileElement(IParserBase::Pos & pos,
-                                     Expected & expected,
-                                     bool id_mode,
-                                     bool use_inherit_keyword,
-                                     bool previous_element_was_parent_profile,
-                                     std::shared_ptr<ASTSettingsProfileElement> & result)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            String parent_profile;
-            String setting_name;
-            Field value;
-            Field min_value;
-            Field max_value;
-            std::optional<bool> readonly;
-
-            if (parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, readonly))
-            {
-            }
-            else if (parseProfileKeyword(pos, expected, use_inherit_keyword) || previous_element_was_parent_profile)
-            {
-                if (!parseProfileNameOrID(pos, expected, id_mode, parent_profile))
-                    return false;
-            }
-            else
-                return false;
-
-            result = std::make_shared<ASTSettingsProfileElement>();
-            result->parent_profile = std::move(parent_profile);
-            result->setting_name = std::move(setting_name);
-            result->value = std::move(value);
-            result->min_value = std::move(min_value);
-            result->max_value = std::move(max_value);
-            result->readonly = readonly;
-            result->id_mode = id_mode;
-            result->use_inherit_keyword = use_inherit_keyword;
-            return true;
-        });
-    }
 }
 
 
 bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::shared_ptr<ASTSettingsProfileElement> res;
-    if (!parseSettingsProfileElement(pos, expected, id_mode, use_inherit_keyword, false, res))
-        return false;
+    String parent_profile;
+    String name;
+    Field value;
+    Field min_value;
+    Field max_value;
+    std::optional<bool> readonly;
 
-    node = res;
+    if (ParserKeyword{"PROFILE"}.ignore(pos, expected) ||
+        (enable_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected)))
+    {
+        if (!parseProfileNameOrID(pos, expected, id_mode, parent_profile))
+            return false;
+    }
+    else
+    {
+        ASTPtr name_ast;
+        if (!ParserIdentifier{}.parse(pos, name_ast, expected))
+            return false;
+        name = getIdentifierName(name_ast);
+
+        bool has_value_or_constraint = false;
+        while (parseValue(pos, expected, value) || parseMinMaxValue(pos, expected, min_value, max_value)
+               || parseReadonlyOrWritableKeyword(pos, expected, readonly))
+        {
+            has_value_or_constraint = true;
+        }
+
+        if (!has_value_or_constraint)
+            return false;
+    }
+
+    auto result = std::make_shared<ASTSettingsProfileElement>();
+    result->parent_profile = std::move(parent_profile);
+    result->name = std::move(name);
+    result->value = std::move(value);
+    result->min_value = std::move(min_value);
+    result->max_value = std::move(max_value);
+    result->readonly = readonly;
+    result->id_mode = id_mode;
+    result->use_inherit_keyword = enable_inherit_keyword;
+    node = result;
     return true;
 }
 
@@ -209,21 +155,15 @@ bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected
     }
     else
     {
-        bool previous_element_was_parent_profile = false;
-
-        auto parse_element = [&]
+        do
         {
-            std::shared_ptr<ASTSettingsProfileElement> element;
-            if (!parseSettingsProfileElement(pos, expected, id_mode, use_inherit_keyword, previous_element_was_parent_profile, element))
+            ASTPtr ast;
+            if (!ParserSettingsProfileElement{}.useIDMode(id_mode).enableInheritKeyword(enable_inherit_keyword).parse(pos, ast, expected))
                 return false;
-
-            elements.push_back(element);
-            previous_element_was_parent_profile = !element->parent_profile.empty();
-            return true;
-        };
-
-        if (!ParserList::parseUtil(pos, expected, parse_element, false))
-            return false;
+            auto element = typeid_cast<std::shared_ptr<ASTSettingsProfileElement>>(ast);
+            elements.push_back(std::move(element));
+        }
+        while (ParserToken{TokenType::Comma}.ignore(pos, expected));
     }
 
     auto result = std::make_shared<ASTSettingsProfileElements>();

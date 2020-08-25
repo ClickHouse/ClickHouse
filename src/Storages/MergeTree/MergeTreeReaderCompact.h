@@ -20,7 +20,6 @@ public:
     MergeTreeReaderCompact(
         DataPartCompactPtr data_part_,
         NamesAndTypesList columns_,
-        const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         MarkRanges mark_ranges_,
@@ -44,6 +43,7 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
+    using ColumnPosition = std::optional<size_t>;
     /// Positions of columns in part structure.
     using ColumnPositions = std::vector<ColumnPosition>;
     ColumnPositions column_positions;
@@ -65,6 +65,8 @@ private:
         MergeTreeMarksLoader & marks_loader,
         const ColumnPositions & column_positions,
         const MarkRanges & mark_ranges);
+
+    ColumnPosition findColumnForOffsets(const String & column_name);
 };
 
 }

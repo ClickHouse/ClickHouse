@@ -45,7 +45,7 @@ static void checkCalculated(const ColumnWithTypeAndName & col_read,
         throw Exception("Unexpected defaults count", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (!col_read.type->equals(*col_defaults.type))
-        throw Exception("Mismatch column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
+        throw Exception("Mismach column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
 }
 
 static void mixNumberColumns(
@@ -151,7 +151,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     if (block_missing_values.empty())
         return res;
 
-    /// res block already has all columns values, with default value for type
+    /// res block alredy has all columns values, with default value for type
     /// (not value specified in table). We identify which columns we need to
     /// recalculate with help of block_missing_values.
     Block evaluate_block{res};
@@ -191,7 +191,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
             /// TODO: FixedString
             if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
             {
-                MutableColumnPtr column_mixed = IColumn::mutate(std::move(column_read.column));
+                MutableColumnPtr column_mixed = (*std::move(column_read.column)).mutate();
                 mixNumberColumns(column_read.type->getTypeId(), column_mixed, column_def.column, defaults_mask);
                 column_read.column = std::move(column_mixed);
             }

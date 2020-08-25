@@ -26,7 +26,10 @@ if (USE_INTERNAL_CCTZ)
 
     # Build a libray with embedded tzdata
 
-    if (OS_LINUX)
+    # We invoke 'ld' and 'objcopy' directly because lld linker has no option to generate object file with binary data.
+    # Note: we can invoke specific ld from toolchain and relax condition on ARCH_AMD64.
+
+    if (OS_LINUX AND ARCH_AMD64)
 
         set (TIMEZONES
             Africa/Abidjan
@@ -602,8 +605,8 @@ if (USE_INTERNAL_CCTZ)
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
             add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
-                COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
+                COMMAND cd ${TZDIR} && ld -r -b binary -o ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${TIMEZONE}
+                COMMAND objcopy --rename-section .data=.rodata,alloc,load,readonly,data,contents
                     ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ})
 
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
@@ -611,12 +614,7 @@ if (USE_INTERNAL_CCTZ)
 
         add_library(tzdata STATIC ${TZ_OBJS})
         set_target_properties(tzdata PROPERTIES LINKER_LANGUAGE C)
-        # whole-archive prevents symbols from being discarded for unknown reason
-        # CMake can shuffle each of target_link_libraries arguments with other
-        # libraries in linker command. To avoid this we hardcode whole-archive
-        # library into single string.
-        add_dependencies(cctz tzdata)
-        target_link_libraries(cctz INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:tzdata> -Wl,${NO_WHOLE_ARCHIVE}")
+        target_link_libraries(cctz -Wl,--whole-archive tzdata -Wl,--no-whole-archive) # whole-archive prevents symbols from being discarded
     endif ()
 
 else ()

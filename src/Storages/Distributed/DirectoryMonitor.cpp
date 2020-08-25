@@ -8,11 +8,8 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <common/StringRef.h>
-#include <Common/ActionBlocker.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -84,14 +81,14 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
-    , should_batch_inserts(storage.global_context->getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , min_batched_block_size_rows(storage.global_context->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.global_context->getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
-    , log{&Poco::Logger::get(getLoggerName())}
+    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
+    , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
     , bg_pool(bg_pool_)
 {
@@ -111,19 +108,10 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 
 void StorageDistributedDirectoryMonitor::flushAllData()
 {
-    if (quit)
-        return;
-
-    CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
-    std::unique_lock lock{mutex};
-
-    const auto & files = getFiles(metric_pending_files);
-    if (!files.empty())
+    if (!quit)
     {
-        processFiles(files, metric_pending_files);
-
-        /// Update counters
-        getFiles(metric_pending_files);
+        std::unique_lock lock{mutex};
+        processFiles();
     }
 }
 
@@ -143,38 +131,24 @@ void StorageDistributedDirectoryMonitor::run()
 {
     std::unique_lock lock{mutex};
 
-    /// This metric will be updated with the number of pending files later.
-    CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
-
     bool do_sleep = false;
     while (!quit)
     {
         do_sleep = true;
-
-        const auto & files = getFiles(metric_pending_files);
-        if (files.empty())
-            break;
-
         if (!monitor_blocker.isCancelled())
         {
             try
             {
-                do_sleep = !processFiles(files, metric_pending_files);
-
-                std::unique_lock metrics_lock(metrics_mutex);
-                last_exception = std::exception_ptr{};
+                do_sleep = !processFiles();
             }
             catch (...)
             {
-                std::unique_lock metrics_lock(metrics_mutex);
-
                 do_sleep = true;
                 ++error_count;
                 sleep_time = std::min(
                     std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
                     max_sleep_time);
                 tryLogCurrentException(getLoggerName().data());
-                last_exception = std::current_exception();
             }
         }
         else
@@ -185,8 +159,6 @@ void StorageDistributedDirectoryMonitor::run()
         const auto now = std::chrono::system_clock::now();
         if (now - last_decrease_time > decrease_error_count_period)
         {
-            std::unique_lock metrics_lock(metrics_mutex);
-
             error_count /= 2;
             last_decrease_time = now;
         }
@@ -194,9 +166,6 @@ void StorageDistributedDirectoryMonitor::run()
         if (do_sleep)
             break;
     }
-
-    /// Update counters
-    getFiles(metric_pending_files);
 
     if (!quit && do_sleep)
         task_handle->scheduleAfter(sleep_time.count());
@@ -245,18 +214,15 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
-    const auto settings = storage.global_context->getSettings();
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+    const auto settings = storage.global_context.getSettings();
+    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
+        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 }
 
 
-std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles(CurrentMetrics::Increment & metric_pending_files)
+bool StorageDistributedDirectoryMonitor::processFiles()
 {
     std::map<UInt64, std::string> files;
-    size_t new_bytes_count = 0;
 
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it{path}; it != end; ++it)
@@ -265,29 +231,17 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles(Curre
         Poco::Path file_path{file_path_str};
 
         if (!it->isDirectory() && startsWith(file_path.getExtension(), "bin"))
-        {
             files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
-            new_bytes_count += Poco::File(file_path).getSize();
-        }
     }
 
-    /// Note: the value of this metric will be kept if this function will throw an exception.
-    /// This is needed, because in case of exception, files still pending.
-    metric_pending_files.changeTo(files.size());
+    if (files.empty())
+        return false;
 
-    {
-        std::unique_lock metrics_lock(metrics_mutex);
-        files_count = files.size();
-        bytes_count = new_bytes_count;
-    }
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedFilesToInsert, CurrentMetrics::Value(files.size())};
 
-    return files;
-}
-bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files, CurrentMetrics::Increment & metric_pending_files)
-{
     if (should_batch_inserts)
     {
-        processFilesWithBatching(files, metric_pending_files);
+        processFilesWithBatching(files);
     }
     else
     {
@@ -296,17 +250,17 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
             if (quit)
                 return true;
 
-            processFile(file.second, metric_pending_files);
+            processFile(file.second);
         }
     }
 
     return true;
 }
 
-void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files)
+void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    LOG_TRACE(log, "Started processing `{}`", file_path);
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
+    LOG_TRACE(log, "Started processing `" << file_path << '`');
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
     try
     {
@@ -317,12 +271,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         Settings insert_settings;
         std::string insert_query;
         ClientInfo client_info;
-
         readHeader(in, insert_settings, insert_query, client_info, log);
 
         auto connection = pool->get(timeouts, &insert_settings);
-
-        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings, &client_info};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -335,13 +287,12 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
 
     Poco::File{file_path}.remove();
-    metric_pending_files.sub();
 
-    LOG_TRACE(log, "Finished processing `{}`", file_path);
+    LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
 
 void StorageDistributedDirectoryMonitor::readHeader(
-    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log)
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log)
 {
     UInt64 query_size;
     readVarUInt(query_size, in);
@@ -364,11 +315,14 @@ void StorageDistributedDirectoryMonitor::readHeader(
         readVarUInt(initiator_revision, header_buf);
         if (ClickHouseRevision::get() < initiator_revision)
         {
-            LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
+            LOG_WARNING(
+                log,
+                "ClickHouse shard version is older than ClickHouse initiator version. "
+                    << "It may lack support for new features.");
         }
 
         readStringBinary(insert_query, header_buf);
-        insert_settings.read(header_buf);
+        insert_settings.deserialize(header_buf);
 
         if (header_buf.hasPendingData())
             client_info.read(header_buf, initiator_revision);
@@ -382,7 +336,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
 
     if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
     {
-        insert_settings.read(in, SettingsWriteFormat::BINARY);
+        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
         readStringBinary(insert_query, in);
         return;
     }
@@ -472,7 +426,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
             if (Poco::File{tmp_file}.exists())
-                LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
+                LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
 
             {
                 WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
@@ -481,7 +435,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context->getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
@@ -498,7 +452,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 auto file_path = file_index_to_path.find(file_idx);
                 if (file_path == file_index_to_path.end())
                 {
-                    LOG_ERROR(parent.log, "Failed to send batch: file with index {} is absent", file_idx);
+                    LOG_ERROR(parent.log, "Failed to send batch: file with index " << file_idx << " is absent");
                     batch_broken = true;
                     break;
                 }
@@ -509,7 +463,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, insert_settings, client_info);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings, &client_info);
                     remote->writePrefix();
                 }
 
@@ -532,14 +486,14 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         if (!batch_broken)
         {
-            LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
+            LOG_TRACE(parent.log, "Sent a batch of " << file_indices.size() << " files.");
 
             for (UInt64 file_index : file_indices)
                 Poco::File{file_index_to_path.at(file_index)}.remove();
         }
         else
         {
-            LOG_ERROR(parent.log, "Marking a batch of {} files as broken.", file_indices.size());
+            LOG_ERROR(parent.log, "Marking a batch of " << file_indices.size() << " files as broken.");
 
             for (UInt64 file_idx : file_indices)
             {
@@ -582,7 +536,7 @@ public:
         : in(file_name)
         , decompressing_in(in)
         , block_in(decompressing_in, ClickHouseRevision::get())
-        , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
+        , log{&Logger::get("DirectoryMonitorBlockInputStream")}
     {
         Settings insert_settings;
         String insert_query;
@@ -616,7 +570,7 @@ private:
     Block first_block;
     Block header;
 
-    Poco::Logger * log;
+    Logger * log;
 };
 
 BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
@@ -631,23 +585,7 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
     return task_handle->scheduleAfter(ms, false);
 }
 
-StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus() const
-{
-    std::unique_lock metrics_lock(metrics_mutex);
-
-    return Status{
-        path,
-        last_exception,
-        error_count,
-        files_count,
-        bytes_count,
-        monitor_blocker.isCancelled(),
-    };
-}
-
-void StorageDistributedDirectoryMonitor::processFilesWithBatching(
-    const std::map<UInt64, std::string> & files,
-    CurrentMetrics::Increment & metric_pending_files)
+void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
     std::unordered_set<UInt64> file_indices_to_skip;
 
@@ -659,7 +597,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(
         batch.readText(in);
         file_indices_to_skip.insert(batch.file_indices.begin(), batch.file_indices.end());
         batch.send();
-        metric_pending_files.sub(batch.file_indices.size());
     }
 
     std::unordered_map<BatchHeader, Batch, BatchHeader::Hash> header_to_batch;
@@ -720,23 +657,16 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(
         batch.total_bytes += total_bytes;
 
         if (batch.isEnoughSize())
-        {
             batch.send();
-            metric_pending_files.sub(batch.file_indices.size());
-        }
     }
 
     for (auto & kv : header_to_batch)
     {
         Batch & batch = kv.second;
         batch.send();
-        metric_pending_files.sub(batch.file_indices.size());
     }
 
-    /// current_batch.txt will not exist if there was no send
-    /// (this is the case when all batches that was pending has been marked as pending)
-    if (Poco::File{current_batch_file_path}.exists())
-        Poco::File{current_batch_file_path}.remove();
+    Poco::File{current_batch_file_path}.remove();
 }
 
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
@@ -760,7 +690,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     Poco::File{broken_path}.createDirectory();
     Poco::File{file_path}.renameTo(broken_file_path);
 
-    LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
+    LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
 }
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
@@ -785,10 +715,7 @@ void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path
     task_handle->deactivate();
     std::lock_guard lock{mutex};
 
-    {
-        std::unique_lock metrics_lock(metrics_mutex);
-        path = new_path;
-    }
+    path = new_path;
     current_batch_file_path = path + "current_batch.txt";
 
     task_handle->activateAndSchedule();

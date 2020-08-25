@@ -4,7 +4,6 @@
 #include <Access/SettingsProfile.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Core/Settings.h>
-#include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -34,25 +33,21 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     if (!ast.parent_profile.empty())
         parent_profile = name_to_id(ast.parent_profile);
 
-    if (!ast.setting_name.empty())
+    if (!ast.name.empty())
     {
-        setting_name = ast.setting_name;
-
-        /// Optionally check if a setting with that name is allowed.
-        if (manager)
-            manager->checkSettingNameIsAllowed(setting_name);
-
+        name = ast.name;
         value = ast.value;
         min_value = ast.min_value;
         max_value = ast.max_value;
         readonly = ast.readonly;
 
+        size_t index = Settings::findIndexStrict(name);
         if (!value.isNull())
-            value = Settings::castValueUtil(setting_name, value);
+            value = Settings::valueToCorrespondingType(index, value);
         if (!min_value.isNull())
-            min_value = Settings::castValueUtil(setting_name, min_value);
+            min_value = Settings::valueToCorrespondingType(index, min_value);
         if (!max_value.isNull())
-            max_value = Settings::castValueUtil(setting_name, max_value);
+            max_value = Settings::valueToCorrespondingType(index, max_value);
     }
 }
 
@@ -65,7 +60,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
     if (parent_profile)
         ast->parent_profile = ::DB::toString(*parent_profile);
 
-    ast->setting_name = setting_name;
+    ast->name = name;
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
@@ -86,7 +81,7 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithName
             ast->parent_profile = *parent_profile_name;
     }
 
-    ast->setting_name = setting_name;
+    ast->name = name;
     ast->value = value;
     ast->min_value = min_value;
     ast->max_value = max_value;
@@ -137,8 +132,8 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !elem.value.isNull())
-            res.set(elem.setting_name, elem.value);
+        if (!elem.name.empty() && !elem.value.isNull())
+            res.set(elem.name, elem.value);
     }
     return res;
 }
@@ -148,25 +143,25 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     SettingsChanges res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !elem.value.isNull())
-            res.push_back({elem.setting_name, elem.value});
+        if (!elem.name.empty() && !elem.value.isNull())
+            res.push_back({elem.name, elem.value});
     }
     return res;
 }
 
-SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControlManager & manager) const
+SettingsConstraints SettingsProfileElements::toSettingsConstraints() const
 {
-    SettingsConstraints res{manager};
+    SettingsConstraints res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty())
+        if (!elem.name.empty())
         {
             if (!elem.min_value.isNull())
-                res.setMinValue(elem.setting_name, elem.min_value);
+                res.setMinValue(elem.name, elem.min_value);
             if (!elem.max_value.isNull())
-                res.setMaxValue(elem.setting_name, elem.max_value);
+                res.setMaxValue(elem.name, elem.max_value);
             if (elem.readonly)
-                res.setReadOnly(elem.setting_name, *elem.readonly);
+                res.setReadOnly(elem.name, *elem.readonly);
         }
     }
     return res;

@@ -20,9 +20,8 @@ protected:
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return false; }
-    bool isGenericCompression() const override { return false; }
-    bool isNone() const override { return true; }
 };
 
+class CompressionCodecFactory;
+void registerCodecNone(CompressionCodecFactory & factory);
 }

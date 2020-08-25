@@ -1,21 +1,23 @@
 #include "RedisBlockInputStream.h"
 
-#include <string>
-#include <vector>
+#if USE_POCO_REDIS
 
-#include <Poco/Redis/Array.h>
-#include <Poco/Redis/Client.h>
-#include <Poco/Redis/Command.h>
-#include <Poco/Redis/Type.h>
+#    include <string>
+#    include <vector>
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#    include <Poco/Redis/Array.h>
+#    include <Poco/Redis/Client.h>
+#    include <Poco/Redis/Command.h>
+#    include <Poco/Redis/Type.h>
 
-#include "DictionaryStructure.h"
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <ext/range.h>
+
+#    include "DictionaryStructure.h"
 
 
 namespace DB
@@ -206,3 +208,5 @@ namespace DB
         return description.sample_block.cloneWithColumns(std::move(columns));
     }
 }
+
+#endif

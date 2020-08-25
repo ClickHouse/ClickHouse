@@ -17,6 +17,7 @@
 #endif
 
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/String.h>
 #include <algorithm>
 

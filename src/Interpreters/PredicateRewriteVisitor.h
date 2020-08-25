@@ -24,12 +24,13 @@ public:
         return true;
     }
 
-    PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_);
+    PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_, const Names & column_names_,
+                                bool optimize_final_, bool optimize_with_);
 
 private:
     const Context & context;
     const ASTs & predicates;
-    const Names column_names;
+    const Names & column_names;
     bool optimize_final;
     bool optimize_with;
 

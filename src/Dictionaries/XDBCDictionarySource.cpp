@@ -18,7 +18,11 @@
 
 #include "registerDictionaries.h"
 
-#if USE_ODBC
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #    include <Poco/Data/ODBC/Connector.h>
 #endif
 
@@ -106,7 +110,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     const Block & sample_block_,
     const Context & context_,
     const BridgeHelperPtr bridge_)
-    : log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
+    : log(&Logger::get(bridge_->getName() + "DictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , db{config_.getString(config_prefix_ + ".db", "")}
@@ -131,7 +135,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
-    : log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    : log(&Logger::get(other.bridge_helper->getName() + "DictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , db{other.db}
@@ -266,18 +270,17 @@ BlockInputStreamPtr XDBCDictionarySource::loadBase(const std::string & query) co
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
-#if USE_ODBC
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     Poco::Data::ODBC::Connector::registerConnector();
 #endif
 
     auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                   const Poco::Util::AbstractConfiguration & config,
-                                   const std::string & config_prefix,
-                                   Block & sample_block,
-                                   const Context & context,
-                                   const std::string & /* default_database */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
-#if USE_ODBC
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & context,
+                                 bool /* check_config */) -> DictionarySourcePtr {
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
         return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
@@ -301,7 +304,6 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,
                                  const Context & /* context */,
-                                 const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
         throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -310,5 +312,6 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
     };
     factory.registerSource("jdbc", create_table_source);
 }
+
 
 }

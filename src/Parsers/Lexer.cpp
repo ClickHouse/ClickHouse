@@ -50,7 +50,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 Token Lexer::nextToken()
 {
     Token res = nextTokenImpl();
-    if (max_query_size && res.end > begin + max_query_size)
+    if (res.type != TokenType::EndOfStream && max_query_size && res.end > begin + max_query_size)
         res.type = TokenType::ErrorMaxQuerySizeExceeded;
     if (res.isSignificant())
         prev_significant_token_type = res.type;
@@ -305,12 +305,7 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
-        {
-            ++pos;
-            if (pos < end && *pos == '@')
-                return Token(TokenType::DoubleAt, token_begin, ++pos);
-            return Token(TokenType::At, token_begin, pos);
-        }
+            return Token(TokenType::At, token_begin, ++pos);
 
         default:
             if (isWordCharASCII(*pos))
@@ -321,14 +316,7 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::BareWord, token_begin, pos);
             }
             else
-            {
-                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-                pos = skipWhitespacesUTF8(pos, end);
-                if (pos > token_begin)
-                    return Token(TokenType::Whitespace, token_begin, pos);
-                else
-                    return Token(TokenType::Error, token_begin, ++pos);
-            }
+                return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 
