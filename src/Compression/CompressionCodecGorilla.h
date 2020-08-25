@@ -97,8 +97,6 @@ public:
 
     String getCodecDesc() const override;
 
-    void useInfoAboutType(const DataTypePtr & data_type) override;
-
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 

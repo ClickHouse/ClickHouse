@@ -150,11 +150,6 @@ UInt8 getDeltaBytesSize(DataTypePtr column_type)
 
 }
 
-void CompressionCodecDelta::useInfoAboutType(const DataTypePtr & data_type)
-{
-    delta_bytes_size = getDeltaBytesSize(data_type);
-}
-
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);

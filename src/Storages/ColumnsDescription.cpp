@@ -49,7 +49,7 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto codec_str = [](const CompressionCodecPtr & codec_ptr) { return codec_ptr ? codec_ptr->getCodecDesc() : String(); };
+    auto codec_str = [](const auto & codec_desc) { return codec_desc ? codec_desc->description : String{}; };
     auto ttl_str = [](const ASTPtr & ttl_ast) { return ttl_ast ? queryToString(ttl_ast) : String{}; };
 
     return name == other.name
@@ -85,7 +85,7 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     {
         writeChar('\t', buf);
         DB::writeText("CODEC(", buf);
-        DB::writeText(codec->getCodecDesc(), buf);
+        DB::writeText(codec->description, buf);
         DB::writeText(")", buf);
     }
 
@@ -120,7 +120,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
+            codec = CompressionCodecFactory::instance().validateCodecAndGetDescription(col_ast->codec, type, false);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
@@ -414,7 +414,7 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     if (it == columns.get<1>().end() || !it->codec)
         return default_codec;
 
-    return it->codec;
+    return CompressionCodecFactory::instance().get(it->codec->ast, it->type, default_codec);
 }
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
