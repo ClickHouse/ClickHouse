@@ -57,15 +57,12 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
+            ++current_it;
+            ++current_block_idx;
+
             if (current_block_idx == num_blocks)
-            {
                 is_finished = true;
-            }
-            else
-            {
-                ++current_it;
-                ++current_block_idx;
-            }
+
             return Chunk(std::move(columns), src.rows());
         }
     }
@@ -137,7 +134,7 @@ Pipe StorageMemory::read(
     size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        size_t next_offset = stream * size / num_streams;
+        size_t next_offset = (stream + 1) * size / num_streams;
         size_t num_blocks = next_offset - offset;
 
         assert(num_blocks > 0);
