@@ -2,7 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <common/DateLUT.h>
 #include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -724,7 +724,7 @@ namespace MySQLReplication
     {
         /// We only care uuid:seq_no parts assigned to GTID_NEXT.
         payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
-        payload.readStrict(reinterpret_cast<char *>(gtid.uuid), 16);
+        readBigEndianStrict(payload, reinterpret_cast<char *>(&gtid.uuid), 16);
         payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
 
         /// Skip others.
@@ -733,10 +733,7 @@ namespace MySQLReplication
 
     void GTIDEvent::dump(std::ostream & out) const
     {
-        String dst36;
-        dst36.resize(36);
-        formatUUID(gtid.uuid, reinterpret_cast<UInt8 *>(dst36.data()));
-        auto gtid_next = dst36 + ":" + std::to_string(gtid.seq_no);
+        auto gtid_next = gtid.uuid.toUnderType().toHexString() + ":" + std::to_string(gtid.seq_no);
 
         header.dump(out);
         out << "GTID Next: " << gtid_next << std::endl;

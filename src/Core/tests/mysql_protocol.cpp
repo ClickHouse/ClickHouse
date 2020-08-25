@@ -5,7 +5,6 @@
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
-#include <Core/MySQL/PacketsReplication.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -185,7 +184,9 @@ int main(int argc, char ** argv)
               "149319051-149319261:149319263-150635915,a6d83ff6-bfcf-11e7-8c93-246e96158550:1-126618302";
         GTIDSets gtid_sets;
         gtid_sets.parse(str);
-        ASSERT(str == gtid_sets.toString())
+
+        String got = gtid_sets.toString();
+        ASSERT(str == got)
     }
 
     {
@@ -244,7 +245,7 @@ int main(int argc, char ** argv)
             gtid_sets1.parse(tc.gtid_str);
 
             GTID gtid;
-            memcpy(gtid.uuid, gtid_sets1.sets[0].uuid, 16);
+            gtid.uuid = gtid_sets1.sets[0].uuid;
             gtid.seq_no = gtid_sets1.sets[0].intervals[0].start;
             gtid_sets.update(gtid);
 

@@ -7,7 +7,7 @@ namespace DB
 class GTID
 {
 public:
-    UInt8 uuid[16];
+    UUID uuid;
     Int64 seq_no;
 
     GTID() : seq_no(0) { }
@@ -22,7 +22,7 @@ public:
         Int64 end;
     };
 
-    UInt8 uuid[16];
+    UUID uuid;
     std::vector<Interval> intervals;
 
     void tryMerge(size_t i);
