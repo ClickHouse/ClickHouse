@@ -18,6 +18,7 @@ EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
+CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
 if [ -d "/var/lock" ]; then
     LOCALSTATEDIR=/var/lock
@@ -33,6 +34,7 @@ CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
+RETVAL=0
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
 # CLICKHOUSE_STOP_TIMEOUT=60 # Disabled by default. Place to /etc/default/clickhouse if you need.
@@ -76,7 +78,7 @@ is_supported_command()
 
 is_running()
 {
-    pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo "${PROGRAM}" | cut -c1-15) 1> /dev/null 2> /dev/null
+    [ -r "$CLICKHOUSE_PIDFILE" ] && pgrep -s $(cat "$CLICKHOUSE_PIDFILE") 1> /dev/null 2> /dev/null
 }
 
 
@@ -180,7 +182,7 @@ start()
             su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; $CLICKHOUSE_PROGRAM_ENV exec -a \"$PROGRAM\" \"$CLICKHOUSE_BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
             EXIT_STATUS=$?
             if [ $EXIT_STATUS -ne 0 ]; then
-                return $EXIT_STATUS
+                break
             fi
         fi
     fi

@@ -187,8 +187,9 @@ select查询中，星号可以代替表达式使用。详情请参见“select�
 
 ## 表达式 {#syntax-expressions}
 
-表达式是函数、标识符、字符、运算符的应用程序、括号中的表达式、子查询或星号。它也可以包含别名。
-表达式列表是用逗号分隔的一个或多个表达式。
-反过来，函数和运算符可以将表达式作为参数。
+
+An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
+A list of expressions is one or more expressions separated by commas.
+Functions and operators, in turn, can have expressions as arguments.
 
 [原始文档](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->

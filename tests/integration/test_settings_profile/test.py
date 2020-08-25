@@ -50,7 +50,7 @@ def test_smoke():
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "100000001\n"
     assert "Setting max_memory_usage shouldn't be less than 90000000" in instance.query_and_get_error("SET max_memory_usage = 80000000", user="robin")
     assert "Setting max_memory_usage shouldn't be greater than 110000000" in instance.query_and_get_error("SET max_memory_usage = 120000000", user="robin")
-    assert system_settings_profile("xyz") == [[ "xyz", "local directory", 1, 0, "['robin']", "[]" ]]
+    assert system_settings_profile("xyz") == [[ "xyz", "disk", 1, 0, "['robin']", "[]" ]]
     assert system_settings_profile_elements(profile_name="xyz") == [[ "xyz", "\N", "\N", 0, "max_memory_usage", 100000001, 90000000, 110000000, "\N", "\N" ]]
 
     instance.query("ALTER SETTINGS PROFILE xyz TO NONE")
@@ -58,7 +58,7 @@ def test_smoke():
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "10000000000\n"
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
-    assert system_settings_profile("xyz") == [[ "xyz", "local directory", 1, 0, "[]", "[]" ]]
+    assert system_settings_profile("xyz") == [[ "xyz", "disk", 1, 0, "[]", "[]" ]]
     assert system_settings_profile_elements(user_name="robin") == []
 
     # Set settings and constraints via CREATE USER ... SETTINGS PROFILE
@@ -87,7 +87,7 @@ def test_settings_from_granted_role():
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "100000001\n"
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_ast_depth'", user="robin") == "2000\n"
     assert "Setting max_memory_usage shouldn't be greater than 110000000" in instance.query_and_get_error("SET max_memory_usage = 120000000", user="robin")
-    assert system_settings_profile("xyz") == [[ "xyz", "local directory", 2, 0, "[]", "[]" ]]
+    assert system_settings_profile("xyz") == [[ "xyz", "disk", 2, 0, "[]", "[]" ]]
     assert system_settings_profile_elements(profile_name="xyz") == [[ "xyz", "\N", "\N", 0, "max_memory_usage", 100000001, "\N", 110000000, "\N", "\N" ],
                                                                     [ "xyz", "\N", "\N", 1, "max_ast_depth",    2000,      "\N", "\N",      "\N", "\N" ]]
     assert system_settings_profile_elements(role_name="worker") == [[ "\N", "\N", "worker", 0, "\N", "\N", "\N", "\N", "\N", "xyz" ]]
@@ -108,13 +108,13 @@ def test_settings_from_granted_role():
     assert instance.query("SHOW CREATE SETTINGS PROFILE xyz") == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000 TO worker\n"
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "100000001\n"
     assert "Setting max_memory_usage shouldn't be greater than 110000000" in instance.query_and_get_error("SET max_memory_usage = 120000000", user="robin")
-    assert system_settings_profile("xyz") == [[ "xyz", "local directory", 2, 0, "['worker']", "[]" ]]
+    assert system_settings_profile("xyz") == [[ "xyz", "disk", 2, 0, "['worker']", "[]" ]]
 
     instance.query("ALTER SETTINGS PROFILE xyz TO NONE")
     assert instance.query("SHOW CREATE SETTINGS PROFILE xyz") == "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MAX 110000000, max_ast_depth = 2000\n"
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "10000000000\n"
     instance.query("SET max_memory_usage = 120000000", user="robin")
-    assert system_settings_profile("xyz") == [[ "xyz", "local directory", 2, 0, "[]", "[]" ]]
+    assert system_settings_profile("xyz") == [[ "xyz", "disk", 2, 0, "[]", "[]" ]]
 
 
 def test_inheritance():
@@ -125,9 +125,9 @@ def test_inheritance():
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "100000002\n"
     assert "Setting max_memory_usage should not be changed" in instance.query_and_get_error("SET max_memory_usage = 80000000", user="robin")
 
-    assert system_settings_profile("xyz") == [[ "xyz", "local directory", 1, 0, "[]", "[]" ]]
+    assert system_settings_profile("xyz") == [[ "xyz", "disk", 1, 0, "[]", "[]" ]]
     assert system_settings_profile_elements(profile_name="xyz") == [[ "xyz", "\N", "\N", 0, "max_memory_usage", 100000002, "\N", "\N", 1, "\N" ]]
-    assert system_settings_profile("alpha") == [[ "alpha", "local directory", 1, 0, "['robin']", "[]" ]]
+    assert system_settings_profile("alpha") == [[ "alpha", "disk", 1, 0, "['robin']", "[]" ]]
     assert system_settings_profile_elements(profile_name="alpha") == [[ "alpha", "\N", "\N", 0, "\N", "\N", "\N", "\N", "\N", "xyz" ]]
     assert system_settings_profile_elements(user_name="robin") == []
 

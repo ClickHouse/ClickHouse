@@ -59,16 +59,6 @@ static constexpr bool supportDecimal()
         std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>>;
 }
 
-template <template <typename, bool> class Function>
-static constexpr bool supportBigInt()
-{
-    return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantileExact<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>>;
-}
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
@@ -81,7 +71,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE, true>>(argument_types, params);
-    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
+    FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType, false>>(argument_types, params);
     if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType, false>>(argument_types, params);
@@ -91,14 +81,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
         if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, false>>(argument_types, params);
         if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_types, params);
         if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_types, params);
-        //if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
-    }
-
-    if constexpr (supportBigInt<Function>())
-    {
-        if (which.idx == TypeIndex::Int128) return std::make_shared<Function<Int128, true>>(argument_types, params);
-        if (which.idx == TypeIndex::bInt256) return std::make_shared<Function<bInt256, true>>(argument_types, params);
-        if (which.idx == TypeIndex::bUInt256) return std::make_shared<Function<bUInt256, true>>(argument_types, params);
     }
 
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,

@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -407,69 +406,12 @@ public:
         disk->reserved_bytes += size;
     }
 
-    ~DiskS3Reservation() override
-    {
-        try
-        {
-            std::lock_guard lock(disk->reservation_mutex);
-            if (disk->reserved_bytes < size)
-            {
-                disk->reserved_bytes = 0;
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
-            }
-            else
-            {
-                disk->reserved_bytes -= size;
-            }
-
-            if (disk->reservation_count == 0)
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
-            else
-                --disk->reservation_count;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    ~DiskS3Reservation() override;
 
 private:
     DiskS3Ptr disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
-};
-
-/// Runs tasks asynchronously using global thread pool.
-class AsyncExecutor : public Executor
-{
-public:
-    explicit AsyncExecutor() = default;
-
-    std::future<void> execute(std::function<void()> task) override
-    {
-        auto promise = std::make_shared<std::promise<void>>();
-
-        GlobalThreadPool::instance().scheduleOrThrowOnError(
-            [promise, task]()
-            {
-                try
-                {
-                    task();
-                    promise->set_value();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Failed to run async task");
-
-                    try
-                    {
-                        promise->set_exception(std::current_exception());
-                    } catch (...) { }
-                }
-            });
-
-        return promise->get_future();
-    }
 };
 
 
@@ -481,10 +423,8 @@ DiskS3::DiskS3(
     String s3_root_path_,
     String metadata_path_,
     size_t min_upload_part_size_,
-    size_t min_multi_part_upload_size_,
-    size_t min_bytes_for_seek_)
-    : IDisk(std::make_unique<AsyncExecutor>())
-    , name(std::move(name_))
+    size_t min_multi_part_upload_size_)
+    : name(std::move(name_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
@@ -492,7 +432,6 @@ DiskS3::DiskS3(
     , metadata_path(std::move(metadata_path_))
     , min_upload_part_size(min_upload_part_size_)
     , min_multi_part_upload_size(min_multi_part_upload_size_)
-    , min_bytes_for_seek(min_bytes_for_seek_)
 {
 }
 
@@ -598,8 +537,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.s3_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromS3>(client, bucket, metadata, buf_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
+    return std::make_unique<ReadIndirectBufferFromS3>(client, bucket, metadata, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t)
@@ -744,6 +682,32 @@ void DiskS3::createFile(const String & path)
 void DiskS3::setReadOnly(const String & path)
 {
     Poco::File(metadata_path + path).setReadOnly(true);
+}
+
+DiskS3Reservation::~DiskS3Reservation()
+{
+    try
+    {
+        std::lock_guard lock(disk->reservation_mutex);
+        if (disk->reserved_bytes < size)
+        {
+            disk->reserved_bytes = 0;
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+        }
+        else
+        {
+            disk->reserved_bytes -= size;
+        }
+
+        if (disk->reservation_count == 0)
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+        else
+            --disk->reservation_count;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

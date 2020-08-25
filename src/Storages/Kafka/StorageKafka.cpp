@@ -169,11 +169,12 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
 
-    for (const auto & setting : *kafka_settings)
+    for (auto & it : *kafka_settings)
     {
-        const auto & name = setting.getName();
-        if (name.find("kafka_") == std::string::npos)
-            result.emplace_back(name, setting.getValue());
+        if (it.isChanged() && it.getName().toString().rfind("kafka_",0) == std::string::npos)
+        {
+            result.emplace_back(it.getName().toString(), it.getValueAsString());
+        }
     }
     return result;
 }
@@ -197,7 +198,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 }
 
 
-Pipe StorageKafka::read(
+Pipes StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /* query_info */,
@@ -226,7 +227,7 @@ Pipe StorageKafka::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 
@@ -631,8 +632,8 @@ void registerStorageKafka(StorageFactory & factory)
                                 engine_args[(ARG_NUM)-1],                   \
                                 args.local_context);                        \
                     }                                                       \
-                    kafka_settings->PAR_NAME =                              \
-                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
+                    kafka_settings->PAR_NAME.set(                           \
+                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value);\
                 }                                                           \
             }
 

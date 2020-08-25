@@ -5,7 +5,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/SipHash.h>
 
 
 namespace DB
@@ -52,14 +51,6 @@ ASTPtr ASTFunction::clone() const
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
     return res;
-}
-
-
-void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
-{
-    hash_state.update(name.size());
-    hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 

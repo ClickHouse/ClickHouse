@@ -48,15 +48,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     const Context & context;
 
-    /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     struct UnpackedArrays
     {
@@ -384,7 +384,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     return arrays;
 }
 
-void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
+void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     const auto & return_type = block.getByPosition(result).type;
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());

@@ -1,5 +1,4 @@
 #include <Parsers/ASTSettingsProfileElement.h>
-#include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitors.h>
 #include <Common/quoteString.h>
 
@@ -32,7 +31,7 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
         return;
     }
 
-    formatSettingName(setting_name, settings.ostr);
+    settings.ostr << setting_name;
 
     if (!value.isNull())
     {

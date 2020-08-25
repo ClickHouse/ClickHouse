@@ -34,7 +34,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -132,7 +131,7 @@ String InterpreterSelectQuery::generateFilterActions(
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = TreeRewriter(*context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, metadata_snapshot));
+    auto syntax_result = SyntaxAnalyzer(*context).analyzeSelect(query_ast, SyntaxAnalyzerResult({}, storage, metadata_snapshot));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
@@ -312,9 +311,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
 
-        syntax_analyzer_result = TreeRewriter(*context).analyzeSelect(
+        syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
             query_ptr,
-            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
+            SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
             options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
@@ -863,25 +862,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            if (expressions.before_array_join)
-            {
-                QueryPlanStepPtr before_array_join_step = std::make_unique<ExpressionStep>(
-                        query_plan.getCurrentDataStream(),
-                        expressions.before_array_join);
-                before_array_join_step->setStepDescription("Before ARRAY JOIN");
-                query_plan.addStep(std::move(before_array_join_step));
-            }
-
-            if (expressions.array_join)
-            {
-                QueryPlanStepPtr array_join_step = std::make_unique<ArrayJoinStep>(
-                        query_plan.getCurrentDataStream(),
-                        expressions.array_join);
-
-                array_join_step->setStepDescription("ARRAY JOIN");
-                query_plan.addStep(std::move(array_join_step));
-            }
-
             if (expressions.before_join)
             {
                 QueryPlanStepPtr before_join_step = std::make_unique<ExpressionStep>(
@@ -1214,7 +1194,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
             }
 
-            auto syntax_result = TreeRewriter(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
+            auto syntax_result = SyntaxAnalyzer(*context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
             alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, *context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
@@ -1245,7 +1225,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
                 auto analyzed_result
-                    = TreeRewriter(*context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
+                    = SyntaxAnalyzer(*context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
                 prewhere_info->alias_actions
                     = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, *context).getActions(true, false);
 
@@ -1547,7 +1527,8 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     const Settings & settings = context->getSettingsRef();
 
     Aggregator::Params params(header_before_transform, keys, query_analyzer->aggregates(),
-                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
+                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+                              SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 

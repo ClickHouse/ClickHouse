@@ -31,7 +31,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,

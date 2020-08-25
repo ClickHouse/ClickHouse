@@ -12,7 +12,6 @@
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
-#include <Common/renameat2.h>
 
 #include <filesystem>
 
@@ -145,12 +144,9 @@ void DatabaseCatalog::shutdownImpl()
     for (auto & database : current_databases)
         database.second->shutdown();
 
-    tables_marked_dropped.clear();
-
     std::lock_guard lock(databases_mutex);
     assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
     databases.clear();
-    db_uuid_map.clear();
     view_dependencies.clear();
 }
 
@@ -219,8 +215,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     auto table = database->tryGetTable(table_id.table_name, context);
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-    if (!table)
-        database = nullptr;
 
     return {database, table};
 }
@@ -256,11 +250,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 {
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
-    databases.emplace(database_name, database);
-    UUID db_uuid = database->getUUID();
-    assert((db_uuid != UUIDHelpers::Nil) ^ (dynamic_cast<DatabaseAtomic *>(database.get()) == nullptr));
-    if (db_uuid != UUIDHelpers::Nil)
-        db_uuid_map.emplace(db_uuid, database);
+    databases[database_name] = database;
 }
 
 
@@ -269,18 +259,13 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (database_name == TEMPORARY_DATABASE)
         throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    DatabasePtr db;
+    std::shared_ptr<IDatabase> db;
     {
         std::lock_guard lock{databases_mutex};
         assertDatabaseExistsUnlocked(database_name);
         db = databases.find(database_name)->second;
-        db_uuid_map.erase(db->getUUID());
-        databases.erase(database_name);
-    }
 
-    if (check_empty)
-    {
-        try
+        if (check_empty)
         {
             if (!db->empty())
                 throw Exception("New table appeared in database being dropped or detached. Try again.",
@@ -289,11 +274,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
             if (!drop && database_atomic)
                 database_atomic->assertCanBeDetached(false);
         }
-        catch (...)
-        {
-            attachDatabase(database_name, db);
-            throw;
-        }
+
+        databases.erase(database_name);
     }
 
     db->shutdown();
@@ -313,17 +295,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     return db;
 }
 
-void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name)
-{
-    std::lock_guard lock{databases_mutex};
-    assert(databases.find(new_name) == databases.end());
-    auto it = databases.find(old_name);
-    assert(it != databases.end());
-    auto db = it->second;
-    databases.erase(it);
-    databases.emplace(new_name, db);
-}
-
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
     std::lock_guard lock{databases_mutex};
@@ -337,25 +308,6 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const String & database_name) const
     std::lock_guard lock{databases_mutex};
     auto it = databases.find(database_name);
     if (it == databases.end())
-        return {};
-    return it->second;
-}
-
-DatabasePtr DatabaseCatalog::getDatabase(const UUID & uuid) const
-{
-    std::lock_guard lock{databases_mutex};
-    auto it = db_uuid_map.find(uuid);
-    if (it == db_uuid_map.end())
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database UUID {} does not exist", toString(uuid));
-    return it->second;
-}
-
-DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
-{
-    assert(uuid != UUIDHelpers::Nil);
-    std::lock_guard lock{databases_mutex};
-    auto it = db_uuid_map.find(uuid);
-    if (it == db_uuid_map.end())
         return {};
     return it->second;
 }
@@ -521,21 +473,7 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
 std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
-    auto db_guard_iter = ddl_guards.try_emplace(database).first;
-    DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table);
-}
-
-std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
-{
-    DDLGuards::iterator db_guard_iter;
-    {
-        std::unique_lock lock(ddl_guards_mutex);
-        db_guard_iter = ddl_guards.try_emplace(database).first;
-        assert(db_guard_iter->second.first.count(""));
-    }
-    DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::unique_lock{db_guard.second};
+    return std::make_unique<DDLGuard>(ddl_guards[database], std::move(lock), table);
 }
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
@@ -622,7 +560,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
-    ThreadPool pool;
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()
@@ -779,49 +717,18 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
-String DatabaseCatalog::resolveDictionaryName(const String & name) const
-{
-    /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
-    /// Try to split name and get id from associated StorageDictionary.
-    /// If something went wrong, return name as is.
 
-    /// TODO support dot in name for dictionaries in Atomic databases
-    auto pos = name.find('.');
-    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
-        return name;
-    String maybe_database_name = name.substr(0, pos);
-    String maybe_table_name = name.substr(pos + 1);
-
-    auto db_and_table = tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, *global_context);
-    if (!db_and_table.first)
-        return name;
-    assert(db_and_table.second);
-    if (db_and_table.first->getUUID() == UUIDHelpers::Nil)
-        return name;
-    if (db_and_table.second->getName() != "Dictionary")
-        return name;
-
-    return toString(db_and_table.second->getStorageID().uuid);
-}
-
-
-DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
-        : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
+DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+        : map(map_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
     table_lock = std::unique_lock(*it->second.mutex);
-    bool is_database = elem.empty();
-    if (!is_database)
-        db_mutex.lock_shared();
 }
 
 DDLGuard::~DDLGuard()
 {
-    bool is_database = it->first.empty();
-    if (!is_database)
-        db_mutex.unlock_shared();
     guards_lock.lock();
     --it->second.counter;
     if (!it->second.counter)

@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_COLUMN;
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -84,12 +84,12 @@ ConvertingTransform::ConvertingTransform(
                 if (!ignore_constant_values && res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
             }
             else
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                                ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
         }
 
         /// Check conversion by dry run CAST function.

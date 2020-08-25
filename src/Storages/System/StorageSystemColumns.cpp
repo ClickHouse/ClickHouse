@@ -23,8 +23,8 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
-    : IStorage(table_id_)
+StorageSystemColumns::StorageSystemColumns(const std::string & name_)
+    : IStorage({"system", name_})
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -236,11 +236,11 @@ private:
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
     String query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    SettingSeconds lock_acquire_timeout;
 };
 
 
-Pipe StorageSystemColumns::read(
+Pipes StorageSystemColumns::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -294,7 +294,7 @@ Pipe StorageSystemColumns::read(
         if (!block_to_filter.rows())
         {
             pipes.emplace_back(std::make_shared<NullSource>(header));
-            return Pipe::unitePipes(std::move(pipes));
+            return pipes;
         }
 
         ColumnPtr & database_column = block_to_filter.getByName("database").column;
@@ -333,7 +333,7 @@ Pipe StorageSystemColumns::read(
     if (!block_to_filter.rows())
     {
         pipes.emplace_back(std::make_shared<NullSource>(header));
-        return Pipe::unitePipes(std::move(pipes));
+        return pipes;
     }
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
@@ -344,7 +344,7 @@ Pipe StorageSystemColumns::read(
             std::move(filtered_database_column), std::move(filtered_table_column),
             std::move(storages), context));
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 }

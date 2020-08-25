@@ -53,8 +53,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const std::string & path_to_settings,
     const std::string & config_prefix,
     const Block & sample_block_,
-    const Context & context_,
-    const std::string & default_database)
+    const Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , host{config.getString(config_prefix + ".host")}
@@ -62,7 +61,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , secure(config.getBool(config_prefix + ".secure", false))
     , user{config.getString(config_prefix + ".user", "")}
     , password{config.getString(config_prefix + ".password", "")}
-    , db{config.getString(config_prefix + ".db", default_database)}
+    , db{config.getString(config_prefix + ".db", "")}
     , table{config.getString(config_prefix + ".table")}
     , where{config.getString(config_prefix + ".where", "")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
@@ -227,11 +226,9 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
-                                 const std::string & default_database,
                                  bool /* check_config */) -> DictionarySourcePtr
     {
-        return std::make_unique<ClickHouseDictionarySource>(
-            dict_struct, config, config_prefix, config_prefix + ".clickhouse", sample_block, context, default_database);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix, config_prefix + ".clickhouse", sample_block, context);
     };
     factory.registerSource("clickhouse", create_table_source);
 }

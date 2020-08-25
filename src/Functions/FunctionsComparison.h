@@ -80,11 +80,8 @@ namespace ErrorCodes
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
-    using ContainerA = std::conditional_t<!is_big_int_v<A>, PaddedPODArray<A>, std::vector<A>>;
-    using ContainerB = std::conditional_t<!is_big_int_v<B>, PaddedPODArray<B>, std::vector<B>>;
-
     /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
-    static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
+    static void NO_INLINE vectorVector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
     {
         /** GCC 4.8.2 vectorizes a loop only if it is written in this form.
           * In this case, if you loop through the array index (the code will look simpler),
@@ -106,7 +103,7 @@ struct NumComparisonImpl
         }
     }
 
-    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    static void NO_INLINE vectorConstant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
         const A * __restrict a_pos = a.data();
@@ -121,7 +118,7 @@ struct NumComparisonImpl
         }
     }
 
-    static void constantVector(A a, const ContainerB & b, PaddedPODArray<UInt8> & c)
+    static void constantVector(A a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c)
     {
         NumComparisonImpl<B, A, typename Op::SymmetricOp>::vectorConstant(b, a, c);
     }
@@ -570,7 +567,7 @@ private:
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
-    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
+    bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -599,7 +596,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped) const
+    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -625,7 +622,7 @@ private:
     }
 
     template <typename T0>
-    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped) const
+    bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
@@ -634,13 +631,11 @@ private:
                 || executeNumRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
-                || executeNumRightType<T0, bUInt256>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int8>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int128>(block, result, col_left, col_right_untyped)
-                || executeNumRightType<T0, bInt256>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
@@ -656,13 +651,11 @@ private:
                 || executeNumConstRightType<T0, UInt32>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, UInt64>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, UInt128>(block, result, col_left_const, col_right_untyped)
-                || executeNumConstRightType<T0, bUInt256>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int8>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int16>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int32>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int64>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int128>(block, result, col_left_const, col_right_untyped)
-                || executeNumConstRightType<T0, bInt256>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Float32>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Float64>(block, result, col_left_const, col_right_untyped))
                 return true;
@@ -675,7 +668,7 @@ private:
         return false;
     }
 
-    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right) const
+    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         TypeIndex left_number = col_left.type->getTypeId();
         TypeIndex right_number = col_right.type->getTypeId();
@@ -698,7 +691,7 @@ private:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
+    bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
@@ -824,7 +817,7 @@ private:
 
     bool executeWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count) const
+        const DataTypePtr & left_type, const DataTypePtr & right_type, size_t input_rows_count)
     {
         /// To compare something with const string, we cast constant to appropriate type and compare as usual.
         /// It is ok to throw exception if value is not convertible.
@@ -868,7 +861,7 @@ private:
     }
 
     void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
-                          size_t input_rows_count) const
+                          size_t input_rows_count)
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -932,7 +925,7 @@ private:
 
     void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                               const ColumnsWithTypeAndName & y, size_t tuple_size,
-                              size_t input_rows_count) const;
+                              size_t input_rows_count);
 
     void executeTupleEqualityImpl(
         std::shared_ptr<IFunctionOverloadResolver> func_compare,
@@ -942,7 +935,7 @@ private:
         const ColumnsWithTypeAndName & x,
         const ColumnsWithTypeAndName & y,
         size_t tuple_size,
-        size_t input_rows_count) const
+        size_t input_rows_count)
     {
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
@@ -994,7 +987,7 @@ private:
         const ColumnsWithTypeAndName & x,
         const ColumnsWithTypeAndName & y,
         size_t tuple_size,
-        size_t input_rows_count) const
+        size_t input_rows_count)
     {
         Block tmp_block;
 
@@ -1066,7 +1059,7 @@ private:
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
     }
 
-    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1) const
+    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
@@ -1094,7 +1087,7 @@ private:
         }
     }
 
-    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
+    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
     {
         DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
 
@@ -1173,7 +1166,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
@@ -1223,13 +1216,11 @@ public:
                 || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt128>(block, result, col_left_untyped, col_right_untyped)
-                || executeNumLeftType<bUInt256>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int128>(block, result, col_left_untyped, col_right_untyped)
-                || executeNumLeftType<bInt256>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()

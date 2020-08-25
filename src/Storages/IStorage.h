@@ -37,6 +37,8 @@ using StorageActionBlockType = size_t;
 class ASTCreateQuery;
 
 struct Settings;
+struct SettingChange;
+using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
@@ -48,6 +50,7 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
+using Pipes = std::vector<Pipe>;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
@@ -133,13 +136,15 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+public:
+
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
-    /// multiversion, so it can be concurrently changed, but returned copy can be
+    /// multiversion, so it can be concurrently chaged, but returned copy can be
     /// used without any locks.
     StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
 
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
-    /// multiversion, so it can be concurrently changed, but returned copy can be
+    /// multiversion, so it can be concurrently chaged, but returned copy can be
     /// used without any locks.
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
@@ -159,7 +164,7 @@ public:
     /// virtual columns must contain virtual columns from underlying table.
     ///
     /// User can create columns with the same name as virtual column. After that
-    /// virtual column will be overridden and inaccessible.
+    /// virtual column will be overriden and inaccessible.
     ///
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
@@ -178,29 +183,29 @@ private:
     /// Multiversion storage metadata. Allows to read/write storage metadata
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
-
+private:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
     /// Lock table for share. This lock must be acuqired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
-    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder lockForShare(const String & query_id, const SettingSeconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
-    TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder lockForAlter(const String & query_id, const SettingSeconds & acquire_timeout);
 
-    /// Lock table exclusively. This lock must be acquired if you want to be
+    /// Lock table exclusively. This lock must be acuired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
     /// with table. For example it allows to wait all threads before DROP or
     /// truncate query.
     ///
     /// NOTE: You have to be 100% sure that you need this lock. It's extremely
     /// heavyweight and makes table irresponsive.
-    TableExclusiveLockHolder lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
@@ -271,14 +276,17 @@ public:
       * changed during lifetime of the returned pipeline, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual Pipe read(
+    virtual Pipes read(
         const Names & /*column_names*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
+        unsigned /*num_streams*/)
+    {
+        throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -347,11 +355,10 @@ public:
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
       */
-    virtual Pipe alterPartition(
-        const ASTPtr & /* query */,
-        const StorageMetadataPtr & /* metadata_snapshot */,
-        const PartitionCommands & /* commands */,
-        const Context & /* context */);
+    virtual void alterPartition(const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
+    {
+        throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Checks that partition commands can be applied to storage.
     virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
@@ -475,7 +482,7 @@ private:
     mutable RWLock alter_lock = RWLockImpl::create();
 
     /// Lock required for drop queries. Every thread that want to ensure, that
-    /// table is not dropped have to table this lock for read (lockForShare).
+    /// table is not dropped have to tabke this lock for read (lockForShare).
     /// DROP-like queries take this lock for write (lockExclusively), to be sure
     /// that all table threads finished.
     mutable RWLock drop_lock = RWLockImpl::create();

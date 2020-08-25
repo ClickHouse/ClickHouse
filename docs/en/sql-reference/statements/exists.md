@@ -1,6 +1,5 @@
 ---
 toc_priority: 47
-toc_title: EXISTS
 ---
 
 # EXISTS Statement {#exists-statement}

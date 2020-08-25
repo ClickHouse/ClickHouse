@@ -482,7 +482,7 @@ namespace
         {
             case HashJoin::Type::EMPTY: break;
             case HashJoin::Type::CROSS: break; /// Do nothing. We have already saved block, and it is enough.
-            case HashJoin::Type::DICT:  break; /// No one should call it with Type::DICT.
+            case HashJoin::Type::DICT:  break; /// Noone should call it with Type::DICT.
 
         #define M(TYPE) \
             case HashJoin::Type::TYPE: \

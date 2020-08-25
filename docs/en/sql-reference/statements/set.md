@@ -1,6 +1,5 @@
 ---
 toc_priority: 51
-toc_title: SET
 ---
 
 # SET Statement {#query-set}

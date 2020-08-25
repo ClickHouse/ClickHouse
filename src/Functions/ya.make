@@ -18,7 +18,6 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
-    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
@@ -97,7 +96,6 @@ SRCS(
     array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
-    array/mapOp.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
@@ -158,7 +156,6 @@ SRCS(
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
-    formatRow.cpp
     formatString.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
@@ -204,7 +201,6 @@ SRCS(
     geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
-    getSetting.cpp
     getSizeOfEnumType.cpp
     globalVariable.cpp
     greatCircleDistance.cpp
@@ -294,8 +290,6 @@ SRCS(
     multiSearchFirstPositionUTF8.cpp
     negate.cpp
     neighbor.cpp
-    normalizedQueryHash.cpp
-    normalizeQuery.cpp
     notEmpty.cpp
     notEquals.cpp
     notILike.cpp

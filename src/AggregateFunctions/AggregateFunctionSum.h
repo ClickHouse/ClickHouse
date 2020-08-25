@@ -119,7 +119,7 @@ struct AggregateFunctionSumKahanData
     template <typename Value>
     void ALWAYS_INLINE addImpl(Value value, T & out_sum, T & out_compensation)
     {
-        auto compensated_value = static_cast<T>(value) - out_compensation;
+        auto compensated_value = value - out_compensation;
         auto new_sum = out_sum + compensated_value;
         out_compensation = (new_sum - out_sum) - compensated_value;
         out_sum = new_sum;
@@ -273,10 +273,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = static_cast<const ColVecType &>(*columns[0]);
-        if constexpr (is_big_int_v<T>)
-            this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
-        else
-            this->data(place).add(column.getData()[row_num]);
+        this->data(place).add(column.getData()[row_num]);
     }
 
     /// Vectorized version when there is no GROUP BY keys.

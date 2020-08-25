@@ -17,8 +17,6 @@ parser.add_argument('--report', default='main', choices=['main', 'all-queries'],
     help='Which report to build')
 args = parser.parse_args()
 
-tables = []
-errors_explained = []
 report_errors = []
 error_tests = 0
 slow_average_tests = 0
@@ -51,90 +49,21 @@ header_template = """
     font-stretch:normal
 }}
 
-body {{
-    font-family: "Yandex Sans Display Web", Arial, sans-serif;
-    background: #EEE;
-}}
-
+body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
+th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
+td {{ white-space: pre; font-family: Monospace, Courier New; }}
+border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 a {{ color: #06F; text-decoration: none; }}
-
 a:hover, a:active {{ color: #F40; text-decoration: underline; }}
-
+table {{ border: 0; }}
 .main {{ margin: auto; max-width: 95%; }}
+p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 
-p.links a {{
-    padding: 5px; margin: 3px; background: #FFF; line-height: 2;
-    white-space: nowrap;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
-}}
-
-.cancela,.cancela:link,.cancela:visited,.cancela:hover,
-        .cancela:focus,.cancela:active {{
+.cancela,.cancela:link,.cancela:visited,.cancela:hover,.cancela:focus,.cancela:active{{
     color: inherit;
     text-decoration: none;
 }}
-
-table {{
-    border: none;
-    border-spacing: 0px;
-    line-height: 1.5;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
-    text-align: left;
-}}
-
-th, td {{
-    border: none;
-    padding: 5px;
-    vertical-align: top;
-    background-color: #FFF;
-    font-family: sans-serif;
-}}
-
-th {{
-    border-bottom: 2px solid black;
-}}
-
-tr:nth-child(odd) td {{filter: brightness(90%);}}
-
-.all-query-times tr :nth-child(1),
-.all-query-times tr :nth-child(2),
-.all-query-times tr :nth-child(3),
-.all-query-times tr :nth-child(4),
-.all-query-times tr :nth-child(5),
-.all-query-times tr :nth-child(7),
-.changes-in-performance tr :nth-child(1),
-.changes-in-performance tr :nth-child(2),
-.changes-in-performance tr :nth-child(3),
-.changes-in-performance tr :nth-child(4),
-.changes-in-performance tr :nth-child(5),
-.changes-in-performance tr :nth-child(7),
-.unstable-queries tr :nth-child(1),
-.unstable-queries tr :nth-child(2),
-.unstable-queries tr :nth-child(3),
-.unstable-queries tr :nth-child(4),
-.unstable-queries tr :nth-child(6),
-.test-performance-changes tr :nth-child(2),
-.test-performance-changes tr :nth-child(3),
-.test-performance-changes tr :nth-child(4),
-.test-performance-changes tr :nth-child(5),
-.test-performance-changes tr :nth-child(6),
-.test-times tr :nth-child(2),
-.test-times tr :nth-child(3),
-.test-times tr :nth-child(4),
-.test-times tr :nth-child(5),
-.test-times tr :nth-child(6),
-.test-times tr :nth-child(7),
-.test-times tr :nth-child(8),
-.concurrent-benchmarks tr :nth-child(2),
-.concurrent-benchmarks tr :nth-child(3),
-.concurrent-benchmarks tr :nth-child(4),
-.concurrent-benchmarks tr :nth-child(5),
-.metric-changes tr :nth-child(2),
-.metric-changes tr :nth-child(3),
-.metric-changes tr :nth-child(4),
-.metric-changes tr :nth-child(5)
-{{ text-align: right; }}
-
+tr:nth-child(odd) td {{filter: brightness(95%);}}
   </style>
   <title>Clickhouse performance comparison</title>
 </head>
@@ -147,42 +76,21 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 table_anchor = 0
 row_anchor = 0
 
-def currentTableAnchor():
-    global table_anchor
-    return f'{table_anchor}'
-
-def newTableAnchor():
+def nextTableAnchor():
     global table_anchor
     table_anchor += 1
-    return currentTableAnchor()
-
-def currentRowAnchor():
-    global row_anchor
-    global table_anchor
-    return f'{table_anchor}.{row_anchor}'
+    return str(table_anchor)
 
 def nextRowAnchor():
     global row_anchor
     global table_anchor
-    return f'{table_anchor}.{row_anchor + 1}'
-
-def setRowAnchor(anchor_row_part):
-    global row_anchor
-    global table_anchor
-    row_anchor = anchor_row_part
-    return currentRowAnchor()
-
-def advanceRowAnchor():
-    global row_anchor
-    global table_anchor
     row_anchor += 1
-    return currentRowAnchor()
+    return str(table_anchor) + "." + str(row_anchor)
 
-
-def tr(x, anchor=None):
+def tr(x):
+    a = nextRowAnchor()
     #return '<tr onclick="location.href=\'#{a}\'" id={a}>{x}</tr>'.format(a=a, x=str(x))
-    anchor = anchor if anchor else advanceRowAnchor()
-    return f'<tr id={anchor}>{x}</tr>'
+    return '<tr id={a}>{x}</tr>'.format(a=a, x=str(x))
 
 def td(value, cell_attributes = ''):
     return '<td {cell_attributes}>{value}</td>'.format(
@@ -192,29 +100,22 @@ def td(value, cell_attributes = ''):
 def th(x):
     return '<th>' + str(x) + '</th>'
 
-def tableRow(cell_values, cell_attributes = [], anchor=None):
-    return tr(
-        ''.join([td(v, a)
-            for v, a in itertools.zip_longest(
-                cell_values, cell_attributes,
-                fillvalue = '')
-            if a is not None and v is not None]),
-        anchor)
+def tableRow(cell_values, cell_attributes = []):
+    return tr(''.join([td(v, a)
+        for v, a in itertools.zip_longest(
+            cell_values, cell_attributes,
+            fillvalue = '')
+        if a is not None and v is not None]))
 
 def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
 
 def tableStart(title):
-    cls = '-'.join(title.lower().split(' ')[:3]);
-    global table_anchor
-    table_anchor = cls
-    anchor = currentTableAnchor()
-    return f"""
-        <h2 id="{anchor}">
-            <a class="cancela" href="#{anchor}">{title}</a>
-        </h2>
-        <table class="{cls}">
-    """
+    return """
+<h2 id="{anchor}"><a class="cancela" href="#{anchor}">{title}</a></h2>
+<table>""".format(
+        anchor = nextTableAnchor(),
+        title = title)
 
 def tableEnd():
     return '</table>'
@@ -238,23 +139,20 @@ def htmlRows(n):
         result += tableRow(row)
     return result
 
-def addSimpleTable(caption, columns, rows, pos=None):
-    global tables
-    text = ''
+def printSimpleTable(caption, columns, rows):
     if not rows:
         return
 
-    text += tableStart(caption)
-    text += tableHeader(columns)
+    print(tableStart(caption))
+    print(tableHeader(columns))
     for row in rows:
-        text += tableRow(row)
-    text += tableEnd()
-    tables.insert(pos if pos else len(tables), text)
+        print(tableRow(row))
+    print(tableEnd())
 
-def add_tested_commits():
+def print_tested_commits():
     global report_errors
     try:
-        addSimpleTable('Tested commits', ['Old', 'New'],
+        printSimpleTable('Tested commits', ['Old', 'New'],
             [['<pre>{}</pre>'.format(x) for x in
                 [open('left-commit.txt').read(),
                  open('right-commit.txt').read()]]])
@@ -265,8 +163,7 @@ def add_tested_commits():
                 *sys.exc_info()[:2])[-1])
         pass
 
-def add_report_errors():
-    global tables
+def print_report_errors():
     global report_errors
     # Add the errors reported by various steps of comparison script
     try:
@@ -277,138 +174,96 @@ def add_report_errors():
                 *sys.exc_info()[:2])[-1])
         pass
 
-    if not report_errors:
-        return
-
-    text = tableStart('Errors while building the report')
-    text += tableHeader(['Error'])
-    for x in report_errors:
-        text += tableRow([x])
-    text += tableEnd()
-    # Insert after Tested Commits
-    tables.insert(1, text)
-    errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while building the report</a>']);
-
-def add_errors_explained():
-    if not errors_explained:
-        return
-
-    text = '<a name="fail1"/>'
-    text += tableStart('Error summary')
-    text += tableHeader(['Description'])
-    for row in errors_explained:
-        text += tableRow(row)
-    text += tableEnd()
-
-    global tables
-    tables.insert(1, text)
-
+    if len(report_errors):
+        print(tableStart('Errors while building the report'))
+        print(tableHeader(['Error']))
+        for x in report_errors:
+            print(tableRow([x]))
+        print(tableEnd())
 
 if args.report == 'main':
     print(header_template.format())
 
-    add_tested_commits()
-
+    print_tested_commits()
 
     run_error_rows = tsvRows('run-errors.tsv')
     error_tests += len(run_error_rows)
-    addSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
-    if run_error_rows:
-        errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while running the tests</a>']);
-
+    printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
 
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
-    addSimpleTable('Slow on client',
+    printSimpleTable('Slow on client',
                      ['Client time,&nbsp;s', 'Server time,&nbsp;s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
-    if slow_on_client_rows:
-        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries are taking noticeable time client-side (missing `FORMAT Null`?)</a>']);
 
-    unmarked_short_rows = tsvRows('report/unmarked-short-queries.tsv')
-    error_tests += len(unmarked_short_rows)
-    addSimpleTable('Short queries not marked as short',
-        ['New client time, s', 'Test', '#', 'Query'],
-        unmarked_short_rows)
-    if unmarked_short_rows:
-        errors_explained.append([f'<a href="#{currentTableAnchor()}">Some queries have short duration but are not explicitly marked as "short"</a>']);
-
-    def add_partial():
+    def print_partial():
         rows = tsvRows('report/partial-queries-report.tsv')
         if not rows:
             return
-
-        global unstable_partial_queries, slow_average_tests, tables
-        text = tableStart('Partial queries')
+        global unstable_partial_queries, slow_average_tests
+        print(tableStart('Partial queries'))
         columns = ['Median time, s', 'Relative time variance', 'Test', '#', 'Query']
-        text += tableHeader(columns)
+        print(tableHeader(columns))
         attrs = ['' for c in columns]
         for row in rows:
-            anchor = f'{currentTableAnchor()}.{row[2]}.{row[3]}'
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
                 unstable_partial_queries += 1
-                errors_explained.append([f'<a href="#{anchor}">The query no. {row[3]} of test \'{row[2]}\' has excessive variance of run time. Keep it below 10%</a>'])
             else:
                 attrs[1] = ''
             if float(row[0]) > allowed_single_run_time:
                 attrs[0] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="#{anchor}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run_time} seconds"</a>'])
                 slow_average_tests += 1
             else:
                 attrs[0] = ''
-            text += tableRow(row, attrs, anchor)
-        text += tableEnd()
-        tables.append(text)
+            print(tableRow(row, attrs))
+        print(tableEnd())
 
-    add_partial()
+    print_partial()
 
-    def add_changes():
+    def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
         if not rows:
             return
 
-        global faster_queries, slower_queries, tables
+        global faster_queries, slower_queries
 
-        text = tableStart('Changes in performance')
+        print(tableStart('Changes in performance'))
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
-            'Times speedup / slowdown',                 # 2
-            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
-            'p&nbsp;<&nbsp;0.001 threshold',                   # 4
-            # Failed                                           # 5
-            'Test',                                            # 6
-            '#',                                               # 7
-            'Query',                                           # 8
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
+            'p&nbsp;<&nbsp;0.001 threshold',                   # 3
+            # Failed                                           # 4
+            'Test',                                            # 5
+            '#',                                               # 6
+            'Query',                                           # 7
             ]
 
-        text += tableHeader(columns)
+        print(tableHeader(columns))
 
         attrs = ['' for c in columns]
-        attrs[5] = None
+        attrs[4] = None
         for row in rows:
-            anchor = f'{currentTableAnchor()}.{row[6]}.{row[7]}'
-            if int(row[5]):
-                if float(row[3]) < 0.:
+            if int(row[4]):
+                if float(row[2]) < 0.:
                     faster_queries += 1
-                    attrs[2] = attrs[3] = f'style="background: {color_good}"'
+                    attrs[2] = f'style="background: {color_good}"'
                 else:
                     slower_queries += 1
-                    attrs[2] = attrs[3] = f'style="background: {color_bad}"'
-                    errors_explained.append([f'<a href="#{anchor}">The query no. {row[7]} of test \'{row[6]}\' has slowed down</a>'])
+                    attrs[2] = f'style="background: {color_bad}"'
             else:
-                attrs[2] = attrs[3] = ''
+                attrs[2] = ''
 
-            text += tableRow(row, attrs, anchor)
+            print(tableRow(row, attrs))
 
-        text += tableEnd()
-        tables.append(text)
+        print(tableEnd())
 
-    add_changes()
+    print_changes()
 
-    def add_unstable_queries():
-        global unstable_queries, very_unstable_queries, tables
+    def print_unstable_queries():
+        global unstable_queries
+        global very_unstable_queries
 
         unstable_rows = tsvRows('report/unstable-queries.tsv')
         if not unstable_rows:
@@ -420,42 +275,40 @@ if args.report == 'main':
             'Old,&nbsp;s', #0
             'New,&nbsp;s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'p&nbsp;&lt;&nbsp;0.001 threshold', #3
+            'p&nbsp;<&nbsp;0.001 threshold', #3
             # Failed #4
             'Test', #5
             '#',    #6
             'Query' #7
         ]
 
-        text = tableStart('Unstable queries')
-        text += tableHeader(columns)
+        print(tableStart('Unstable queries'))
+        print(tableHeader(columns))
 
         attrs = ['' for c in columns]
         attrs[4] = None
         for r in unstable_rows:
-            anchor = f'{currentTableAnchor()}.{r[5]}.{r[6]}'
             if int(r[4]):
                 very_unstable_queries += 1
                 attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[3] = ''
 
-            text += tableRow(r, attrs, anchor)
+            print(tableRow(r, attrs))
 
-        text += tableEnd()
-        tables.append(text)
+        print(tableEnd())
 
-    add_unstable_queries()
+    print_unstable_queries()
 
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
-    addSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
+    printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    addSimpleTable('Test performance changes',
+    printSimpleTable('Test performance changes',
         ['Test', 'Queries', 'Unstable', 'Changed perf', 'Total not OK', 'Avg relative time diff'],
         tsvRows('report/test-perf-changes.tsv'))
 
-    def add_test_times():
-        global slow_average_tests, tables
+    def print_test_times():
+        global slow_average_tests
         rows = tsvRows('report/test-times.tsv')
         if not rows:
             return
@@ -471,8 +324,8 @@ if args.report == 'main':
             'Shortest query<br>(sum for all runs),&nbsp;s',       #7
             ]
 
-        text = tableStart('Test times')
-        text += tableHeader(columns)
+        print(tableStart('Test times'))
+        print(tableHeader(columns))
 
         nominal_runs = 13  # FIXME pass this as an argument
         total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
@@ -482,25 +335,22 @@ if args.report == 'main':
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
                 attrs[6] = ''
 
             if float(r[5]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[5] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
             else:
                 attrs[5] = ''
 
-            text += tableRow(r, attrs)
+            print(tableRow(r, attrs))
 
-        text += tableEnd()
-        tables.append(text)
+        print(tableEnd())
 
-    add_test_times()
+    print_test_times()
 
-    def add_benchmark_results():
+    def print_benchmark_results():
         if not os.path.isfile('benchmark/website-left.json'):
             return
 
@@ -550,33 +400,26 @@ if args.report == 'main':
 
             all_rows.append([row, attrs])
 
-        text = tableStart('Concurrent benchmarks')
-        text += tableHeader(header)
+        print(tableStart('Concurrent benchmarks'))
+        print(tableHeader(header))
         for row, attrs in all_rows:
-            text += tableRow(row, attrs)
-        text += tableEnd()
-
-        global tables
-        tables.append(text)
+            print(tableRow(row, attrs))
+        print(tableEnd())
 
     try:
-        add_benchmark_results()
+        print_benchmark_results()
     except:
         report_errors.append(
             traceback.format_exception_only(
                 *sys.exc_info()[:2])[-1])
         pass
 
-    addSimpleTable('Metric changes',
+    printSimpleTable('Metric changes',
         ['Metric', 'Old median value', 'New median value',
             'Relative difference', 'Times difference'],
         tsvRows('metrics/changes.tsv'))
 
-    add_report_errors()
-    add_errors_explained()
-
-    for t in tables:
-        print(t)
+    print_report_errors()
 
     print("""
     <p class="links">
@@ -637,9 +480,9 @@ elif args.report == 'all-queries':
 
     print(header_template.format())
 
-    add_tested_commits()
+    print_tested_commits()
 
-    def add_all_queries():
+    def print_all_queries():
         rows = tsvRows('report/all-queries.tsv')
         if not rows:
             return
@@ -649,34 +492,33 @@ elif args.report == 'all-queries':
             # Unstable #1
             'Old,&nbsp;s', #2
             'New,&nbsp;s', #3
-            'Times speedup / slowdown',                 #4
-            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
-            'p&nbsp;&lt;&nbsp;0.001 threshold',          #6
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
+            'Times speedup / slowdown',                 #5
+            'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
             '#',                                      #8
             'Query',                                  #9
             ]
 
-        text = tableStart('All query times')
-        text += tableHeader(columns)
+        print(tableStart('All query times'))
+        print(tableHeader(columns))
 
         attrs = ['' for c in columns]
         attrs[0] = None
         attrs[1] = None
         for r in rows:
-            anchor = f'{currentTableAnchor()}.{r[7]}.{r[8]}'
             if int(r[1]):
                 attrs[6] = f'style="background: {color_bad}"'
             else:
                 attrs[6] = ''
 
             if int(r[0]):
-                if float(r[5]) > 0.:
-                    attrs[4] = attrs[5] = f'style="background: {color_bad}"'
+                if float(r[4]) > 0.:
+                    attrs[4] = f'style="background: {color_bad}"'
                 else:
-                    attrs[4] = attrs[5] = f'style="background: {color_good}"'
+                    attrs[4] = f'style="background: {color_good}"'
             else:
-                attrs[4] = attrs[5] = ''
+                attrs[4] = ''
 
             if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
                 attrs[2] = f'style="background: {color_bad}"'
@@ -685,15 +527,13 @@ elif args.report == 'all-queries':
                 attrs[2] = ''
                 attrs[3] = ''
 
-            text += tableRow(r, attrs, anchor)
+            print(tableRow(r, attrs))
 
-        text += tableEnd()
-        tables.append(text)
+        print(tableEnd())
 
-    add_all_queries()
-    add_report_errors()
-    for t in tables:
-        print(t)
+    print_all_queries()
+
+    print_report_errors()
 
     print("""
     <p class="links">

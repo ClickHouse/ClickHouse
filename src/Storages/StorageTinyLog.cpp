@@ -118,12 +118,7 @@ public:
     {
         try
         {
-            if (!done)
-            {
-                /// Rollback partial writes.
-                streams.clear();
-                storage.file_checker.repair();
-            }
+            writeSuffix();
         }
         catch (...)
         {
@@ -282,13 +277,11 @@ void TinyLogBlockOutputStream::writeSuffix()
 {
     if (done)
         return;
+    done = true;
 
     /// If nothing was written - leave the table in initial state.
     if (streams.empty())
-    {
-        done = true;
         return;
-    }
 
     WrittenStreams written_streams;
     IDataType::SerializeBinaryBulkSettings settings;
@@ -310,12 +303,9 @@ void TinyLogBlockOutputStream::writeSuffix()
     for (auto & pair : streams)
         column_files.push_back(storage.files[pair.first].data_file_path);
 
-    for (const auto & file : column_files)
-        storage.file_checker.update(file);
-    storage.file_checker.save();
+    storage.file_checker.update(column_files.begin(), column_files.end());
 
     streams.clear();
-    done = true;
 }
 
 
@@ -362,24 +352,9 @@ StorageTinyLog::StorageTinyLog(
         /// create directories if they do not exist
         disk->createDirectories(table_path);
     }
-    else
-    {
-        try
-        {
-            file_checker.repair();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
 
     for (const auto & col : storage_metadata.getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
-
-    if (!attach)
-        for (const auto & file : files)
-            file_checker.setEmpty(file.second.data_file_path);
 }
 
 
@@ -420,7 +395,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 }
 
 
-Pipe StorageTinyLog::read(
+Pipes StorageTinyLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -431,10 +406,14 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    Pipes pipes;
+
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
-    return Pipe(std::make_shared<TinyLogSource>(
+    pipes.emplace_back(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+
+    return pipes;
 }
 
 
