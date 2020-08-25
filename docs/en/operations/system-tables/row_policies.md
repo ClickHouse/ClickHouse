@@ -9,7 +9,7 @@ Columns:
 
 -    `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 
--    `table` ([String](../../sql-reference/data-types/string.md)) — Name of a table.
+-    `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Row policy ID.
 
