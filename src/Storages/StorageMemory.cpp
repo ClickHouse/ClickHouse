@@ -126,20 +126,27 @@ Pipe StorageMemory::read(
 
     Pipes pipes;
 
+    BlocksList::iterator first = data.begin();
+
+    size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        BlocksList::iterator first = data.begin();
-        BlocksList::iterator last = data.begin();
+        auto next = first;
+        while (offset < stream * size / num_streams)
+        {
+            ++next;
+            ++offset;
+        }
 
-        std::advance(first, stream * size / num_streams);
-        std::advance(last, (stream + 1) * size / num_streams);
-
-        if (first == last)
+        if (first == next)
             continue;
-        else
-            --last;
+
+        auto last = next;
+        --last;
 
         pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this, metadata_snapshot));
+
+        first = next;
     }
 
     return Pipe::unitePipes(std::move(pipes));
