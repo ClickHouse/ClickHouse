@@ -532,7 +532,7 @@ Colonne:
 -   `query` (String) – The query text. For `INSERT` il n'inclut pas les données à insérer.
 -   `query_id` (String) – Query ID, if defined.
 
-## système.text\_log {#system-tables-text-log}
+## système.text\_log {#system_tables-text_log}
 
 Contient des entrées de journalisation. Niveau de journalisation qui va à cette table peut être limité `text_log.level` paramètre de serveur.
 
