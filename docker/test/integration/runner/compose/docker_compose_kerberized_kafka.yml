@@ -42,6 +42,7 @@ services:
         KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/broker_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dsun.security.krb5.debug=true"
     volumes:
         - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/secrets:/etc/kafka/secrets
+        - /dev/urandom:/dev/random
     depends_on:
         - kafka_kerberized_zookeeper
         - kafka_kerberos
@@ -49,8 +50,11 @@ services:
         - label:disable
 
   kafka_kerberos:
-    build: /home/ilejn/projects/ClickHouse/tests/integration/tskk
+    # build: ${KERBERIZED_KAFKA_DIR:-../..--../../../../tests/integration/tskk}
+    image: ilejn/kdc:latest
     hostname: kafka_kerberos
     volumes:
         - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/secrets:/tmp/keytab
+        - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/../../kerberos_image_config.sh:/config.sh
+        - /dev/urandom:/dev/random
     ports: [88, 749]
