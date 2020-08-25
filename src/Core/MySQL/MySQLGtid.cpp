@@ -36,7 +36,7 @@ void GTIDSets::parse(const String gtid_format)
         boost::split(server_ids, gset, [](char c) { return c == ':'; });
 
         GTIDSet set;
-        set.uuid = stringToUUID(server_ids[0].data());
+        set.uuid = stringToUUID(server_ids[0]);
 
         for (size_t k = 1; k < server_ids.size(); k++)
         {
