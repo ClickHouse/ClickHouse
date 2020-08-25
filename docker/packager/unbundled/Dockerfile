@@ -51,6 +51,6 @@ RUN apt-get --allow-unauthenticated update -y \
             heimdal-multidev \
             libhyperscan-dev
 
-COPY build.sh /
+COPY build.sh
 
 CMD ["/bin/bash", "/build.sh"]
