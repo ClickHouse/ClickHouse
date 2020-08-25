@@ -487,7 +487,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-必要に応じて、インポート後のテーブルを[OPTIMIZE](../../en/sql-reference/statements/optimize.md)することができます。
+必要に応じて、インポート後のテーブルを[OPTIMIZE](../sql-reference/statements/optimize.md)することができます。
 MergeTree-familyのエンジンで設定されているテーブルは、常にバックグラウンドでデータ部分のマージを行い、データストレージを最適化します(あるいは、少なくともそれが意味のあるものかどうかをチェックします)。
 
 以下のクエリは、テーブルエンジンがストレージの最適化を後で行うのではなく、今すぐに行うように強制します:
