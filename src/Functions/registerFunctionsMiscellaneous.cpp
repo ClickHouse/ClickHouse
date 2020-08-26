@@ -18,6 +18,7 @@ void registerFunctionBlockSerializedSize(FunctionFactory &);
 void registerFunctionToColumnTypeName(FunctionFactory &);
 void registerFunctionDumpColumnStructure(FunctionFactory &);
 void registerFunctionDefaultValueOfArgumentType(FunctionFactory &);
+void registerFunctionDefaultValueOfTypeName(FunctionFactory &);
 void registerFunctionBlockSize(FunctionFactory &);
 void registerFunctionBlockNumber(FunctionFactory &);
 void registerFunctionRowNumberInBlock(FunctionFactory &);
@@ -79,6 +80,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionToColumnTypeName(factory);
     registerFunctionDumpColumnStructure(factory);
     registerFunctionDefaultValueOfArgumentType(factory);
+    registerFunctionDefaultValueOfTypeName(factory);
     registerFunctionBlockSize(factory);
     registerFunctionBlockNumber(factory);
     registerFunctionRowNumberInBlock(factory);
