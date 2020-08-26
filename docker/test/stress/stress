@@ -63,7 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=3600)
-    parser.add_argument("--num-parallel", default=cpu_count() // 3);
+    parser.add_argument("--num-parallel", default=cpu_count());
 
     args = parser.parse_args()
     func_pipes = []
