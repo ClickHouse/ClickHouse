@@ -11,7 +11,7 @@ Columns:
 
 -    `auth_type` (Enum8('no_password' = 0,'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3)) — Shows the authentication type. There are multiple ways of user identification: with no password, with plain text password, with [SHA256](https://ru.wikipedia.org/wiki/SHA-2)-encoded password or with [double SHA-1](https://ru.wikipedia.org/wiki/SHA-1)-encoded password.
 
--    `auth_params` ([String](../../sql-reference/data-types/string.md)) — Authentication parameters in json format depending on the auth_type.
+-    `auth_params` ([String](../../sql-reference/data-types/string.md)) — Authentication parameters in the JSON format depending on the `auth_type`.
 
 -    `host_ip` ([Array](../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — IP addresses of hosts that are allowed to connect to the ClickHouse server.
 
