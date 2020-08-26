@@ -48,6 +48,12 @@ public:
     template <typename EntityClassT>
     std::vector<UUID> find(const Strings & names) const { return find(EntityClassT::TYPE, names); }
 
+    /// Searches for an entity with specified type and name. Returns std::nullopt if not found and cannot be generated.
+    std::optional<UUID> findOrGenerate(EntityType type, const String & name) const;
+
+    template <typename EntityClassT>
+    std::optional<UUID> findOrGenerate(const String & name) const { return findOrGenerate(EntityClassT::TYPE, name); }
+
     /// Searches for an entity with specified name and type. Throws an exception if not found.
     UUID getID(EntityType type, const String & name) const;
 
@@ -139,6 +145,7 @@ public:
 
 protected:
     virtual std::optional<UUID> findImpl(EntityType type, const String & name) const = 0;
+    virtual std::optional<UUID> findOrGenerateImpl(EntityType type, const String & name) const;
     virtual std::vector<UUID> findAllImpl(EntityType type) const = 0;
     virtual bool existsImpl(const UUID & id) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id) const = 0;

@@ -673,7 +673,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
     client_info.current_password = password;
 #endif
 
-    auto new_user_id = getAccessControlManager().find<User>(name);
+    auto new_user_id = getAccessControlManager().findOrGenerate<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
     if (new_user_id)
     {

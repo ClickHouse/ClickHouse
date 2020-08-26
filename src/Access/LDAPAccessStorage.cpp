@@ -75,6 +75,12 @@ bool LDAPAccessStorage::isStorageReadOnly() const
 
 std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & name) const
 {
+    return memory_storage.find(type, name);
+}
+
+
+std::optional<UUID> LDAPAccessStorage::findOrGenerateImpl(EntityType type, const String & name) const
+{
     if (type == EntityType::USER)
     {
         std::scoped_lock lock(mutex);

@@ -38,6 +38,7 @@ public: // IAccessStorage implementations.
 
 private: // IAccessStorage implementations.
     virtual std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    virtual std::optional<UUID> findOrGenerateImpl(EntityType type, const String & name) const override;
     virtual std::vector<UUID> findAllImpl(EntityType type) const override;
     virtual bool existsImpl(const UUID & id) const override;
     virtual AccessEntityPtr readImpl(const UUID & id) const override;
