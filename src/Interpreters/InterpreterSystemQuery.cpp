@@ -343,6 +343,48 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
 
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
+
+    /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
+    {
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+
+        ASTPtr create_query_ptr = std::make_shared<ASTCreateQuery>();
+        ASTCreateQuery& create_query = *create_query_ptr.get();
+
+        create_query->database = table_id.database_name;
+        create_query->table = table_id.table_name;
+        create_query->uuid = table_id.uuid;
+
+
+        InterpreterCreateQuery::execute();
+    }
+
+ // 1. Create a new replicated table with AS syntax from the old table.
+ //
+ // CREATE TABLE table_repl_rec AS default.table_repl;
+ //
+ // ClickHouse will throw an error, but it's okay. table will be created anyway.
+ // 2. Stop replica fetches for the old table.
+ //
+ // SYSTEM STOP FETCHES table_repl;
+ //
+ // 3. Move parts to a new table that will register them in zookeeper.
+ //
+ // ALTER TABLE table_repl MOVE PARTITION 1 TO TABLE table_repl_rec;
+ // ALTER TABLE table_repl MOVE PARTITION 2 TO TABLE table_repl_rec;
+ //
+ // Alternatively, you can run in bash:clickhouse-client --format=TSVRaw -q"SELECT 'ALTER TABLE ' || database || '.' || table || ' MOVE PARTITION ID \'' || partition_id || '\' TO TABLE ' || table || '_rec'  || ';\n' FROM system.parts WHERE database = 'default' AND table = 'table_repl' AND active GROUP BY database, table, partition_id ORDER BY database, table, partition_id;" | clickhouse-client -mn4.
+ //
+ // Switch tables.
+ //
+ // RENAME TABLE table_repl TO table_repl_old, table_repl_rec TO table_repl;
+ //
+ // 5. Detach old table.
+ // DETACH TABLE table_repl_old;
+ //
+ // 6. Delete information about the old table, so it wouldn't be attached after clickhouse-server restart.
+ //
+ // rm -rf /var/lib/clickhouse/metadata/default/table_repl_old.sql
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
