@@ -4,10 +4,12 @@
         <default>
             <databases>
                 <mydb>
-                    <!-- PREWHERE -->
                     <prewhere_filter>
                         <filter>b = 3</filter>
                     </prewhere_filter>
+                    <dist_prewhere_filter>
+                        <filter>b = 3</filter>
+                    </dist_prewhere_filter>
                 </mydb>
             </databases>
         </default>

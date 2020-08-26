@@ -79,7 +79,7 @@ class IColumn;
     \
     M(Bool, distributed_directory_monitor_batch_inserts, false, "Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones.", 0) \
     \
-    M(Bool, optimize_move_to_prewhere, true, "Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree.", 0) \
+    M(UInt64, optimize_move_to_prewhere, 1, "Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree, 2 - force move WHERE to PREWHERE even if if there is PREWHERE already.", 0) \
     \
     M(Milliseconds, insert_in_memory_parts_timeout, 600000, "", 0) \
     \
