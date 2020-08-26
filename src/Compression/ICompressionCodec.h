@@ -32,6 +32,10 @@ public:
     /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
     virtual ASTPtr getCodecDesc() const = 0;
 
+    /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
+    /// "CODEC(LZ4,LZ4HC(5))"
+    ASTPtr getFullCodecDesc() const;
+
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
