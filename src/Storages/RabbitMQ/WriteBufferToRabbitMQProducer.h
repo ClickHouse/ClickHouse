@@ -26,8 +26,8 @@ public:
             const AMQP::ExchangeType exchange_type_,
             const size_t channel_id_,
             const String channel_base_,
-            const bool use_txn_,
             const bool persistent_,
+            std::atomic<bool> & wait_confirm_,
             Poco::Logger * log_,
             std::optional<char> delimiter,
             size_t rows_per_message,
@@ -38,7 +38,6 @@ public:
 
     void countRow();
     void activateWriting() { writing_task->activateAndSchedule(); }
-    void commit();
     void updateMaxWait() { wait_num.store(payload_counter); }
 
 private:
@@ -49,7 +48,6 @@ private:
     void setupChannel();
     void removeConfirmed(UInt64 received_delivery_tag, bool multiple, bool republish);
     void publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & message, bool republishing);
-    void publish(const String & payload);
 
     std::pair<String, UInt16> parsed_address;
     const std::pair<String, String> login_password;
@@ -58,8 +56,8 @@ private:
     AMQP::ExchangeType exchange_type;
     const String channel_id_base;
     const String channel_base;
-    const bool use_txn;
     const bool persistent;
+    std::atomic<bool> & wait_confirm;
 
     AMQP::Table key_arguments;
     BackgroundSchedulePool::TaskHolder writing_task;

@@ -79,7 +79,6 @@ protected:
             const String & exchange_type_,
             size_t num_consumers_,
             size_t num_queues_,
-            const bool use_transactional_channel_,
             const String & queue_base_,
             const String & deadletter_exchange,
             const bool persistent_);
@@ -99,7 +98,6 @@ private:
     size_t num_created_consumers = 0;
     bool hash_exchange;
     size_t num_queues;
-    const bool use_transactional_channel;
     String queue_base;
     const String deadletter_exchange;
     const bool persistent;
@@ -120,7 +118,8 @@ private:
     String sharding_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag;
     size_t producer_id = 0, consumer_id = 0;
-    std::atomic<bool> loop_started = false, exchange_removed = false;
+    bool loop_started = false;
+    std::atomic<bool> exchange_removed = false, wait_confirm = true;
     ChannelPtr setup_channel;
     std::mutex connection_mutex, restore_connection;
 

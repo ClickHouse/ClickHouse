@@ -15,7 +15,7 @@ namespace DB
 
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
-static const auto BATCH = 10000;
+static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
@@ -27,8 +27,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         const AMQP::ExchangeType exchange_type_,
         const size_t channel_id_base_,
         const String channel_base_,
-        const bool use_txn_,
         const bool persistent_,
+        std::atomic<bool> & wait_confirm_,
         Poco::Logger * log_,
         std::optional<char> delimiter,
         size_t rows_per_message,
@@ -41,8 +41,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , exchange_type(exchange_type_)
         , channel_id_base(std::to_string(channel_id_base_))
         , channel_base(channel_base_)
-        , use_txn(use_txn_)
         , persistent(persistent_)
+        , wait_confirm(wait_confirm_)
         , payloads(BATCH)
         , returned(RETURNED_LIMIT)
         , log(log_)
@@ -58,11 +58,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     if (setupConnection(false))
         setupChannel();
 
-    if (!use_txn)
-    {
-        writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
-        writing_task->deactivate();
-    }
+    writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
+    writing_task->deactivate();
 
     if (exchange_type == AMQP::ExchangeType::headers)
     {
@@ -114,17 +111,8 @@ void WriteBufferToRabbitMQProducer::countRow()
         chunks.clear();
         set(nullptr, 0);
 
-        if (!use_txn)
-        {
-            /// "publisher confirms" will be used, this is default.
-            ++payload_counter;
-            payloads.push(std::make_pair(payload_counter, payload));
-        }
-        else
-        {
-            /// means channel->startTransaction() was called, not default, enabled only with table setting.
-            publish(payload);
-        }
+        ++payload_counter;
+        payloads.push(std::make_pair(payload_counter, payload));
     }
 }
 
@@ -189,28 +177,21 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         channel_id = channel_id_base + std::to_string(channel_id_counter++) + "_" + channel_base;
         LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
 
-        if (use_txn)
+        /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
+         * onNack() is received. If persistent == false, message is confirmed the moment it is enqueued. First option is two times
+         * slower than the second, so default is second and the first is turned on in table setting.
+         *
+         * "Publisher confirms" are implemented similar to strategy#3 here https://www.rabbitmq.com/tutorials/tutorial-seven-java.html
+         */
+        producer_channel->confirmSelect()
+        .onAck([&](uint64_t acked_delivery_tag, bool multiple)
         {
-            producer_channel->startTransaction();
-        }
-        else
+            removeConfirmed(acked_delivery_tag, multiple, false);
+        })
+        .onNack([&](uint64_t nacked_delivery_tag, bool multiple, bool /* requeue */)
         {
-            /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
-             * onNack() is received. If persistent == false, message is confirmed the moment it is enqueued. First option is two times
-             * slower than the second, so default is second and the first is turned on in table setting.
-             *
-             * "Publisher confirms" are implemented similar to strategy#3 here https://www.rabbitmq.com/tutorials/tutorial-seven-java.html
-             */
-            producer_channel->confirmSelect()
-            .onAck([&](uint64_t acked_delivery_tag, bool multiple)
-            {
-                removeConfirmed(acked_delivery_tag, multiple, false);
-            })
-            .onNack([&](uint64_t nacked_delivery_tag, bool multiple, bool /* requeue */)
-            {
-                removeConfirmed(nacked_delivery_tag, multiple, true);
-            });
-        }
+            removeConfirmed(nacked_delivery_tag, multiple, true);
+        });
     });
 }
 
@@ -272,7 +253,7 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
         message_settings["republished"] = std::to_string(republishing);
         envelope.setHeaders(message_settings);
 
-        /* Adding here a messageID property to message metadata. Since RabbitMQ does not guarantee excatly-once delivery, then on the
+        /* Adding here a messageID property to message metadata. Since RabbitMQ does not guarantee exactly-once delivery, then on the
          * consumer side "republished" field of message metadata can be checked and, if it set to 1, consumer might also check "messageID"
          * property. This way detection of duplicates is guaranteed.
          */
@@ -310,11 +291,11 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
 
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
-    while (!payloads.empty() || wait_all)
+    /// wait_confirm == false when shutdown is called, needed because table might be dropped before all acks are received.
+    while ((!payloads.empty() || wait_all) && wait_confirm.load())
     {
         /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
-         * as fast as possible and no new publishes are made before returned messages are handled. Also once payloads.queue lacks space
-         * - push attemt will block thread in countRow() - this is intended.
+         * as fast as possible and no new publishes are made before returned messages are handled.
          */
         if (!returned.empty() && producer_channel->usable())
             publish(returned, true);
@@ -334,74 +315,6 @@ void WriteBufferToRabbitMQProducer::writingFunc()
     }
 
     LOG_DEBUG(log, "Prodcuer on channel {} completed", channel_id);
-}
-
-
-/* This publish is for the case when transaction is delcared on the channel with channel->startTransaction(). Here only publish
- * once payload is available and then commitTransaction() is called, where a needed event loop will run.
- */
-void WriteBufferToRabbitMQProducer::publish(const String & payload)
-{
-    AMQP::Envelope envelope(payload.data(), payload.size());
-
-    if (persistent)
-        envelope.setDeliveryMode(2);
-
-    if (exchange_type == AMQP::ExchangeType::consistent_hash)
-    {
-        producer_channel->publish(exchange_name, std::to_string(delivery_tag), envelope);
-    }
-    else if (exchange_type == AMQP::ExchangeType::headers)
-    {
-        producer_channel->publish(exchange_name, "", envelope);
-    }
-    else
-    {
-        producer_channel->publish(exchange_name, routing_keys[0], envelope);
-    }
-}
-
-
-void WriteBufferToRabbitMQProducer::commit()
-{
-    /* Actually have not yet found any information about how is it supposed work once any error occurs with a channel, because any channel
-     * error closes this channel and any operation on a closed channel will fail (but transaction is unique to channel).
-     * RabbitMQ transactions seem not trust-worthy at all - see https://www.rabbitmq.com/semantics.html. Seems like its best to always
-     * use "publisher confirms" rather than transactions (and by default it is so). Probably even need to delete this option.
-     */
-    if (!use_txn || !producer_channel->usable())
-        return;
-
-    std::atomic<bool> answer_received = false, wait_rollback = false;
-
-    producer_channel->commitTransaction()
-    .onSuccess([&]()
-    {
-        answer_received = true;
-        LOG_TRACE(log, "All messages were successfully published");
-    })
-    .onError([&](const char * message1)
-    {
-        answer_received = true;
-        wait_rollback = true;
-        LOG_TRACE(log, "Publishing not successful: {}", message1);
-
-        producer_channel->rollbackTransaction()
-        .onSuccess([&]()
-        {
-            wait_rollback = false;
-        })
-        .onError([&](const char * message2)
-        {
-            wait_rollback = false;
-            LOG_ERROR(log, "Failed to rollback transaction: {}", message2);
-        });
-    });
-
-    while (!answer_received || wait_rollback)
-    {
-        iterateEventLoop();
-    }
 }
 
 
