@@ -89,8 +89,8 @@ struct UInt128
     UInt128 & operator= (const UInt64 rhs) { low = rhs; high = 0; return *this; }
 };
 
-template <typename T> bool inline operator == (T a, const UInt128 b) { return b == a; }
-template <typename T> bool inline operator != (T a, const UInt128 b) { return b != a; }
+template <typename T> bool inline operator == (T a, const UInt128 b) { return b.operator==(a); }
+template <typename T> bool inline operator != (T a, const UInt128 b) { return b.operator!=(a); }
 template <typename T> bool inline operator >= (T a, const UInt128 b) { return b <= a; }
 template <typename T> bool inline operator >  (T a, const UInt128 b) { return b < a; }
 template <typename T> bool inline operator <= (T a, const UInt128 b) { return b >= a; }
