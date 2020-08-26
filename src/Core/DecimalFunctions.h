@@ -183,7 +183,10 @@ To convertTo(const DecimalType & decimal, size_t scale)
 
     if constexpr (std::is_floating_point_v<To>)
     {
-        return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
+        if constexpr (is_big_int_v<NativeT>)
+            return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
+        else
+            return static_cast<To>(decimal.value) / scaleMultiplier<NativeT>(scale);
     }
     else if constexpr (is_integer_v<To> && (sizeof(To) >= sizeof(NativeT)))
     {
