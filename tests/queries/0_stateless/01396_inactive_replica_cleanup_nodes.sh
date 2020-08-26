@@ -6,6 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Check that if we have one inactive replica and a huge number of INSERTs to active replicas,
 # the number of nodes in ZooKeeper does not grow unbounded.
 
+SCALE=5000
+
 $CLICKHOUSE_CLIENT -n --query "
     DROP TABLE IF EXISTS r1;
     DROP TABLE IF EXISTS r2;
@@ -14,19 +16,19 @@ $CLICKHOUSE_CLIENT -n --query "
     DETACH TABLE r2;
 "
 
-$CLICKHOUSE_CLIENT --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(10000)"
+$CLICKHOUSE_CLIENT --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
 
 
 # Now wait for cleanup thread
 
 for _ in {1..60}; do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-    [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || currentDatabase() || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%'") -gt 9900 ]] && break;
+    [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || currentDatabase() || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%'") -gt $((SCALE - 100)) ]] && break;
     sleep 1
 done
 
 
-$CLICKHOUSE_CLIENT --query "SELECT numChildren < 2500 FROM system.zookeeper WHERE path = '/clickhouse/tables/r' AND name = 'log'";
+$CLICKHOUSE_CLIENT --query "SELECT numChildren < $((SCALE / 4)) FROM system.zookeeper WHERE path = '/clickhouse/tables/r' AND name = 'log'";
 echo -e '\n---\n';
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/1' AND name = 'is_lost'";
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/r/replicas/2' AND name = 'is_lost'";
