@@ -475,8 +475,22 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
         return {};
 
     NameSet result = {"checksums.txt", "columns.txt"};
-    if (volume->getDisk()->exists(getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME))
+    String path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    if (volume->getDisk()->exists(path))
+    {
+        std::cerr << "PATH:" << path << "EXISTS\n";
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+    }
+    else
+    {
+        Names files;
+        volume->getDisk()->listFiles(getFullRelativePath(), files);
+        std::cerr << "PATH:" << path << " doesn't exists\n";
+        for (auto & file : files)
+        {
+            std::cerr << "FILE:" << file << std::endl;
+        }
+    }
 
     return result;
 }
@@ -847,10 +861,10 @@ void IMergeTreeDataPart::remove() const
     #    pragma GCC diagnostic pop
     #endif
 
-            auto files_without_checksums = getFileNamesWithoutChecksums();
-            for (const auto & file : files_without_checksums)
+            for (const auto & file : {"checksums.txt", "columns.txt"})
                 volume->getDisk()->remove(to + "/" + file);
 
+            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
             volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
             volume->getDisk()->remove(to);
