@@ -13,7 +13,6 @@
 #include <Common/escapeForFileName.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
