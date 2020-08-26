@@ -52,12 +52,67 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
     ldap_server = ldap_server_cfg;
     roles.swap(roles_cfg);
     access_control_manager = access_control_manager_;
+    role_change_subscription = access_control_manager->subscribeForChanges<Role>(
+        [this] (const UUID & id, const AccessEntityPtr & entity)
+        {
+            return this->processRoleChange(id, entity);
+        }
+    );
+    roles_of_interest.clear();
 }
 
 
 bool LDAPAccessStorage::isConfiguredNoLock() const
 {
     return !ldap_server.empty() &&/* !roles.empty() &&*/ access_control_manager;
+}
+
+
+void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
+{
+    auto role_ptr = typeid_cast<std::shared_ptr<const Role>>(entity);
+    if (role_ptr)
+    {
+        if (roles.find(role_ptr->getName()) != roles.end())
+        {
+            auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
+            {
+                auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
+                if (user_ptr && !user_ptr->granted_roles.roles.contains(id))
+                {
+                    auto clone = user_ptr->clone();
+                    auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
+                    user_clone_ptr->granted_roles.grant(id);
+                    return user_clone_ptr;
+                }
+                return cached_entity;
+            };
+
+            memory_storage.update(memory_storage.findAll<User>(), update_func);
+            roles_of_interest.insert(id);
+        }
+    }
+    else
+    {
+        if (roles_of_interest.find(id) != roles_of_interest.end())
+        {
+            auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
+            {
+                auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
+                if (user_ptr && user_ptr->granted_roles.roles.contains(id))
+                {
+                    auto clone = user_ptr->clone();
+                    auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
+                    user_clone_ptr->granted_roles.revoke(id);
+                    return user_clone_ptr;
+                }
+                return cached_entity;
+            };
+
+            memory_storage.update(memory_storage.findAll<User>(), update_func);
+            roles_of_interest.erase(id);
+        }
+    }
 }
 
 
@@ -124,6 +179,7 @@ std::optional<UUID> LDAPAccessStorage::findOrGenerateImpl(EntityType type, const
                 return {};
             }
 
+            roles_of_interest.insert(role_id.value());
             user->granted_roles.grant(role_id.value());
         }
 
