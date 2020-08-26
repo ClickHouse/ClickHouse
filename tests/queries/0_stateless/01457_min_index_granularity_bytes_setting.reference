@@ -1,0 +1,5 @@
+--- CREATE TABLE with INVALID index_granularity_bytes i.e.index_granularity_bytes < min_index_granularity_bytes ---
+--- INSERT INTO TABLE invalid_min_index_granularity_bytes_setting ---
+--- CREATE TABLE with VALID index_granularity_bytes i.e index_granularity_bytes > min_index_granularity_bytes ---
+--- INSERT INTO TABLE valid_min_index_granularity_bytes_setting ---
+1
