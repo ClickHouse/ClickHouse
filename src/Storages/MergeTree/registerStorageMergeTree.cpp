@@ -595,8 +595,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
         {
             throw Exception(
-                "index_granularity_bytes " + std::to_string(min_index_granularity_bytes)
-                    + " is lesser than specified min_index_granularity_bytes" + std::to_string(min_index_granularity_bytes),
+                "index_granularity_bytes: " + std::to_string(index_granularity_bytes)
+                    + " is lesser than specified min_index_granularity_bytes: " + std::to_string(min_index_granularity_bytes),
                 ErrorCodes::BAD_ARGUMENTS);
         }
     }
