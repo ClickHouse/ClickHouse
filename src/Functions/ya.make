@@ -137,6 +137,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     defaultValueOfArgumentType.cpp
+    defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
     dumpColumnStructure.cpp
