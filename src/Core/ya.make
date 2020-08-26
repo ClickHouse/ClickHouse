@@ -21,6 +21,7 @@ SRCS(
     MySQL/IMySQLReadPacket.cpp
     MySQL/IMySQLWritePacket.cpp
     MySQL/MySQLClient.cpp
+    MySQL/MySQLGtid.cpp
     MySQL/MySQLReplication.cpp
     MySQL/PacketEndpoint.cpp
     MySQL/PacketsConnection.cpp
