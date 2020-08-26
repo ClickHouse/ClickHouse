@@ -246,7 +246,7 @@ class Cluster(object):
                     assert os.path.exists(self.clickhouse_binary_path)
 
             with And("I set all the necessary environment variables"):
-                os.environ["COMPOSE_HTTP_TIMEOUT"] = 300
+                os.environ["COMPOSE_HTTP_TIMEOUT"] = "300"
                 os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = self.clickhouse_binary_path
                 os.environ["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = os.path.join(
                     os.path.dirname(self.clickhouse_binary_path), "clickhouse-odbc-bridge")
