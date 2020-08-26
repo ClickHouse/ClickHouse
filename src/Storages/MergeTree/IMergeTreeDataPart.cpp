@@ -848,11 +848,11 @@ void IMergeTreeDataPart::remove() const
     #    pragma GCC diagnostic pop
     #endif
 
-            for (const auto & file : {"checksums.txt", "columns.txt"})
+            auto files_without_checksums = getFileNamesWithoutChecksums();
+            for (const auto & file : files_without_checksums)
                 volume->getDisk()->remove(to + "/" + file);
 
             volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
-            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
             volume->getDisk()->remove(to);
         }
