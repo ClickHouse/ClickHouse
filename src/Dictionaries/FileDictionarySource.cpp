@@ -32,7 +32,7 @@ FileDictionarySource::FileDictionarySource(
     {
         const String user_files_path = context.getUserFilesPath();
         if (!startsWith(filepath, user_files_path))
-            throw Exception("File path " + filepath + " is not inside " + user_files_path, ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
     }
 }
 
