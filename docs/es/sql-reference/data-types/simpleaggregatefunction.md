@@ -1,11 +1,6 @@
----
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
----
-
 # SimpleAggregateFunction {#data-type-simpleaggregatefunction}
 
-El tipo de dato `SimpleAggregateFunction(name, types_of_arguments…)` almacena el valor actual de la función agregada, no almacena su estado completo como have [`AggregateFunction`](aggregatefunction.md). Esta optimización se puede aplicar a las funciones con la siguiente propiedad: el resultado de aplicar una función `f` a un conjunto de filas `S1 UNION ALL S2` se puede obtener aplicando `f` a partes de la fila establecida por separado, y luego aplicar de nuevo `f` los resultados: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. Un ejemplo de función con esta propiedad es la suma. Esta propiedad garantiza que los resultados de agregación parcial son suficientes para calcular el combinado, por lo que no tenemos que almacenar y procesar ningún dato adicional.
+El tipo de dato `SimpleAggregateFunction(name, types_of_arguments…)` almacena el valor actual de la función agregada, no almacena su estado completo como hace [`AggregateFunction`](aggregatefunction.md). Esta optimización se puede aplicar a las funciones con la siguiente propiedad: el resultado de aplicar una función `f` a un conjunto de filas `S1 UNION ALL S2` se puede obtener aplicando `f` a partes de la fila establecida por separado, y luego aplicar de nuevo `f` los resultados: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. Un ejemplo de función con esta propiedad es la suma. Esta propiedad garantiza que los resultados de agregación parcial son suficientes para calcular el combinado, por lo que no tenemos que almacenar y procesar ningún dato adicional.
 
 La lista de functiones de agregación soportadas son:
 
