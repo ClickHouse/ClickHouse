@@ -45,13 +45,13 @@ antlrcpp::Any ParseTreeVisitor::visitTableColumnPropertyExpr(ClickHouseParser::T
     else if (ctx->ALIAS()) type = TableColumnPropertyExpr::PropertyType::ALIAS;
     else __builtin_unreachable();
 
-    return std::make_shared<TableColumnPropertyExpr>(type, ctx->columnExpr()->accept(this));
+    return std::make_shared<TableColumnPropertyExpr>(type, visit(ctx->columnExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableElementExprColumn(ClickHouseParser::TableElementExprColumnContext *ctx)
 {
     if (ctx->tableColumnDfnt())
-        return ctx->tableColumnDfnt()->accept(this);
+        return visit(ctx->tableColumnDfnt());
     __builtin_unreachable();
 }
 
@@ -61,11 +61,11 @@ antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColu
     PtrTo<ColumnTypeExpr> type;
     PtrTo<ColumnExpr> ttl;
 
-    if (ctx->tableColumnPropertyExpr()) property = ctx->tableColumnPropertyExpr()->accept(this);
-    if (ctx->columnTypeExpr()) type = ctx->columnTypeExpr()->accept(this);
-    if (ctx->TTL()) ttl = ctx->columnExpr()->accept(this);
+    if (ctx->tableColumnPropertyExpr()) property = visit(ctx->tableColumnPropertyExpr());
+    if (ctx->columnTypeExpr()) type = visit(ctx->columnTypeExpr());
+    if (ctx->TTL()) ttl = visit(ctx->columnExpr());
 
-    return TableElementExpr::createColumn(ctx->identifier()->accept(this), type, property, ttl);
+    return TableElementExpr::createColumn(visit(ctx->identifier()), type, property, ttl);
 }
 
 }

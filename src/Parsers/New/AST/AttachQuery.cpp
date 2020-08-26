@@ -1,16 +1,20 @@
-#include <Parsers/New/AST/CreateMaterializedViewQuery.h>
+#include <Parsers/New/AST/AttachQuery.h>
 
 #include <Parsers/New/AST/CreateTableQuery.h>
-#include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 
 
 namespace DB::AST
 {
 
-CreateMaterializedViewQuery::CreateMaterializedViewQuery(
-    bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> schema, PtrTo<EngineClause> engine, PtrTo<SelectUnionQuery> query)
+AttachQuery::AttachQuery(
+    bool if_not_exists_,
+    PtrTo<TableIdentifier> identifier,
+    PtrTo<SchemaClause> schema,
+    PtrTo<EngineClause> engine,
+    PtrTo<SelectUnionQuery> query)
     : if_not_exists(if_not_exists_)
 {
     children.push_back(identifier);

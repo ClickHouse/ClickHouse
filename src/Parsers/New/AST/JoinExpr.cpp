@@ -184,12 +184,12 @@ antlrcpp::Any ParseTreeVisitor::visitJoinConstraintClause(ClickHouseParser::Join
 {
     return std::make_shared<AST::JoinConstraintClause>(
         ctx->ON() ? AST::JoinConstraintClause::ConstraintType::ON : AST::JoinConstraintClause::ConstraintType::USING,
-        ctx->columnExprList()->accept(this));
+        visit(ctx->columnExprList()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprCrossOp(ClickHouseParser::JoinExprCrossOpContext *ctx)
 {
-    auto [op, mode] = std::pair<AST::JoinExpr::JoinOpType, AST::JoinExpr::JoinOpMode>(ctx->joinOpCross()->accept(this));
+    auto [op, mode] = std::pair<AST::JoinExpr::JoinOpType, AST::JoinExpr::JoinOpMode>(visit(ctx->joinOpCross()));
 
     return AST::JoinExpr::createJoinOp(ctx->joinExpr(0)->accept(this), ctx->joinExpr(1)->accept(this), op, mode, nullptr);
 }
@@ -204,19 +204,19 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprOp(ClickHouseParser::JoinExprOpCont
     return AST::JoinExpr::createJoinOp(
         ctx->joinExpr(0)->accept(this),
         ctx->joinExpr(1)->accept(this),
-        ctx->joinOp()->accept(this),
+        visit(ctx->joinOp()),
         mode,
-        ctx->joinConstraintClause()->accept(this));
+        visit(ctx->joinConstraintClause()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprParens(ClickHouseParser::JoinExprParensContext *ctx)
 {
-    return ctx->joinExpr()->accept(this);
+    return visit(ctx->joinExpr());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprTable(ClickHouseParser::JoinExprTableContext *ctx)
 {
-    return AST::JoinExpr::createTableExpr(ctx->tableExpr()->accept(this));
+    return AST::JoinExpr::createTableExpr(visit(ctx->tableExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *ctx)

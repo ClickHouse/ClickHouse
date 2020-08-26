@@ -65,23 +65,23 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx)
 {
-    auto after = ctx->AFTER() ? ctx->identifier()->accept(this).as<PtrTo<Identifier>>() : nullptr;
-    return AlterTableClause::createAdd(!!ctx->IF(), ctx->tableColumnDfnt()->accept(this), after);
+    auto after = ctx->AFTER() ? visit(ctx->identifier()).as<PtrTo<Identifier>>() : nullptr;
+    return AlterTableClause::createAdd(!!ctx->IF(), visit(ctx->tableColumnDfnt()), after);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx)
 {
-    return AlterTableClause::createComment(!!ctx->IF(), ctx->identifier()->accept(this), Literal::createString(ctx->STRING_LITERAL()));
+    return AlterTableClause::createComment(!!ctx->IF(), visit(ctx->identifier()), Literal::createString(ctx->STRING_LITERAL()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx)
 {
-    return AlterTableClause::createDrop(!!ctx->IF(), ctx->identifier()->accept(this));
+    return AlterTableClause::createDrop(!!ctx->IF(), visit(ctx->identifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx)
 {
-    return AlterTableClause::createModify(!!ctx->IF(), ctx->tableColumnDfnt()->accept(this));
+    return AlterTableClause::createModify(!!ctx->IF(), visit(ctx->tableColumnDfnt()));
 }
 
 }

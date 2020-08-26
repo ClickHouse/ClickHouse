@@ -24,7 +24,7 @@ antlrcpp::Any ParseTreeVisitor::visitSettingExprList(ClickHouseParser::SettingEx
 
 antlrcpp::Any ParseTreeVisitor::visitSettingExpr(ClickHouseParser::SettingExprContext *ctx)
 {
-    return std::make_shared<AST::SettingExpr>(ctx->identifier()->accept(this), ctx->literal()->accept(this));
+    return std::make_shared<AST::SettingExpr>(visit(ctx->identifier()), visit(ctx->literal()));
 }
 
 }

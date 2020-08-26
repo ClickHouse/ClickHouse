@@ -50,13 +50,13 @@ antlrcpp::Any ParseTreeVisitor::visitValuesClause(ClickHouseParser::ValuesClause
         for (auto * expr : ctx->valueTupleExpr()) list->append(expr->accept(this));
         return ValuesClause::createValues(list);
     }
-    if (ctx->selectUnionStmt()) return ValuesClause::createSelect(ctx->selectUnionStmt()->accept(this));
+    if (ctx->selectUnionStmt()) return ValuesClause::createSelect(visit(ctx->selectUnionStmt()));
     __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx)
 {
-    return ValueExpr::createTuple(ctx->valueExprList()->accept(this));
+    return ValueExpr::createTuple(visit(ctx->valueExprList()));
 }
 
 }

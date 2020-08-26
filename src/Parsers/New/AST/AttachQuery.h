@@ -6,10 +6,10 @@
 namespace DB::AST
 {
 
-class CreateMaterializedViewQuery : public DDLQuery
+class AttachQuery : public DDLQuery
 {
     public:
-        CreateMaterializedViewQuery(
+        AttachQuery(
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
             PtrTo<SchemaClause> schema,

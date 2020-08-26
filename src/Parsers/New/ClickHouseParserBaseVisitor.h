@@ -65,11 +65,15 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx) override {
+  virtual antlrcpp::Any visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSchemaAsSubqueryClause(ClickHouseParser::SchemaAsSubqueryClauseContext *ctx) override {
+  virtual antlrcpp::Any visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -133,6 +137,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -150,6 +158,10 @@ public:
   }
 
   virtual antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitRenameStmt(ClickHouseParser::RenameStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 

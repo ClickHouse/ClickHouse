@@ -41,7 +41,7 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitValueExprArray(ClickHouseParser::ValueExprArrayContext *ctx)
 {
-    return ValueExpr::createArray(ctx->valueExprList()->accept(this));
+    return ValueExpr::createArray(visit(ctx->valueExprList()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitValueExprList(ClickHouseParser::ValueExprListContext *ctx)
@@ -53,12 +53,12 @@ antlrcpp::Any ParseTreeVisitor::visitValueExprList(ClickHouseParser::ValueExprLi
 
 antlrcpp::Any ParseTreeVisitor::visitValueExprLiteral(ClickHouseParser::ValueExprLiteralContext *ctx)
 {
-    return ValueExpr::createLiteral(ctx->literal()->accept(this));
+    return ValueExpr::createLiteral(visit(ctx->literal()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitValueExprTuple(ClickHouseParser::ValueExprTupleContext *ctx)
 {
-    return ValueExpr::createTuple(ctx->valueTupleExpr()->accept(this));
+    return ValueExpr::createTuple(visit(ctx->valueTupleExpr()));
 }
 
 }

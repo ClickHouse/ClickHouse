@@ -1,15 +1,19 @@
 set (SRCS
     AST/AlterTableQuery.cpp
+    AST/AttachQuery.cpp
     AST/CheckQuery.cpp
     AST/ColumnExpr.cpp
     AST/ColumnTypeExpr.cpp
     AST/CreateDatabaseQuery.cpp
     AST/CreateMaterializedViewQuery.cpp
     AST/CreateTableQuery.cpp
+    AST/CreateViewQuery.cpp
     AST/DDLQuery.cpp
     AST/DescribeQuery.cpp
+    AST/DetachQuery.cpp
     AST/DropQuery.cpp
     AST/EngineExpr.cpp
+    AST/ExistsQuery.cpp
     AST/Identifier.cpp
     AST/InsertQuery.cpp
     AST/JoinExpr.cpp
@@ -19,6 +23,7 @@ set (SRCS
     AST/OrderExpr.cpp
     AST/Query.cpp
     AST/RatioExpr.cpp
+    AST/RenameQuery.cpp
     AST/SelectStmt.cpp
     AST/SelectUnionQuery.cpp
     AST/SetQuery.cpp

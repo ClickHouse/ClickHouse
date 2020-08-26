@@ -34,6 +34,7 @@ class OrderByClause;
 class OrderExpr;
 class Query;
 class RatioExpr;
+class SchemaClause;
 class SelectStmt;
 class SelectUnionQuery;
 class SettingExpr;

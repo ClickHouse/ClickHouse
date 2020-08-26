@@ -90,14 +90,14 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitEngineClause(ClickHouseParser::EngineClauseContext *ctx)
 {
-    auto clause = std::make_shared<EngineClause>(ctx->engineExpr()->accept(this).as<PtrTo<EngineExpr>>());
+    auto clause = std::make_shared<EngineClause>(visit(ctx->engineExpr()).as<PtrTo<EngineExpr>>());
 
-    if (ctx->orderByClause()) clause->setOrderByClause(ctx->orderByClause()->accept(this));
-    if (ctx->partitionByClause()) clause->setPartitionByClause(ctx->partitionByClause()->accept(this));
-    if (ctx->primaryKeyClause()) clause->setPrimaryKeyClause(ctx->primaryKeyClause()->accept(this));
-    if (ctx->sampleByClause()) clause->setSampleByClause(ctx->sampleByClause()->accept(this));
-    if (ctx->ttlClause()) clause->setTTLClause(ctx->ttlClause()->accept(this));
-    if (ctx->settingsClause()) clause->setSettingsClause(ctx->settingsClause()->accept(this));
+    if (ctx->orderByClause()) clause->setOrderByClause(visit(ctx->orderByClause()));
+    if (ctx->partitionByClause()) clause->setPartitionByClause(visit(ctx->partitionByClause()));
+    if (ctx->primaryKeyClause()) clause->setPrimaryKeyClause(visit(ctx->primaryKeyClause()));
+    if (ctx->sampleByClause()) clause->setSampleByClause(visit(ctx->sampleByClause()));
+    if (ctx->ttlClause()) clause->setTTLClause(visit(ctx->ttlClause()));
+    if (ctx->settingsClause()) clause->setSettingsClause(visit(ctx->settingsClause()));
 
     return clause;
 }
@@ -105,24 +105,24 @@ antlrcpp::Any ParseTreeVisitor::visitEngineClause(ClickHouseParser::EngineClause
 antlrcpp::Any ParseTreeVisitor::visitEngineExpr(ClickHouseParser::EngineExprContext *ctx)
 {
     PtrTo<Identifier> identifier
-        = ctx->identifier() ? ctx->identifier()->accept(this).as<PtrTo<Identifier>>() : std::make_shared<Identifier>("Null");
+        = ctx->identifier() ? visit(ctx->identifier()).as<PtrTo<Identifier>>() : std::make_shared<Identifier>("Null");
     return std::make_shared<EngineExpr>(
-        identifier, ctx->columnExprList() ? ctx->columnExprList()->accept(this).as<PtrTo<ColumnExprList>>() : nullptr);
+        identifier, ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitPartitionByClause(ClickHouseParser::PartitionByClauseContext *ctx)
 {
-    return std::make_shared<PartitionByClause>(ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>());
+    return std::make_shared<PartitionByClause>(visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitPrimaryKeyClause(ClickHouseParser::PrimaryKeyClauseContext *ctx)
 {
-    return std::make_shared<PrimaryKeyClause>(ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>());
+    return std::make_shared<PrimaryKeyClause>(visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSampleByClause(ClickHouseParser::SampleByClauseContext *ctx)
 {
-    return std::make_shared<SampleByClause>(ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>());
+    return std::make_shared<SampleByClause>(visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTtlClause(ClickHouseParser::TtlClauseContext *ctx)
@@ -144,7 +144,7 @@ antlrcpp::Any ParseTreeVisitor::visitTtlExpr(ClickHouseParser::TtlExprContext *c
 
     if (ctx->STRING_LITERAL()) literal = Literal::createString(ctx->STRING_LITERAL());
 
-    return std::make_shared<TTLExpr>(ctx->columnExpr()->accept(this), type, literal);
+    return std::make_shared<TTLExpr>(visit(ctx->columnExpr()), type, literal);
 }
 
 }

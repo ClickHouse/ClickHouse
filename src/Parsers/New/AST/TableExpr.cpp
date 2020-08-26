@@ -117,8 +117,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExprContext *ctx)
 {
-    if (ctx->literal()) return std::make_shared<TableArgExpr>(ctx->literal()->accept(this).as<PtrTo<Literal>>());
-    if (ctx->tableIdentifier()) return std::make_shared<TableArgExpr>(ctx->tableIdentifier()->accept(this).as<PtrTo<TableIdentifier>>());
+    if (ctx->literal()) return std::make_shared<TableArgExpr>(visit(ctx->literal()).as<PtrTo<Literal>>());
+    if (ctx->tableIdentifier()) return std::make_shared<TableArgExpr>(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
     __builtin_unreachable();
 }
 
@@ -131,23 +131,23 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgList(ClickHouseParser::TableArgList
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprAlias(ClickHouseParser::TableExprAliasContext *ctx)
 {
-    return TableExpr::createAlias(ctx->tableExpr()->accept(this), ctx->identifier()->accept(this));
+    return TableExpr::createAlias(visit(ctx->tableExpr()), visit(ctx->identifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprFunction(ClickHouseParser::TableExprFunctionContext *ctx)
 {
     return TableExpr::createFunction(
-        ctx->identifier()->accept(this), ctx->tableArgList() ? ctx->tableArgList()->accept(this).as<PtrTo<TableArgList>>() : nullptr);
+        visit(ctx->identifier()), ctx->tableArgList() ? visit(ctx->tableArgList()).as<PtrTo<TableArgList>>() : nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx)
 {
-    return TableExpr::createIdentifier(ctx->tableIdentifier()->accept(this).as<PtrTo<TableIdentifier>>());
+    return TableExpr::createIdentifier(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *ctx)
 {
-    return TableExpr::createSubquery(ctx->selectUnionStmt()->accept(this));
+    return TableExpr::createSubquery(visit(ctx->selectUnionStmt()));
 }
 
 }

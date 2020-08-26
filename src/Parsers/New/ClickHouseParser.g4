@@ -8,7 +8,7 @@ options {
 
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifier)?;
+queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT (identifier | NULL_SQL))?;
 
 query
     : alterStmt     // DDL
@@ -16,8 +16,10 @@ query
     | createStmt    // DDL
     | describeStmt
     | dropStmt      // DDL
+    | existsStmt
     | insertStmt
     | optimizeStmt  // DDL
+    | renameStmt    // DDL
     | selectUnionStmt
     | setStmt
     | showStmt
@@ -44,16 +46,17 @@ checkStmt: CHECK TABLE tableIdentifier;
 // CREATE statement
 
 createStmt
-    : CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                           # createDatabaseStmt
-    | CREATE MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier engineExpr? AS selectUnionStmt  # createMaterializedViewStmt
-    | CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause                     # createTableStmt
+    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                 # CreateDatabaseStmt
+    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? POPULATE? subqueryClause  # CreateMaterializedViewStmt
+    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?            # CreateTableStmt
+    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier subqueryClause                                                     # CreateViewStmt
     ;
 
+subqueryClause: AS selectUnionStmt;
 schemaClause
-    : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN engineClause?  # SchemaDescriptionClause
-    | engineClause? AS selectUnionStmt                                        # SchemaAsSubqueryClause
-    | AS tableIdentifier engineClause?                                        # SchemaAsTableClause
-    | AS identifier LPAREN tableArgList? RPAREN                               # SchemaAsFunctionClause
+    : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN  # SchemaDescriptionClause
+    | AS tableIdentifier                                        # SchemaAsTableClause
+    | AS identifier LPAREN tableArgList? RPAREN                 # SchemaAsFunctionClause
     ;
 engineClause:
     engineExpr
@@ -89,9 +92,13 @@ describeStmt: (DESCRIBE | DESC) TABLE tableIdentifier;
 // DROP statement
 
 dropStmt
-    : DROP DATABASE (IF EXISTS)? databaseIdentifier       # DropDatabaseStmt
-    | DROP TEMPORARY? TABLE (IF EXISTS)? tableIdentifier  # DropTableStmt
+    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier                   # DropDatabaseStmt
+    | (DETACH | DROP) TEMPORARY? TABLE (IF EXISTS)? tableIdentifier (NO DELAY)?  # DropTableStmt
     ;
+
+// EXISTS statement
+
+existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
 
 // INSERT statement
 
@@ -112,6 +119,10 @@ partitionClause
     : PARTITION columnExpr // actually we expect here any form of tuple of literals
     | PARTITION ID STRING_LITERAL
     ;
+
+// RENAME statement
+
+renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*;
 
 // SELECT statement
 
@@ -276,14 +287,14 @@ literal
     | NULL_SQL
     | identifier LPAREN RPAREN
     ;
-keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
-    : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CHECK | CLUSTER
-    | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT
-    | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER
-    | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH
-    | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE
-    | SECOND | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE
-    | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
+keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE
+    : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST | CHECK
+    | CLUSTER | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC | DESCENDING | DESCRIBE
+    | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING
+    | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL
+    | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION
+    | PREWHERE | PRIMARY | QUARTER | RENAME | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN
+    | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

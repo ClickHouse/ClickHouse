@@ -32,7 +32,7 @@ antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::Partition
     if (ctx->STRING_LITERAL()) list->append(Literal::createString(ctx->STRING_LITERAL()));
     else
     {
-        auto tuple = ctx->columnExpr()->accept(this).as<PtrTo<ColumnExpr>>();
+        auto tuple = visit(ctx->columnExpr()).as<PtrTo<ColumnExpr>>();
 
         if (tuple->getType() == ColumnExpr::ExprType::FUNCTION && tuple->getFunctionName() == "tuple")
         {

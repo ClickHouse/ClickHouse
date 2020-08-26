@@ -59,21 +59,21 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx)
 {
-    return std::make_shared<DatabaseIdentifier>(ctx->identifier()->accept(this).as<PtrTo<Identifier>>());
+    return std::make_shared<DatabaseIdentifier>(visit(ctx->identifier()).as<PtrTo<Identifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx)
 {
     // TODO: not complete!
     return std::make_shared<TableIdentifier>(
-        ctx->databaseIdentifier() ? ctx->databaseIdentifier()->accept(this).as<PtrTo<DatabaseIdentifier>>() : nullptr,
-        ctx->identifier()->accept(this));
+        ctx->databaseIdentifier() ? visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>() : nullptr,
+        visit(ctx->identifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *ctx)
 {
     return std::make_shared<ColumnIdentifier>(
-        ctx->tableIdentifier() ? ctx->tableIdentifier()->accept(this).as<PtrTo<TableIdentifier>>() : nullptr,
+        ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr,
         ctx->identifier(0)->accept(this),
         ctx->identifier().size() == 2 ? ctx->identifier(1)->accept(this).as<PtrTo<Identifier>>() : nullptr);
 }

@@ -12,21 +12,15 @@ namespace DB::AST
 {
 
 // static
-PtrTo<SchemaClause> SchemaClause::createDescription(PtrTo<TableElementList> list, PtrTo<EngineClause> clause)
+PtrTo<SchemaClause> SchemaClause::createDescription(PtrTo<TableElementList> list)
 {
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::DESCRIPTION, {list, clause}));
+    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::DESCRIPTION, {list}));
 }
 
 // static
-PtrTo<SchemaClause> SchemaClause::createAsSubquery(PtrTo<SelectUnionQuery> query, PtrTo<EngineClause> clause)
+PtrTo<SchemaClause> SchemaClause::createAsTable(PtrTo<TableIdentifier> identifier)
 {
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::SUBQUERY, {query, clause}));
-}
-
-// static
-PtrTo<SchemaClause> SchemaClause::createAsTable(PtrTo<TableIdentifier> identifier, PtrTo<EngineClause> clause)
-{
-    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::TABLE, {identifier, clause}));
+    return PtrTo<SchemaClause>(new SchemaClause(ClauseType::TABLE, {identifier}));
 }
 
 // static
@@ -41,11 +35,19 @@ SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : clause_type(type)
     (void)clause_type; // TODO
 }
 
-CreateTableQuery::CreateTableQuery(bool temporary_, bool if_not_exists_, PtrTo<TableIdentifier> identifier, PtrTo<SchemaClause> clause)
+CreateTableQuery::CreateTableQuery(
+    bool temporary_,
+    bool if_not_exists_,
+    PtrTo<TableIdentifier> identifier,
+    PtrTo<SchemaClause> schema,
+    PtrTo<EngineClause> engine,
+    PtrTo<SelectUnionQuery> query)
     : temporary(temporary_), if_not_exists(if_not_exists_)
 {
     children.push_back(identifier);
-    children.push_back(clause);
+    children.push_back(schema);
+    children.push_back(engine);
+    children.push_back(query);
     (void)if_not_exists, (void)temporary; // TODO
 }
 
@@ -56,32 +58,29 @@ namespace DB
 
 using namespace AST;
 
+// TODO: assert(!(ctx->parent->TEMPORARY() ^ ctx->engineClause()))
+
 antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx)
 {
     auto elems = std::make_shared<TableElementList>();
     for (auto * elem : ctx->tableElementExpr()) elems->append(elem->accept(this).as<PtrTo<TableElementExpr>>());
-
-    // TODO: assert(!(ctx->parent->TEMPORARY() ^ ctx->engineClause()))
-    return SchemaClause::createDescription(
-        elems, ctx->engineClause() ? ctx->engineClause()->accept(this).as<PtrTo<EngineClause>>() : nullptr);
-}
-
-antlrcpp::Any ParseTreeVisitor::visitSchemaAsSubqueryClause(ClickHouseParser::SchemaAsSubqueryClauseContext *ctx)
-{
-    return SchemaClause::createAsSubquery(
-        ctx->selectUnionStmt()->accept(this), ctx->engineClause() ? ctx->engineClause()->accept(this).as<PtrTo<EngineClause>>() : nullptr);
+    return SchemaClause::createDescription(elems);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaAsTableClause(ClickHouseParser::SchemaAsTableClauseContext *ctx)
 {
-    return SchemaClause::createAsTable(
-        ctx->tableIdentifier()->accept(this), ctx->engineClause() ? ctx->engineClause()->accept(this).as<PtrTo<EngineClause>>() : nullptr);
+    return SchemaClause::createAsTable(visit(ctx->tableIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *ctx)
 {
     return SchemaClause::createAsFunction(
-        ctx->identifier()->accept(this), ctx->tableArgList() ? ctx->tableArgList()->accept(this).as<PtrTo<TableArgList>>() : nullptr);
+        visit(ctx->identifier()), ctx->tableArgList() ? visit(ctx->tableArgList()).as<PtrTo<TableArgList>>() : nullptr);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *ctx)
+{
+    return visit(ctx->selectUnionStmt());
 }
 
 }
