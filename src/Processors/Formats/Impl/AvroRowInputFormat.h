@@ -129,6 +129,9 @@ public:
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;
+protected:
+    bool allowSyncAfterError() const override { return true; }
+    void syncAfterError() override;
 private:
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;

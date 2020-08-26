@@ -11,6 +11,9 @@
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
+    M(QueryTimeMicroseconds, "Total time of all queries.") \
+    M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.") \
+    M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.") \
     M(FileOpen, "Number of files opened.") \
     M(Seek, "Number of times the 'lseek' function was called.") \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.") \
@@ -117,6 +120,8 @@
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
+    M(SelectedRows, "Number of rows SELECTed from all tables.") \
+    M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
@@ -202,6 +207,8 @@
     M(PerfDataTLBMisses, "Data TLB misses") \
     M(PerfInstructionTLBReferences, "Instruction TLB references") \
     M(PerfInstructionTLBMisses, "Instruction TLB misses") \
+    M(PerfLocalMemoryReferences, "Local NUMA node memory reads") \
+    M(PerfLocalMemoryMisses, "Local NUMA node memory read misses") \
     \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \

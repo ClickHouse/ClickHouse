@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e
 
@@ -22,7 +22,7 @@ function thread()
 }
 
 for REPLICA in $SEQ; do
-    thread $REPLICA $DATA_SIZE &
+    thread "$REPLICA" $DATA_SIZE &
 done
 
 wait

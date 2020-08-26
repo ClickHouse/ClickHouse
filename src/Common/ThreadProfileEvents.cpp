@@ -193,12 +193,16 @@ static const PerfEventInfo raw_events_info[] = {
     // https://stackoverflow.com/questions/49933319/how-to-interpret-perf-itlb-loads-itlb-load-misses
     CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBReferences, ACCESS),
     CACHE_EVENT(PERF_COUNT_HW_CACHE_ITLB, PerfInstructionTLBMisses, MISS),
+
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_NODE, PerfLocalMemoryReferences, ACCESS),
+    CACHE_EVENT(PERF_COUNT_HW_CACHE_NODE, PerfLocalMemoryMisses, MISS),
 };
 
 static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_RAW_EVENTS);
 
 #undef HARDWARE_EVENT
 #undef SOFTWARE_EVENT
+#undef CACHE_EVENT
 
 // A map of event name -> event index, to parse event list in settings.
 static std::unordered_map<std::string, size_t> populateEventMap()

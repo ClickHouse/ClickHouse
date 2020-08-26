@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-for i in `seq 4`; do
+for i in $(seq 4); do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i"
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp"
     $CLICKHOUSE_CLIENT -q "CREATE TABLE replica_01108_$i (n int) ENGINE=ReplicatedMergeTree('/clickhouse/tables/replica_01108_$i', 'replica') ORDER BY tuple()"
@@ -62,12 +62,12 @@ timeout $TIMEOUT bash -c restart_thread_2 2> /dev/null &
 
 wait
 
-for i in `seq 4`; do
+for i in $(seq 4); do
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_$i" >/dev/null 2>&1
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_${i}_tmp" >/dev/null 2>&1
 done
 
-while [[ `$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query LIKE 'RENAME%'"` -gt 0 ]]; do
+while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query LIKE 'RENAME%'") -gt 0 ]]; do
     sleep 1
 done;
 
@@ -75,7 +75,7 @@ $CLICKHOUSE_CLIENT -q "SELECT replaceOne(name, '_tmp', '') FROM system.tables WH
 $CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^replica_01108_') GROUP BY position(_table, 'tmp')"
 
 
-for i in `seq 4`; do
+for i in $(seq 4); do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i NO DELAY"
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp NO DELAY"
 done

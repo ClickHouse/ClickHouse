@@ -56,6 +56,8 @@ SRCS(
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
+    PolygonDictionaryImplementations.cpp
+    PolygonDictionaryUtils.cpp
     RangeHashedDictionary.cpp
     readInvalidateQuery.cpp
     RedisBlockInputStream.cpp

@@ -1,11 +1,19 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 
 namespace DB
 {
+
+const String & getPartitionIdForPart(const TTLMergeSelector::Part & part_info)
+{
+    const MergeTreeData::DataPartPtr & part = *static_cast<const MergeTreeData::DataPartPtr *>(part_info.data);
+    return part->info.partition_id;
+}
+
 
 IMergeSelector::PartsInPartition TTLMergeSelector::select(
     const Partitions & partitions,
@@ -18,15 +26,24 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
 
     for (size_t i = 0; i < partitions.size(); ++i)
     {
-        for (auto it = partitions[i].begin(); it != partitions[i].end(); ++it)
+        const auto & mergeable_parts_in_partition = partitions[i];
+        if (mergeable_parts_in_partition.empty())
+            continue;
+
+        const auto & partition_id = getPartitionIdForPart(mergeable_parts_in_partition.front());
+        const auto & next_merge_time_for_partition = merge_due_times[partition_id];
+        if (next_merge_time_for_partition > current_time)
+            continue;
+
+        for (Iterator part_it = mergeable_parts_in_partition.cbegin(); part_it != mergeable_parts_in_partition.cend(); ++part_it)
         {
-            time_t ttl = only_drop_parts ? it->max_ttl : it->min_ttl;
+            time_t ttl = only_drop_parts ? part_it->max_ttl : part_it->min_ttl;
 
             if (ttl && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
                 partition_to_merge_min_ttl = ttl;
                 partition_to_merge_index = i;
-                best_begin = it;
+                best_begin = part_it;
             }
         }
     }
@@ -67,6 +84,9 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
         total_size += best_end->size;
         ++best_end;
     }
+
+    const auto & best_partition_id = getPartitionIdForPart(best_partition.front());
+    merge_due_times[best_partition_id] = current_time + merge_cooldown_time;
 
     return PartsInPartition(best_begin, best_end);
 }

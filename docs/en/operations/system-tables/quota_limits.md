@@ -1,4 +1,4 @@
-# system.quota\_limits {#system_tables-quota_limits}
+# system.quota_limits {#system_tables-quota_limits}
 
 Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota.
 
@@ -15,3 +15,5 @@ Columns:
 - `max_read_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of rows read from all tables and table functions participated in queries.
 - `max_read_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of bytes read from all tables and table functions participated in queries.
 - `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Maximum of the query execution time, in seconds.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/quota_limits) <!--hide-->

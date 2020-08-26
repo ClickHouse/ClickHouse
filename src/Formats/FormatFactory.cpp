@@ -10,7 +10,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -203,19 +202,6 @@ BlockInputStreamPtr FormatFactory::getInput(
 BlockOutputStreamPtr FormatFactory::getOutput(
     const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
-    if (name == "PrettyCompactMonoBlock")
-    {
-        /// TODO: rewrite
-        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-        auto res = std::make_shared<SquashingBlockOutputStream>(
-                std::make_shared<OutputStreamToOutputFormat>(format),
-                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
-
-        res->disableFlush();
-
-        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
-    }
-
     if (!getCreators(name).output_processor_creator)
     {
         const auto & output_getter = getCreators(name).output_creator;
@@ -395,7 +381,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSON(*this);
     registerOutputFormatProcessorJSONCompact(*this);
     registerOutputFormatProcessorXML(*this);
-    registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWire(*this);

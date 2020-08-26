@@ -11,13 +11,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static ITransformingStep::DataStreamTraits getTraits()
+static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::DataStreamTraits
+    return ITransformingStep::Traits
     {
+        {
             .preserves_distinct_columns = false, /// TODO: it seem to actually be true. Check it later.
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
+            .preserves_sorting = true,
+        },
+        {
+            .preserves_number_of_rows = false,
+        }
     };
 }
 

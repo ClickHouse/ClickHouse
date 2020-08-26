@@ -5,6 +5,9 @@
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp)
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+
+get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
+
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
 
@@ -26,6 +29,7 @@ endif()
 add_dependencies(generate-source generate-contributors)
 
 set(GENERATED_LICENSES_SRC ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.generated.cpp)
+set(GENERATED_TIMEZONES_SRC ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemTimeZones.generated.cpp)
 
 add_custom_command(
     OUTPUT StorageSystemLicenses.generated.cpp
@@ -33,8 +37,17 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
+list (APPEND storages_system_sources ${GENERATED_TIMEZONES_SRC})
+
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 
 add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
-target_link_libraries(clickhouse_storages_system PRIVATE dbms common string_utils clickhouse_common_zookeeper clickhouse_parsers)
+target_link_libraries(clickhouse_storages_system PRIVATE
+    dbms
+    common
+    string_utils
+    clickhouse_common_zookeeper
+    clickhouse_parsers
+    Poco::JSON
+)

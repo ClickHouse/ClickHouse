@@ -92,15 +92,19 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+            DataTypeUInt256,
             DataTypeInt8,
             DataTypeInt16,
             DataTypeInt32,
             DataTypeInt64,
+            DataTypeInt128,
+            DataTypeInt256,
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
+            DataTypeDecimal<Decimal256>,
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }
@@ -152,7 +156,7 @@ public:
         return result;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
         bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
         {

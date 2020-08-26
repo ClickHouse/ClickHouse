@@ -33,7 +33,8 @@ private:
         working_buffer = in.buffer();
         pos = in.position();
 
-        calculateHash(working_buffer.begin(), working_buffer.size());
+        // `pos` may be different from working_buffer.begin() when using AIO.
+        calculateHash(pos, working_buffer.end() - pos);
 
         return res;
     }

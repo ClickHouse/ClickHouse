@@ -1,5 +1,6 @@
 ---
 toc_priority: 46
+toc_title: DROP
 ---
 
 # DROP Statements {#drop}
@@ -77,3 +78,11 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 Deletes a settings profile.
 
 Deleted settings profile is revoked from all the entities where it was assigned.
+
+## DROP VIEW {#drop-view}
+
+``` sql
+DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+Deletes a view. Views can be deleted by a `DROP TABLE` command as well but `DROP VIEW` checks that `[db.]name` is a view.
