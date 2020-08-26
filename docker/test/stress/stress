@@ -36,7 +36,7 @@ def get_options(i):
 def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit):
     skip_list_opt = get_skip_list_cmd(cmd)
 
-    global_time_limit_option = None
+    global_time_limit_option = ''
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
 
