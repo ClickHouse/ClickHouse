@@ -577,6 +577,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         storage_settings->loadFromQuery(*args.storage_def);
 
+        // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
 
@@ -586,6 +587,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         index_granularity_bytes = storage_settings->index_granularity_bytes;
         min_index_granularity_bytes = storage_settings->min_index_granularity_bytes;
 
+        /* the min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default
+         * if index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
+         * min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
+         * index_granularity_bytes SETTING of 1b can create really large parts with large marks.
+        */
         if (index_granularity_bytes > 0 && index_granularity_bytes < min_index_granularity_bytes)
         {
             throw Exception(
