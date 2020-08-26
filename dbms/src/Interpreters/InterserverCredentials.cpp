@@ -60,4 +60,4 @@ std::pair<std::string, bool> SimpleInterserverCredentials::isValidUser(std::pair
     return {"", true};
 }
 
-} /// namespace DB
+}

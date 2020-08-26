@@ -21,7 +21,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
@@ -235,7 +234,6 @@ private:
     zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
-    std::shared_ptr<BaseInterserverCredentials> interserver_credentials_;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;

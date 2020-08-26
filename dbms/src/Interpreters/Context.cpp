@@ -1597,7 +1597,7 @@ std::pair<String, String> Context::getInterserverCredentials() const
     std::lock_guard lock(shared->interserver_io_credentials_mutex);
     auto & credentials = shared->interserver_io_credentials;
 
-    return {credentials->getUser(), credentials->getPassword()};
+    return { credentials->getUser(), credentials->getPassword() };
 }
 
 

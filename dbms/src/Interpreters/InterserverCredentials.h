@@ -17,21 +17,23 @@ namespace ErrorCodes
 class BaseInterserverCredentials
 {
 public:
-    BaseInterserverCredentials(std::string user, std::string password) : current_user_(user), current_password_(password) { }
+    BaseInterserverCredentials(std::string current_user_, std::string current_password_)
+        : current_user(current_user_), current_password(current_password_)
+            { }
 
     virtual ~BaseInterserverCredentials() { }
 
     /// isValidUser implements authentication for InterserverIOHandler
     virtual std::pair<std::string, bool> isValidUser(std::pair<std::string, std::string> pair) = 0;
 
-    std::string getUser() { return current_user_; }
+    std::string getUser() { return current_user; }
 
-    std::string getPassword() { return current_password_; }
+    std::string getPassword() { return current_password; }
 
 
 protected:
-    std::string current_user_;
-    std::string current_password_;
+    std::string current_user;
+    std::string current_password;
 };
 
 
@@ -77,15 +79,15 @@ public:
 
     ~SimpleInterserverCredentials() override { }
 
-    SimpleInterserverCredentials(const std::string current_user, const std::string current_password, const Store & store)
-        : BaseInterserverCredentials(current_user, current_password), store_(std::move(store))
+    SimpleInterserverCredentials(const std::string current_user_, const std::string current_password_, const Store & store_)
+        : BaseInterserverCredentials(current_user_, current_password_), store(std::move(store_))
     {
     }
 
     std::pair<std::string, bool> isValidUser(std::pair<std::string, std::string> pair) override;
 
 private:
-    Store store_;
+    Store store;
 
     static Store makeCredentialStore(
         const std::string current_user,
@@ -94,4 +96,4 @@ private:
         const std::string root_tag);
 };
 
-} /// namespace DB
+}
