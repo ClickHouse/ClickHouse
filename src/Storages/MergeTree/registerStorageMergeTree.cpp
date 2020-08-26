@@ -156,9 +156,8 @@ appendGraphitePattern(const Poco::Util::AbstractConfiguration & config, const St
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(), [](const Graphite::Retention & a, const Graphite::Retention & b) {
-            return a.age > b.age;
-        });
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
+            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
 
     patterns.emplace_back(pattern);
 }
@@ -302,13 +301,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     size_t max_num_params = 0;
     String needed_params;
 
-    auto add_mandatory_param = [&](const char * desc) {
+    auto add_mandatory_param = [&](const char * desc)
+    {
         ++min_num_params;
         ++max_num_params;
         needed_params += needed_params.empty() ? "\n" : ",\n";
         needed_params += desc;
     };
-    auto add_optional_param = [&](const char * desc) {
+    auto add_optional_param = [&](const char * desc)
+    {
         ++max_num_params;
         needed_params += needed_params.empty() ? "\n" : ",\n[";
         needed_params += desc;
