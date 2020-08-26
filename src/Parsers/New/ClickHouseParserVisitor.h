@@ -30,6 +30,8 @@ public:
 
     virtual antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *context) = 0;

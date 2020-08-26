@@ -27,11 +27,12 @@ query
 // ALTER statement
 
 alterStmt
-    : ALTER TABLE tableIdentifier alterTableClause  # AlterTableStmt
+    : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*  # AlterTableStmt
     ;
 
 alterTableClause
     : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER identifier)?  # AlterTableAddClause
+    | COMMENT COLUMN (IF EXISTS)? identifier STRING_LITERAL            # AlterTableCommentClause
     | DROP COLUMN (IF EXISTS)? identifier                              # AlterTableDropClause
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                       # AlterTableModifyClause
     ;

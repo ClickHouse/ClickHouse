@@ -37,6 +37,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx) override {
     return visitChildren(ctx);
   }

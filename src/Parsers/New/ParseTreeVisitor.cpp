@@ -58,7 +58,9 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx)
 {
-    return std::make_shared<AlterTableQuery>(ctx->tableIdentifier()->accept(this), ctx->alterTableClause()->accept(this));
+    auto list = std::make_shared<List<AlterTableClause>>();
+    for (auto * clause : ctx->alterTableClause()) list->append(clause->accept(this));
+    return std::make_shared<AlterTableQuery>(ctx->tableIdentifier()->accept(this), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx)

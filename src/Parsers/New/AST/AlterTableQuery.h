@@ -10,6 +10,7 @@ class AlterTableClause : public INode
 {
     public:
         static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal);
         static PtrTo<AlterTableClause> createDrop(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
 
@@ -17,6 +18,7 @@ class AlterTableClause : public INode
         enum class ClauseType
         {
             ADD,
+            COMMENT,
             DROP,
             MODIFY,
         };
@@ -34,7 +36,7 @@ class AlterTableClause : public INode
 class AlterTableQuery : public DDLQuery
 {
     public:
-        AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<AlterTableClause> clause);
+        AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses);
 };
 
 }

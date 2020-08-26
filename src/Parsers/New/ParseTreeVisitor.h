@@ -36,6 +36,7 @@ public:
     // ALTER clauses
 
     antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx) override;
+    antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx) override;
 

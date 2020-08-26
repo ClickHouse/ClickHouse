@@ -1,6 +1,7 @@
 #include <Parsers/New/AST/AlterTableQuery.h>
 
 #include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/TableElementExpr.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>
@@ -15,6 +16,14 @@ PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<Ta
     // TODO: assert(element->getType() == TableElementExpr::ExprType::COLUMN);
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::ADD, {element, after}));
     query->if_not_exists = if_not_exists;
+    return query;
+}
+
+// static
+PtrTo<AlterTableClause> AlterTableClause::createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::COMMENT, {identifier, literal}));
+    query->if_exists = if_exists;
     return query;
 }
 
@@ -41,10 +50,10 @@ AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : clause_type
     (void)clause_type; // TODO
 }
 
-AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<AlterTableClause> clause)
+AlterTableQuery::AlterTableQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterTableClause>> clauses)
 {
     children.push_back(identifier);
-    children.push_back(clause);
+    children.push_back(clauses);
 }
 
 }
@@ -58,6 +67,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::Alter
 {
     auto after = ctx->AFTER() ? ctx->identifier()->accept(this).as<PtrTo<Identifier>>() : nullptr;
     return AlterTableClause::createAdd(!!ctx->IF(), ctx->tableColumnDfnt()->accept(this), after);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx)
+{
+    return AlterTableClause::createComment(!!ctx->IF(), ctx->identifier()->accept(this), Literal::createString(ctx->STRING_LITERAL()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx)
