@@ -2,6 +2,7 @@
 
 #include <Access/MemoryAccessStorage.h>
 #include <Core/Types.h>
+#include <ext/scope_guard.h>
 #include <mutex>
 #include <set>
 
@@ -54,11 +55,14 @@ private: // IAccessStorage implementations.
 
 private:
     bool isConfiguredNoLock() const;
+    void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
     mutable std::recursive_mutex mutex;
     String ldap_server;
     std::set<String> roles;
     AccessControlManager * access_control_manager = nullptr;
+    ext::scope_guard role_change_subscription;
+    mutable std::set<UUID> roles_of_interest;
     mutable MemoryAccessStorage memory_storage;
 };
 }
