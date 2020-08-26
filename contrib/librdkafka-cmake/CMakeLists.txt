@@ -6,7 +6,7 @@ set(SRCS
 #  ${RDKAFKA_SOURCE_DIR}/lz4.c
 #  ${RDKAFKA_SOURCE_DIR}/lz4frame.c
 #  ${RDKAFKA_SOURCE_DIR}/lz4hc.c
-#  ${RDKAFKA_SOURCE_DIR}/rdxxhash.c
+  ${RDKAFKA_SOURCE_DIR}/rdxxhash.c
 #  ${RDKAFKA_SOURCE_DIR}/regexp.c
   ${RDKAFKA_SOURCE_DIR}/rdaddr.c
   ${RDKAFKA_SOURCE_DIR}/rdavl.c

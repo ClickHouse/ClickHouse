@@ -61,7 +61,8 @@
         "01103_check_cpu_instructions_at_startup",
         "01037_polygon_dicts_",
         "hyperscan",
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01396_inactive_replica_cleanup_nodes"
     ],
     "unbundled-build": [
         "00429",
