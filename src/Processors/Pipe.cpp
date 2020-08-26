@@ -74,7 +74,7 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     if (ports.size() == 1)
         return ports.front();
 
-    /// Calculate totals fro several streams.
+    /// Calculate totals from several streams.
     /// Take totals from first sources which has any, skip others.
 
     /// ->> Concat -> Limit

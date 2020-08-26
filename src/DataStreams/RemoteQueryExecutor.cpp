@@ -237,7 +237,9 @@ Block RemoteQueryExecutor::read()
 
             default:
                 got_unknown_packet_from_replica = true;
-                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                    toString(packet.type),
+                    multiplexed_connections->dumpAddresses());
         }
     }
 }
@@ -269,6 +271,12 @@ void RemoteQueryExecutor::finish()
             finished = true;
             break;
 
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
+
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
             packet.exception->rethrow();
@@ -276,7 +284,9 @@ void RemoteQueryExecutor::finish()
 
         default:
             got_unknown_packet_from_replica = true;
-            throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
+                multiplexed_connections->dumpAddresses());
     }
 }
 
