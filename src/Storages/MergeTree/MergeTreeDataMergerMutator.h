@@ -157,7 +157,11 @@ private:
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
-    static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
+    static NameSet collectFilesToSkip(
+        const MergeTreeDataPartPtr & source_part,
+        const Block & updated_header,
+        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+        const String & mrk_extension);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
@@ -210,7 +214,8 @@ private:
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values);
+        bool need_remove_expired_values,
+        const CompressionCodecPtr & codec);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

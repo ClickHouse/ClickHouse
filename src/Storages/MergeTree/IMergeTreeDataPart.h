@@ -288,6 +288,8 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
+    CompressionCodecPtr default_codec;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -330,7 +332,28 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
+    /// Detect default codec for part based on compression section from
+    /// config.xml (require total size of all parts in table)
+    void detectAndSetDefaultCompressionCodec(size_t total_storage_size);
+
+    /// Return set of metadat file names without checksums. For example,
+    /// columns.txt or checksums.txt itself.
+    NameSet getFileNamesWithoutChecksums() const;
+
+    /// Load default compression codec from file default_compression_codec.txt
+    /// return false if load was not successful (for example file doesn't
+    /// exists)
+    bool loadDefaultCompressionCodec();
+
+    /// File with compression codec name which was used to compress part columns
+    /// by default. Some columns may have their own compression codecs, but
+    /// default will be stored in this file.
+    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+
 protected:
+
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
 

@@ -43,6 +43,7 @@ namespace
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -83,7 +84,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION))});
 
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
@@ -115,7 +116,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         if (isInMemoryPart(part))
             sendPartFromMemory(part, out);
         else
-            sendPartFromDisk(part, out);
+        {
+            bool send_default_compression_file = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION;
+            sendPartFromDisk(part, out, send_default_compression_file);
+        }
     }
     catch (const NetException &)
     {
@@ -147,14 +151,20 @@ void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteB
     block_out.write(part_in_memory->block);
 }
 
-void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
+void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, bool send_default_compression_file)
 {
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
     /// Add files that are not in the checksum list.
-    checksums.files["checksums.txt"] = {};
-    checksums.files["columns.txt"] = {};
+    auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
+    for (const auto & file_name : file_names_without_checksums)
+    {
+        if (!send_default_compression_file && file_name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
+            continue;
+        checksums.files[file_name] = {};
+    }
 
+    auto disk = part->volume->getDisk();
     MergeTreeData::DataPart::Checksums data_checksums;
 
     writeBinary(checksums.files.size(), out);
@@ -162,7 +172,6 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
     {
         String file_name = it.first;
 
-        auto disk = part->volume->getDisk();
         String path = part->getFullRelativePath() + file_name;
 
         UInt64 size = disk->getFileSize(path);
@@ -182,8 +191,7 @@ void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuf
 
         writePODBinary(hashing_out.getHash(), out);
 
-        if (file_name != "checksums.txt" &&
-            file_name != "columns.txt")
+        if (!file_names_without_checksums.count(file_name))
             data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
 
@@ -230,7 +238,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION)},
         {"compress",                "false"}
     });
 
@@ -381,7 +389,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
                 ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
         if (file_name != "checksums.txt" &&
-            file_name != "columns.txt")
+            file_name != "columns.txt" &&
+            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
@@ -392,6 +401,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
+    if (!new_data_part->loadDefaultCompressionCodec())
+        new_data_part->detectAndSetDefaultCompressionCodec(data.getTotalActiveSizeInBytes());
     new_data_part->checksums.checkEqual(checksums, false);
 
     return new_data_part;
