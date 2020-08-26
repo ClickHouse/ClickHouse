@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-
 namespace DB
 {
 
@@ -23,8 +22,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const Context & context) const
 {
+    if (!filename.empty())
+        return;
+
     /// Parse args
     ASTs & args_func = ast_function->children;
 
@@ -39,8 +41,8 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    std::string filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() == 2 && getName() == "file")
     {
@@ -51,24 +53,41 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
         throw Exception("Table function '" + getName() + "' requires 3 or 4 arguments: filename, format, structure and compression method (default auto).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ColumnsDescription columns;
-    std::string compression_method = "auto";
-
     if (args.size() > 2)
-    {
-        auto structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        columns = parseColumnsListFromString(structure, context);
-    }
+        structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() == 4)
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+}
+
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+{
+    parseArguments(ast_function, context);
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(ast_function, context);
+
+    auto get_structure = [=, tf = shared_from_this()]()
+    {
+        return tf->getActualTableStructure(ast_function, context);
+    };
 
     /// Create table
-    StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
+    StoragePtr storage = getStorage(filename, format, cached_columns, const_cast<Context &>(context), table_name, compression_method, std::move(get_structure));
 
     storage->startup();
 
     return storage;
+}
+
+ColumnsDescription ITableFunctionFileLike::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+{
+    parseArguments(ast_function, context);
+    if (structure.empty())
+    {
+        assert(getName() == "file" && format == "Distributed");
+        return {};  /// TODO get matching path, read structure
+    }
+    return parseColumnsListFromString(structure, context);
 }
 
 }

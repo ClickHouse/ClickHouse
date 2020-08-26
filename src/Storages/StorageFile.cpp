@@ -161,7 +161,11 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 
     if (args.format_name == "Distributed")
     {
-        if (!paths.empty())
+        if (paths.empty())
+        {
+            throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+        }
+        else
         {
             auto & first_path = paths[0];
             Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();

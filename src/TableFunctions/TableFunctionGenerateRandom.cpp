@@ -13,6 +13,9 @@
 #include <TableFunctions/TableFunctionGenerateRandom.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
+#include <Interpreters/Context.h>
+#include <Storages/StorageTableFunction.h>
+
 #include "registerTableFunctions.h"
 
 
@@ -26,8 +29,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, const Context & /*context*/) const
 {
+    if (!structure.empty())
+        return;
+
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -58,11 +64,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
     }
 
     /// Parsing first argument as table structure and creating a sample block
-    std::string structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
-
-    UInt64 max_string_length = 10;
-    UInt64 max_array_length = 10;
-    std::optional<UInt64> random_seed;
+    structure = args[0]->as<const ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() >= 2)
     {
@@ -76,11 +78,26 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function,
 
     if (args.size() == 4)
         max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
+}
 
+ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+{
+    parseArguments(ast_function, context);
+    return parseColumnsListFromString(structure, context);
+}
 
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+{
+    parseArguments(ast_function, context);
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(ast_function, context);
 
-    auto res = StorageGenerateRandom::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);
+    auto get_structure = [=, tf = shared_from_this()]()
+    {
+        return tf->getActualTableStructure(ast_function, context);
+    };
+
+    auto res = std::make_shared<StorageTableFunction<StorageGenerateRandom>>(get_structure, StorageID(getDatabaseName(), table_name), cached_columns, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;
 }

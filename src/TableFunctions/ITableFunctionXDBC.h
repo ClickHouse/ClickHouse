@@ -24,6 +24,15 @@ private:
     virtual BridgeHelperPtr createBridgeHelper(Context & context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const = 0;
+
+    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+
+    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+
+    mutable String connection_string;
+    mutable String schema_name;
+    mutable String remote_table_name;
+    mutable BridgeHelperPtr helper;
 };
 
 class TableFunctionJDBC : public ITableFunctionXDBC

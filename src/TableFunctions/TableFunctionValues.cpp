@@ -3,6 +3,7 @@
 
 #include <Core/Block.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageTableFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -62,8 +63,10 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Context & /*context*/) const
 {
+
+
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -83,22 +86,42 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
             "Got '{}' instead", getName(), args[0]->formatForErrorMessage()),
             ErrorCodes::BAD_ARGUMENTS);
     }
-    std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+    structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+}
+
+ColumnsDescription TableFunctionValues::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+{
+    parseArguments(ast_function, context);
+    return parseColumnsListFromString(structure, context);
+}
+
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+{
+    parseArguments(ast_function, context);
+
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(ast_function, context);
+
+    auto get_structure = [=, tf = shared_from_this()]()
+    {
+        return tf->getActualTableStructure(ast_function, context);
+    };
 
     Block sample_block;
-    for (const auto & name_type : columns.getOrdinary())
+    for (const auto & name_type : cached_columns.getOrdinary())
         sample_block.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+    ASTs & args = ast_function->children.at(0)->children;
 
     /// Parsing other arguments as values and inserting them into columns
     parseAndInsertValues(res_columns, args, sample_block, context);
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
+    auto res = std::make_shared<StorageTableFunction<StorageValues>>(get_structure, StorageID(getDatabaseName(), table_name), cached_columns, res_block);
     res->startup();
     return res;
 }

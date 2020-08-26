@@ -22,7 +22,7 @@ public:
 
     std::string getName() const override { return name; }
 
-    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) override;
+    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
