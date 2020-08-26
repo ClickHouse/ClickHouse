@@ -38,6 +38,7 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/SystemLog.h>
@@ -117,9 +118,9 @@ struct ContextShared
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
-    String interserver_io_user;
-    String interserver_io_password;
     String interserver_scheme;                              /// http or https
+    mutable std::mutex interserver_io_credentials_mutex;
+    std::shared_ptr<BaseInterserverCredentials> interserver_io_credentials;
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
@@ -1559,6 +1560,46 @@ bool Context::hasZooKeeper() const
     return getConfigRef().has("zookeeper");
 }
 
+std::shared_ptr<BaseInterserverCredentials> Context::getInterserverCredential()
+{
+    std::lock_guard lock(shared->interserver_io_credentials_mutex);
+    return shared->interserver_io_credentials;
+}
+
+void Context::setInterserverCredentials(std::shared_ptr<BaseInterserverCredentials> credentials)
+{
+    std::lock_guard lock(shared->interserver_io_credentials_mutex);
+
+    if (credentials == nullptr)
+        return;
+
+    shared->interserver_io_credentials = credentials;
+}
+
+void Context::updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config)
+{
+    std::shared_ptr<BaseInterserverCredentials> interserver_credentials = nullptr;
+
+    if (config.has("interserver_http_credentials"))
+    {
+        interserver_credentials = SimpleInterserverCredentials::make(config, "interserver_http_credentials");
+    }
+    else
+    {
+        interserver_credentials = NullInterserverCredentials::make();
+    }
+
+    global_context->setInterserverCredentials(interserver_credentials);
+}
+
+std::pair<String, String> Context::getInterserverCredentials() const
+{
+    std::lock_guard lock(shared->interserver_io_credentials_mutex);
+    auto & credentials = shared->interserver_io_credentials;
+
+    return {credentials->getUser(), credentials->getPassword()};
+}
+
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
@@ -1573,17 +1614,6 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
                         ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return { shared->interserver_io_host, shared->interserver_io_port };
-}
-
-void Context::setInterserverCredentials(const String & user, const String & password)
-{
-    shared->interserver_io_user = user;
-    shared->interserver_io_password = password;
-}
-
-std::pair<String, String> Context::getInterserverCredentials() const
-{
-    return { shared->interserver_io_user, shared->interserver_io_password };
 }
 
 void Context::setInterserverScheme(const String & scheme)

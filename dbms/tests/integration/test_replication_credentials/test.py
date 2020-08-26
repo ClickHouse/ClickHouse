@@ -127,6 +127,54 @@ def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
     node8.query("insert into test_table values ('2017-06-22', 222, 1)")
     time.sleep(1)
 
-    assert node7.query("SELECT id FROM test_table order by id") == '111\n'
+    assert node7.query("SELECT id FROM test_table order by id") == '111\n222\n'
     assert node8.query("SELECT id FROM test_table order by id") == '222\n'
+    allow_empty = """
+    <yandex>
+        <interserver_http_port>9009</interserver_http_port>
+        <interserver_http_credentials>
+            <user>admin</user>
+            <password>222</password>
+            <allow_empty>true</allow_empty>
+        </interserver_http_credentials>
+    </yandex>
+    """
 
+    node7.replace_config("/etc/clickhouse-server/config.d/credentials1.xml",
+                         allow_empty)
+
+    node8.query("SYSTEM RESTART REPLICAS")
+    time.sleep(1)
+    assert node8.query("SELECT id FROM test_table order by id") == '111\n222\n'
+    new_password = """
+    <yandex>
+        <interserver_http_port>9009</interserver_http_port>
+        <interserver_http_credentials>
+            <user>admin</user>
+            <password>333</password>
+            <users>
+                <admin>222</admin>
+            </users>
+        </interserver_http_credentials>
+    </yandex>
+    """
+    node8_config = """
+    <yandex>
+        <interserver_http_port>9009</interserver_http_port>
+        <interserver_http_credentials>
+            <user>admin</user>
+            <password>222</password>
+        </interserver_http_credentials>
+    </yandex>
+    """
+    node8.replace_config("/etc/clickhouse-server/config.d/credentials1.xml",
+                         node8_config)
+    node7.replace_config("/etc/clickhouse-server/config.d/credentials1.xml",
+                         new_password)
+
+    node7.query("insert into test_table values ('2017-06-23', 333, 1)")
+    node8.query("insert into test_table values ('2017-06-23', 444, 1)")
+    time.sleep(1)
+    expected = '111\n222\n333\n444\n'
+    assert node7.query("SELECT id FROM test_table order by id") == expected
+    assert node8.query("SELECT id FROM test_table order by id") == expected

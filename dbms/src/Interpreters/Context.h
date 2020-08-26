@@ -48,6 +48,7 @@ class QuotaContext;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
+class BaseInterserverCredentials;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
@@ -353,7 +354,9 @@ public:
     std::pair<String, UInt16> getInterserverIOAddress() const;
 
     /// Credentials which server will use to communicate with others
-    void setInterserverCredentials(const String & user, const String & password);
+    void setInterserverCredentials(std::shared_ptr<BaseInterserverCredentials> credentials);
+    void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<BaseInterserverCredentials> getInterserverCredential();
     std::pair<String, String> getInterserverCredentials() const;
 
     /// Interserver requests scheme (http or https)

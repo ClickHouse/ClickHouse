@@ -23,30 +23,21 @@ namespace ErrorCodes
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
 {
-    const auto & config = server.config();
+    auto creds = server.context().getInterserverCredential();
+    const std::string DEFAULT_USER = "";
+    const std::string DEFAULT_PASSWORD = "";
 
-    if (config.has("interserver_http_credentials.user"))
-    {
-        if (!request.hasCredentials())
-            return {"Server requires HTTP Basic authentification, but client doesn't provide it", false};
-        String scheme, info;
-        request.getCredentials(scheme, info);
+    String scheme, info;
+    if (!request.hasCredentials())
+        return creds->isValidUser(std::make_pair(DEFAULT_USER, DEFAULT_PASSWORD));
 
-        if (scheme != "Basic")
-            return {"Server requires HTTP Basic authentification but client provides another method", false};
+    request.getCredentials(scheme, info);
 
-        String user = config.getString("interserver_http_credentials.user");
-        String password = config.getString("interserver_http_credentials.password", "");
+    if (scheme != "Basic")
+        return {"Server requires HTTP Basic authentification but client provides another method", false};
 
-        Poco::Net::HTTPBasicCredentials credentials(info);
-        if (std::make_pair(user, password) != std::make_pair(credentials.getUsername(), credentials.getPassword()))
-            return {"Incorrect user or password in HTTP Basic authentification", false};
-    }
-    else if (request.hasCredentials())
-    {
-        return {"Client requires HTTP Basic authentification, but server doesn't provide it", false};
-    }
-    return {"", true};
+    Poco::Net::HTTPBasicCredentials credentials(info);
+    return creds->isValidUser(std::make_pair(credentials.getUsername(), credentials.getPassword()));
 }
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)

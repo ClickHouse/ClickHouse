@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
+#include <Interpreters/InterserverCredentials.h>
 
 
 namespace CurrentMetrics

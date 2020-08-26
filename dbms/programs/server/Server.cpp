@@ -41,8 +41,9 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/SystemLog.cpp>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -407,16 +408,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    if (config().has("interserver_http_credentials"))
-    {
-        String user = config().getString("interserver_http_credentials.user", "");
-        String password = config().getString("interserver_http_credentials.password", "");
-
-        if (user.empty())
-            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-        global_context->setInterserverCredentials(user, password);
-    }
+    LOG_DEBUG(log, "Initiaializing InterserverCredentials.");
+    global_context->updateInterserverCredentials(config());
+    if (global_context->getInterserverCredential() == nullptr)
+        throw Exception("Error initializing interserver credentials",
+            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
@@ -447,6 +443,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+
+            global_context->updateInterserverCredentials(*config);
         },
         /* already_loaded = */ true);
 
