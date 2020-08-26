@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -333,9 +334,9 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
-String CompressionCodecDoubleDelta::getCodecDesc() const
+ASTPtr CompressionCodecDoubleDelta::getCodecDesc() const
 {
-    return "DoubleDelta";
+    return std::make_shared<ASTIdentifier>("DoubleDelta");
 }
 
 UInt32 CompressionCodecDoubleDelta::getMaxCompressedDataSize(UInt32 uncompressed_size) const

@@ -271,7 +271,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetDescription(codec, data_type, false);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false);
 
         column.ttl = ttl;
 
@@ -291,7 +291,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (codec)
-                column.codec = CompressionCodecFactory::instance().validateCodecAndGetDescription(codec, data_type ? data_type : column.type, false);
+                column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false);
 
             if (comment)
                 column.comment = *comment;
@@ -815,7 +815,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::BAD_ARGUMENTS};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetDescription(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -835,7 +835,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetDescription(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
 
             modified_columns.emplace(column_name);
         }

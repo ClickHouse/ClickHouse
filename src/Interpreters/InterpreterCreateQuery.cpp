@@ -281,14 +281,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         }
 
         if (column.codec)
-        {
-            String codec_desc = column.codec->description;
-            codec_desc = "CODEC(" + codec_desc + ")";
-            const char * codec_desc_pos = codec_desc.data();
-            const char * codec_desc_end = codec_desc_pos + codec_desc.size();
-            ParserIdentifierWithParameters codec_p;
-            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        }
+            column_declaration->codec = column.codec;
 
         if (column.ttl)
             column_declaration->ttl = column.ttl;
@@ -422,7 +415,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetDescription(col_decl.codec, column.type, sanity_check_compression_codecs);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_decl.codec, column.type, sanity_check_compression_codecs);
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;

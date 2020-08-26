@@ -3,6 +3,7 @@
 #include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
+#include <Parsers/ASTExpressionList.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -28,22 +29,12 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
-String CompressionCodecMultiple::getCodecDesc() const
+ASTPtr CompressionCodecMultiple::getCodecDesc() const
 {
-    return getCodecDescImpl();
-}
-
-String CompressionCodecMultiple::getCodecDescImpl() const
-{
-    WriteBufferFromOwnString out;
-    for (size_t idx = 0; idx < codecs.size(); ++idx)
-    {
-        if (idx != 0)
-            out << ", ";
-
-        out << codecs[idx]->getCodecDesc();
-    }
-    return out.str();
+    auto result = std::make_shared<ASTExpressionList>();
+    for (const auto & codec : codecs)
+        result->children.push_back(codec->getCodecDesc());
+    return result;
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
