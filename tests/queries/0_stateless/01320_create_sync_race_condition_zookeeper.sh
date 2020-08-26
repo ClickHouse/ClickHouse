@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS r;"
 
 function thread1()
 {
-    while true; do $CLICKHOUSE_CLIENT -n --query "CREATE TABLE r (x UInt64) ENGINE = ReplicatedMergeTree('/test/table', 'r') ORDER BY x; DROP TABLE r;"; done
+    while true; do $CLICKHOUSE_CLIENT -n --query "CREATE TABLE r (x UInt64) ENGINE = ReplicatedMergeTree('/test_01320/table', 'r') ORDER BY x; DROP TABLE r;"; done
 }
 
 function thread2()

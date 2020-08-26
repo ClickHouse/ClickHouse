@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for i in $(seq 4); do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i"
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp"
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE replica_01108_$i (n int) ENGINE=ReplicatedMergeTree('/clickhouse/tables/replica_01108_$i', 'replica') ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE replica_01108_$i (n int) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01108/replica_01108_$i', 'replica') ORDER BY tuple()"
     $CLICKHOUSE_CLIENT -q "INSERT INTO replica_01108_$i SELECT * FROM system.numbers LIMIT $i * 10, 10"
 done
 
@@ -76,7 +76,6 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^r
 
 
 for i in $(seq 4); do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i NO DELAY"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp NO DELAY"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp"
 done
-sleep 2
