@@ -832,7 +832,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         return false;
     }
 
-    LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+    LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by replica (" << zookeeper->get(is_executed_path) << ") of the same shard.");
     return true;
 }
 
