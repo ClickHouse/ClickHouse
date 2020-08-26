@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Has arbitrary non zero number of inputs and one output.
+/** Has arbitary non zero number of inputs and one output.
   * All of them have the same structure.
   *
   * Pulls all data from first input, then all data from second input, etc...
@@ -16,7 +16,10 @@ namespace DB
 class ConcatProcessor : public IProcessor
 {
 public:
-    ConcatProcessor(const Block & header, size_t num_inputs);
+    ConcatProcessor(const Block & header, size_t num_inputs)
+        : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
+    {
+    }
 
     String getName() const override { return "Concat"; }
 

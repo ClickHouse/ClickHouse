@@ -18,6 +18,7 @@ file(GLOB AWS_CORE_SOURCES
     "${AWS_CORE_LIBRARY_DIR}/source/client/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/http/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/http/standard/*.cpp"
+    "${AWS_CORE_LIBRARY_DIR}/source/http/curl/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/config/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/external/cjson/*.cpp"
     "${AWS_CORE_LIBRARY_DIR}/source/external/tinyxml2/*.cpp"
@@ -82,7 +83,7 @@ set(S3_INCLUDES
 
 add_library(aws_s3_checksums ${AWS_CHECKSUMS_SOURCES})
 target_include_directories(aws_s3_checksums PUBLIC "${AWS_CHECKSUMS_LIBRARY_DIR}/include/")
-if(CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+if(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(aws_s3_checksums PRIVATE "-DDEBUG_BUILD")
 endif()
 set_target_properties(aws_s3_checksums PROPERTIES LINKER_LANGUAGE C)
@@ -90,6 +91,7 @@ set_property(TARGET aws_s3_checksums PROPERTY C_STANDARD 99)
 
 add_library(aws_s3 ${S3_UNIFIED_SRC})
 
+target_compile_definitions(aws_s3 PUBLIC -DENABLE_CURL_CLIENT)
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MAJOR=1")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MINOR=7")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
@@ -100,4 +102,4 @@ if (OPENSSL_FOUND)
     target_link_libraries(aws_s3 PRIVATE ${OPENSSL_LIBRARIES})
 endif()
 
-target_link_libraries(aws_s3 PRIVATE aws_s3_checksums)
+target_link_libraries(aws_s3 PRIVATE aws_s3_checksums curl)

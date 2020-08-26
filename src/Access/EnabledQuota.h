@@ -12,7 +12,7 @@
 
 namespace DB
 {
-struct QuotaUsage;
+struct QuotaUsageInfo;
 
 
 /// Instances of `EnabledQuota` are used to track resource consumption.
@@ -23,7 +23,7 @@ public:
     {
         UUID user_id;
         String user_name;
-        boost::container::flat_set<UUID> enabled_roles;
+        std::vector<UUID> enabled_roles;
         Poco::Net::IPAddress client_address;
         String client_key;
 
@@ -53,7 +53,7 @@ public:
     void checkExceeded(ResourceType resource_type) const;
 
     /// Returns the information about quota consumption.
-    std::optional<QuotaUsage> getUsage() const;
+    QuotaUsageInfo getUsageInfo() const;
 
     /// Returns an instance of EnabledQuota which is never exceeded.
     static std::shared_ptr<const EnabledQuota> getUnlimitedQuota();
@@ -65,17 +65,17 @@ private:
 
     const String & getUserName() const { return params.user_name; }
 
-    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+    static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
 
     struct Interval
     {
         mutable std::atomic<ResourceAmount> used[MAX_RESOURCE_TYPE];
         ResourceAmount max[MAX_RESOURCE_TYPE];
-        std::chrono::seconds duration = std::chrono::seconds::zero();
-        bool randomize_interval = false;
+        std::chrono::seconds duration;
+        bool randomize_interval;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;
 
-        Interval();
+        Interval() {}
         Interval(const Interval & src) { *this = src; }
         Interval & operator =(const Interval & src);
     };
@@ -83,11 +83,11 @@ private:
     struct Intervals
     {
         std::vector<Interval> intervals;
-        std::optional<UUID> quota_id;
+        UUID quota_id;
         String quota_name;
         String quota_key;
 
-        std::optional<QuotaUsage> getUsage(std::chrono::system_clock::time_point current_time) const;
+        QuotaUsageInfo getUsageInfo(std::chrono::system_clock::time_point current_time) const;
     };
 
     struct Impl;

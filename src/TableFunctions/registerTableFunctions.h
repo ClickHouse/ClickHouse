@@ -20,7 +20,6 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
-void registerTableFunctionCOS(TableFunctionFactory & factory);
 #endif
 
 #if USE_HDFS

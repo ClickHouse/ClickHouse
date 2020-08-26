@@ -1,15 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_folder_title: "Param\xE8tre"
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_folder_title: Settings
 toc_priority: 55
 toc_title: Introduction
 ---
 
-# Paramètre {#session-settings-intro}
+# Paramètre {#settings}
 
-Il existe plusieurs façons d'effectuer tous les paramètres décrits dans cette section de la documentation.
-
+Il existe plusieurs façons de faire tous les paramètres décrits ci-dessous.
 Les paramètres sont configurés en couches, de sorte que chaque couche suivante redéfinit les paramètres précédents.
 
 Façons de configurer les paramètres, par ordre de priorité:

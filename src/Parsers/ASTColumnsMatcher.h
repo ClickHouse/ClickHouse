@@ -33,7 +33,6 @@ public:
     void appendColumnName(WriteBuffer & ostr) const override;
     void setPattern(String pattern);
     bool isColumnMatching(const String & column_name) const;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

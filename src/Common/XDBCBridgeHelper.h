@@ -173,25 +173,19 @@ public:
     {
         if (!checkBridgeIsRunning())
         {
-            LOG_TRACE(log, "{} is not running, will try to start it", BridgeHelperMixin::serviceAlias());
+            LOG_TRACE(log, BridgeHelperMixin::serviceAlias() + " is not running, will try to start it");
             startBridge();
             bool started = false;
-
-            uint64_t milliseconds_to_wait = 10; /// Exponential backoff
-            uint64_t counter = 0;
-            while (milliseconds_to_wait < 10000)
+            for (size_t counter : ext::range(1, 20))
             {
-                ++counter;
-                LOG_TRACE(log, "Checking {} is running, try {}", BridgeHelperMixin::serviceAlias(), counter);
+                LOG_TRACE(log, "Checking " + BridgeHelperMixin::serviceAlias() + " is running, try " << counter);
                 if (checkBridgeIsRunning())
                 {
                     started = true;
                     break;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds_to_wait));
-                milliseconds_to_wait *= 2;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-
             if (!started)
                 throw Exception(BridgeHelperMixin::getName() + "BridgeHelper: " + BridgeHelperMixin::serviceAlias() + " is not responding",
                     ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
@@ -298,11 +292,11 @@ struct ODBCBridgeMixin
         return AccessType::ODBC;
     }
 
-    static std::unique_ptr<ShellCommand> startBridge(
-        const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
+    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
+
 
         std::vector<std::string> cmd_args;
         path.setFileName("clickhouse-odbc-bridge");
@@ -335,7 +329,7 @@ struct ODBCBridgeMixin
             cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
         }
 
-        LOG_TRACE(log, "Starting {}", serviceAlias());
+        LOG_TRACE(log, "Starting " + serviceAlias());
 
         return ShellCommand::executeDirect(path.toString(), cmd_args, true);
     }

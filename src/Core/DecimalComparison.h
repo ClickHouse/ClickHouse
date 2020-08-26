@@ -37,7 +37,6 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
 template <size_t > struct ConstructDecInt { using Type = Int32; };
 template <> struct ConstructDecInt<8> { using Type = Int64; };
 template <> struct ConstructDecInt<16> { using Type = Int128; };
-template <> struct ConstructDecInt<48> { using Type = bInt256; };
 
 template <typename T, typename U>
 struct DecCompareInt
@@ -85,15 +84,15 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal256>();
+        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal128>();
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
         Shift shift;
         if (scale_a < scale_b)
-            shift.a = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<B>(scale_b - scale_a));
+            shift.a = B::getScaleMultiplier(scale_b - scale_a);
         if (scale_a > scale_b)
-            shift.b = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<A>(scale_a - scale_b));
+            shift.b = A::getScaleMultiplier(scale_a - scale_b);
 
         return applyWithScale(a, b, shift);
     }
@@ -130,13 +129,13 @@ private:
         if (decimal0 && decimal1)
         {
             auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
-            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal0, false).value);
-            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal1, false).value);
+            shift.a = result_type.scaleFactorFor(*decimal0, false);
+            shift.b = result_type.scaleFactorFor(*decimal1, false);
         }
         else if (decimal0)
-            shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
+            shift.b = decimal0->getScaleMultiplier();
         else if (decimal1)
-            shift.a = static_cast<CompareInt>(decimal1->getScaleMultiplier().value);
+            shift.a = decimal1->getScaleMultiplier();
 
         return shift;
     }
@@ -148,7 +147,7 @@ private:
         Shift shift;
         const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
         if (decimal0)
-            shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
+            shift.b = decimal0->getScaleMultiplier();
         return shift;
     }
 
@@ -159,7 +158,7 @@ private:
         Shift shift;
         const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
         if (decimal1)
-            shift.a = static_cast<CompareInt>(decimal1->getScaleMultiplier().value);
+            shift.a = decimal1->getScaleMultiplier();
         return shift;
     }
 
@@ -225,21 +224,8 @@ private:
     template <bool scale_left, bool scale_right>
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
-        CompareInt x;
-        if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<A>)
-            x = a.value;
-        else if constexpr (is_big_int_v<CompareInt> && std::is_same_v<A, UInt8>)
-            x = static_cast<UInt16>(a);
-        else
-            x = static_cast<CompareInt>(a);
-
-        CompareInt y;
-        if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<B>)
-            y = b.value;
-        else if constexpr (is_big_int_v<CompareInt> && std::is_same_v<B, UInt8>)
-            y = static_cast<UInt16>(b);
-        else
-            y = static_cast<CompareInt>(b);
+        CompareInt x = a;
+        CompareInt y = b;
 
         if constexpr (_check_overflow)
         {

@@ -38,22 +38,16 @@ void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr &, Data
     if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
-        auto opt_name = tryGetIdentifierName(ast);
-        if (opt_name && !data.aliases.count(*opt_name))
-            setIdentifierSpecial(ast);
+        if (auto opt_name = tryGetIdentifierName(ast))
+            if (!data.aliases.count(*opt_name))
+                setIdentifierSpecial(ast);
     }
 
-    // First argument of joinGet can be a table name, perhaps with a database.
-    // First argument of dictGet can be a dictionary name, perhaps with a database.
-    if (functionIsJoinGet(func.name) || functionIsDictGet(func.name))
+    // first argument of joinGet can be a table identifier
+    if (func.name == "joinGet")
     {
-        if (func.arguments->children.empty())
-        {
-            return;
-        }
         auto & ast = func.arguments->children.at(0);
-        auto opt_name = tryGetIdentifierName(ast);
-        if (opt_name && !data.aliases.count(*opt_name))
+        if (auto opt_name = tryGetIdentifierName(ast))
             setIdentifierSpecial(ast);
     }
 }

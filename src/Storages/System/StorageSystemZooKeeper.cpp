@@ -112,13 +112,8 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
 
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
-    String path_corrected;
-    /// path should starts with '/', otherwise ZBADARGUMENTS will be thrown in
-    /// ZooKeeper::sendThread and the session will fail.
-    if (path[0] != '/')
-        path_corrected = '/';
-    path_corrected += path;
     /// In all cases except the root, path must not end with a slash.
+    String path_corrected = path;
     if (path_corrected != "/" && path_corrected.back() == '/')
         path_corrected.resize(path_corrected.size() - 1);
 
@@ -136,7 +131,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
-        if (res.error == Coordination::Error::ZNONODE)
+        if (res.error == Coordination::ZNONODE)
             continue;   /// Node was deleted meanwhile.
 
         const Coordination::Stat & stat = res.stat;

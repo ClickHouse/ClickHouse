@@ -8,7 +8,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDataType.h>
 #include <Poco/String.h>
 
 
@@ -25,9 +24,10 @@ protected:
 };
 
 
-/** Storage engine or Codec. For example:
- *         Memory()
- *         ReplicatedMergeTree('/path', 'replica')
+/** Parametric type or Storage. For example:
+ *         FixedString(10) or
+ *         Partitioned(Log, ChunkID) or
+ *         Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
  * Result of parsing - ASTFunction with or without parameters.
  */
 class ParserIdentifierWithParameters : public IParserBase
@@ -47,12 +47,14 @@ protected:
 
 /** The name and type are separated by a space. For example, URL String. */
 using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
+/** Name and type separated by a space. The name can contain a dot. For example, Hits.URL String. */
+using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
 template <typename NameParser>
 bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserDataType type_parser;
+    ParserIdentifierWithOptionalParameters type_parser;
 
     ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
@@ -90,8 +92,7 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false)
-    : require_type(require_type_), allow_null_modifiers(allow_null_modifiers_)
+    explicit IParserColumnDeclaration(bool require_type_ = true) : require_type(require_type_)
     {
     }
 
@@ -103,7 +104,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     bool require_type = true;
-    bool allow_null_modifiers = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -113,10 +113,8 @@ template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
-    ParserDataType type_parser;
+    ParserIdentifierWithOptionalParameters type_parser;
     ParserKeyword s_default{"DEFAULT"};
-    ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not{"NOT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
@@ -137,7 +135,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       */
     ASTPtr type;
     String default_specifier;
-    std::optional<bool> null_modifier;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -166,17 +163,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    if (type && allow_null_modifiers)
-    {
-        if (s_not.ignore(pos, expected))
-        {
-            if (!s_null.ignore(pos, expected))
-                return false;
-            null_modifier.emplace(false);
-        }
-        else if (s_null.ignore(pos, expected))
-            null_modifier.emplace(true);
-    }
 
     if (s_comment.ignore(pos, expected))
     {
@@ -206,8 +192,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->type = type;
         column_declaration->children.push_back(std::move(type));
     }
-
-    column_declaration->null_modifier = null_modifier;
 
     if (default_expression)
     {
@@ -354,7 +338,7 @@ protected:
 
 /// Parses complete dictionary create query. Uses ParserDictionary and
 /// ParserDictionaryAttributeDeclaration. Produces ASTCreateQuery.
-/// CREATE DICTIONARY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
+/// CREATE DICTIONAY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
 class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:

@@ -1,7 +1,7 @@
-FROM ubuntu:20.04
+FROM ubuntu:18.04
 
-ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=20.8.1.*
+ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
+ARG version=20.4.10.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -15,14 +15,13 @@ RUN apt-get update \
     && echo $repository > /etc/apt/sources.list.d/clickhouse.list \
     && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive \
-        apt-get --yes -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" upgrade \
-    && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --allow-unauthenticated --yes --no-install-recommends \
             clickhouse-common-static=$version \
             clickhouse-client=$version \
             clickhouse-server=$version \
             locales \
             wget \
+            tzdata \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

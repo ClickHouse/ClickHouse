@@ -3,7 +3,6 @@
 #include <cassert>
 #include <Functions/GeoHash.h>
 
-
 namespace DB
 {
 
@@ -115,7 +114,6 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, uin
     result.fill(0);
 
     const auto bits = (precision * BITS_PER_SYMBOL) / 2;
-    assert(bits < 255);
     uint8_t i = 0;
     for (; i < bits; ++i)
     {
@@ -262,21 +260,15 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
     *latitude = decodeCoordinate(lat_encoded, LAT_MIN, LAT_MAX, singleCoordBitsPrecision(precision, LATITUDE));
 }
 
-GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
-    Float64 longitude_min,
-    Float64 latitude_min,
-    Float64 longitude_max,
-    Float64 latitude_max,
-    uint8_t precision)
+GeohashesInBoxPreparedArgs geohashesInBoxPrepare(Float64 longitude_min,
+                                              Float64 latitude_min,
+                                              Float64 longitude_max,
+                                              Float64 latitude_max,
+                                              uint8_t precision)
 {
     precision = geohashPrecision(precision);
 
-    if (longitude_max < longitude_min
-        || latitude_max < latitude_min
-        || std::isnan(longitude_min)
-        || std::isnan(longitude_max)
-        || std::isnan(latitude_min)
-        || std::isnan(latitude_max))
+    if (longitude_max < longitude_min || latitude_max < latitude_min)
     {
         return {};
     }
@@ -289,50 +281,51 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
     const auto lon_step = getSpan(precision, LONGITUDE);
     const auto lat_step = getSpan(precision, LATITUDE);
 
-    /// Align max to the right (or up) border of geohash grid cell to ensure that cell is in result.
+    // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
     Float64 lon_min = floor(longitude_min / lon_step) * lon_step;
     Float64 lat_min = floor(latitude_min / lat_step) * lat_step;
     Float64 lon_max = ceil(longitude_max / lon_step) * lon_step;
     Float64 lat_max = ceil(latitude_max / lat_step) * lat_step;
 
-    UInt32 lon_items = (lon_max - lon_min) / lon_step;
-    UInt32 lat_items = (lat_max - lat_min) / lat_step;
+    const auto lon_span = lon_max - lon_min;
+    const auto lat_span = lat_max - lat_min;
+    // in case of a very small (or zero) span, produce at least 1 item.
+    const auto items_count = std::max(size_t{1}, static_cast<size_t>(ceil(lon_span/lon_step * lat_span/lat_step)));
 
-    return GeohashesInBoxPreparedArgs
-    {
-        std::max<UInt64>(1, UInt64(lon_items) * lat_items),
-        lon_items,
-        lat_items,
-        lon_min,
-        lat_min,
-        lon_step,
-        lat_step,
-        precision
+    return GeohashesInBoxPreparedArgs{
+            items_count,
+            precision,
+            lon_min,
+            lat_min,
+            lon_max,
+            lat_max,
+            lon_step,
+            lat_step
     };
 }
 
 UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 {
-    if (args.precision == 0
-        || args.precision > MAX_PRECISION
-        || args.longitude_step <= 0
-        || args.latitude_step <= 0)
+    if (args.items_count == 0
+            || args.precision == 0
+            || args.precision > MAX_PRECISION
+            || args.latitude_min > args.latitude_max
+            || args.longitude_min > args.longitude_max
+            || args.longitude_step <= 0
+            || args.latitude_step <= 0)
     {
         return 0;
     }
 
     UInt64 items = 0;
-    for (size_t i = 0; i < args.longitude_items; ++i)
+    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step) // NOLINT
     {
-        for (size_t j = 0; j < args.latitude_items; ++j)
+        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step) // NOLINT
         {
-            size_t length = geohashEncodeImpl(
-                args.longitude_min + args.longitude_step * i,
-                args.latitude_min + args.latitude_step * j,
-                args.precision,
-                out);
+            assert(items <= args.items_count);
 
-            out += length;
+            size_t l = geohashEncodeImpl(lon, lat, args.precision, out);
+            out += l;
             *out = '\0';
             ++out;
 
@@ -342,8 +335,8 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 
     if (items == 0)
     {
-        size_t length = geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
-        out += length;
+        size_t l = geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
+        out += l;
         *out = '\0';
         ++out;
 

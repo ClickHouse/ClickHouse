@@ -282,7 +282,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -295,12 +295,7 @@ public:
         if (size)
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-            if constexpr (is_big_int_v<T>)
-                // is data_to empty? we should probaly use std::vector::insert then
-                for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
-                    data_to.push_back(*it);
-            else
-                data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
 
@@ -605,7 +600,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
@@ -820,7 +815,7 @@ public:
         data(place).last = prev;
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 

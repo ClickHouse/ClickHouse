@@ -53,8 +53,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const std::string & path_to_settings,
     const std::string & config_prefix,
     const Block & sample_block_,
-    const Context & context_,
-    const std::string & default_database)
+    const Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , host{config.getString(config_prefix + ".host")}
@@ -62,7 +61,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , secure(config.getBool(config_prefix + ".secure", false))
     , user{config.getString(config_prefix + ".user", "")}
     , password{config.getString(config_prefix + ".password", "")}
-    , db{config.getString(config_prefix + ".db", default_database)}
+    , db{config.getString(config_prefix + ".db", "")}
     , table{config.getString(config_prefix + ".table")}
     , where{config.getString(config_prefix + ".where", "")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
@@ -77,9 +76,12 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     if (is_local)
     {
-        context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0));
+        context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
         context = copyContextAndApplySettings(path_to_settings, context, config);
     }
+
+    /// Processors are not supported here yet.
+    context.setSetting("experimental_use_processors", false);
 
     /// Query context is needed because some code in executeQuery function may assume it exists.
     /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
@@ -135,10 +137,10 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       */
     if (is_local)
     {
-        auto stream = executeQuery(load_all_query, context, true).getInputStream();
+        BlockIO res = executeQuery(load_all_query, context, true);
         /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
-        stream = std::make_shared<ConvertingBlockInputStream>(stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return stream;
+        res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
 }
@@ -148,9 +150,9 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
     std::string load_update_query = getUpdateFieldAndDate();
     if (is_local)
     {
-        auto stream = executeQuery(load_update_query, context, true).getInputStream();
-        stream = std::make_shared<ConvertingBlockInputStream>(stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return stream;
+        auto res = executeQuery(load_update_query, context, true);
+        res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, sample_block, context);
 }
@@ -172,7 +174,7 @@ bool ClickHouseDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
-        LOG_TRACE(log, "Invalidate query has returned: {}, previous value: {}", response, invalidate_query_response);
+        LOG_TRACE(log, "Invalidate query has returned: " << response << ", previous value: " << invalidate_query_response);
         if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
@@ -195,10 +197,10 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 {
     if (is_local)
     {
-        auto res = executeQuery(query, context, true).getInputStream();
-        res = std::make_shared<ConvertingBlockInputStream>(
-            res, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
-        return res;
+        auto res = executeQuery(query, context, true);
+        res.in = std::make_shared<ConvertingBlockInputStream>(
+            res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        return res.in;
     }
 
     return std::make_shared<RemoteBlockInputStream>(pool, query, sample_block, context);
@@ -210,7 +212,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (is_local)
     {
         Context query_context = context;
-        auto input_block = executeQuery(request, query_context, true).getInputStream();
+        auto input_block = executeQuery(request, query_context, true).in;
         return readInvalidateQuery(*input_block);
     }
     else
@@ -230,11 +232,9 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & context,
-                                 const std::string & default_database,
                                  bool /* check_config */) -> DictionarySourcePtr
     {
-        return std::make_unique<ClickHouseDictionarySource>(
-            dict_struct, config, config_prefix, config_prefix + ".clickhouse", sample_block, context, default_database);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix, config_prefix + ".clickhouse", sample_block, context);
     };
     factory.registerSource("clickhouse", create_table_source);
 }

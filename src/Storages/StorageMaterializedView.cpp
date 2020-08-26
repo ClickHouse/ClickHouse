@@ -18,7 +18,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -30,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
@@ -41,6 +41,58 @@ static inline String generateInnerTableName(const StorageID & view_id)
     return ".inner." + view_id.getTableName();
 }
 
+static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Context & context, bool add_default_db = true)
+{
+    if (add_default_db)
+    {
+        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), nullptr);
+        visitor.visit(query);
+    }
+
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
+    {
+        return StorageID(db_and_table->database, db_and_table->table/*, db_and_table->uuid*/);
+    }
+    else if (auto subquery = extractTableExpression(query, 0))
+    {
+        auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
+        if (!ast_select)
+            throw Exception("Logical error while creating StorageMaterializedView. "
+                            "Could not retrieve table name from select query.",
+                            DB::ErrorCodes::LOGICAL_ERROR);
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW",
+                  ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, false);
+    }
+    else
+        return StorageID::createEmpty();
+}
+
+
+static void checkAllowedQueries(const ASTSelectQuery & query)
+{
+    if (query.prewhere() || query.final() || query.sampleSize())
+        throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    ASTPtr subquery = extractTableExpression(query, 0);
+    if (!subquery)
+        return;
+
+    if (const auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
+    {
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        const auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        checkAllowedQueries(inner_query->as<ASTSelectQuery &>());
+    }
+}
+
 
 StorageMaterializedView::StorageMaterializedView(
     const StorageID & table_id_,
@@ -50,8 +102,7 @@ StorageMaterializedView::StorageMaterializedView(
     bool attach_)
     : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -66,9 +117,13 @@ StorageMaterializedView::StorageMaterializedView(
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
-    storage_metadata.setSelectQuery(select);
-    setInMemoryMetadata(storage_metadata);
+    select = query.select->clone();
+    inner_query = query.select->list_of_selects->children.at(0);
+
+    auto & select_query = inner_query->as<ASTSelectQuery &>();
+    checkAllowedQueries(select_query);
+
+    select_table_id = extractDependentTableFromSelectQuery(select_query, local_context);
 
     if (!has_inner_table)
         target_table_id = query.to_table_id;
@@ -94,21 +149,37 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table})->getStorageID();
     }
 
-    if (!select.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
+    if (!select_table_id.empty())
+        DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
+{
+    return getTargetTable()->getColumn(column_name);
+}
+
+bool StorageMaterializedView::hasColumn(const String & column_name) const
+{
+    return getTargetTable()->hasColumn(column_name);
+}
+
+StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
+{
+    StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
+    result.select = getSelectQuery();
+    return result;
+}
+
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr &query_ptr) const
 {
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
 }
 
-Pipe StorageMaterializedView::read(
+Pipes StorageMaterializedView::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -116,26 +187,26 @@ Pipe StorageMaterializedView::read(
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto lock = storage->lockStructureForShare(
+            false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
+    if (query_info.order_by_optimizer)
+        query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
-    Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    pipe.addTableLock(lock);
+    Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
-    return pipe;
+    for (auto & pipe : pipes)
+        pipe.addTableLock(lock);
+
+    return pipes;
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
+BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto stream = storage->write(query, metadata_snapshot, context);
-
+    auto lock = storage->lockStructureForShare(
+            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto stream = storage->write(query, context);
     stream->addTableLock(lock);
     return stream;
 }
@@ -143,7 +214,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -161,15 +232,14 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
+    if (!select_table_id.empty())
+        DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageMaterializedView::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id);
@@ -183,48 +253,49 @@ void StorageMaterializedView::checkStatementCanBeForwarded() const
             + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
 }
 
-bool StorageMaterializedView::optimize(
-    const ASTPtr & query,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
-    const ASTPtr & partition,
-    bool final,
-    bool deduplicate,
-    const Context & context)
+bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     checkStatementCanBeForwarded();
-    auto storage_ptr = getTargetTable();
-    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
+    return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     const Context & context,
-    TableLockHolder &)
+    TableStructureWriteLockHolder & table_lock_holder)
 {
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
-        const auto & new_select = new_metadata.select;
-        const auto & old_select = old_metadata.getSelectQuery();
+        auto & new_select = metadata.select->as<ASTSelectWithUnionQuery &>();
 
-        DatabaseCatalog::instance().updateDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+        if (new_select.list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-        new_metadata.setSelectQuery(new_select);
+        auto & new_inner_query = new_select.list_of_selects->children.at(0);
+        auto & select_query = new_inner_query->as<ASTSelectQuery &>();
+        checkAllowedQueries(select_query);
+
+        auto new_select_table_id = extractDependentTableFromSelectQuery(select_query, context);
+        DatabaseCatalog::instance().updateDependency(select_table_id, table_id, new_select_table_id, table_id);
+
+        select_table_id = new_select_table_id;
+        select = metadata.select;
+        inner_query = new_inner_query;
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
 {
     if (settings.allow_experimental_alter_materialized_view_structure)
     {
@@ -248,18 +319,10 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
     }
 }
 
-Pipe StorageMaterializedView::alterPartition(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
+void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
 {
     checkStatementCanBeForwarded();
-    return getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
-}
-
-void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
+    getTargetTable()->alterPartition(query, commands, context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
@@ -271,7 +334,6 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
     if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
@@ -297,28 +359,25 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     }
 
     IStorage::renameInMemory(new_table_id);
-    const auto & select_query = metadata_snapshot->getSelectQuery();
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeDependency(select_query.select_table_id, getStorageID());
+    if (!select_table_id.empty())
+        DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return DatabaseCatalog::instance().getTable(target_table_id, global_context);
+    return DatabaseCatalog::instance().getTable(target_table_id);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
+    return DatabaseCatalog::instance().tryGetTable(target_table_id);
 }
 
 Strings StorageMaterializedView::getDataPaths() const

@@ -1,26 +1,29 @@
-#include <vector>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include "config_functions.h"
+#if USE_H3
+#    include <vector>
+#    include <Columns/ColumnArray.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <DataTypes/IDataType.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/IFunction.h>
+#    include <Common/typeid_cast.h>
+#    include <ext/range.h>
 
-#include <h3api.h>
+#    if __has_include(<h3/h3api.h>)
+#        include <h3/h3api.h>
+#    else
+#        include <h3api.h>
+#    endif
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int PARAMETER_OUT_OF_BOUND;
 }
-
 class FunctionH3KRing : public IFunction
 {
 public:
@@ -50,7 +53,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
         const auto * col_k = block.getByPosition(arguments[1]).column.get();
@@ -67,15 +70,6 @@ public:
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
-
-            /// Overflow is possible. The function maxKringSize does not check for overflow.
-            /// The calculation is similar to square of k but several times more.
-            /// Let's use huge underestimation as the safe bound. We should not allow to generate too large arrays nevertheless.
-            constexpr auto max_k = 10000;
-            if (k > max_k)
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too large 'k' argument for {} function, maximum {}", getName(), max_k);
-            if (k < 0)
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
             const auto vec_size = maxKringSize(k);
             hindex_vec.resize(vec_size);
@@ -104,3 +98,4 @@ void registerFunctionH3KRing(FunctionFactory & factory)
 }
 
 }
+#endif

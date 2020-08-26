@@ -1,4 +1,3 @@
-# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
@@ -11,7 +10,6 @@ SRCS(
     ConnectionPoolWithFailover.cpp
     MultiplexedConnections.cpp
     TimeoutSetter.cpp
-
 )
 
 END()

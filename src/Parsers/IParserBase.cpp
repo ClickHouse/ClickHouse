@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+}
+
+
 bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
     expected.add(pos, getName());

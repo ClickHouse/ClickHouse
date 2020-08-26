@@ -63,7 +63,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_freeze("FREEZE");
     ParserKeyword s_partition("PARTITION");
 
-    ParserKeyword s_first("FIRST");
     ParserKeyword s_after("AFTER");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_if_exists("IF EXISTS");
@@ -116,9 +115,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_col_decl.parse(pos, command->col_decl, expected))
                 return false;
 
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
+            if (s_after.ignore(pos, expected))
             {
                 if (!parser_name.parse(pos, command->column, expected))
                     return false;
@@ -263,19 +260,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->part = true;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = DataDestinationType::DISK;
+                command->move_destination_type = PartDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = DataDestinationType::VOLUME;
+                command->move_destination_type = PartDestinationType::VOLUME;
             else if (s_to_table.ignore(pos))
             {
                 if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                     return false;
-                command->move_destination_type = DataDestinationType::TABLE;
+                command->move_destination_type = PartDestinationType::TABLE;
             }
             else
                 return false;
 
-            if (command->move_destination_type != DataDestinationType::TABLE)
+            if (command->move_destination_type != PartDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -292,19 +289,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->type = ASTAlterCommand::MOVE_PARTITION;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = DataDestinationType::DISK;
+                command->move_destination_type = PartDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = DataDestinationType::VOLUME;
+                command->move_destination_type = PartDestinationType::VOLUME;
             else if (s_to_table.ignore(pos))
             {
                 if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                     return false;
-                command->move_destination_type = DataDestinationType::TABLE;
+                command->move_destination_type = PartDestinationType::TABLE;
             }
             else
                 return false;
 
-            if (command->move_destination_type != DataDestinationType::TABLE)
+            if (command->move_destination_type != PartDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -431,14 +428,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
                 return false;
-
-            if (s_first.ignore(pos, expected))
-                command->first = true;
-            else if (s_after.ignore(pos, expected))
-            {
-                if (!parser_name.parse(pos, command->column, expected))
-                    return false;
-            }
 
             command->type = ASTAlterCommand::MODIFY_COLUMN;
         }

@@ -20,8 +20,14 @@ public:
     QuotaCache(const AccessControlManager & access_control_manager_);
     ~QuotaCache();
 
-    std::shared_ptr<const EnabledQuota> getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key);
-    std::vector<QuotaUsage> getAllQuotasUsage() const;
+    std::shared_ptr<const EnabledQuota> getEnabledQuota(
+        const UUID & user_id,
+        const String & user_name,
+        const std::vector<UUID> & enabled_roles,
+        const Poco::Net::IPAddress & address,
+        const String & client_key);
+
+    std::vector<QuotaUsageInfo> getUsageInfo() const;
 
 private:
     using Interval = EnabledQuota::Interval;
@@ -39,7 +45,7 @@ private:
 
         QuotaPtr quota;
         UUID quota_id;
-        const RolesOrUsersSet * roles = nullptr;
+        const ExtendedRoleSet * roles = nullptr;
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 

@@ -27,7 +27,6 @@ struct ExternalLoaderConfigSettings
     std::string external_config;
     std::string external_name;
     std::string external_database;
-    std::string external_uuid;
 };
 
 /** Interface for manage user-defined objects.
@@ -83,7 +82,7 @@ public:
     template <typename T>
     static constexpr bool is_vector_load_result_type = std::is_same_v<T, LoadResults> || std::is_same_v<T, Loadables>;
 
-    ExternalLoader(const String & type_name_, Poco::Logger * log);
+    ExternalLoader(const String & type_name_, Logger * log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.

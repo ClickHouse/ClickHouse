@@ -94,8 +94,6 @@ WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
     {
         if (fd >= 0)
             next();
-        else
-            assert(!offset() && "attempt to write after close");
     }
     catch (...)
     {

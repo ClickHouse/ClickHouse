@@ -5,13 +5,12 @@
 
 namespace DB
 {
+
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_)
+    const MergeTreeDataPartPtr & data_part)
     : storage(data_part->storage)
-    , metadata_snapshot(metadata_snapshot_)
-    , volume(data_part->volume)
-    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
+    , disk(data_part->disk)
+    , part_path(data_part->getFullRelativePath())
 {
 }
 
@@ -83,7 +82,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     {
         if (checksums.files.count(removed_file))
         {
-            data_part->volume->getDisk()->remove(data_part->getFullRelativePath() + removed_file);
+            data_part->disk->remove(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
         }
     }

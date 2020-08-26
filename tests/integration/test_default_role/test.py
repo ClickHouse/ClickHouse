@@ -28,6 +28,7 @@ def reset_users_and_roles():
     yield
 
 
+@pytest.mark.skip(reason="SHOW CURRENT ROLES is not supported in 20.4")
 def test_set_default_roles():
     assert instance.query("SHOW CURRENT ROLES", user="john") == ""
 
@@ -50,6 +51,7 @@ def test_set_default_roles():
     assert instance.query("SHOW CURRENT ROLES", user="john") == TSV( [['ry', 0, 1]] )
 
 
+@pytest.mark.skip(reason="SHOW CURRENT ROLES is not supported in 20.4")
 def test_alter_user():
     assert instance.query("SHOW CURRENT ROLES", user="john") == ""
 
@@ -70,8 +72,8 @@ def test_alter_user():
 
 
 def test_wrong_set_default_role():
-    assert "There is no user `rx`" in instance.query_and_get_error("SET DEFAULT ROLE NONE TO rx")
-    assert "There is no user `ry`" in instance.query_and_get_error("SET DEFAULT ROLE rx TO ry")
-    assert "There is no role `john`" in instance.query_and_get_error("SET DEFAULT ROLE john TO john")
-    assert "There is no role `john`" in instance.query_and_get_error("ALTER USER john DEFAULT ROLE john")
-    assert "There is no role `john`" in instance.query_and_get_error("ALTER USER john DEFAULT ROLE ALL EXCEPT john")
+    assert "User `rx` not found" in instance.query_and_get_error("SET DEFAULT ROLE NONE TO rx")
+    assert "User `ry` not found" in instance.query_and_get_error("SET DEFAULT ROLE rx TO ry")
+    assert "Role `john` not found" in instance.query_and_get_error("SET DEFAULT ROLE john TO john")
+    assert "Role `john` not found" in instance.query_and_get_error("ALTER USER john DEFAULT ROLE john")
+    assert "Role `john` not found" in instance.query_and_get_error("ALTER USER john DEFAULT ROLE ALL EXCEPT john")
