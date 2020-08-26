@@ -11,7 +11,7 @@ services:
         ZOOKEEPER_SERVERS: "kafka_kerberized_zookeeper:2888:3888"
         KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/zookeeper_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dzookeeper.authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider -Dsun.security.krb5.debug=true"
     volumes:
-        - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/secrets:/etc/kafka/secrets
+        - ${KERBERIZED_KAFKA_DIR}/secrets:/etc/kafka/secrets
         - /dev/urandom:/dev/random
     depends_on:
         - kafka_kerberos
@@ -32,7 +32,7 @@ services:
         # KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:9092,OUTSIDE://kerberized_kafka1:19092
         KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: GSSAPI
         KAFKA_SASL_ENABLED_MECHANISMS: GSSAPI
-        KAFKA_SASL_KERBEROS_SERVICE_NAME: kafka        
+        KAFKA_SASL_KERBEROS_SERVICE_NAME: kafka
         KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: OUTSIDE:SASL_PLAINTEXT,UNSECURED_OUTSIDE:PLAINTEXT,UNSECURED_INSIDE:PLAINTEXT,
         KAFKA_INTER_BROKER_LISTENER_NAME: OUTSIDE
         KAFKA_BROKER_ID: 1
@@ -41,7 +41,7 @@ services:
         KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
         KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/broker_jaas.conf -Djava.security.krb5.conf=/etc/kafka/secrets/krb.conf -Dsun.security.krb5.debug=true"
     volumes:
-        - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/secrets:/etc/kafka/secrets
+        - ${KERBERIZED_KAFKA_DIR}/secrets:/etc/kafka/secrets
         - /dev/urandom:/dev/random
     depends_on:
         - kafka_kerberized_zookeeper
@@ -50,11 +50,11 @@ services:
         - label:disable
 
   kafka_kerberos:
-    # build: ${KERBERIZED_KAFKA_DIR:-../..--../../../../tests/integration/tskk}
+    # build: ${KERBERIZED_KAFKA_DIR}
     image: ilejn/kdc:latest
     hostname: kafka_kerberos
     volumes:
-        - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/secrets:/tmp/keytab
-        - ${KERBERIZED_KAFKA_DIR:-../../../../../tests/integration/tskk/_instances/instance}/../../kerberos_image_config.sh:/config.sh
+        - ${KERBERIZED_KAFKA_DIR}/secrets:/tmp/keytab
+        - ${KERBERIZED_KAFKA_DIR}/../../kerberos_image_config.sh:/config.sh
         - /dev/urandom:/dev/random
     ports: [88, 749]

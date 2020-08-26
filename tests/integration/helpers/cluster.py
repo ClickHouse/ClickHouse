@@ -45,6 +45,10 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
+def remove_files(files):
+    for a_file in files:
+        if os.path.isfile(a_file):
+            os.remove(a_file)
 
 def subprocess_check_call(args):
     # Uncomment for debugging
@@ -175,7 +179,11 @@ class ClickHouseCluster:
                      clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
+<<<<<<< HEAD
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
+=======
+                     hostname=None, env_variables=None, image="ilejn/yandex_clickhouse-integration-test",
+>>>>>>> test via runner is Ok, switched to custom images
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
         """Add an instance to the cluster.
@@ -621,10 +629,15 @@ class ClickHouseCluster:
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 env_var = {}
                 env_var['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
-                _create_env_file(self.base_dir, env_var, ".env")
-                subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
-                self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
 
+                # different docker_compose versions look for .env in different places
+                #   -- env-file too recent to rely on it
+                files_to_cleanup = []
+                files_to_cleanup.append(_create_env_file(self.base_dir, env_var, ".env"))
+                files_to_cleanup.append(_create_env_file(os.getcwd(), env_var, ".env"))
+                subprocess_check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
+                remove_files(files_to_cleanup)
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
                 self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
