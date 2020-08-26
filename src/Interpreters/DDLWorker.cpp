@@ -766,7 +766,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     zkutil::EventPtr event = std::make_shared<Poco::Event>();
     if (zookeeper->tryGet(is_executed_path, executed_by))
     {
-        LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
+        LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by replica (" << executed_by << ") of the same shard.");
         return true;
     }
 
@@ -788,7 +788,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             /// this task.
             if (zookeeper->tryGet(is_executed_path, executed_by))
             {
-                LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
+                LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by replica (" << executed_by << ") of the same shard.");
                 executed_by_leader = true;
                 break;
             }
