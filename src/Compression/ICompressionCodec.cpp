@@ -2,6 +2,7 @@
 
 #include <cassert>
 
+#include <Parsers/ASTFunction.h>
 #include <common/unaligned.h>
 #include <Common/Exception.h>
 
@@ -15,6 +16,13 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
+ASTPtr ICompressionCodec::getFullCodecDesc() const
+{
+    std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+    result->name = "CODEC";
+    result->arguments = getCodecDesc();
+    return result;
+}
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {

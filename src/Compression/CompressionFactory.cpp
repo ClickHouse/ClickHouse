@@ -140,9 +140,9 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
-        ASTPtr result = std::make_shared<ASTFunction>();
-        result->as<ASTFunction>()->name = "CODEC";
-        result->as<ASTFunction>()->arguments = codecs_descriptions;
+        std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+        result->name = "CODEC";
+        result->arguments = codecs_descriptions;
         return result;
     }
 
