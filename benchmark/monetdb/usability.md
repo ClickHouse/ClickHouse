@@ -2,7 +2,7 @@ Go to https://www.monetdb.org/
 
 The graphical design of the website is a bit old-fashioned but I do not afraid.
 
-Dowload now.
+Download now.
 Latest binary releases.
 Ubuntu & Debian.
 
@@ -1103,7 +1103,7 @@ Ok, it's doing something at least for twenty minues...
 clk: 28:02 min
 ```
 
-Finally it has loaded data successfuly in 28 minutes. It's not fast - just below 60 000 rows per second.
+Finally it has loaded data successfully in 28 minutes. It's not fast - just below 60 000 rows per second.
 
 But the second query from the test does not work:
 

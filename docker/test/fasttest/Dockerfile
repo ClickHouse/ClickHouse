@@ -11,41 +11,42 @@ RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 mai
 
 
 RUN apt-get --allow-unauthenticated update -y \
-  && env DEBIAN_FRONTEND=noninteractive \
-      apt-get --allow-unauthenticated install --yes --no-install-recommends \
-          bash \
-          fakeroot \
-          ccache \
-          software-properties-common \
-          apt-transport-https \
-          ca-certificates \
-          wget \
-          bash \
-          fakeroot \
-          cmake \
-          ccache \
-          llvm-10 \
-          clang-10 \
-          lld-10 \
-          clang-tidy-10 \
-          ninja-build \
-          gperf \
-          git \
-          tzdata \
-          gperf \
-          rename \
-          build-essential \
-          expect \
-          python \
-          python-lxml \
-          python-termcolor \
-          python-requests \
-          unixodbc \
-          qemu-user-static \
-          sudo \
-          moreutils \
-          curl \
-          brotli
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get --allow-unauthenticated install --yes --no-install-recommends \
+            apt-transport-https \
+            bash \
+            bash \
+            brotli \
+            build-essential \
+            ca-certificates \
+            ccache \
+            ccache \
+            clang-10 \
+            clang-tidy-10 \
+            cmake \
+            curl \
+            expect \
+            fakeroot \
+            fakeroot \
+            git \
+            gperf \
+            gperf \
+            lld-10 \
+            llvm-10 \
+            moreutils \
+            ninja-build \
+            psmisc \
+            python \
+            python-lxml \
+            python-requests \
+            python-termcolor \
+            qemu-user-static \
+            rename \
+            software-properties-common \
+            sudo \
+            tzdata \
+            unixodbc \
+            wget
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
