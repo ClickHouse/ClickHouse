@@ -4,6 +4,7 @@ set (SRCS
     AST/ColumnExpr.cpp
     AST/ColumnTypeExpr.cpp
     AST/CreateDatabaseQuery.cpp
+    AST/CreateMaterializedViewQuery.cpp
     AST/CreateTableQuery.cpp
     AST/DDLQuery.cpp
     AST/DescribeQuery.cpp

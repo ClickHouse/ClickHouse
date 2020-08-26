@@ -20,6 +20,7 @@ public:
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx) override;
     antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx) override;
     antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override;
+    antlrcpp::Any visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext *ctx) override;
     antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx) override;
     antlrcpp::Any visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx) override;
     antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override;

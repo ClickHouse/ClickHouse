@@ -31,15 +31,15 @@ public:
     SECOND = 89, SELECT = 90, SEMI = 91, SET = 92, SETTINGS = 93, SHOW = 94, 
     TABLE = 95, TABLES = 96, TEMPORARY = 97, THEN = 98, TIES = 99, TO = 100, 
     TOTALS = 101, TRAILING = 102, TRIM = 103, TTL = 104, UNION = 105, USE = 106, 
-    USING = 107, VALUES = 108, VOLUME = 109, WEEK = 110, WHEN = 111, WHERE = 112, 
-    WITH = 113, YEAR = 114, IDENTIFIER = 115, FLOATING_LITERAL = 116, HEXADECIMAL_LITERAL = 117, 
-    INTEGER_LITERAL = 118, STRING_LITERAL = 119, ARROW = 120, ASTERISK = 121, 
-    BACKQUOTE = 122, BACKSLASH = 123, COLON = 124, COMMA = 125, CONCAT = 126, 
-    DASH = 127, DOT = 128, EQ_DOUBLE = 129, EQ_SINGLE = 130, GE = 131, GT = 132, 
-    LBRACKET = 133, LE = 134, LPAREN = 135, LT = 136, NOT_EQ = 137, PERCENT = 138, 
-    PLUS = 139, QUERY = 140, QUOTE_SINGLE = 141, RBRACKET = 142, RPAREN = 143, 
-    SEMICOLON = 144, SLASH = 145, UNDERSCORE = 146, SINGLE_LINE_COMMENT = 147, 
-    MULTI_LINE_COMMENT = 148, WHITESPACE = 149
+    USING = 107, VALUES = 108, VIEW = 109, VOLUME = 110, WEEK = 111, WHEN = 112, 
+    WHERE = 113, WITH = 114, YEAR = 115, IDENTIFIER = 116, FLOATING_LITERAL = 117, 
+    HEXADECIMAL_LITERAL = 118, INTEGER_LITERAL = 119, STRING_LITERAL = 120, 
+    ARROW = 121, ASTERISK = 122, BACKQUOTE = 123, BACKSLASH = 124, COLON = 125, 
+    COMMA = 126, CONCAT = 127, DASH = 128, DOT = 129, EQ_DOUBLE = 130, EQ_SINGLE = 131, 
+    GE = 132, GT = 133, LBRACKET = 134, LE = 135, LPAREN = 136, LT = 137, 
+    NOT_EQ = 138, PERCENT = 139, PLUS = 140, QUERY = 141, QUOTE_SINGLE = 142, 
+    RBRACKET = 143, RPAREN = 144, SEMICOLON = 145, SLASH = 146, UNDERSCORE = 147, 
+    SINGLE_LINE_COMMENT = 148, MULTI_LINE_COMMENT = 149, WHITESPACE = 150
   };
 
   enum {
@@ -337,6 +337,24 @@ public:
     virtual size_t getRuleIndex() const override;
 
    
+  };
+
+  class  CreateMaterializedViewStmtContext : public CreateStmtContext {
+  public:
+    CreateMaterializedViewStmtContext(CreateStmtContext *ctx);
+
+    antlr4::tree::TerminalNode *CREATE();
+    antlr4::tree::TerminalNode *MATERIALIZED();
+    antlr4::tree::TerminalNode *VIEW();
+    TableIdentifierContext *tableIdentifier();
+    antlr4::tree::TerminalNode *AS();
+    SelectUnionStmtContext *selectUnionStmt();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *NOT();
+    antlr4::tree::TerminalNode *EXISTS();
+    EngineExprContext *engineExpr();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
   class  CreateTableStmtContext : public CreateStmtContext {
@@ -2008,6 +2026,7 @@ public:
     antlr4::tree::TerminalNode *CHECK();
     antlr4::tree::TerminalNode *CLUSTER();
     antlr4::tree::TerminalNode *COLLATE();
+    antlr4::tree::TerminalNode *COMMENT();
     antlr4::tree::TerminalNode *CREATE();
     antlr4::tree::TerminalNode *CROSS();
     antlr4::tree::TerminalNode *DATABASE();
@@ -2087,6 +2106,7 @@ public:
     antlr4::tree::TerminalNode *UNION();
     antlr4::tree::TerminalNode *USE();
     antlr4::tree::TerminalNode *VALUES();
+    antlr4::tree::TerminalNode *VIEW();
     antlr4::tree::TerminalNode *VOLUME();
     antlr4::tree::TerminalNode *WEEK();
     antlr4::tree::TerminalNode *WHEN();

@@ -44,8 +44,9 @@ checkStmt: CHECK TABLE tableIdentifier;
 // CREATE statement
 
 createStmt
-    : CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?        # createDatabaseStmt
-    | CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause  # createTableStmt
+    : CREATE DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                           # createDatabaseStmt
+    | CREATE MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier engineExpr? AS selectUnionStmt  # createMaterializedViewStmt
+    | CREATE TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause                     # createTableStmt
     ;
 
 schemaClause
@@ -277,12 +278,12 @@ literal
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | BETWEEN | BOTH | BY | CASE | CAST | CHECK | CLUSTER
-    | COLLATE | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT | DROP
-    | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER
+    | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELETE | DESC | DESCENDING | DESCRIBE | DISK | DISTINCT
+    | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER
     | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH
     | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RIGHT | SAMPLE
     | SECOND | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE
-    | VALUES | VOLUME | WEEK | WHEN | WITH | YEAR
+    | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
 unaryOp: DASH | NOT;

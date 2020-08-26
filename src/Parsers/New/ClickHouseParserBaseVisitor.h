@@ -57,6 +57,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx) override {
     return visitChildren(ctx);
   }

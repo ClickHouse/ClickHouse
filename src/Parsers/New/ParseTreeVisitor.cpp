@@ -4,6 +4,7 @@
 #include <Parsers/New/AST/CheckQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
+#include <Parsers/New/AST/CreateMaterializedViewQuery.h>
 #include <Parsers/New/AST/CreateTableQuery.h>
 #include <Parsers/New/AST/DDLQuery.h>
 #include <Parsers/New/AST/DescribeQuery.h>
@@ -74,6 +75,13 @@ antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::Create
         !!ctx->IF(),
         ctx->databaseIdentifier()->accept(this),
         ctx->engineExpr() ? ctx->engineExpr()->accept(this).as<PtrTo<EngineExpr>>() : nullptr);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext *ctx)
+{
+    auto engine = ctx->engineExpr() ? ctx->engineExpr()->accept(this).as<PtrTo<EngineExpr>>() : nullptr;
+    return std::make_shared<CreateMaterializedViewQuery>(
+        !!ctx->IF(), ctx->tableIdentifier()->accept(this), engine, ctx->selectUnionStmt()->accept(this));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *ctx)
