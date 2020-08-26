@@ -28,10 +28,12 @@ void GTIDSets::parse(const String gtid_format)
     }
 
     std::vector<String> gtid_sets;
-    boost::split(gtid_sets, gtid_format,boost::is_any_of(", "), boost::token_compress_on);
+    boost::split(gtid_sets, gtid_format, [](char c) { return c == ','; });
 
-    for (const auto & gset : gtid_sets)
+    for (const auto & gs : gtid_sets)
     {
+        auto gset = boost::trim_copy(gs);
+
         std::vector<String> server_ids;
         boost::split(server_ids, gset, [](char c) { return c == ':'; });
 
