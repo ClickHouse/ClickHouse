@@ -475,22 +475,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
         return {};
 
     NameSet result = {"checksums.txt", "columns.txt"};
-    String path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
-    if (volume->getDisk()->exists(path))
-    {
-        std::cerr << "PATH:" << path << "EXISTS\n";
+    String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
-    }
-    else
-    {
-        Names files;
-        volume->getDisk()->listFiles(getFullRelativePath(), files);
-        std::cerr << "PATH:" << path << " doesn't exists\n";
-        for (auto & file : files)
-        {
-            std::cerr << "FILE:" << file << std::endl;
-        }
-    }
 
     return result;
 }
