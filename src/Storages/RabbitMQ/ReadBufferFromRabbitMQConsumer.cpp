@@ -120,7 +120,7 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
     /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
      * specific queue when its name is specified in queue_base setting.
      */
-    const String queue_name = !hash_exchange ? queue_base : queue_base + "_" + std::to_string(channel_id_base) + "_" + std::to_string(queue_id);
+    const String queue_name = !hash_exchange ? queue_base : std::to_string(channel_id_base) + "_" + std::to_string(queue_id) + "_" + queue_base;
     setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
     while (!binding_created)
@@ -173,7 +173,7 @@ void ReadBufferFromRabbitMQConsumer::ackMessages()
     AckTracker record = last_inserted_record;
 
     /// Do not send ack to server if message's channel is not the same as current running channel.
-    if (record.channel_id == channel_id && record.delivery_tag && record.delivery_tag > prev_tag)
+    if (record.channel_id == channel_id && record.delivery_tag && record.delivery_tag > prev_tag && event_handler->connectionRunning())
     {
         consumer_channel->ack(record.delivery_tag, AMQP::multiple); /// Will ack all up to last tag starting from last acked.
         prev_tag = record.delivery_tag;

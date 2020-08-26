@@ -36,8 +36,11 @@ void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
+    LOG_DEBUG(log, "Background loop started");
     while (loop_state.load() == Loop::RUN)
         uv_run(loop, UV_RUN_NOWAIT);
+
+    LOG_DEBUG(log, "Background loop ended");
 }
 
 void RabbitMQHandler::iterateLoop()
