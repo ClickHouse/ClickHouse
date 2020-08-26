@@ -13,6 +13,7 @@
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Storages/StorageMySQL.h>
+#    include <Storages/StorageTableFunction.h>
 #    include <TableFunctions/ITableFunction.h>
 #    include <TableFunctions/TableFunctionFactory.h>
 #    include <TableFunctions/TableFunctionMySQL.h>
@@ -20,8 +21,6 @@
 #    include <Common/parseAddress.h>
 #    include <Common/quoteString.h>
 #    include "registerTableFunctions.h"
-
-#    include <mysqlxx/Pool.h>
 
 
 namespace DB
@@ -35,8 +34,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Context & context) const
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -52,14 +50,12 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+    String host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+    password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-    bool replace_query = false;
-    std::string on_duplicate_clause;
     if (args.size() >= 6)
         replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;
     if (args.size() == 7)
@@ -71,9 +67,14 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
             ErrorCodes::BAD_ARGUMENTS);
 
     /// 3306 is the default MySQL port number
-    auto parsed_host_port = parseAddress(host_port, 3306);
+    parsed_host_port = parseAddress(host_port, 3306);
+}
 
-    mysqlxx::Pool pool(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+{
+    parseArguments(ast_function, context);
+    if (!pool)
+        pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
     /// Determine table definition by running a query to INFORMATION_SCHEMA.
 
@@ -99,7 +100,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         << " ORDER BY ORDINAL_POSITION";
 
     NamesAndTypesList columns;
-    MySQLBlockInputStream result(pool.get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(pool->get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();
@@ -117,16 +118,34 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     if (columns.empty())
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    auto res = StorageMySQL::create(
+    return ColumnsDescription{columns};
+}
+
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+{
+    parseArguments(ast_function, context);
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(ast_function, context);
+    if (!pool)
+        pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+
+    auto get_structure = [=, tf = shared_from_this()]()
+    {
+        return tf->getActualTableStructure(ast_function, context);
+    };
+
+    auto res = std::make_shared<StorageTableFunction<StorageMySQL>>(std::move(get_structure),
         StorageID(getDatabaseName(), table_name),
-        std::move(pool),
+        std::move(*pool),
         remote_database_name,
         remote_table_name,
         replace_query,
         on_duplicate_clause,
-        ColumnsDescription{columns},
+        cached_columns,
         ConstraintsDescription{},
         context);
+
+    pool.reset();
 
     res->startup();
     return res;

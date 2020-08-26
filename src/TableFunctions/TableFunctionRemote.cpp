@@ -236,7 +236,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(const ASTPtr & ast_function, const Context & context)
+ColumnsDescription TableFunctionRemote::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
 {
     prepareClusterInfo(ast_function, context);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);

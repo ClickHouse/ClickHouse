@@ -22,6 +22,12 @@ private:
     const char * getStorageTypeName() const override { return "SystemNumbers"; }
 
     UInt64 evaluateArgument(const Context & context, ASTPtr & argument) const;
+
+    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+
+    mutable UInt64 offset = 0;
+    mutable UInt64 length;
 };
 
 

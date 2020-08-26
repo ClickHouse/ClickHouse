@@ -29,17 +29,17 @@ protected:
         const Context & context,
         const std::string & table_name) const override;
 
-    static StoragePtr getStorage(
-        const String & source,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & format,
-        const ColumnsDescription & columns,
-        Context & global_context,
-        const std::string & table_name,
-        const String & compression_method);
-
     const char * getStorageTypeName() const override { return "S3"; }
+
+    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+
+    mutable String filename;
+    mutable String format;
+    mutable String structure;
+    mutable String access_key_id;
+    mutable String secret_access_key;
+    mutable String compression_method = "auto";
 };
 
 class TableFunctionCOS : public TableFunctionS3

@@ -4,6 +4,7 @@
 
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
+#include <Storages/StorageTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -21,8 +22,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionS3::parseArguments(const ASTPtr & ast_function, const Context & context) const
 {
+
+
     /// Parse args
     ASTs & args_func = ast_function->children;
 
@@ -38,11 +41,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    String filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    String format;
-    String structure;
-    String access_key_id;
-    String secret_access_key;
+    filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() < 5)
     {
@@ -57,47 +56,49 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
         structure = args[4]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
-    String compression_method;
     if (args.size() == 4 || args.size() == 6)
         compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        compression_method = "auto";
+}
 
-    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+ColumnsDescription TableFunctionS3::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+{
+    parseArguments(ast_function, context);
+    return parseColumnsListFromString(structure, context);
+}
 
-    /// Create table
-    StoragePtr storage = getStorage(filename, access_key_id, secret_access_key, format, columns, const_cast<Context &>(context), table_name, compression_method);
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+{
+    parseArguments(ast_function, context);
+
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(ast_function, context);
+
+    auto get_structure = [=, tf = shared_from_this()]()
+    {
+        return tf->getActualTableStructure(ast_function, context);
+    };
+
+    Poco::URI uri (filename);
+    S3::URI s3_uri (uri);
+    UInt64 min_upload_part_size = context.getSettingsRef().s3_min_upload_part_size;
+
+    StoragePtr storage = std::make_shared<StorageTableFunction<StorageS3>>(std::move(get_structure),
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            StorageID(getDatabaseName(), table_name),
+            format,
+            min_upload_part_size,
+            cached_columns,
+            ConstraintsDescription{},
+            const_cast<Context &>(context),
+            compression_method);
 
     storage->startup();
 
     return storage;
 }
 
-StoragePtr TableFunctionS3::getStorage(
-    const String & source,
-    const String & access_key_id,
-    const String & secret_access_key,
-    const String & format,
-    const ColumnsDescription & columns,
-    Context & global_context,
-    const std::string & table_name,
-    const String & compression_method)
-{
-    Poco::URI uri (source);
-    S3::URI s3_uri (uri);
-    UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(
-        s3_uri,
-        access_key_id,
-        secret_access_key,
-        StorageID(getDatabaseName(), table_name),
-        format,
-        min_upload_part_size,
-        columns,
-        ConstraintsDescription{},
-        global_context,
-        compression_method);
-}
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {

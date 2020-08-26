@@ -9,11 +9,12 @@
 namespace DB
 {
 StoragePtr TableFunctionFile::getStorage(
-    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const std::string & compression_method) const
+    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context,
+    const std::string & table_name, const std::string & compression_method, GetStructureFunc get_structure) const
 {
     StorageFile::CommonArguments args{StorageID(getDatabaseName(), table_name), format, compression_method, columns, ConstraintsDescription{}, global_context};
 
-    return StorageFile::create(source, global_context.getUserFilesPath(), args);
+    return std::make_shared<StorageTableFunction<StorageFile>>(std::move(get_structure), source, global_context.getUserFilesPath(), args);
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

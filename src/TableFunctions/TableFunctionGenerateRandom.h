@@ -16,6 +16,15 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
     const char * getStorageTypeName() const override { return "GenerateRandom"; }
+
+    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+
+    mutable String structure;
+    mutable UInt64 max_string_length = 10;
+    mutable UInt64 max_array_length = 10;
+    mutable std::optional<UInt64> random_seed;
+
 };
 
 

@@ -24,7 +24,7 @@ class Context;
   * - go to `example01-01-1`, in `merge` database, `hits` table.
   */
 
-class ITableFunction
+class ITableFunction : public std::enable_shared_from_this<ITableFunction>
 {
 public:
     static inline std::string getDatabaseName() { return "_table_function"; }
@@ -32,7 +32,7 @@ public:
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
-    virtual ColumnsDescription getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) { return {}; }
+    virtual ColumnsDescription getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) const { return {}; }
 
     /// Create storage according to the query.
     StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;

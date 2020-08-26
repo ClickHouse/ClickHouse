@@ -1,6 +1,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
@@ -45,8 +46,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
     return any_table->getInMemoryMetadataPtr()->getColumns().getAllPhysical();
 }
 
-
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -65,12 +65,30 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
-    String source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+}
 
-    auto res = StorageMerge::create(
+ColumnsDescription TableFunctionMerge::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+{
+    parseArguments(ast_function, context);
+    return ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)};
+}
+
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+{
+    parseArguments(ast_function, context);
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(ast_function, context);
+
+    auto get_structure = [=, tf = shared_from_this()]()
+    {
+        return tf->getActualTableStructure(ast_function, context);
+    };
+
+    auto res = std::make_shared<StorageTableFunction<StorageMerge>>(std::move(get_structure),
         StorageID(getDatabaseName(), table_name),
-        ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)},
+        cached_columns,
         source_database,
         table_name_regexp,
         context);
