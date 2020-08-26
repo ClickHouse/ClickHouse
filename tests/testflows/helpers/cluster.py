@@ -258,22 +258,22 @@ class Cluster(object):
         with Given("docker-compose"):
             max_attempts = 5
             for attempt in range(max_attempts):
-                with When("attempt {attempt}/{max_attempts}"):
+                with When(f"attempt {attempt}/{max_attempts}"):
                     with By("pulling images for all the services"):
-                        cmd = self.command(None, f'{self.docker_compose} pull 2>&1 | tee', exitcode=None, timeout=timeout)
+                        cmd = self.command(None, f"{self.docker_compose} pull 2>&1 | tee", exitcode=None, timeout=timeout)
                         if cmd.exitcode != 0:
                             continue
                     with And("executing docker-compose down just in case it is up"):
-                        cmd = self.command(None, f'{self.docker_compose} down 2>&1 | tee', exitcode=None, timeout=timeout)
+                        cmd = self.command(None, f"{self.docker_compose} down 2>&1 | tee", exitcode=None, timeout=timeout)
                         if cmd.exitcode != 0:
                             continue
                     with And("executing docker-compose up"):
-                        cmd = self.command(None, f'{self.docker_compose} up -d 2>&1 | tee', timeout=timeout)
+                        cmd = self.command(None, f"{self.docker_compose} up -d 2>&1 | tee", timeout=timeout)
 
                     with Then("check there are no unhealthy containers"):
                         if "is unhealthy" in cmd.output:
-                            self.command(None, f'{self.docker_compose} ps | tee')
-                            self.command(None, f'{self.docker_compose} logs | tee')
+                            self.command(None, f"{self.docker_compose} ps | tee")
+                            self.command(None, f"{self.docker_compose} logs | tee")
 
                     if cmd.exitcode == 0:
                         break
