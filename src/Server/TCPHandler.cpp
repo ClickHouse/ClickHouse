@@ -351,6 +351,8 @@ void TCPHandler::runImpl()
                     tryLogCurrentException(log, "Can't send logs to client");
                 }
 
+                const auto & e = *exception;
+                LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
