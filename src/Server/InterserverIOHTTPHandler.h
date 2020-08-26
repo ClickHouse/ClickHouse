@@ -1,9 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
+#include <Interpreters/InterserverCredentials.h>
 
 
 namespace CurrentMetrics
@@ -41,7 +43,9 @@ private:
 
     void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output);
 
-    std::pair<String, bool> checkAuthentication(Poco::Net::HTTPServerRequest & request) const;
+    bool checkAuthentication(Poco::Net::HTTPServerRequest & request) const;
+    const std::string default_user = "";
+    const std::string default_password = "";
 };
 
 }

@@ -20,35 +20,25 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int WRONG_PASSWORD;
 }
 
-std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
+bool InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
 {
-    const auto & config = server.config();
+    auto creds = server.context().getInterserverCredential();
+    if (!request.hasCredentials())
+        return creds->isValidUser(std::make_pair(default_user, default_password));
 
-    if (config.has("interserver_http_credentials.user"))
-    {
-        if (!request.hasCredentials())
-            return {"Server requires HTTP Basic authentication, but client doesn't provide it", false};
-        String scheme, info;
-        request.getCredentials(scheme, info);
+    String scheme, info;
+    request.getCredentials(scheme, info);
 
-        if (scheme != "Basic")
-            return {"Server requires HTTP Basic authentication but client provides another method", false};
+    if (scheme != "Basic")
+        throw Exception("Server requires HTTP Basic authentication but client provides another method", ErrorCodes::NOT_IMPLEMENTED);
 
-        String user = config.getString("interserver_http_credentials.user");
-        String password = config.getString("interserver_http_credentials.password", "");
-
-        Poco::Net::HTTPBasicCredentials credentials(info);
-        if (std::make_pair(user, password) != std::make_pair(credentials.getUsername(), credentials.getPassword()))
-            return {"Incorrect user or password in HTTP Basic authentication", false};
-    }
-    else if (request.hasCredentials())
-    {
-        return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
-    }
-    return {"", true};
+    Poco::Net::HTTPBasicCredentials credentials(info);
+    return creds->isValidUser(std::make_pair(credentials.getUsername(), credentials.getPassword()));
 }
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
@@ -95,7 +85,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
 
     try
     {
-        if (auto [message, success] = checkAuthentication(request); success)
+        if (checkAuthentication(request))
         {
             processQuery(request, response, used_output);
             LOG_DEBUG(log, "Done processing query");
@@ -104,12 +94,21 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         {
             response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
-                writeString(message, *used_output.out);
+                writeString("Unauthorized.", *used_output.out);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
         }
     }
     catch (Exception & e)
     {
+        if (e.code() == ErrorCodes::WRONG_PASSWORD)
+        {
+            response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
+            if (!response.sent())
+                writeString("Unauthorized.", *used_output.out);
+            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            return;
+        }
+
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
             return;
 
