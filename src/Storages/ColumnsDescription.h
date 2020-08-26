@@ -31,7 +31,7 @@ struct ColumnDescription
     DataTypePtr type;
     ColumnDefault default_desc;
     String comment;
-    std::optional<CompressionCodecDescription> codec;
+    ASTPtr codec;
     ASTPtr ttl;
 
     ColumnDescription() = default;

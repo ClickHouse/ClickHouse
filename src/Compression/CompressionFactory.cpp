@@ -48,20 +48,20 @@ void CompressionCodecFactory::validateCodec(const String & family_name, std::opt
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetDescription(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetDescription(makeASTFunction("CODEC", identifier), {}, sanity_check);
+        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier), {}, sanity_check);
     }
 }
 
-CompressionCodecDescription CompressionCodecFactory::validateCodecAndGetDescription(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const
+ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        Strings codecs_descriptions;
+        ASTPtr codecs_descriptions = std::make_shared<ASTExpressionList>();
 
         bool is_compression = false;
         bool has_none = false;
@@ -95,12 +95,12 @@ CompressionCodecDescription CompressionCodecFactory::validateCodecAndGetDescript
                         "{} codec cannot have any arguments, it's just an alias for codec specified in config.xml", DEFAULT_CODEC_NAME);
 
                 result_codec = default_codec;
-                codecs_descriptions.emplace_back(codec_family_name);
+                codecs_descriptions->children.emplace_back(std::make_shared<ASTIdentifier>(DEFAULT_CODEC_NAME));
             }
             else
             {
                 result_codec = getImpl(codec_family_name, codec_arguments, column_type);
-                codecs_descriptions.emplace_back(result_codec->getCodecDesc());
+                codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
             is_compression |= result_codec->isCompression();
@@ -110,11 +110,11 @@ CompressionCodecDescription CompressionCodecFactory::validateCodecAndGetDescript
                 generic_compression_codec_pos = i;
         }
 
-        String codec_description = boost::algorithm::join(codecs_descriptions, ", ");
+        String codec_description = queryToString(codecs_descriptions);
 
         if (sanity_check)
         {
-            if (codecs_descriptions.size() > 1 && has_none)
+            if (codecs_descriptions->children.size() > 1 && has_none)
                 throw Exception(
                     "It does not make sense to have codec NONE along with other compression codecs: " + codec_description
                         + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
@@ -134,13 +134,16 @@ CompressionCodecDescription CompressionCodecFactory::validateCodecAndGetDescript
 
             /// It does not make sense to apply any transformations after generic compression algorithm
             /// So, generic compression can be only one and only at the end.
-            if (generic_compression_codec_pos && *generic_compression_codec_pos != codecs_descriptions.size() - 1)
+            if (generic_compression_codec_pos && *generic_compression_codec_pos != codecs_descriptions->children.size() - 1)
                 throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
                     " because it does not make sense to apply any transformations after generic compression algorithm."
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
-        return CompressionCodecDescription{ast, codec_description};
+        ASTPtr result = std::make_shared<ASTFunction>();
+        result->as<ASTFunction>()->name = "CODEC";
+        result->as<ASTFunction>()->arguments = codecs_descriptions;
+        return result;
     }
 
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);

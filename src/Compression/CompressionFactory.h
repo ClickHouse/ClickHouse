@@ -20,23 +20,6 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using CodecNameWithLevel = std::pair<String, std::optional<int>>;
 
-/// Description for codec. AST and description may differ, because some codecs
-/// may add some default parameters to their description.
-///
-/// NOTE: We store both AST and preprocessed description. It would be simplier to use only AST
-/// everywhere, but historically we store preprocessed codecs description in metadata files,
-/// so now we cannot replace it with AST specified by user.
-struct CompressionCodecDescription
-{
-    /// AST specified by user, for example "CODEC(Delta, LZ4HC)". Used to get
-    /// ICompressionCodec object from factory.
-    ASTPtr ast;
-
-    /// String description with substituted codecs parameters: "Delta(4), LZ4HC(5)".
-    /// Stored in text representation of ColumnsDescription.
-    String description;
-};
-
 /** Creates a codec object by name of compression algorithm family and parameters.
  */
 class CompressionCodecFactory final : private boost::noncopyable
@@ -55,7 +38,7 @@ public:
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    CompressionCodecDescription validateCodecAndGetDescription(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const;
 
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check) const;

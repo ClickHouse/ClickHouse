@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -29,7 +30,7 @@ public:
     virtual uint8_t getMethodByte() const = 0;
 
     /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
-    virtual String getCodecDesc() const = 0;
+    virtual ASTPtr getCodecDesc() const = 0;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;

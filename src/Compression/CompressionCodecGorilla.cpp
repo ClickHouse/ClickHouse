@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -248,9 +249,9 @@ uint8_t CompressionCodecGorilla::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
-String CompressionCodecGorilla::getCodecDesc() const
+ASTPtr CompressionCodecGorilla::getCodecDesc() const
 {
-    return "Gorilla";
+    return std::make_shared<ASTIdentifier>("Gorilla");
 }
 
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
