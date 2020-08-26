@@ -148,7 +148,7 @@ SHOW CREATE [ROW] POLICY name ON [database.]table
 
 Shows parameters that were used at a [quota creation](../../sql-reference/statements/create/quota.md).
 
-### Syntax {#show-create-row-policy-syntax}
+### Syntax {#show-create-quota-syntax}
 
 ``` sql
 SHOW CREATE QUOTA [name | CURRENT]
@@ -158,23 +158,70 @@ SHOW CREATE QUOTA [name | CURRENT]
 
 Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
-### Syntax {#show-create-row-policy-syntax}
+### Syntax {#show-create-settings-profile-syntax}
 
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name
 ```
 
-## SHOW USERS
+## SHOW USERS {#show-users-statement}
 
-## SHOW [CURRENT|ENABLED] ROLES
+Shows a list of usernames. See [user account](../../operations/access-rights.md#user-account-management).
 
-## SHOW [SETTINGS] PROFILES
+### Syntax {#show-users-syntax}
 
-## SHOW [ROW] POLICIES [ON [db.]table]
+``` sql
+SHOW USERS
+```
 
-## SHOW QUOTAS
+## SHOW ROLES {#show-roles-statement}
 
-## SHOW [CURRENT] QUOTA
+Shows a list of [roles](../../operations/access-rights.md#role-management).
 
+### Syntax {#show-roles-syntax}
+
+``` sql
+SHOW [CURRENT|ENABLED] ROLES
+```
+
+## SHOW PROFILES {#show-profiles-statement}
+
+Shows a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management).
+
+### Syntax {#show-profiles-syntax}
+
+``` sql
+SHOW [SETTINGS] PROFILES
+```
+
+## SHOW POLICIES {#show-policies-statement}
+
+Shows a list of [row policies](../../operations/access-rights.md#row-policy-management) for the specified table.
+
+### Syntax {#show-policies-syntax}
+
+``` sql
+SHOW [ROW] POLICIES [ON [db.]table]
+```
+
+## SHOW QUOTAS {#show-quotas-statement}
+
+Shows a list of [quotas](../../operations/access-rights.md#quotas-management).
+
+### Syntax {#show-quotas-syntax}
+
+``` sql
+SHOW QUOTAS
+```
+
+## SHOW QUOTA {#show-quota-statement}
+
+Shows a [quota](../../operations/quotas.md) consumption for current user.
+
+### Syntax {#show-quota-syntax}
+
+``` sql
+SHOW [CURRENT] QUOTA
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
