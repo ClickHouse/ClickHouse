@@ -9,7 +9,6 @@ def _fill_nodes(nodes, shard):
         node.query(
             '''
                 CREATE DATABASE test;
-    
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
             '''.format(shard=shard, replica=node.name))
@@ -135,6 +134,7 @@ def credentials_and_no_credentials_cluster():
 
 
 def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
+    # Initial state: node7 requires auth; node8 open
     node7.query("insert into test_table values ('2017-06-21', 111, 0)")
     time.sleep(1)
 
@@ -144,5 +144,25 @@ def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
     node8.query("insert into test_table values ('2017-06-22', 222, 1)")
     time.sleep(1)
 
-    assert node7.query("SELECT id FROM test_table order by id") == '111\n'
+    assert node7.query("SELECT id FROM test_table order by id") == '111\n222\n'
     assert node8.query("SELECT id FROM test_table order by id") == '222\n'
+
+    allow_empty = """
+    <yandex>
+        <interserver_http_port>9009</interserver_http_port>
+        <interserver_http_credentials>
+            <user>admin</user>
+            <password>222</password>
+            <allow_empty>true</allow_empty>
+        </interserver_http_credentials>
+    </yandex>
+    """
+
+    # change state: Flip node7 to mixed auth/non-auth (allow node8)
+    node7.replace_config("/etc/clickhouse-server/config.d/credentials1.xml",
+                         allow_empty)
+    node7.query("insert into test_table values ('2017-06-22', 333, 1)")
+    node8.query("DETACH TABLE test_table")
+    node8.query("ATTACH TABLE test_table")
+    time.sleep(3)
+    assert node8.query("SELECT id FROM test_table order by id") == '111\n222\n333\n'

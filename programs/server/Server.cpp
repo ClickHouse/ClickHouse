@@ -47,6 +47,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -620,16 +621,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    if (config().has("interserver_http_credentials"))
-    {
-        String user = config().getString("interserver_http_credentials.user", "");
-        String password = config().getString("interserver_http_credentials.password", "");
-
-        if (user.empty())
-            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-        global_context->setInterserverCredentials(user, password);
-    }
+    LOG_DEBUG(log, "Initiaializing InterserverCredentials.");
+    global_context->updateInterserverCredentials(config());
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
@@ -673,6 +666,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
             global_context->updateStorageConfiguration(*config);
+            global_context->updateInterserverCredentials(*config);
         },
         /* already_loaded = */ true);
 
