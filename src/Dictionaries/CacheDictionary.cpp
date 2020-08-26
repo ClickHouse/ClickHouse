@@ -817,7 +817,7 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
         update_unit_ptr->can_use_callback = false;
         throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                             "Dictionary {} source seems unavailable, because {}ms timeout exceeded.",
-                            getDictionaryID().getNameForLogs(), toString(timeout_for_wait));
+                            getDictionaryID().getNameForLogs(), toString(query_wait_timeout_milliseconds));
     }
 
 
