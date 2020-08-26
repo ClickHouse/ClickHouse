@@ -107,26 +107,6 @@ def test_prewhere_not_supported():
     assert node.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
 
 
-def test_single_table_name():
-    copy_policy_xml('tag_with_table_name.xml')
-    assert node.query("SELECT * FROM mydb.table") == TSV([[1, 0], [1, 1]])
-    assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 0, 0], [0, 0, 6, 0]])
-    assert node.query("SELECT * FROM mydb.filtered_table3") == TSV([[0, 1], [1, 0]])
-
-    assert node.query("SELECT a FROM mydb.table") == TSV([[1], [1]])
-    assert node.query("SELECT b FROM mydb.table") == TSV([[0], [1]])
-    assert node.query("SELECT a FROM mydb.table WHERE a = 1") == TSV([[1], [1]])
-    assert node.query("SELECT a = 1 FROM mydb.table") == TSV([[1], [1]])
-
-    assert node.query("SELECT a FROM mydb.filtered_table3") == TSV([[0], [1]])
-    assert node.query("SELECT b FROM mydb.filtered_table3") == TSV([[1], [0]])
-    assert node.query("SELECT c FROM mydb.filtered_table3") == TSV([[1], [1]])
-    assert node.query("SELECT a + b FROM mydb.filtered_table3") == TSV([[1], [1]])
-    assert node.query("SELECT a FROM mydb.filtered_table3 WHERE c = 1") == TSV([[0], [1]])
-    assert node.query("SELECT c = 1 FROM mydb.filtered_table3") == TSV([[1], [1]])
-    assert node.query("SELECT a + b = 1 FROM mydb.filtered_table3") == TSV([[1], [1]])
-
-
 def test_policy_from_users_xml_affects_only_user_assigned():
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1,0], [1, 1]])
     assert node.query("SELECT * FROM mydb.filtered_table1", user="another") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
@@ -136,26 +116,6 @@ def test_policy_from_users_xml_affects_only_user_assigned():
 
     assert node.query("SELECT * FROM mydb.local") == TSV([[1,0], [1, 1], [2, 0], [2, 1]])
     assert node.query("SELECT * FROM mydb.local", user="another") == TSV([[1, 0], [1, 1]])
-
-
-def test_custom_table_name():
-    copy_policy_xml('multiple_tags_with_table_names.xml')
-    assert node.query("SELECT * FROM mydb.table") == TSV([[1, 0], [1, 1]])
-    assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 0, 0], [0, 0, 6, 0]])
-    assert node.query("SELECT * FROM mydb.`.filtered_table4`") == TSV([[0, 1], [1, 0]])
-
-    assert node.query("SELECT a FROM mydb.table") == TSV([[1], [1]])
-    assert node.query("SELECT b FROM mydb.table") == TSV([[0], [1]])
-    assert node.query("SELECT a FROM mydb.table WHERE a = 1") == TSV([[1], [1]])
-    assert node.query("SELECT a = 1 FROM mydb.table") == TSV([[1], [1]])
-
-    assert node.query("SELECT a FROM mydb.`.filtered_table4`") == TSV([[0], [1]])
-    assert node.query("SELECT b FROM mydb.`.filtered_table4`") == TSV([[1], [0]])
-    assert node.query("SELECT c FROM mydb.`.filtered_table4`") == TSV([[1], [1]])
-    assert node.query("SELECT a + b FROM mydb.`.filtered_table4`") == TSV([[1], [1]])
-    assert node.query("SELECT a FROM mydb.`.filtered_table4` WHERE c = 1") == TSV([[0], [1]])
-    assert node.query("SELECT c = 1 FROM mydb.`.filtered_table4`") == TSV([[1], [1]])
-    assert node.query("SELECT a + b = 1 FROM mydb.`.filtered_table4`") == TSV([[1], [1]])
 
 
 def test_change_of_users_xml_changes_row_policies():
@@ -294,6 +254,20 @@ def test_dcl_management():
 
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", node.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
+
+
+def test_tags_with_db_and_table_names():
+    copy_policy_xml('tags_with_db_and_table_names.xml')
+    
+    assert node.query("SELECT * FROM mydb.table") == TSV([[0, 0], [0, 1]])
+    assert node.query("SELECT * FROM mydb.filtered_table2") == TSV([[0, 0, 6, 0]])
+    assert node.query("SELECT * FROM mydb.filtered_table3") == TSV([[0, 0]])
+    assert node.query("SELECT * FROM mydb.`.filtered_table4`") == TSV([[1, 1]])
+
+    assert node.query("SHOW CREATE POLICIES default") == TSV(["CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
+                                                              "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
+                                                              "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
+                                                              "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default"])
 
 
 def test_miscellaneous_engines():

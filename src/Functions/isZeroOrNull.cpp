@@ -1,5 +1,4 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>

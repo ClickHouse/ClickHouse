@@ -44,13 +44,21 @@ using namespace GatherUtils;
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
   */
 
+template <typename From, typename To>
+inline To special_cast(From x)
+{
+    if constexpr (is_big_int_v<To> && std::is_same_v<From, UInt8>)
+        return static_cast<To>(static_cast<UInt16>(x));
+    else
+        return static_cast<To>(x);
+}
 
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = PaddedPODArray<A>;
-    using ArrayB = PaddedPODArray<B>;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayB = typename ColumnVector<B>::Container;
     using ColVecResult = ColumnVector<ResultType>;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
@@ -60,7 +68,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            res[i] = cond[i] ? special_cast<A, ResultType>(a[i]) : special_cast<B, ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -71,7 +79,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+            res[i] = cond[i] ? special_cast<A, ResultType>(a[i]) : special_cast<B, ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -82,7 +90,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+            res[i] = cond[i] ? special_cast<A, ResultType>(a) : special_cast<B, ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
@@ -93,7 +101,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+            res[i] = cond[i] ? special_cast<A, ResultType>(a) : special_cast<B, ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 };
@@ -103,8 +111,8 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
 {
     using ResultType = Decimal<R>;
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = DecimalPaddedPODArray<Decimal<A>>;
-    using ArrayB = DecimalPaddedPODArray<Decimal<B>>;
+    using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
+    using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
@@ -701,19 +709,13 @@ private:
 
         if (cond_is_true)
         {
-            if (result_column.type->equals(*column1.type))
-            {
-                result_column.column = std::move(column1.column);
-                return true;
-            }
+            result_column.column = castColumn(column1, result_column.type);
+            return true;
         }
         else if (cond_is_false || cond_is_null)
         {
-            if (result_column.type->equals(*column2.type))
-            {
-                result_column.column = std::move(column2.column);
-                return true;
-            }
+            result_column.column = castColumn(column2, result_column.type);
+            return true;
         }
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*not_const_condition))

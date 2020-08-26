@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS mt_compact"
 
@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE table = 'mt_compac
 $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES mt_compact"
 
 # Retry because already started concurrent merges may interrupt optimize
-for i in {0..10}; do
+for _ in {0..10}; do
     $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE mt_compact FINAL SETTINGS optimize_throw_if_noop=1" 2>/dev/null
     if [ $? -eq 0 ]; then
         break

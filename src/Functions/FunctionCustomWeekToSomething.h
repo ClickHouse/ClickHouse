@@ -51,7 +51,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -67,7 +67,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[2].type))
@@ -75,7 +75,7 @@ public:
                     "Function " + getName()
                         + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                          "a constant UInt8 with week mode. The 3nd argument (optional) must be "
+                          "a constant UInt8 with week mode. The 3rd argument (optional) must be "
                           "a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)

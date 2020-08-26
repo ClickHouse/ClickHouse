@@ -34,6 +34,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromStorageStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -488,7 +489,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     /// We must guarantee that result structure is the same as in getSampleBlock()
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
-        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header);
+        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header, true);
         query_plan.addStep(std::move(converting));
     }
 }
@@ -874,6 +875,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
+            }
+
+            if (expressions.before_array_join)
+            {
+                QueryPlanStepPtr before_array_join_step = std::make_unique<ExpressionStep>(
+                        query_plan.getCurrentDataStream(),
+                        expressions.before_array_join);
+                before_array_join_step->setStepDescription("Before ARRAY JOIN");
+                query_plan.addStep(std::move(before_array_join_step));
+            }
+
+            if (expressions.array_join)
+            {
+                QueryPlanStepPtr array_join_step = std::make_unique<ArrayJoinStep>(
+                        query_plan.getCurrentDataStream(),
+                        expressions.array_join);
+
+                array_join_step->setStepDescription("ARRAY JOIN");
+                query_plan.addStep(std::move(array_join_step));
             }
 
             if (expressions.before_join)
@@ -1545,8 +1565,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     const Settings & settings = context->getSettingsRef();
 
     Aggregator::Params params(header_before_transform, keys, query_analyzer->aggregates(),
-                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              SettingUInt64(0), SettingUInt64(0),
+                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 

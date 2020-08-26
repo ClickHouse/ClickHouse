@@ -1,4 +1,4 @@
-# system.metric\_log {#system_tables-metric_log}
+# system.metric_log {#system_tables-metric_log}
 
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
@@ -50,6 +50,8 @@ CurrentMetric_ReplicatedChecks:                             0
 **See also**
 
 -   [system.asynchronous\_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
--   [system.events](../../operations/system-tables/events.md) — Contains a number of events that occurred.
+-   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
 -   [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/metric_log) <!--hide-->

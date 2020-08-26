@@ -1087,7 +1087,7 @@ SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) 
 └───┴─────┘
 ```
 
-Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference.md#agg_function-sum), содержащее сумму одного числа.
+Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), содержащее сумму одного числа.
 
 Весь запрос делает следующее:
 

@@ -89,14 +89,11 @@ CH只支持用单引号包含的字母。特殊字符可通过反斜杠进行转
 在字符串中，你至少需要对 `'` 和 `\` 进行转义。单引号可以使用单引号转义，例如 `'It\'s'` 和 `'It''s'` 是相同的。
 
 ### 括号 {#compound}
+
 数组都是使用方括号进行构造 `[1, 2, 3]`，元组则使用圆括号 `(1, 'Hello, world!', 2)`
-
 从技术上来讲，这些都不是字符串，而是包含创建数组和元组运算符的表达式。
-
 创建一个数组必须至少包含一个元素，创建一个元组至少包含2个元素
-
 当元组出现在 `SELECT` 查询的 `IN` 部分时，是一种例外情形。查询结果可以包含元组，但是元组类型不能保存到数据库中（除非表采用 [内存表](../engines/table-engines/special/memory.md)引擎）
-
 
 ### NULL值 {#null-literal}
 
@@ -187,9 +184,8 @@ select查询中，星号可以代替表达式使用。详情请参见“select�
 
 ## 表达式 {#syntax-expressions}
 
-
-An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
-A list of expressions is one or more expressions separated by commas.
-Functions and operators, in turn, can have expressions as arguments.
+表达式是函数、标识符、字符、运算符的应用程序、括号中的表达式、子查询或星号。它也可以包含别名。
+表达式列表是用逗号分隔的一个或多个表达式。
+反过来，函数和运算符可以将表达式作为参数。
 
 [原始文档](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->

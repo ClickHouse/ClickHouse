@@ -5,11 +5,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
-#include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
 #include <common/arithmeticOverflow.h>
-
-#include <common/defines.h>
 
 #include <memory>
 

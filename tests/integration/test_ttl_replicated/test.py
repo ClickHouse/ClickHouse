@@ -5,9 +5,11 @@ import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
+
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -22,10 +24,12 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def drop_table(nodes, table_name):
     for node in nodes:
         node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
     time.sleep(1)
+
 
 def test_ttl_columns(started_cluster):
     drop_table([node1, node2], "test_ttl")
@@ -45,6 +49,40 @@ def test_ttl_columns(started_cluster):
     expected = "1\t0\t0\n2\t0\t0\n"
     assert TSV(node1.query("SELECT id, a, b FROM test_ttl ORDER BY id")) == TSV(expected)
     assert TSV(node2.query("SELECT id, a, b FROM test_ttl ORDER BY id")) == TSV(expected)
+
+
+def test_merge_with_ttl_timeout(started_cluster):
+    table = "test_merge_with_ttl_timeout"
+    drop_table([node1, node2], table)
+    for node in [node1, node2]:
+        node.query(
+        '''
+            CREATE TABLE {table}(date DateTime, id UInt32, a Int32 TTL date + INTERVAL 1 DAY, b Int32 TTL date + INTERVAL 1 MONTH)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}', '{replica}')
+            ORDER BY id PARTITION BY toDayOfMonth(date);
+        '''.format(replica=node.name, table=table))
+
+    node1.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
+    node2.query("SYSTEM STOP TTL MERGES {table}".format(table=table))
+
+    for i in range(1, 4):
+        node1.query("INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
+
+    assert node1.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "0\n"
+    assert node2.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "0\n"
+
+    node1.query("SYSTEM START TTL MERGES {table}".format(table=table))
+    node2.query("SYSTEM START TTL MERGES {table}".format(table=table))
+
+    time.sleep(15) # TTL merges shall happen.
+
+    for i in range(1, 4):
+        node1.query("INSERT INTO {table} VALUES (toDateTime('2000-10-{day:02d} 10:00:00'), 1, 2, 3)".format(day=i, table=table))
+
+    time.sleep(15) # TTL merges shall not happen.
+
+    assert node1.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
+    assert node2.query("SELECT countIf(a = 0) FROM {table}".format(table=table)) == "3\n"
 
 
 def test_ttl_many_columns(started_cluster):

@@ -780,8 +780,10 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         ArrayImpl::NullMapBuilder builder;
         Block source_block;
 
-        const auto & input_type = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType();
-        const auto & tmp_ret_type = typeid_cast<const DataTypeNullable &>(*block.getByPosition(result).type).getNestedType();
+        const DataTypePtr & input_type = typeid_cast<const DataTypeNullable &>(
+            *typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType();
+
+        DataTypePtr tmp_ret_type = removeNullable(block.getByPosition(result).type);
 
         if (col_array)
         {

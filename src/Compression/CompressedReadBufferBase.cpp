@@ -1,14 +1,11 @@
 #include "CompressedReadBufferBase.h"
 
-#include <vector>
 #include <cstring>
 #include <cassert>
 #include <city.h>
-#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/hex.h>
-#include <common/unaligned.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
@@ -47,7 +44,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     std::stringstream message;
 
-    /// TODO mess up of endianess in error message.
+    /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
         " Reference: " + getHexUIntLowercase(expected_checksum.first) + getHexUIntLowercase(expected_checksum.second)
         + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)

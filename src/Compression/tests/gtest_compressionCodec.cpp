@@ -11,8 +11,6 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 
-#include <fmt/format.h>
-
 #include <random>
 #include <bitset>
 #include <cmath>
@@ -700,7 +698,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integral_v<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
@@ -1276,7 +1274,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
     )
 );
 
-// These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
+// These 'tests' try to measure performance of encoding and decoding and hence only make sense to be run locally,
 // also they require pretty big data to run against and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 

@@ -42,4 +42,4 @@ def test_null_value(started_cluster):
 
     # Check, that empty null_value interprets as default value
     assert query("select dictGetUInt64('cache', 'UInt64_', toUInt64(12121212))") == "0\n"
-    assert query("select dictGetDateTime('cache', 'DateTime_', toUInt64(12121212))") == "0000-00-00 00:00:00\n"
+    assert query("select toTimeZone(dictGetDateTime('cache', 'DateTime_', toUInt64(12121212)), 'UTC')") == "1970-01-01 00:00:00\n"

@@ -17,7 +17,7 @@
   * This is very unusual function made as a special order for Yandex.Metrica.
   *
   * arrayEnumerateUniqRanked(['hello', 'world', 'hello']) = [1, 1, 2]
-  * - it returns similar structured array containing number of occurence of the corresponding value.
+  * - it returns similar structured array containing number of occurrence of the corresponding value.
   *
   * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['hello']], 1) = [1, 1, 2]
   * - look at the depth 1 by default. Elements are ['hello', 'world'], ['hello'], ['hello'].
@@ -118,8 +118,8 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
-    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+    /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     void executeMethodImpl(
         const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,

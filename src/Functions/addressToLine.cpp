@@ -1,6 +1,5 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
-#include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/HashTable/HashMap.h>
@@ -9,7 +8,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>

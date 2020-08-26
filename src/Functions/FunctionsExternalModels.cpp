@@ -4,8 +4,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <string>

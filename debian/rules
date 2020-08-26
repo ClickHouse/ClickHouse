@@ -101,7 +101,7 @@ override_dh_clean:
 	dh_clean # -X contrib
 
 override_dh_strip:
-#https://www.debian.org/doc/debian-policy/ch-source.html#debian-rules-and-deb-build-options
+	#https://www.debian.org/doc/debian-policy/ch-source.html#debian-rules-and-deb-build-options
 ifeq (,$(filter nostrip,$(DEB_BUILD_OPTIONS)))
 	dh_strip -pclickhouse-common-static --dbg-package=clickhouse-common-static-dbg
 endif

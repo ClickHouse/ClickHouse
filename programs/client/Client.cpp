@@ -57,7 +57,7 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
-#include <Parsers/ParserQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -67,6 +67,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -126,7 +127,6 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool has_received_logs = false;      /// We have received some logs, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -160,6 +160,7 @@ private:
     /// Console output.
     WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
+
     /// The user can specify to redirect query output to a file.
     std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
@@ -232,10 +233,10 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef().allUnchanged())
         {
-            const String & name = setting.getName().toString();
-            if (config().has(name) && !setting.isChanged())
+            const auto & name = setting.getName();
+            if (config().has(name))
                 context.setSetting(name, config().getString(name));
         }
 
@@ -789,7 +790,7 @@ private:
         // in particular, it can't distinguish the end of partial input buffer
         // and the final end of input file. This means we have to try to split
         // the input into separate queries here. Two patterns of input are
-        // especially interesing:
+        // especially interesting:
         // 1) multiline query:
         //      select 1
         //      from system.numbers;
@@ -1040,9 +1041,21 @@ private:
             full_query = text.substr(this_query_begin - text.data(),
                 begin - text.data());
 
+            // Don't repeat inserts, the tables grow too big. Also don't repeat
+            // creates because first we run the unmodified query, it will succeed,
+            // and the subsequent queries will fail. When we run out of fuzzer
+            // errors, it may be interesting to add fuzzing of create queries that
+            // wraps columns into LowCardinality or Nullable. Also there are other
+            // kinds of create queries such as CREATE DICTIONARY, we could fuzz
+            // them as well.
+            int this_query_runs = query_fuzzer_runs;
+            if (as_insert
+                || orig_ast->as<ASTCreateQuery>())
+            {
+                this_query_runs = 1;
+            }
+
             ASTPtr fuzz_base = orig_ast;
-            // Don't repeat inserts, the tables grow too big.
-            const int this_query_runs = as_insert ? 1 : query_fuzzer_runs;
             for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
             {
                 fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
@@ -1539,8 +1552,7 @@ private:
                         cancelled = true;
                         if (is_interactive)
                         {
-                            if (written_progress_chars)
-                                clearProgress();
+                            clearProgress();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -1627,7 +1639,8 @@ private:
                 return false;
 
             default:
-                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection->getDescription());
         }
     }
 
@@ -1795,9 +1808,6 @@ private:
 
     void onData(Block & block)
     {
-        if (written_progress_chars)
-            clearProgress();
-
         if (!block)
             return;
 
@@ -1814,18 +1824,23 @@ private:
             written_first_block = true;
         }
 
+        bool clear_progess = std_out.offset() > 0;
+        if (clear_progess)
+            clearProgress();
+
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        writeProgress();
+        if (clear_progess)
+            writeProgress();
     }
 
 
     void onLogData(Block & block)
     {
-        has_received_logs = true;
         initLogsOutputStream();
+        clearProgress();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -1853,15 +1868,18 @@ private:
         }
         if (block_out_stream)
             block_out_stream->onProgress(value);
+
         writeProgress();
     }
 
 
     void clearProgress()
     {
-        written_progress_chars = 0;
-        if (!has_received_logs)
+        if (written_progress_chars)
+        {
+            written_progress_chars = 0;
             std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+        }
     }
 
 
@@ -1888,8 +1906,15 @@ private:
 
         const char * indicator = indicators[increment % 8];
 
-        if (!has_received_logs && written_progress_chars)
-            message << '\r';
+        size_t terminal_width = getTerminalWidth();
+
+        if (!written_progress_chars)
+        {
+            /// If the current line is not empty, the progress must be output on the next line.
+            /// The trick is found here: https://www.vidarholen.net/contents/blog/?p=878
+            message << std::string(terminal_width, ' ');
+        }
+        message << '\r';
 
         size_t prefix_size = message.count();
 
@@ -1925,7 +1950,7 @@ private:
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(getTerminalWidth()) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
@@ -1941,10 +1966,6 @@ private:
         }
 
         message << CLEAR_TO_END_OF_LINE;
-
-        if (has_received_logs)
-            message << '\n';
-
         ++increment;
 
         message.next();
@@ -2005,6 +2026,8 @@ private:
 
     void onEndOfStream()
     {
+        clearProgress();
+
         if (block_out_stream)
             block_out_stream->writeSuffix();
 
@@ -2015,8 +2038,7 @@ private:
 
         if (is_interactive && !written_first_block)
         {
-            if (written_progress_chars)
-                clearProgress();
+            clearProgress();
             std::cout << "Ok." << std::endl;
         }
     }
@@ -2252,9 +2274,9 @@ public:
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (const auto & setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef().all())
         {
-            const String name = setting.getName().toString();
+            const auto & name = setting.getName();
             if (options.count(name))
                 config().setString(name, options[name].as<std::string>());
         }

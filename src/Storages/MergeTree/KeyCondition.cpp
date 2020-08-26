@@ -463,7 +463,33 @@ static Field applyFunctionForField(
     return (*block.safeGetByPosition(1).column)[0];
 }
 
-static FieldRef applyFunction(FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+/// The case when arguments may have types different than in the primary key.
+static std::pair<Field, DataTypePtr> applyFunctionForFieldOfUnknownType(
+    const FunctionOverloadResolverPtr & func,
+    const DataTypePtr & arg_type,
+    const Field & arg_value)
+{
+    ColumnWithTypeAndName argument = { arg_type->createColumnConst(1, arg_value), arg_type, "x" };
+
+    FunctionBasePtr func_base = func->build({argument});
+
+    DataTypePtr return_type = func_base->getReturnType();
+
+    Block block
+    {
+        std::move(argument),
+        { nullptr, return_type, "result" }
+    };
+
+    func_base->execute(block, {0}, 1, 1);
+
+    Field result = (*block.safeGetByPosition(1).column)[0];
+
+    return {std::move(result), std::move(return_type)};
+}
+
+
+static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     /// Fallback for fields without block reference.
     if (field.isExplicit())
@@ -530,7 +556,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         return false;
 
     bool found_transformation = false;
-    for (const ExpressionAction & a : key_expr->getActions())
+    for (const ExpressionAction & action : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
           * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
@@ -542,23 +568,27 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
           * Instead, we can qualify only functions that do not transform the range (for example rounding),
           * which while not strictly monotonic, are monotonic everywhere on the input range.
           */
-        const auto & action = a.argument_names;
-        if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
+        const auto & argument_names = action.argument_names;
+        if (action.type == ExpressionAction::Type::APPLY_FUNCTION
+            && argument_names.size() == 1
+            && argument_names[0] == expr_name)
         {
-            if (!a.function_base->hasInformationAboutMonotonicity())
+            if (!action.function_base->hasInformationAboutMonotonicity())
                 return false;
 
-            // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
+            /// Range is irrelevant in this case.
+            IFunction::Monotonicity monotonicity = action.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
-            // Apply the next transformation step
-            out_value = applyFunctionForField(a.function_base, out_type, out_value);
-            out_type = a.function_base->getReturnType();
-            expr_name = a.result_name;
+            /// Apply the next transformation step.
+            std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(
+                action.function_builder,
+                out_type, out_value);
 
-            // Transformation results in a key expression, accept
+            expr_name = action.result_name;
+
+            /// Transformation results in a key expression, accept.
             auto it = key_columns.find(expr_name);
             if (key_columns.end() != it)
             {
@@ -792,23 +822,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 is_set_const = true;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                     && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
             {
                 key_arg_pos = 0;
             }
             else if (getConstant(args[1], block_with_constants, const_value, const_type)
-                     && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
             {
                 key_arg_pos = 0;
                 is_constant_transformed = true;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                     && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+                && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
             {
                 key_arg_pos = 1;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                     && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
             {
                 key_arg_pos = 1;
                 is_constant_transformed = true;
@@ -1089,7 +1119,7 @@ BoolMask KeyCondition::checkInRange(
 /*      std::cerr << "Hyperrectangle: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
             std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
-        std::cerr << ": " << res << "\n";*/
+        std::cerr << ": " << res.can_be_true << "\n";*/
 
         return res;
     });
@@ -1098,10 +1128,10 @@ BoolMask KeyCondition::checkInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    MonotonicFunctionsChain & functions,
+    const MonotonicFunctionsChain & functions,
     DataTypePtr current_type)
 {
-    for (auto & func : functions)
+    for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
         IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
@@ -1112,10 +1142,20 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             return {};
         }
 
+        /// If we apply function to open interval, we can get empty intervals in result.
+        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+        /// To avoid this we make range left and right included.
         if (!key_range.left.isNull())
+        {
             key_range.left = applyFunction(func, current_type, key_range.left);
+            key_range.left_included = true;
+        }
+
         if (!key_range.right.isNull())
+        {
             key_range.right = applyFunction(func, current_type, key_range.right);
+            key_range.right_included = true;
+        }
 
         current_type = func->getReturnType();
 

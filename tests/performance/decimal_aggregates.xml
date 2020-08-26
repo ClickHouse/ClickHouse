@@ -1,6 +1,6 @@
 <test max_ignored_relative_change="0.4">
     <settings>
-        <max_memory_usage>30G</max_memory_usage>
+        <max_memory_usage>35G</max_memory_usage>
     </settings>
 
     <create_query>CREATE TABLE t (x UInt64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>

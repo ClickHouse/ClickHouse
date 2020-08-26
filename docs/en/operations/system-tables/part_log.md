@@ -1,4 +1,4 @@
-# system.part\_log {#system_tables-part-log}
+# system.part_log {#system_tables-part-log}
 
 The `system.part_log` table is created only if the [part\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
 
@@ -30,3 +30,5 @@ The `system.part_log` table contains the following columns:
 -   `exception` (String) — Text message of the occurred error.
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/part_log) <!--hide-->

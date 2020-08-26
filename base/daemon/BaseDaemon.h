@@ -29,7 +29,7 @@
 namespace Poco { class TaskManager; }
 
 
-/// \brief Base class for applications that can run as deamons.
+/// \brief Base class for applications that can run as daemons.
 ///
 /// \code
 /// # Some possible command line options:
@@ -192,6 +192,8 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id_info;
+
+    std::vector<int> handled_signals;
 };
 
 
