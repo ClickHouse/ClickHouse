@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -18,14 +19,14 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
-    CompressionCodecPtr default_codec,
+    CompressionCodecPtr default_codec_,
     bool blocks_are_granules_size)
     : MergedBlockOutputStream(
         data_part,
         metadata_snapshot_,
         columns_list_,
         skip_indices,
-        default_codec,
+        default_codec_,
         {},
         data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size)
@@ -37,12 +38,13 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
-    CompressionCodecPtr default_codec,
+    CompressionCodecPtr default_codec_,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
     bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
+    , default_codec(default_codec_)
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
@@ -120,6 +122,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsSizesOnDisk();
+    new_part->default_codec = default_codec;
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
@@ -160,6 +163,11 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(part_path + "columns.txt", 4096);
         part_columns.writeText(*out);
+    }
+
+    {
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
+        DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
     }
 
     {

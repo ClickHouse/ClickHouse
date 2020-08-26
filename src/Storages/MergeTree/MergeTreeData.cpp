@@ -113,9 +113,6 @@ namespace ErrorCodes
 }
 
 
-const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
-
-
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -754,10 +751,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
+    MutableDataPartsVector parts_without_default_compression;
     size_t suspicious_broken_parts = 0;
 
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
+    std::atomic<size_t> total_active_parts_size = 0;
 
     ThreadPool pool(num_threads);
 
@@ -777,7 +776,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             bool broken = false;
 
             String part_path = relative_data_path + "/" + part_name;
-            String marker_path = part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH;
+            String marker_path = part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
             if (part_disk_ptr->exists(marker_path))
             {
                 LOG_WARNING(log, "Detaching stale part {}{}, which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.", getFullPathOnDisk(part_disk_ptr), part_name);
@@ -790,6 +789,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             try
             {
                 part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+                /// If it was not successful we will try to get default
+                /// compression from config.xml
+                if (!part->loadDefaultCompressionCodec())
+                {
+                    std::lock_guard loading_lock(mutex);
+                    parts_without_default_compression.push_back(part);
+                }
             }
             catch (const Exception & e)
             {
@@ -872,6 +878,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             std::lock_guard loading_lock(mutex);
             if (!data_parts_indexes.insert(part).second)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+            total_active_parts_size += part->getBytesOnDisk();
         });
     }
 
@@ -890,6 +897,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
     }
 
+    /// Deduce codec based on part size and total parts size with rules from
+    /// config.xml
+    for (auto & part : parts_without_default_compression)
+        part->detectAndSetDefaultCompressionCodec(total_active_parts_size);
+
     if (has_non_adaptive_parts && has_adaptive_parts && !settings->enable_mixed_granularity_parts)
         throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
 
@@ -903,6 +915,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         part->remove();
     for (auto & part : broken_parts_to_detach)
         part->renameToDetached("");
+
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
     /// were merged), but that for some reason are still not deleted from the filesystem.
@@ -953,6 +966,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     calculateColumnSizesImpl();
+
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
@@ -2357,7 +2371,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             modifyPartState(part_it, DataPartState::Committed);
 
             auto disk = original_active_part->volume->getDisk();
-            String marker_path = original_active_part->getFullRelativePath() + DELETE_ON_DESTROY_MARKER_PATH;
+            String marker_path = original_active_part->getFullRelativePath() + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
             try
             {
                 disk->createFile(marker_path);
@@ -2419,22 +2433,16 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 }
 
 
-static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
+static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, size_t total_active_parts_size)
 {
     auto disk = part->volume->getDisk();
     String full_part_path = part->getFullRelativePath();
 
     part->loadColumnsChecksumsIndexes(false, true);
+    if (!part->loadDefaultCompressionCodec())
+        part->detectAndSetDefaultCompressionCodec(total_active_parts_size);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
 }
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const
-{
-    MutableDataPartPtr part = createPart(Poco::Path(relative_path).getFileName(), volume, relative_path);
-    loadPartAndFixMetadataImpl(part);
-    return part;
-}
-
 
 void MergeTreeData::calculateColumnSizesImpl()
 {
@@ -2906,12 +2914,14 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     LOG_DEBUG(log, "Checking parts");
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+
+    size_t total_active_parts_size = getTotalActiveSizeInBytes();
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", part_names.second);
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first]);
         MutableDataPartPtr part = createPart(part_names.first, single_disk_volume, source_dir + part_names.second);
-        loadPartAndFixMetadataImpl(part);
+        loadPartAndFixMetadataImpl(part, total_active_parts_size);
         loaded_parts.push_back(part);
     }
 
@@ -3273,7 +3283,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
-    disk->removeIfExists(dst_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+    disk->removeIfExists(dst_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
@@ -3364,7 +3374,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
         else
             localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);
 
-        part->volume->getDisk()->removeIfExists(backup_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+        part->volume->getDisk()->removeIfExists(backup_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
