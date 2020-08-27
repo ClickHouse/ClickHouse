@@ -1272,6 +1272,9 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & types) const override
     {
+        if (2 != types.size())
+            return false;
+
         auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1]))
@@ -1284,6 +1287,8 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(2 == types.size() && 2 == values.size());
+
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         auto * x = values[0]();
         auto * y = values[1]();
