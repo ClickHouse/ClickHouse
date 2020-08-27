@@ -2,6 +2,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 #include <Core/Types.h>
+#include <Common/UInt128.h>
 
 
 namespace DB
@@ -59,7 +60,7 @@ public:
     Poco::Net::SocketAddress initial_address;
     
     
-    UInt128 trace_id;
+    __uint128_t trace_id;
     UInt64 span_id;
     UInt64 parent_span_id;
 
