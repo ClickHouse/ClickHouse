@@ -1613,7 +1613,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 
-Включает или отключает для таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) возможность полного удаления кусков данных, в которых все записи устарели. 
+Для таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) включает или отключает  возможность полного удаления кусков данных, в которых все записи устарели. 
 
 Когда настройка `ttl_only_drop_parts` отключена (т.е. по умолчанию), сервер лишь удаляет устаревшие записи в соответствии с их временем жизни (TTL). 
 
