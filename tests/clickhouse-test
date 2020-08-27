@@ -16,7 +16,7 @@ from subprocess import Popen
 from subprocess import PIPE
 from subprocess import CalledProcessError
 from datetime import datetime
-from time import sleep
+from time import time, sleep
 from errno import ESRCH
 try:
     import termcolor
@@ -167,6 +167,7 @@ def colored(text, args, color=None, on_color=None, attrs=None):
 
 SERVER_DIED = False
 exit_code = 0
+stop_time = None
 
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
@@ -174,6 +175,7 @@ def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
     global exit_code
     global SERVER_DIED
+    global stop_time
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=['bold'])
     CL_SQUARE_BRACKET = colored("]", args, attrs=['bold'])
@@ -200,6 +202,10 @@ def run_tests_array(all_tests_with_params):
 
     for case in all_tests:
         if SERVER_DIED:
+            break
+
+        if stop_time and time() > stop_time:
+            print("\nStop tests run because global time limit is exceeded.\n")
             break
 
         case_file = os.path.join(suite_dir, case)
@@ -457,6 +463,7 @@ def collect_build_flags(client):
 
 def main(args):
     global SERVER_DIED
+    global stop_time
     global exit_code
     global server_logs_level
 
@@ -495,6 +502,10 @@ def main(args):
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
+
+    # This code is bad as the time is not monotonic
+    if args.global_time_limit:
+        stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
@@ -716,6 +727,7 @@ if __name__ == '__main__':
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
     parser.add_argument('-o', '--output', help='Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type=int, default=600, help='Timeout for each test case in seconds')
+    parser.add_argument('--global_time_limit', type=int, help='Stop if executing more than specified time (after current test finished)')
     parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
