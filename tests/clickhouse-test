@@ -39,7 +39,7 @@ MESSAGES_TO_RETRY = [
 def json_minify(string):
     """
     Removes all js-style comments from json string. Allows to have comments in skip_list.json.
-    The code taken from https://github.com/getify/JSON.minify/tree/python
+    The code taken from https://github.com/getify/JSON.minify/tree/python under the MIT license.
     """
 
     tokenizer = re.compile('"|(/\*)|(\*/)|(//)|\n|\r')
