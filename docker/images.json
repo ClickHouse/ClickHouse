@@ -16,15 +16,6 @@
         "name": "yandex/clickhouse-unbundled-builder",
         "dependent": []
     },
-    "docker/test/base": {
-        "name": "yandex/clickhouse-test-base",
-        "dependent": [
-            "docker/test/stateless_with_coverage",
-            "docker/test/coverage",
-            "docker/test/stateless_pytest",
-            "docker/test/stateless"
-        ]
-    },
     "docker/test/coverage": {
         "name": "yandex/clickhouse-coverage",
         "dependent": []
