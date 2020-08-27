@@ -1087,14 +1087,15 @@ void Context::setCurrentQueryId(const String & query_id)
             UInt64 a;
             UInt64 b;
         } words;
-        UInt128 uuid;
+        __uint128_t uuid;
     } random;
 
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
     
-    trace_id = random.uuid;
-
+    client_info.trace_id = random.uuid;
+    client_info.span_id = 1;
+    client_info.parent_span_id = 0;
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.

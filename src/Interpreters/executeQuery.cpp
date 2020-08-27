@@ -30,6 +30,7 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/OpenTelemetryLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -146,6 +147,11 @@ static void logQuery(const String & query, const Context & context, bool interna
             (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             joinLines(query));
+        
+        LOG_TRACE(&Poco::Logger::get("executeQuery"),
+            "OpenTelemetry trace id {:x}, span id {:x}, parent span id {:x}",
+            context.getClientInfo().trace_id, context.getClientInfo().span_id,
+            context.getClientInfo().parent_span_id);
     }
 }
 
@@ -215,6 +221,29 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
+
+    if (auto opentelemetry_log = context.getOpenTelemetryLog())
+    {
+        OpenTelemetrySpanLogElement span;
+        span.trace_id = context.getClientInfo().trace_id;
+        span.span_id = context.getClientInfo().span_id;
+        span.parent_span_id = context.getClientInfo().parent_span_id;
+        span.operation_name = "query";
+        span.start_time = current_time;
+        span.finish_time = current_time;
+
+        // keep values synchonized to type enum in QueryLogElement::createBlock
+        span.attribute_names.push_back("status");
+        span.attribute_values.push_back("ExceptionBeforeStart");
+
+        span.attribute_names.push_back("query");
+        span.attribute_values.push_back(elem.query);
+
+        span.attribute_names.push_back("query_id");
+        span.attribute_values.push_back(elem.client_info.current_query_id);
+
+        opentelemetry_log->add(span);
+    }
 
     ProfileEvents::increment(ProfileEvents::FailedQuery);
 
@@ -587,6 +616,25 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (auto opentelemetry_log = context.getOpenTelemetryLog())
                 {
+                    OpenTelemetrySpanLogElement span;
+                    span.trace_id = context.getClientInfo().trace_id;
+                    span.span_id = context.getClientInfo().span_id;
+                    span.parent_span_id = context.getClientInfo().parent_span_id;
+                    span.operation_name = "query";
+                    span.start_time = elem.query_start_time;
+                    span.finish_time = time(nullptr); // current time
+
+                    // keep values synchonized to type enum in QueryLogElement::createBlock
+                    span.attribute_names.push_back("status");
+                    span.attribute_values.push_back("QueryFinish");
+
+                    span.attribute_names.push_back("query");
+                    span.attribute_values.push_back(elem.query);
+
+                    span.attribute_names.push_back("query_id");
+                    span.attribute_values.push_back(elem.client_info.current_query_id);
+
+                    opentelemetry_log->add(span);
                 }
             };
 
