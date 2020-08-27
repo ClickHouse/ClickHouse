@@ -32,6 +32,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
+#include <memory>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -344,47 +345,90 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
 
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
+    /// 0. Check if the replica needs to be restored (metadata missing).
+    // 1. Metadata is not present
+    // 2. Data is present
+
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    const String new_table_name = table_id.table_name + "_" + std::to_string(rand());
+
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     {
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
-
         ASTPtr create_query_ptr = std::make_shared<ASTCreateQuery>();
-        ASTCreateQuery& create_query = *create_query_ptr.get();
+        ASTCreateQuery& create_query = create_query_ptr->as<ASTCreateQuery&>();
 
-        create_query->database = table_id.database_name;
-        create_query->table = table_id.table_name;
-        create_query->uuid = table_id.uuid;
+        create_query.database = table_id.database_name;
+        create_query.uuid = table_id.uuid;
+        create_query.table = table_id.table_name;
+        create_query.as_table = new_table_name;
 
+        InterpreterCreateQuery interpreter_create(create_query_ptr, context);
 
-        InterpreterCreateQuery::execute();
+        /// catch the exception here
+        interpreter_create.execute();
     }
 
- // 1. Create a new replicated table with AS syntax from the old table.
- //
- // CREATE TABLE table_repl_rec AS default.table_repl;
- //
- // ClickHouse will throw an error, but it's okay. table will be created anyway.
- // 2. Stop replica fetches for the old table.
- //
- // SYSTEM STOP FETCHES table_repl;
- //
- // 3. Move parts to a new table that will register them in zookeeper.
- //
- // ALTER TABLE table_repl MOVE PARTITION 1 TO TABLE table_repl_rec;
- // ALTER TABLE table_repl MOVE PARTITION 2 TO TABLE table_repl_rec;
- //
- // Alternatively, you can run in bash:clickhouse-client --format=TSVRaw -q"SELECT 'ALTER TABLE ' || database || '.' || table || ' MOVE PARTITION ID \'' || partition_id || '\' TO TABLE ' || table || '_rec'  || ';\n' FROM system.parts WHERE database = 'default' AND table = 'table_repl' AND active GROUP BY database, table, partition_id ORDER BY database, table, partition_id;" | clickhouse-client -mn4.
- //
- // Switch tables.
- //
- // RENAME TABLE table_repl TO table_repl_old, table_repl_rec TO table_repl;
- //
- // 5. Detach old table.
- // DETACH TABLE table_repl_old;
- //
- // 6. Delete information about the old table, so it wouldn't be attached after clickhouse-server restart.
- //
- // rm -rf /var/lib/clickhouse/metadata/default/table_repl_old.sql
+    /// 2. Stop replica fetches for the old table (SYSTEM STOP FETCHES old)
+    {
+        ASTPtr stop_fetches_ptr = std::make_shared<ASTSystemQuery>();
+        ASTSystemQuery& stop_fetches_query = stop_fetches_ptr->as<ASTSystemQuery&>();
+
+        stop_fetches_query.database = table_id.database_name;
+        stop_fetches_query.table = table_id.table_name;
+        stop_fetches_query.type = ASTSystemQuery::Type::STOP_FETCHES;
+
+        InterpreterSystemQuery interpreter_stop_fetches(stop_fetches_ptr, context);
+
+        interpreter_stop_fetches.execute();
+    }
+
+    /// 3. Move parts to a new table that will register them in zookeeper.
+    {
+        /// 3.1 Get partition ids for old table
+        /// (SELECT partition_id FROM system.parts WHERE database = 'old_db' AND table = 'old' AND active)
+
+        ASTPtr get_partition_ids_ptr = std::make_shared<ASTSelectQuery>();
+        ASTSelectQuery& get_partition_ids_query = get_partition_ids_ptr->as<ASTSelectQuery&>();
+
+        get_partition_ids_query.
+
+        /// 3.2 Move partitions to the new table (ALTER TABLE old MOVE PARTITION ID x TO TABLE new).
+        ASTPtr move_partition_id_ptr = std::make_shared<ASTAlterQuery>();
+        ASTAlterQuery& move_partition_id_query = move_partition_id_ptr->as<ASTAlterQuery&>();
+    }
+
+    /// 4. Rename tables (RENAME TABLE new TO old, old TO new).
+    {
+        ASTPtr rename_ptr = std::make_shared<ASTRenameQuery>();
+
+        rename_ptr->as<ASTRenameQuery&>().elements =
+        {
+            {{table_id.database_name, table_id.table_name}, {table_id.database_name, new_table_name}}, // old -> new
+            {{table_id.database_name, new_table_name}, {table_id.database_name, table_id.table_name}}  // new -> old
+        };
+
+        InterpreterRenameQuery interpreter_rename(rename_ptr, context);
+
+        interpreter_rename.execute();
+    }
+
+    /// 5. Detach old table (DETACH TABLE old).
+    {
+        ASTPtr detach_ptr = std::make_shared<ASTDropQuery>();
+        ASTDropQuery& detach_query = detach_ptr->as<ASTDropQuery&>();
+
+        detach_query.kind = ASTDropQuery::Kind::Detach;
+        detach_query.database = table_id.database_name;
+        detach_query.uuid = table_id.uuid;
+        detach_query.table = table_id.table_name;
+
+        InterpreterDropQuery interpreter_drop(detach_ptr, context);
+
+        interpreter_drop.execute();
+    }
+
+     // 6. Delete information about the old table, so it wouldn't be attached after clickhouse-server restart.
+     // rm -rf /var/lib/clickhouse/metadata/default/table_repl_old.sql
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
