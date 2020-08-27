@@ -78,7 +78,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
     
     `TTL date + INTERVAl 1 DAY`
     
-    规则有两种类型类型 `DELETE|TO DISK` 或 `'xxx'|TO VOLUME` `'xxx'`指定了当满足条件（到达当前时间）时所要执行的动作：移除过期的行，还是将 PART （如果PART中的所有行都满足表达式的话）移动到指定的磁盘（`TO DISK 'xxx'`) 或 卷（`TO VOLUME 'xxx'`）。默认的规则是移除（`DELETE`）。可以在列表中指定多个规则，但最多只能有一个`DELETE`的规则。
+    规则的类型 `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'`指定了当满足条件（到达当前时间）时所要执行的动作：移除过期的行，还是将 PART （如果PART中的所有行都满足表达式的话）移动到指定的磁盘（`TO DISK 'xxx'`) 或 卷（`TO VOLUME 'xxx'`）。默认的规则是移除（`DELETE`）。可以在列表中指定多个规则，但最多只能有一个`DELETE`的规则。
 
 -   `SETTINGS` — 影响 `MergeTree` 性能的额外参数：
 
