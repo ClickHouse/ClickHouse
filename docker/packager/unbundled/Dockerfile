@@ -69,6 +69,6 @@ RUN apt-get update \
         libmysqlclient-dev \
         --yes --no-install-recommends
 
-COPY build.sh
+COPY build.sh /
 
 CMD ["/bin/bash", "/build.sh"]
