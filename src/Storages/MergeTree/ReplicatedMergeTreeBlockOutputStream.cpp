@@ -270,6 +270,46 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             /// Deletes the information that the block number is used for writing.
             block_number_lock->getUnlockOps(ops);
+
+            /** If we need a quorum - create a node in which the quorum is monitored.
+              * (If such a node already exists, then someone has managed to make another quorum record at the same time,
+              *  but for it the quorum has not yet been reached.
+              *  You can not do the next quorum record at this time.)
+              */
+            if (quorum)
+            {
+                ReplicatedMergeTreeQuorumEntry quorum_entry;
+                quorum_entry.part_name = part->name;
+                quorum_entry.required_number_of_replicas = quorum;
+                quorum_entry.replicas.insert(storage.replica_name);
+
+                /** At this point, this node will contain information that the current replica received a part.
+                    * When other replicas will receive this part (in the usual way, processing the replication log),
+                    *  they will add themselves to the contents of this node.
+                    * When it contains information about `quorum` number of replicas, this node is deleted,
+                    *  which indicates that the quorum has been reached.
+                    */
+
+                ops.emplace_back(
+                    zkutil::makeCreateRequest(
+                        quorum_info.status_path,
+                        quorum_entry.toString(),
+                        zkutil::CreateMode::Persistent));
+
+                /// Make sure that during the insertion time, the replica was not reinitialized or disabled (when the server is finished).
+                ops.emplace_back(
+                    zkutil::makeCheckRequest(
+                        storage.replica_path + "/is_active",
+                        quorum_info.is_active_node_version));
+
+                /// Unfortunately, just checking the above is not enough, because `is_active` node can be deleted and reappear with the same version.
+                /// But then the `host` value will change. We will check this.
+                /// It's great that these two nodes change in the same transaction (see MergeTreeRestartingThread).
+                ops.emplace_back(
+                    zkutil::makeCheckRequest(
+                        storage.replica_path + "/host",
+                        quorum_info.host_node_version));
+            }
         }
         else
         {
@@ -299,53 +339,10 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             /// Used only for exception messages.
             block_number = part->info.min_block;
-
-            /// Don't do subsequent duplicate check.
-            block_id_path.clear();
         }
 
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
-
-        /** If we need a quorum - create a node in which the quorum is monitored.
-          * (If such a node already exists, then someone has managed to make another quorum record at the same time,
-          *  but for it the quorum has not yet been reached.
-          *  You can not do the next quorum record at this time.)
-          */
-        if (quorum) /// TODO Duplicate blocks.
-        {
-            ReplicatedMergeTreeQuorumEntry quorum_entry;
-            quorum_entry.part_name = part->name;
-            quorum_entry.required_number_of_replicas = quorum;
-            quorum_entry.replicas.insert(storage.replica_name);
-
-            /** At this point, this node will contain information that the current replica received a part.
-                * When other replicas will receive this part (in the usual way, processing the replication log),
-                *  they will add themselves to the contents of this node.
-                * When it contains information about `quorum` number of replicas, this node is deleted,
-                *  which indicates that the quorum has been reached.
-                */
-
-            ops.emplace_back(
-                zkutil::makeCreateRequest(
-                    quorum_info.status_path,
-                    quorum_entry.toString(),
-                    zkutil::CreateMode::Persistent));
-
-            /// Make sure that during the insertion time, the replica was not reinitialized or disabled (when the server is finished).
-            ops.emplace_back(
-                zkutil::makeCheckRequest(
-                    storage.replica_path + "/is_active",
-                    quorum_info.is_active_node_version));
-
-            /// Unfortunately, just checking the above is not enough, because `is_active` node can be deleted and reappear with the same version.
-            /// But then the `host` value will change. We will check this.
-            /// It's great that these two nodes change in the same transaction (see MergeTreeRestartingThread).
-            ops.emplace_back(
-                zkutil::makeCheckRequest(
-                    storage.replica_path + "/host",
-                    quorum_info.host_node_version));
-        }
 
         MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
