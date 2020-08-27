@@ -798,10 +798,9 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
 {
     std::unique_lock<std::mutex> update_lock(update_mutex);
 
-    size_t timeout_for_wait = 100000;
     bool result = is_update_finished.wait_for(
             update_lock,
-            std::chrono::milliseconds(timeout_for_wait),
+            std::chrono::milliseconds(query_wait_timeout_milliseconds),
             [&] { return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (!result)
@@ -817,8 +816,8 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
          * */
         update_unit_ptr->can_use_callback = false;
         throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Dictionary {} source seems unavailable, because {} timeout exceeded.",
-                            getDictionaryID().getNameForLogs(), toString(timeout_for_wait));
+                            "Dictionary {} source seems unavailable, because {}ms timeout exceeded.",
+                            getDictionaryID().getNameForLogs(), toString(query_wait_timeout_milliseconds));
     }
 
 
