@@ -3291,6 +3291,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     dst_data_part->is_temp = true;
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+    dst_data_part->default_codec = src_part->default_codec;
     dst_data_part->modification_time = disk->getLastModified(dst_part_path).epochTime();
     return dst_data_part;
 }
