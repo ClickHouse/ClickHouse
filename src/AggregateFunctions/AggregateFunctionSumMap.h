@@ -348,7 +348,11 @@ private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
 
-    std::unordered_set<T> keys_to_keep;
+    /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
+    static constexpr const bool allow_hash = !OverBigInt<T>;
+    using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
+
+    ContainerT keys_to_keep;
 
 public:
     AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type_,
@@ -367,7 +371,9 @@ public:
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        keys_to_keep.reserve(keys_to_keep_.size());
+        if constexpr (allow_hash)
+            keys_to_keep.reserve(keys_to_keep_.size());
+
         for (const Field & f : keys_to_keep_)
         {
             keys_to_keep.emplace(f.safeGet<NearestFieldType<T>>());

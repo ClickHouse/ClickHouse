@@ -375,7 +375,7 @@ void MergeTreeData::checkProperties(
 
             if (indices_names.find(index.name) != indices_names.end())
                 throw Exception(
-                        "Index with name " + backQuote(index.name) + " already exsists",
+                        "Index with name " + backQuote(index.name) + " already exists",
                         ErrorCodes::LOGICAL_ERROR);
 
             indices_names.insert(index.name);
@@ -629,8 +629,8 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                                   std::back_inserter(names_intersection));
 
             if (!names_intersection.empty())
-                throw Exception("Colums: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
-                " listed both in colums to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Columns: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
+                " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -1037,7 +1037,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
                 ((part_remove_time < now &&
                 now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds()) || force
-                || isInMemoryPart(part))) /// Remove in-memory parts immediatly to not store excessive data in RAM
+                || isInMemoryPart(part))) /// Remove in-memory parts immediately to not store excessive data in RAM
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1225,7 +1225,8 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
-    global_context.dropCaches();
+    if (!getStorageID().hasUUID())
+        global_context.dropCaches();
 
     relative_data_path = new_table_path;
     renameInMemory(new_table_id);
@@ -1244,7 +1245,10 @@ void MergeTreeData::dropAllData()
     data_parts_indexes.clear();
     column_sizes.clear();
 
-    global_context.dropCaches();
+    /// Tables in atomic databases have UUID and stored in persistent locations.
+    /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
+    if (!getStorageID().hasUUID())
+        global_context.dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
@@ -1252,7 +1256,17 @@ void MergeTreeData::dropAllData()
     clearPartsFromFilesystem(all_parts);
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
-        disk->removeRecursive(path);
+    {
+        try
+        {
+            disk->removeRecursive(path);
+        }
+        catch (const Poco::FileNotFoundException &)
+        {
+            /// If the file is already deleted, log the error message and do nothing.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     LOG_TRACE(log, "dropAllData: done.");
 }

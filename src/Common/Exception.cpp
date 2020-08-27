@@ -56,7 +56,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 }
 
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(String(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
@@ -205,7 +205,19 @@ static std::string getExtraExceptionInfo(const std::exception & e)
         if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
         {
             if (file_exception->code() == ENOSPC)
-                getNoSpaceLeftInfoMessage(file_exception->message(), msg);
+            {
+                /// See Poco::FileImpl::handleLastErrorImpl(...)
+                constexpr const char * expected_error_message = "no space left on device: ";
+                if (startsWith(file_exception->message(), expected_error_message))
+                {
+                    String path = file_exception->message().substr(strlen(expected_error_message));
+                    getNoSpaceLeftInfoMessage(path, msg);
+                }
+                else
+                {
+                    msg += "\nCannot print extra info for Poco::Exception";
+                }
+            }
         }
         else if (const auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {
