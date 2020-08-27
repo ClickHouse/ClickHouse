@@ -78,7 +78,7 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
             auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
             {
                 auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
-                if (user_ptr && !user_ptr->granted_roles.roles.contains(id))
+                if (user_ptr && user_ptr->granted_roles.roles.find(id) == user_ptr->granted_roles.roles.end())
                 {
                     auto clone = user_ptr->clone();
                     auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
@@ -99,7 +99,7 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
             auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
             {
                 auto user_ptr = typeid_cast<std::shared_ptr<const User>>(cached_entity);
-                if (user_ptr && user_ptr->granted_roles.roles.contains(id))
+                if (user_ptr && user_ptr->granted_roles.roles.find(id) != user_ptr->granted_roles.roles.end())
                 {
                     auto clone = user_ptr->clone();
                     auto user_clone_ptr = typeid_cast<std::shared_ptr<User>>(clone);
