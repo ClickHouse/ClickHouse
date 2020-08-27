@@ -273,6 +273,9 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
         if (metadata.primary_key.definition_ast)
             storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
 
+        if (metadata.sampling_key.definition_ast && storage_ast.sample_by)
+            storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
+
         if (metadata.table_ttl.definition_ast)
             storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
 
