@@ -153,7 +153,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(1);
+        sleepForSeconds(10);
         call_default_signal_handler(sig);
     }
 
