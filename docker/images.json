@@ -2,10 +2,6 @@
     "docker/packager/deb": {
         "name": "yandex/clickhouse-deb-builder",
         "dependent": [
-            "docker/test/stateless",
-            "docker/test/stateless_with_coverage",
-            "docker/test/stateless_pytest",
-            "docker/test/coverage",
             "docker/packager/unbundled"
         ]
     },
@@ -136,6 +132,10 @@
     "docker/test/base": {
          "name": "yandex/clickhouse-test-base",
          "dependent": [
+            "docker/test/stateless",
+            "docker/test/stateless_with_coverage",
+            "docker/test/stateless_pytest",
+            "docker/test/coverage"
          ]
     },
     "docker/packager/unbundled": {
