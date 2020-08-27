@@ -1209,6 +1209,9 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & arguments) const override
     {
+        if (2 != arguments.size())
+            return false;
+
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
@@ -1226,6 +1229,8 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(2 == types.size() && 2 == values.size());
+
         llvm::Value * result = nullptr;
         castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
         {
