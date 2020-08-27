@@ -1,18 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <optional>
-
 #include <Disks/IVolume.h>
-
 
 namespace DB
 {
-
-class VolumeJBOD;
-
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
-using VolumesJBOD = std::vector<VolumeJBODPtr>;
 
 /**
  * Implements something similar to JBOD (https://en.wikipedia.org/wiki/Non-RAID_drive_architectures#JBOD).
@@ -22,21 +13,13 @@ using VolumesJBOD = std::vector<VolumeJBODPtr>;
 class VolumeJBOD : public IVolume
 {
 public:
-    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_allowed_)
+    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_)
         : IVolume(name_, disks_, max_data_part_size_)
-        , are_merges_allowed(are_merges_allowed_)
     {
     }
 
     VolumeJBOD(
         String name_,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        DiskSelectorPtr disk_selector
-    );
-
-    VolumeJBOD(
-        const VolumeJBOD & volume_jbod,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         DiskSelectorPtr disk_selector
@@ -55,18 +38,11 @@ public:
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
 
-    bool areMergesAllowed() const override;
-
-    void setAllowMergesFromQuery(bool allow) override;
-
-    /// True if parts on this volume participate in merges according to configuration.
-    bool are_merges_allowed = true;
-
-    /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
-    std::optional<bool> are_merges_allowed_user_override;
-
 private:
     mutable std::atomic<size_t> last_used = 0;
 };
+
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+using VolumesJBOD = std::vector<VolumeJBODPtr>;
 
 }

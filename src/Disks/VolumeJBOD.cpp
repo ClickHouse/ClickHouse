@@ -53,18 +53,6 @@ VolumeJBOD::VolumeJBOD(
     static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
-
-    are_merges_allowed = config.getBool(config_prefix + ".allow_merges", true);
-}
-
-VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        DiskSelectorPtr disk_selector)
-    : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
-{
-    are_merges_allowed_user_override = volume_jbod.are_merges_allowed_user_override;
-    last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
 DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
@@ -94,19 +82,6 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
     }
     return {};
-}
-
-bool VolumeJBOD::areMergesAllowed() const
-{
-    if (are_merges_allowed_user_override)
-        return *are_merges_allowed_user_override;
-    else
-        return are_merges_allowed;
-}
-
-void VolumeJBOD::setAllowMergesFromQuery(bool allow)
-{
-    are_merges_allowed_user_override = allow;
 }
 
 }

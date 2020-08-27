@@ -1571,15 +1571,15 @@ Default value: 16.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
-Enables parallel distributed `INSERT ... SELECT` query. 
+Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
-
 
 Possible values:
 
 -   0 — Disabled.
--   1 — Enabled.
+-   1 — `SELECT` will be executed on each shard from underlying table of the distributed engine.
+-   2 — `SELECT` and `INSERT` will be executed on each shard from/to underlying table of the distributed engine.
 
 Default value: 0.
 
@@ -1863,5 +1863,18 @@ Default value: `0`.
 
 -   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
+
+## lock_acquire_timeout {#lock_acquire_timeout}
+
+Defines how many seconds locking request waits before failing. 
+
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the ClickHouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No locking timeout.
+
+Default value: `120`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
