@@ -25,13 +25,17 @@ struct MergeTreeWriterSettings
         , max_compress_block_size(global_settings.min_compress_block_size)
         , aio_threshold(aio_threshold_)
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
-        , blocks_are_granules_size(blocks_are_granules_size_) {}
+        , blocks_are_granules_size(blocks_are_granules_size_)
+        , max_threads(global_settings.merge_tree_writer_max_threads)
+    {
+    }
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;
     size_t aio_threshold;
     bool can_use_adaptive_granularity;
     bool blocks_are_granules_size;
+    size_t max_threads;
 
     /// true if we write temporary files during alter.
     size_t estimated_size = 0;

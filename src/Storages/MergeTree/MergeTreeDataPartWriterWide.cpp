@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -90,37 +92,68 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 
-    auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
+    std::unique_ptr<ThreadPool> writing_thread_pool;
+    std::vector<WrittenOffsetColumns> offset_columns_per_column;
+    if (settings.max_threads != 1)
+    {
+        offset_columns_per_column.reserve(columns_list.size());
+        writing_thread_pool = std::make_unique<ThreadPool>(settings.max_threads);
+    }
+
+    offset_columns_per_column.emplace_back(written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{});
+    if (writing_thread_pool)
+    {
+        auto it = columns_list.begin();
+        for (size_t i = 0; i + 1 < columns_list.size(); ++i, ++it)
+        {
+            const ColumnWithTypeAndName & column = block.getByName(it->name);
+            offset_columns_per_column.emplace_back(getOffsetColumnsForColumn(column.name, *column.type, offset_columns_per_column.back()));
+        }
+    }
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
-        const ColumnWithTypeAndName & column = block.getByName(it->name);
+        WrittenOffsetColumns & offset_columns = writing_thread_pool ? offset_columns_per_column[i] : offset_columns_per_column.back();
 
-        if (permutation)
+        const ColumnWithTypeAndName & column = block.getByName(it->name);
+        prepareWriteColumn(column.name, *column.type, offset_columns);
+
+        auto write_column_job = [&, it]
         {
-            if (primary_key_block.has(it->name))
+            if (permutation)
             {
-                const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                writeColumn(column.name, *column.type, primary_column, offset_columns);
-            }
-            else if (skip_indexes_block.has(it->name))
-            {
-                const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                writeColumn(column.name, *column.type, index_column, offset_columns);
+                if (primary_key_block.has(it->name))
+                {
+                    const auto & primary_column = *primary_key_block.getByName(it->name).column;
+                    writeColumn(column.name, *column.type, primary_column, offset_columns);
+                }
+                else if (skip_indexes_block.has(it->name))
+                {
+                    const auto & index_column = *skip_indexes_block.getByName(it->name).column;
+                    writeColumn(column.name, *column.type, index_column, offset_columns);
+                }
+                else
+                {
+                    /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
+                    ColumnPtr permuted_column = column.column->permute(*permutation, 0);
+                    writeColumn(column.name, *column.type, *permuted_column, offset_columns);
+                }
             }
             else
             {
-                /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
-                ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                writeColumn(column.name, *column.type, *permuted_column, offset_columns);
+                writeColumn(column.name, *column.type, *column.column, offset_columns);
             }
-        }
+        };
+
+        if (writing_thread_pool)
+            writing_thread_pool->scheduleOrThrowOnError(write_column_job);
         else
-        {
-            writeColumn(column.name, *column.type, *column.column, offset_columns);
-        }
+            write_column_job();
     }
+
+    if (writing_thread_pool)
+        writing_thread_pool->wait();
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -186,6 +219,45 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     return from_row + number_of_rows;
 }
 
+
+MergeTreeDataPartWriterOnDisk::WrittenOffsetColumns MergeTreeDataPartWriterWide::getOffsetColumnsForColumn(
+    const String & name,
+    const IDataType & type,
+    WrittenOffsetColumns & offset_columns)
+{
+    WrittenOffsetColumns result(offset_columns);
+
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
+    {
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+
+        if (is_offsets && offset_columns.count(stream_name) == 0)
+            result.emplace(std::move(stream_name));
+    };
+
+    IDataType::SubstreamPath stream_path;
+    type.enumerateStreams(callback, stream_path);
+
+    return result;
+}
+
+void MergeTreeDataPartWriterWide::prepareWriteColumn(
+    const String & name,
+    const IDataType & type,
+    WrittenOffsetColumns & offset_columns)
+{
+    auto [it, inserted] = serialization_states.emplace(name, nullptr);
+
+    if (inserted)
+    {
+        IDataType::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.getter = createStreamGetter(name, offset_columns);
+        type.serializeBinaryBulkStatePrefix(serialize_settings, it->second);
+    }
+}
+
+
 /// Column must not be empty. (column.size() !== 0)
 void MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
@@ -193,14 +265,6 @@ void MergeTreeDataPartWriterWide::writeColumn(
     const IColumn & column,
     WrittenOffsetColumns & offset_columns)
 {
-    auto [it, inserted] = serialization_states.emplace(name, nullptr);
-    if (inserted)
-    {
-        IDataType::SerializeBinaryBulkSettings serialize_settings;
-        serialize_settings.getter = createStreamGetter(name, offset_columns);
-        type.serializeBinaryBulkStatePrefix(serialize_settings, it->second);
-    }
-
     const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns);
@@ -240,7 +304,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
             type,
             column,
             offset_columns,
-            it->second,
+            serialization_states[name],
             serialize_settings,
             current_row,
             rows_to_write,
