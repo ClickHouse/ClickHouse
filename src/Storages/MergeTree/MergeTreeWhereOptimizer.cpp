@@ -239,6 +239,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     /// Here PREWHERE can exists only for allow_insecure_prewhere and row-level security filters moved to PREWHERE
+    /// (TODO: remove duplicates)
     if (select.prewhere())
         select.setExpression(ASTSelectQuery::Expression::PREWHERE, makeASTFunction("and",
             select.prewhere()->clone(), reconstruct(prewhere_conditions)));
