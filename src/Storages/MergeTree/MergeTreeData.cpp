@@ -116,6 +116,13 @@ namespace ErrorCodes
 const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
 
 
+static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
+{
+    const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
+    if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
+        throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+}
+
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -180,12 +187,9 @@ MergeTreeData::MergeTreeData(
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
-        const auto & pk_sample_block = metadata_.getPrimaryKey().sample_block;
-        if (!pk_sample_block.has(metadata_.sampling_key.column_names[0]) && !attach
-            && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
-            throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+        /// This is for backward compatibility.
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key);
     }
-
 
     checkTTLExpressions(metadata_, metadata_);
 
@@ -1416,6 +1420,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             throw Exception(
                 "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
+        {
+            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
