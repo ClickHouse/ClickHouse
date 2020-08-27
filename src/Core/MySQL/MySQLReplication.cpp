@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <common/DateLUT.h>
 #include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -132,7 +133,6 @@ namespace MySQLReplication
 
     void XIDEvent::parseImpl(ReadBuffer & payload) { payload.readStrict(reinterpret_cast<char *>(&xid), 8); }
 
-
     void XIDEvent::dump(std::ostream & out) const
     {
         header.dump(out);
@@ -174,6 +174,12 @@ namespace MySQLReplication
         payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
     }
 
+    /// Types that do not used in the binlog event:
+    /// MYSQL_TYPE_ENUM
+    /// MYSQL_TYPE_SET
+    /// MYSQL_TYPE_TINY_BLOB
+    /// MYSQL_TYPE_MEDIUM_BLOB
+    /// MYSQL_TYPE_LONG_BLOB
     void TableMapEvent::parseMeta(String meta)
     {
         auto pos = 0;
@@ -207,9 +213,6 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATETIME2:
                 case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_JSON:
-                case MYSQL_TYPE_TINY_BLOB:
-                case MYSQL_TYPE_MEDIUM_BLOB:
-                case MYSQL_TYPE_LONG_BLOB:
                 case MYSQL_TYPE_BLOB:
                 case MYSQL_TYPE_GEOMETRY: {
                     column_meta.emplace_back(UInt16(meta[pos]));
@@ -217,18 +220,20 @@ namespace MySQLReplication
                     break;
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
-                case MYSQL_TYPE_ENUM:
-                case MYSQL_TYPE_SET:
                 case MYSQL_TYPE_STRING: {
-                    column_meta.emplace_back((UInt16(meta[pos]) << 8) + UInt16(meta[pos + 1]));
+                    auto b0 = UInt16(meta[pos] << 8);
+                    auto b1 = UInt8(meta[pos + 1]);
+                    column_meta.emplace_back(UInt16(b0 + b1));
                     pos += 2;
                     break;
                 }
 
-                case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_BIT:
+                case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
-                    column_meta.emplace_back(UInt16(meta[pos]) + (UInt16(meta[pos + 1] << 8)));
+                    auto b0 = UInt8(meta[pos]);
+                    auto b1 = UInt16(meta[pos + 1] << 8);
+                    column_meta.emplace_back(UInt16(b0 + b1));
                     pos += 2;
                     break;
                 }
@@ -288,10 +293,15 @@ namespace MySQLReplication
         }
     }
 
+    /// Types that do not used in the binlog event:
+    /// MYSQL_TYPE_ENUM
+    /// MYSQL_TYPE_SET
+    /// MYSQL_TYPE_TINY_BLOB
+    /// MYSQL_TYPE_MEDIUM_BLOB
+    /// MYSQL_TYPE_LONG_BLOB
     void RowsEvent::parseRow(ReadBuffer & payload, Bitmap & bitmap)
     {
         Tuple row;
-        UInt32 field_len = 0;
         UInt32 null_index = 0;
 
         UInt32 re_count = 0;
@@ -306,6 +316,8 @@ namespace MySQLReplication
 
         for (auto i = 0U; i < number_columns; i++)
         {
+            UInt32 field_len = 0;
+
             /// Column not presents.
             if (!bitmap[i])
                 continue;
@@ -322,8 +334,9 @@ namespace MySQLReplication
                 {
                     if (meta >= 256)
                     {
-                        UInt32 byte0 = meta >> 8;
-                        UInt32 byte1 = meta & 0xff;
+                        UInt8 byte0 = meta >> 8;
+                        UInt8 byte1 = meta & 0xff;
+
                         if ((byte0 & 0x30) != 0x30)
                         {
                             field_len = byte1 | (((byte0 & 0x30) ^ 0x30) << 4);
@@ -331,17 +344,8 @@ namespace MySQLReplication
                         }
                         else
                         {
-                            switch (byte0)
-                            {
-                                case MYSQL_TYPE_SET:
-                                case MYSQL_TYPE_ENUM:
-                                case MYSQL_TYPE_STRING:
-                                    field_type = byte0;
-                                    field_len = byte1;
-                                    break;
-                                default:
-                                    throw ReplicationError("ParseRow: Unhandled binlog event", ErrorCodes::UNKNOWN_EXCEPTION);
-                            }
+                            field_len = byte1;
+                            field_type = byte0;
                         }
                     }
                     else
@@ -350,12 +354,6 @@ namespace MySQLReplication
                     }
                 }
 
-                /// Types that do not used in the binlog event:
-                /// MYSQL_TYPE_ENUM
-                /// MYSQL_TYPE_SET
-                /// MYSQL_TYPE_TINY_BLOB
-                /// MYSQL_TYPE_MEDIUM_BLOB
-                /// MYSQL_TYPE_LONG_BLOB
                 switch (field_type)
                 {
                     case MYSQL_TYPE_TINY: {
@@ -606,6 +604,23 @@ namespace MySQLReplication
                         row.push_back(Field{Int32{val}});
                         break;
                     }
+                    case MYSQL_TYPE_BIT: {
+                        UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
+                        UInt32 size = (bits + 7) / 8;
+
+                        Bitmap bitmap1;
+                        readBitmap(payload, bitmap1, size);
+                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
+                        break;
+                    }
+                    case MYSQL_TYPE_SET: {
+                        UInt32 size = (meta & 0xff);
+
+                        Bitmap bitmap1;
+                        readBitmap(payload, bitmap1, size);
+                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
+                        break;
+                    }
                     case MYSQL_TYPE_VARCHAR:
                     case MYSQL_TYPE_VAR_STRING: {
                         uint32_t size = 0;
@@ -705,12 +720,85 @@ namespace MySQLReplication
         }
     }
 
+    void GTIDEvent::parseImpl(ReadBuffer & payload)
+    {
+        /// We only care uuid:seq_no parts assigned to GTID_NEXT.
+        payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
+
+        // MySQL UUID is big-endian.
+        UInt64 high = 0UL, low = 0UL;
+        readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
+        gtid.uuid.toUnderType().low = low;
+
+        readBigEndianStrict(payload, reinterpret_cast<char *>(&high), 8);
+        gtid.uuid.toUnderType().high = high;
+
+        payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
+
+        /// Skip others.
+        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+    }
+
+    void GTIDEvent::dump(std::ostream & out) const
+    {
+        auto gtid_next = gtid.uuid.toUnderType().toHexString() + ":" + std::to_string(gtid.seq_no);
+
+        header.dump(out);
+        out << "GTID Next: " << gtid_next << std::endl;
+    }
+
     void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }
 
     void DryRunEvent::dump(std::ostream & out) const
     {
         header.dump(out);
         out << "[DryRun Event]" << std::endl;
+    }
+
+    /// Update binlog name/position/gtid based on the event type.
+    void Position::update(BinlogEventPtr event)
+    {
+        switch (event->header.type)
+        {
+            case FORMAT_DESCRIPTION_EVENT:
+            case QUERY_EVENT:
+            case XID_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case ROTATE_EVENT: {
+                auto rotate = std::static_pointer_cast<RotateEvent>(event);
+                binlog_name = rotate->next_binlog;
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case GTID_EVENT: {
+                auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
+                binlog_pos = event->header.log_pos;
+                gtid_sets.update(gtid_event->gtid);
+                break;
+            }
+            default: {
+                /// DryRun event.
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+        }
+    }
+
+    void Position::update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_)
+    {
+        binlog_pos = binlog_pos_;
+        binlog_name = binlog_name_;
+        gtid_sets.parse(gtid_sets_);
+    }
+
+    void Position::dump(std::ostream & out) const
+    {
+        out << "\n=== Binlog Position ===" << std::endl;
+        out << "Binlog: " << this->binlog_name << std::endl;
+        out << "Position: " << this->binlog_pos << std::endl;
+        out << "GTIDSets: " << this->gtid_sets.toString() << std::endl;
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
@@ -735,17 +823,14 @@ namespace MySQLReplication
                 event = std::make_shared<FormatDescriptionEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
             case ROTATE_EVENT: {
                 event = std::make_shared<RotateEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-
-                auto rotate = std::static_pointer_cast<RotateEvent>(event);
-                position.updateLogPos(event->header.log_pos);
-                position.updateLogName(rotate->next_binlog);
+                position.update(event);
                 break;
             }
             case QUERY_EVENT: {
@@ -762,16 +847,15 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        position.updateLogPos(event->header.log_pos);
+                        position.update(event);
                 }
-
                 break;
             }
             case XID_EVENT: {
                 event = std::make_shared<XIDEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
             case TABLE_MAP_EVENT: {
@@ -814,11 +898,18 @@ namespace MySQLReplication
                 event->parseEvent(payload);
                 break;
             }
+            case GTID_EVENT: {
+                event = std::make_shared<GTIDEvent>();
+                event->parseHeader(payload);
+                event->parseEvent(payload);
+                position.update(event);
+                break;
+            }
             default: {
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
         }

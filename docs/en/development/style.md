@@ -703,7 +703,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **3.** Compiler: `gcc`. At this time (August 2020), the code is compiled using version 9.3. (It can also be compiled using `clang 8`.)
 
-The standard library is used (`libstdc++` or `libc++`).
+The standard library is used (`libc++`).
 
 **4.**OS: Linux Ubuntu, not older than Precise.
 

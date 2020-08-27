@@ -1546,6 +1546,17 @@ Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-regist
 
 Default value: `Empty`.
 
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+
+Enables using fields that are not specified in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When a field is not found in the schema, ClickHouse uses the default value instead of throwing an exception.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## background\_pool\_size {#background_pool_size}
 
 Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from `default` profile at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
@@ -1560,15 +1571,15 @@ Default value: 16.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
-Enables parallel distributed `INSERT ... SELECT` query. 
+Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
-
 
 Possible values:
 
 -   0 — Disabled.
--   1 — Enabled.
+-   1 — `SELECT` will be executed on each shard from underlying table of the distributed engine.
+-   2 — `SELECT` and `INSERT` will be executed on each shard from/to underlying table of the distributed engine.
 
 Default value: 0.
 
@@ -1874,5 +1885,18 @@ Default value: `0`.
 
 -   [CREATE TABLE query clauses and settings](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (`merge_with_ttl_timeout` setting)
 -   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
+
+## lock_acquire_timeout {#lock_acquire_timeout}
+
+Defines how many seconds locking request waits before failing. 
+
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the ClickHouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No locking timeout.
+
+Default value: `120`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

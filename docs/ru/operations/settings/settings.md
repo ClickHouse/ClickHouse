@@ -1549,6 +1549,16 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Значение по умолчанию: `Пустая строка`.
 
+## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
+Позволяет использовать данные, которых не нашлось в схеме формата [Avro](../../interfaces/formats.md#data-format-avro) или [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent). Если поле не найдено в схеме, ClickHouse подставит значение по умолчанию вместо исключения.
+
+Возможные значения:
+
+-   0 — Выключена.
+-   1 — Включена.
+
+Значение по умолчанию: `0`.
+
 ## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 
 Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера. Настройка применяется только для блоков, вставляемых в [материализованное представление](../../sql-reference/statements/create/view.md#create-view). Настройка позволяет избежать избыточного потребления памяти.
@@ -1596,7 +1606,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## mutations_sync {#mutations_sync}
 
-Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
+Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter/index.md#mutations)) синхронно.
 
 Возможные значения:
 
@@ -1608,8 +1618,8 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также**
 
--   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
--   [Мутации](../../sql-reference/statements/alter.md#mutations)
+-   [Синхронность запросов ALTER](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+-   [Мутации](../../sql-reference/statements/alter/index.md#mutations)
 
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 

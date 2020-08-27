@@ -2,9 +2,6 @@
 
 set -x -e
 
-# Update tzdata to the latest version. It is embedded into clickhouse binary.
-sudo apt-get update && sudo apt-get install tzdata
-
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
