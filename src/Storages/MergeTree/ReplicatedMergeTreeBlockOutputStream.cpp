@@ -223,6 +223,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     size_t loop_counter = 0;
     constexpr size_t max_iterations = 10;
 
+    bool is_already_existing_part = false;
+
     while (true)
     {
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
@@ -242,6 +244,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         String existing_part_name;
         if (block_number_lock)
         {
+            is_already_existing_part = false;
             block_number = block_number_lock->getNumber();
 
             /// Set part attributes according to part_number. Prepare an entry for log.
@@ -313,6 +316,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
         else
         {
+            is_already_existing_part = true;
+
             /// This block was already written to some replica. Get the part name for it.
             /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
             existing_part_name = zookeeper->get(storage.zookeeper_path + "/blocks/" + block_id);
@@ -446,6 +451,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
     if (quorum)
     {
+        if (is_already_existing_part)
+        {
+            storage.updateQuorum(part->name);
+        }
+
         /// We are waiting for quorum to be satisfied.
         LOG_TRACE(log, "Waiting for quorum");
 
