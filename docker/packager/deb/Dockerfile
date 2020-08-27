@@ -31,7 +31,7 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-ENV APACHE_PUBKEY_HASH="ec52a838a734b9d5e09d95c0167b09bf1af9565f814d4d5b3785f66fd5b53dd01c918d9ec008cb58e843324dec523d26"
+ENV APACHE_PUBKEY_HASH="bba6987b63c63f710fd4ed476121c588bc3812e99659d27a855f8c4d312783ee66ad6adfce238765691b04d62fa3688f"
 
 RUN  export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && wget -O /tmp/arrow-keyring.deb "https://apache.bintray.com/arrow/ubuntu/apache-arrow-archive-keyring-latest-${CODENAME}.deb" \
@@ -49,8 +49,8 @@ RUN apt-get update \
         clang-11 \
         clang-tidy-11 \
         lld-11 \
-        lld-11-dev \
         llvm-11 \
+        llvm-11-dev \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
         lld-${LLVM_VERSION} \
