@@ -484,11 +484,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
 bool IMergeTreeDataPart::loadDefaultCompressionCodec()
 {
+    /// In memory parts doesn't have any compression
     if (!isStoredOnDisk())
-    {
-        default_codec = CompressionCodecFactory::instance().get("NONE", {});
         return true;
-    }
 
     String path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
     if (!volume->getDisk()->exists(path))
