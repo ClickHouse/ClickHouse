@@ -36,6 +36,7 @@ struct MergeTreeWriterSettings
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
+        , max_threads(global_settings.merge_tree_writer_max_threads)
     {
     }
 
@@ -45,6 +46,7 @@ struct MergeTreeWriterSettings
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
+    size_t max_threads;
 
     /// true if we write temporary files during alter.
     size_t estimated_size = 0;

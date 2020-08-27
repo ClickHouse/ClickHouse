@@ -36,6 +36,18 @@ private:
     /// Also validate written data in debug mode
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
 
+    /// Get offset_columns to be written for given column.
+    static WrittenOffsetColumns getOffsetColumnsForColumn(
+        const String & name,
+        const IDataType & type,
+        WrittenOffsetColumns & offset_columns);
+
+    /// Shall be called before `writeColumn`.
+    void prepareWriteColumn(
+        const String & name,
+        const IDataType & type,
+        WrittenOffsetColumns & offset_columns);
+
     /// Write data of one column.
     /// Return how many marks were written and
     /// how many rows were written for last mark
