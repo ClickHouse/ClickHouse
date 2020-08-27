@@ -183,13 +183,7 @@ To convertTo(const DecimalType & decimal, size_t scale)
 
     if constexpr (std::is_floating_point_v<To>)
     {
-        // boost::multipreision has no implicit casts, so we have to explicitly cast it to Float here. On the other hand, native
-        // types might have more efficient implementations for division of Float by NativeT, so it might be more efficient to
-        // avoid the cast.
-        if constexpr (is_big_int_v<NativeT>)
-            return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
-        else
-            return static_cast<To>(decimal.value) / scaleMultiplier<NativeT>(scale);
+        return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
     }
     else if constexpr (is_integer_v<To> && (sizeof(To) >= sizeof(NativeT)))
     {
