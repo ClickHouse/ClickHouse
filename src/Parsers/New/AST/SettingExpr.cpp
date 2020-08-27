@@ -1,13 +1,18 @@
 #include <Parsers/New/AST/SettingExpr.h>
 
+#include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/Literal.h>
+
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::AST
 {
 
-SettingExpr::SettingExpr(PtrTo<Identifier> name_, PtrTo<Literal> value_) : name(name_), value(value_)
+SettingExpr::SettingExpr(PtrTo<Identifier> name, PtrTo<Literal> value)
 {
+    children.push_back(name);
+    children.push_back(value);
 }
 
 }

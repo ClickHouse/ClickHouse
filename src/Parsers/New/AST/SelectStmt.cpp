@@ -2,7 +2,10 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
 #include <Parsers/New/AST/JoinExpr.h>
+#include <Parsers/New/AST/LimitExpr.h>
+
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
@@ -17,8 +20,9 @@ WithClause::WithClause(PtrTo<ColumnExprList> expr_list) : exprs(expr_list)
 
 // FROM Clause
 
-FromClause::FromClause(PtrTo<JoinExpr> join_expr, bool final_) : expr(join_expr), final(final_)
+FromClause::FromClause(PtrTo<JoinExpr> expr, bool final_) : final(final_)
 {
+    children.push_back(expr);
     /// FIXME: remove this.
     (void)final;
 }
@@ -26,7 +30,7 @@ FromClause::FromClause(PtrTo<JoinExpr> join_expr, bool final_) : expr(join_expr)
 ASTPtr FromClause::convertToOld() const
 {
     auto old_tables = std::make_shared<ASTTablesInSelectQuery>();
-    old_tables->children = expr->convertToOld()->children;
+    old_tables->children = children[EXPR]->convertToOld()->children;
     return old_tables;
 }
 
@@ -88,8 +92,9 @@ LimitByClause::LimitByClause(PtrTo<LimitExpr> expr, PtrTo<ColumnExprList> expr_l
 
 // LIMIT Clause
 
-LimitClause::LimitClause(PtrTo<LimitExpr> expr_) : expr(expr_)
+LimitClause::LimitClause(PtrTo<LimitExpr> expr)
 {
+    children.push_back(expr);
 }
 
 // SETTINGS Clause

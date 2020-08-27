@@ -1,5 +1,6 @@
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/New/AST/AlterPartitionQuery.h>
 #include <Parsers/New/AST/AlterTableQuery.h>
 #include <Parsers/New/AST/AttachQuery.h>
 #include <Parsers/New/AST/CheckQuery.h>
@@ -26,7 +27,6 @@
 #include <Parsers/New/AST/ShowQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
 #include <Parsers/New/AST/UseQuery.h>
-#include "Parsers/New/ClickHouseParser.h"
 
 
 namespace DB
@@ -56,6 +56,11 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     if (ctx->selectUnionStmt()) return std::static_pointer_cast<Query>(visit(ctx->selectUnionStmt()).as<PtrTo<SelectUnionQuery>>());
     if (ctx->setStmt()) return std::static_pointer_cast<Query>(visit(ctx->setStmt()).as<PtrTo<SetQuery>>());
     __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterPartitionStmt(ClickHouseParser::AlterPartitionStmtContext *ctx)
+{
+    return std::make_shared<AlterPartitionQuery>(visit(ctx->tableIdentifier()), visit(ctx->alterPartitionClause()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx)

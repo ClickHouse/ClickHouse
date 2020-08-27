@@ -17,6 +17,7 @@ public:
     antlrcpp::Any visitQueryList(ClickHouseParser::QueryListContext *ctx) override;
     antlrcpp::Any visitQueryStmt(ClickHouseParser::QueryStmtContext *ctx) override;
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *ctx) override;
+    antlrcpp::Any visitAlterPartitionStmt(ClickHouseParser::AlterPartitionStmtContext *ctx) override;
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx) override;
     antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx) override;
     antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override;
@@ -39,6 +40,7 @@ public:
 
     // ALTER clauses
 
+    antlrcpp::Any visitAlterPartitionDropClause(ClickHouseParser::AlterPartitionDropClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx) override;
@@ -71,7 +73,7 @@ public:
 
     // OPTIMIZE clauses
 
-    antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx) override;
+    antlrcpp::Any visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx) override;  // returns |PtrTo<PartitionExprList>|
 
     // SELECT clauses
 

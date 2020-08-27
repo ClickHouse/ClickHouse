@@ -22,12 +22,16 @@ class WithClause : public INode
 class FromClause : public INode
 {
     public:
-        FromClause(PtrTo<JoinExpr> join_expr, bool final_);
+        FromClause(PtrTo<JoinExpr> join_expr, bool final);
 
         ASTPtr convertToOld() const override;
 
     private:
-        PtrTo<JoinExpr> expr;
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,
+        };
+
         bool final;
 };
 
@@ -110,10 +114,13 @@ class LimitByClause : public INode
 class LimitClause : public INode
 {
     public:
-        explicit LimitClause(PtrTo<LimitExpr> expr_);
+        explicit LimitClause(PtrTo<LimitExpr> expr);
 
     private:
-        PtrTo<LimitExpr> expr;
+        enum ChildIndex : UInt8
+        {
+            EXPR = 0,
+        };
 };
 
 class SettingsClause : public INode

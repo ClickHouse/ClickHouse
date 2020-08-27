@@ -1,18 +1,17 @@
 #include <Parsers/New/AST/LimitExpr.h>
 
 #include <Parsers/New/AST/Literal.h>
+
 #include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB::AST
 {
 
-LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit_) : limit(limit_)
+LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit, PtrTo<NumberLiteral> offset)
 {
-}
-
-LimitExpr::LimitExpr(PtrTo<NumberLiteral> limit_, PtrTo<NumberLiteral> offset_) : limit(limit_), offset(offset_)
-{
+    children.push_back(limit);
+    children.push_back(offset);
 }
 
 }

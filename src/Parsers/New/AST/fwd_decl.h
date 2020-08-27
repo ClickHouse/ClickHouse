@@ -54,6 +54,7 @@ using ColumnParamList = List<Literal>;
 using ColumnTypeExprList = List<ColumnTypeExpr>;
 using EnumValueList = List<EnumValue>;
 using OrderExprList = List<OrderExpr>;
+using PartitionExprList = List<Literal>;
 using QueryList = List<Query, ';'>;
 using SettingExprList = List<SettingExpr>;
 using TableArgList = List<TableArgExpr>;

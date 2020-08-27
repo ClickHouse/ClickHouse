@@ -27,7 +27,7 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::PartitionClauseContext *ctx)
 {
-    auto list = std::make_shared<List<Literal>>();
+    auto list = std::make_shared<PartitionExprList>();
 
     if (ctx->STRING_LITERAL()) list->append(Literal::createString(ctx->STRING_LITERAL()));
     else
@@ -42,7 +42,15 @@ antlrcpp::Any ParseTreeVisitor::visitPartitionClause(ClickHouseParser::Partition
 
                 if (expr->getType() == ColumnExpr::ExprType::LITERAL)
                     list->append(expr->getLiteral());
+                else
+                {
+                    // TODO: 'Expected tuple of literals as Partition Expression'.
+                }
             }
+        }
+        else
+        {
+            // TODO: 'Expected tuple of literals as Partition Expression'.
         }
     }
 

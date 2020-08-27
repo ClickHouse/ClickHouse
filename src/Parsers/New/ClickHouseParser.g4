@@ -30,6 +30,7 @@ query
 
 alterStmt
     : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*  # AlterTableStmt
+    | ALTER TABLE tableIdentifier alterPartitionClause                        # AlterPartitionStmt
     ;
 
 alterTableClause
@@ -37,6 +38,9 @@ alterTableClause
     | COMMENT COLUMN (IF EXISTS)? identifier STRING_LITERAL            # AlterTableCommentClause
     | DROP COLUMN (IF EXISTS)? identifier                              # AlterTableDropClause
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                       # AlterTableModifyClause
+    ;
+alterPartitionClause
+    : DROP partitionClause  # AlterPartitionDropClause
     ;
 
 // CHECK statement
@@ -227,10 +231,9 @@ columnsExpr
     | columnExpr                       # ColumnsExprColumn
     ;
 columnExpr
-    : literal                                                                        # ColumnExprLiteral
-    | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk // single-column only
-    | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery // single-column only
-    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens   // single-column only
+    : (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
+    | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery  // single-column only
+    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens    // single-column only
     | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
     | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
     | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
@@ -248,6 +251,7 @@ columnExpr
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
     | columnExpr AS identifier                                                       # ColumnExprAlias
+    | literal                                                                        # ColumnExprLiteral
     ;
 columnParamList: literal (COMMA literal)*;
 columnArgList: columnArgExpr (COMMA columnArgExpr)*;
@@ -271,8 +275,8 @@ tableExpr
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : literal
-    | tableIdentifier
+    : tableIdentifier
+    | literal
     ;
 
 // Databases

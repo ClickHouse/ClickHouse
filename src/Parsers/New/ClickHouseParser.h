@@ -45,28 +45,28 @@ public:
 
   enum {
     RuleQueryList = 0, RuleQueryStmt = 1, RuleQuery = 2, RuleAlterStmt = 3, 
-    RuleAlterTableClause = 4, RuleCheckStmt = 5, RuleCreateStmt = 6, RuleSubqueryClause = 7, 
-    RuleSchemaClause = 8, RuleEngineClause = 9, RulePartitionByClause = 10, 
-    RulePrimaryKeyClause = 11, RuleSampleByClause = 12, RuleTtlClause = 13, 
-    RuleEngineExpr = 14, RuleTableElementExpr = 15, RuleTableColumnDfnt = 16, 
-    RuleTableColumnPropertyExpr = 17, RuleTtlExpr = 18, RuleDescribeStmt = 19, 
-    RuleDropStmt = 20, RuleExistsStmt = 21, RuleInsertStmt = 22, RuleValuesClause = 23, 
-    RuleValueTupleExpr = 24, RuleOptimizeStmt = 25, RulePartitionClause = 26, 
-    RuleRenameStmt = 27, RuleSelectUnionStmt = 28, RuleSelectStmt = 29, 
-    RuleWithClause = 30, RuleFromClause = 31, RuleSampleClause = 32, RuleArrayJoinClause = 33, 
-    RulePrewhereClause = 34, RuleWhereClause = 35, RuleGroupByClause = 36, 
-    RuleHavingClause = 37, RuleOrderByClause = 38, RuleLimitByClause = 39, 
-    RuleLimitClause = 40, RuleSettingsClause = 41, RuleJoinExpr = 42, RuleJoinOp = 43, 
-    RuleJoinOpCross = 44, RuleJoinConstraintClause = 45, RuleLimitExpr = 46, 
-    RuleOrderExprList = 47, RuleOrderExpr = 48, RuleRatioExpr = 49, RuleSettingExprList = 50, 
-    RuleSettingExpr = 51, RuleSetStmt = 52, RuleShowStmt = 53, RuleUseStmt = 54, 
-    RuleValueExprList = 55, RuleValueExpr = 56, RuleColumnTypeExpr = 57, 
-    RuleColumnExprList = 58, RuleColumnsExpr = 59, RuleColumnExpr = 60, 
-    RuleColumnParamList = 61, RuleColumnArgList = 62, RuleColumnArgExpr = 63, 
-    RuleColumnLambdaExpr = 64, RuleColumnIdentifier = 65, RuleTableExpr = 66, 
-    RuleTableIdentifier = 67, RuleTableArgList = 68, RuleTableArgExpr = 69, 
-    RuleDatabaseIdentifier = 70, RuleLiteral = 71, RuleKeyword = 72, RuleIdentifier = 73, 
-    RuleUnaryOp = 74, RuleBinaryOp = 75, RuleEnumValue = 76
+    RuleAlterTableClause = 4, RuleAlterPartitionClause = 5, RuleCheckStmt = 6, 
+    RuleCreateStmt = 7, RuleSubqueryClause = 8, RuleSchemaClause = 9, RuleEngineClause = 10, 
+    RulePartitionByClause = 11, RulePrimaryKeyClause = 12, RuleSampleByClause = 13, 
+    RuleTtlClause = 14, RuleEngineExpr = 15, RuleTableElementExpr = 16, 
+    RuleTableColumnDfnt = 17, RuleTableColumnPropertyExpr = 18, RuleTtlExpr = 19, 
+    RuleDescribeStmt = 20, RuleDropStmt = 21, RuleExistsStmt = 22, RuleInsertStmt = 23, 
+    RuleValuesClause = 24, RuleValueTupleExpr = 25, RuleOptimizeStmt = 26, 
+    RulePartitionClause = 27, RuleRenameStmt = 28, RuleSelectUnionStmt = 29, 
+    RuleSelectStmt = 30, RuleWithClause = 31, RuleFromClause = 32, RuleSampleClause = 33, 
+    RuleArrayJoinClause = 34, RulePrewhereClause = 35, RuleWhereClause = 36, 
+    RuleGroupByClause = 37, RuleHavingClause = 38, RuleOrderByClause = 39, 
+    RuleLimitByClause = 40, RuleLimitClause = 41, RuleSettingsClause = 42, 
+    RuleJoinExpr = 43, RuleJoinOp = 44, RuleJoinOpCross = 45, RuleJoinConstraintClause = 46, 
+    RuleLimitExpr = 47, RuleOrderExprList = 48, RuleOrderExpr = 49, RuleRatioExpr = 50, 
+    RuleSettingExprList = 51, RuleSettingExpr = 52, RuleSetStmt = 53, RuleShowStmt = 54, 
+    RuleUseStmt = 55, RuleValueExprList = 56, RuleValueExpr = 57, RuleColumnTypeExpr = 58, 
+    RuleColumnExprList = 59, RuleColumnsExpr = 60, RuleColumnExpr = 61, 
+    RuleColumnParamList = 62, RuleColumnArgList = 63, RuleColumnArgExpr = 64, 
+    RuleColumnLambdaExpr = 65, RuleColumnIdentifier = 66, RuleTableExpr = 67, 
+    RuleTableIdentifier = 68, RuleTableArgList = 69, RuleTableArgExpr = 70, 
+    RuleDatabaseIdentifier = 71, RuleLiteral = 72, RuleKeyword = 73, RuleIdentifier = 74, 
+    RuleUnaryOp = 75, RuleBinaryOp = 76, RuleEnumValue = 77
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -84,6 +84,7 @@ public:
   class QueryContext;
   class AlterStmtContext;
   class AlterTableClauseContext;
+  class AlterPartitionClauseContext;
   class CheckStmtContext;
   class CreateStmtContext;
   class SubqueryClauseContext;
@@ -246,6 +247,18 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  AlterPartitionStmtContext : public AlterStmtContext {
+  public:
+    AlterPartitionStmtContext(AlterStmtContext *ctx);
+
+    antlr4::tree::TerminalNode *ALTER();
+    antlr4::tree::TerminalNode *TABLE();
+    TableIdentifierContext *tableIdentifier();
+    AlterPartitionClauseContext *alterPartitionClause();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   AlterStmtContext* alterStmt();
 
   class  AlterTableClauseContext : public antlr4::ParserRuleContext {
@@ -318,6 +331,31 @@ public:
   };
 
   AlterTableClauseContext* alterTableClause();
+
+  class  AlterPartitionClauseContext : public antlr4::ParserRuleContext {
+  public:
+    AlterPartitionClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+   
+    AlterPartitionClauseContext() = default;
+    void copyFrom(AlterPartitionClauseContext *context);
+    using antlr4::ParserRuleContext::copyFrom;
+
+    virtual size_t getRuleIndex() const override;
+
+   
+  };
+
+  class  AlterPartitionDropClauseContext : public AlterPartitionClauseContext {
+  public:
+    AlterPartitionDropClauseContext(AlterPartitionClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *DROP();
+    PartitionClauseContext *partitionClause();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  AlterPartitionClauseContext* alterPartitionClause();
 
   class  CheckStmtContext : public antlr4::ParserRuleContext {
   public:
@@ -2027,8 +2065,8 @@ public:
   public:
     TableArgExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    LiteralContext *literal();
     TableIdentifierContext *tableIdentifier();
+    LiteralContext *literal();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

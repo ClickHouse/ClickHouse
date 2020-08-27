@@ -9,11 +9,14 @@ namespace DB::AST
 class LimitExpr : public INode
 {
     public:
-        explicit LimitExpr(PtrTo<NumberLiteral> limit_);
-        LimitExpr(PtrTo<NumberLiteral> limit_, PtrTo<NumberLiteral> offset_);
+        explicit LimitExpr(PtrTo<NumberLiteral> limit, PtrTo<NumberLiteral> offset = nullptr);
 
     private:
-        PtrTo<NumberLiteral> limit, offset;
+        enum ChildIndex : UInt8
+        {
+            LIMIT = 0,
+            OFFSET = 1,
+        };
 };
 
 }
