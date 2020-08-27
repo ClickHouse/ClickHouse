@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
+#include <Common/intExp.h>
 
 
 namespace DB
@@ -37,7 +38,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " +
                 toString(arguments.size()) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -87,13 +88,12 @@ public:
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
-            using NativeT = typename Type::NativeType;
             using ColVecType = ColumnDecimal<Type>;
 
             if (const ColumnConst * const_column = checkAndGetColumnConst<ColVecType>(src_column.column.get()))
             {
                 Type const_decimal = checkAndGetColumn<ColVecType>(const_column->getDataColumnPtr().get())->getData()[0];
-                UInt8 res_value = (digits<NativeT>(const_decimal.value) > precision);
+                UInt8 res_value = outOfDigits<Type>(const_decimal, precision);
                 result_column->getData().resize_fill(input_rows_count, res_value);
                 return true;
             }
@@ -118,50 +118,28 @@ private:
     template <typename T>
     static void execute(const ColumnDecimal<T> & col, ColumnUInt8 & result_column, size_t rows_count, UInt32 precision)
     {
-        using NativeT = typename T::NativeType;
-
         const auto & src_data = col.getData();
         auto & dst_data = result_column.getData();
         dst_data.resize(rows_count);
 
         for (size_t i = 0; i < rows_count; ++i)
-            dst_data[i] = (digits<NativeT>(src_data[i].value) > precision);
+            dst_data[i] = outOfDigits<T>(src_data[i], precision);
     }
 
     template <typename T>
-    static UInt32 digits(T value)
+    static bool outOfDigits(T dec, UInt32 precision)
     {
-        UInt32 res = 0;
-        T tmp;
+        static_assert(IsDecimalNumber<T>);
+        using NativeT = typename T::NativeType;
 
-        static constexpr const Int32 e3 = 1000;
-        static constexpr const Int32 e9 = 1000000000;
+        if (precision > DecimalUtils::maxPrecision<T>())
+            return false;
 
-        if constexpr (sizeof(T) > sizeof(Int32))
-        {
-            tmp = value / e9;
-            while (tmp)
-            {
-                value = tmp;
-                tmp /= e9;
-                res += 9;
-            }
-        }
+        NativeT pow10 = intExp10OfSize<NativeT>(precision);
 
-        tmp = value / e3;
-        while (tmp)
-        {
-            value = tmp;
-            tmp /= e3;
-            res += 3;
-        }
-
-        while (value)
-        {
-            value /= 10;
-            ++res;
-        }
-        return res;
+        if (dec.value < 0)
+            return dec.value <= -pow10;
+        return dec.value >= pow10;
     }
 };
 

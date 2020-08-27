@@ -132,6 +132,7 @@ SRCS(
     concat.cpp
     convertCharset.cpp
     cos.cpp
+    countDigits.cpp
     CRC.cpp
     currentDatabase.cpp
     currentUser.cpp
@@ -243,6 +244,7 @@ SRCS(
     intExp10.cpp
     intExp2.cpp
     isConstant.cpp
+    isDecimalOverflow.cpp
     isFinite.cpp
     isInfinite.cpp
     isNaN.cpp
