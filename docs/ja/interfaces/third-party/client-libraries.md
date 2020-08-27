@@ -48,6 +48,7 @@ toc_title: "\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8"
 -   コトリン
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [クリックハウスAdo](https://github.com/killwort/ClickHouse-Net)
     -   [クリックハウスクライアン](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
