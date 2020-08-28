@@ -1423,6 +1423,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
         if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
         {
+            if (!is_custom_partitioned)
+                throw Exception(
+                    "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
+                    ErrorCodes::BAD_ARGUMENTS);
+
             checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
