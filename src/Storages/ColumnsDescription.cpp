@@ -408,10 +408,7 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
 
-    if (it == columns.get<1>().end() || !it->codec)
-        return false;
-
-    return true;
+    return it != columns.get<1>().end() && it->codec != nullptr;
 }
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
