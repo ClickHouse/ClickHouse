@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -66,7 +67,7 @@ public:
             size_t offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                ToFieldType value = 0;
+                ToFieldType value{};
                 memcpy(&value, &data_from[offset], std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
                 vec_res[i] = value;
                 offset = offsets_from[i];
@@ -88,7 +89,7 @@ public:
             size_t copy_size = std::min(step, sizeof(ToFieldType));
             for (size_t i = 0; i < size; ++i)
             {
-                ToFieldType value = 0;
+                ToFieldType value{};
                 memcpy(&value, &data_from[offset], copy_size);
                 vec_res[i] = value;
                 offset += step;
@@ -118,6 +119,7 @@ struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
 struct NameReinterpretAsDateTime    { static constexpr auto name = "reinterpretAsDateTime"; };
+struct NameReinterpretAsUUID        { static constexpr auto name = "reinterpretAsUUID"; };
 
 using FunctionReinterpretAsUInt8 = FunctionReinterpretStringAs<DataTypeUInt8,       NameReinterpretAsUInt8>;
 using FunctionReinterpretAsUInt16 = FunctionReinterpretStringAs<DataTypeUInt16,     NameReinterpretAsUInt16>;
@@ -131,6 +133,7 @@ using FunctionReinterpretAsFloat32 = FunctionReinterpretStringAs<DataTypeFloat32
 using FunctionReinterpretAsFloat64 = FunctionReinterpretStringAs<DataTypeFloat64,   NameReinterpretAsFloat64>;
 using FunctionReinterpretAsDate = FunctionReinterpretStringAs<DataTypeDate,         NameReinterpretAsDate>;
 using FunctionReinterpretAsDateTime = FunctionReinterpretStringAs<DataTypeDateTime, NameReinterpretAsDateTime>;
+using FunctionReinterpretAsUUID = FunctionReinterpretStringAs<DataTypeUUID, NameReinterpretAsUUID>;
 
 
 void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
@@ -147,6 +150,7 @@ void registerFunctionsReinterpretStringAs(FunctionFactory & factory)
     factory.registerFunction<FunctionReinterpretAsFloat64>();
     factory.registerFunction<FunctionReinterpretAsDate>();
     factory.registerFunction<FunctionReinterpretAsDateTime>();
+    factory.registerFunction<FunctionReinterpretAsUUID>();
 }
 
 }
