@@ -13,6 +13,8 @@
 #include <Common/escapeForFileName.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
+#include <Compression/getCompressionCodecForFile.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -416,6 +418,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadTTLInfos();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
+    loadDefaultCompressionCodec();
+
 }
 
 void IMergeTreeDataPart::loadIndexGranularity()
@@ -482,56 +486,73 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     return result;
 }
 
-bool IMergeTreeDataPart::loadDefaultCompressionCodec()
+void IMergeTreeDataPart::loadDefaultCompressionCodec()
 {
     /// In memory parts doesn't have any compression
     if (!isStoredOnDisk())
     {
         default_codec = CompressionCodecFactory::instance().get("NONE", {});
-        return true;
+        return;
     }
 
     String path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
     if (!volume->getDisk()->exists(path))
-        return false;
-
-
-    auto file_buf = openForReading(volume->getDisk(), path);
-    String codec_line;
-    readEscapedStringUntilEOL(codec_line, *file_buf);
-
-    ReadBufferFromString buf(codec_line);
-
-    if (!checkString("CODEC", buf))
     {
-        LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be deduced automatically, from compression section in config.xml.", name, path, codec_line);
-        return false;
+        default_codec = detectDefaultCompressionCodec();
     }
+    else
+    {
 
-    try
-    {
-        ParserCodec codec_parser;
-        auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
-        return true;
-    }
-    catch (const DB::Exception & ex)
-    {
-        LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from compression section in config.xml.", name, path, codec_line, ex.what());
-        return false;
+        auto file_buf = openForReading(volume->getDisk(), path);
+        String codec_line;
+        readEscapedStringUntilEOL(codec_line, *file_buf);
+
+        ReadBufferFromString buf(codec_line);
+
+        if (!checkString("CODEC", buf))
+        {
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be deduced automatically, from data on disk", name, path, codec_line);
+            default_codec = detectDefaultCompressionCodec();
+        }
+
+        try
+        {
+            ParserCodec codec_parser;
+            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
+        }
+        catch (const DB::Exception & ex)
+        {
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
+            default_codec = detectDefaultCompressionCodec();
+        }
     }
 }
 
-
-void IMergeTreeDataPart::detectAndSetDefaultCompressionCodec(size_t total_storage_size)
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 {
     /// In memory parts doesn't have any compression
-    if (isStoredOnDisk())
-        default_codec
-            = storage.global_context.chooseCompressionCodec(getBytesOnDisk(),
-                static_cast<double>(getBytesOnDisk()) / total_storage_size);
-    else
-        default_codec = CompressionCodecFactory::instance().get("NONE", {});
+    if (!isStoredOnDisk())
+        return CompressionCodecFactory::instance().get("NONE", {});
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    CompressionCodecPtr result = nullptr;
+    for (const auto & part_column : columns)
+    {
+        /// It was compressed with default codec
+        if (!storage_columns.hasCompressionCodec(part_column.name))
+        {
+            result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
+            break;
+        }
+    }
+
+    if (!result)
+        result = CompressionCodecFactory::instance().getDefaultCodec();
+
+    return result;
 }
 
 void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()

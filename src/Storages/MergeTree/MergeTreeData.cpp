@@ -751,12 +751,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
-    MutableDataPartsVector parts_without_default_compression;
     size_t suspicious_broken_parts = 0;
 
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
-    std::atomic<size_t> total_active_parts_size = 0;
 
     ThreadPool pool(num_threads);
 
@@ -789,13 +787,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             try
             {
                 part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-                /// If it was not successful we will try to get default
-                /// compression from config.xml
-                if (!part->loadDefaultCompressionCodec())
-                {
-                    std::lock_guard loading_lock(mutex);
-                    parts_without_default_compression.push_back(part);
-                }
             }
             catch (const Exception & e)
             {
@@ -878,7 +869,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             std::lock_guard loading_lock(mutex);
             if (!data_parts_indexes.insert(part).second)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-            total_active_parts_size += part->getBytesOnDisk();
         });
     }
 
@@ -896,11 +886,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         if (!data_parts_indexes.insert(part).second)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
     }
-
-    /// Deduce codec based on part size and total parts size with rules from
-    /// config.xml
-    for (auto & part : parts_without_default_compression)
-        part->detectAndSetDefaultCompressionCodec(total_active_parts_size);
 
     if (has_non_adaptive_parts && has_adaptive_parts && !settings->enable_mixed_granularity_parts)
         throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
@@ -2433,14 +2418,12 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 }
 
 
-static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, size_t total_active_parts_size)
+static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
     auto disk = part->volume->getDisk();
     String full_part_path = part->getFullRelativePath();
 
     part->loadColumnsChecksumsIndexes(false, true);
-    if (!part->loadDefaultCompressionCodec())
-        part->detectAndSetDefaultCompressionCodec(total_active_parts_size);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
 }
 
@@ -2915,13 +2898,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
 
-    size_t total_active_parts_size = getTotalActiveSizeInBytes();
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", part_names.second);
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first]);
         MutableDataPartPtr part = createPart(part_names.first, single_disk_volume, source_dir + part_names.second);
-        loadPartAndFixMetadataImpl(part, total_active_parts_size);
+        loadPartAndFixMetadataImpl(part);
         loaded_parts.push_back(part);
     }
 
@@ -3291,7 +3273,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     dst_data_part->is_temp = true;
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-    dst_data_part->default_codec = src_part->default_codec;
     dst_data_part->modification_time = disk->getLastModified(dst_part_path).epochTime();
     return dst_data_part;
 }

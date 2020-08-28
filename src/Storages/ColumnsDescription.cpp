@@ -404,6 +404,16 @@ std::optional<ColumnDefault> ColumnsDescription::getDefault(const String & colum
 }
 
 
+bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    if (it == columns.get<1>().end() || !it->codec)
+        return false;
+
+    return true;
+}
+
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto it = columns.get<1>().find(column_name);
