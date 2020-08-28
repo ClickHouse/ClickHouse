@@ -111,7 +111,7 @@ private:
         tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
-    void visit(ASTFunction & function, ASTPtr & node) const
+    void visit(ASTFunction & function, ASTPtr &) const
     {
         bool is_operator_in = false;
         for (auto name : {"in", "notIn", "globalIn", "globalNotIn"})
