@@ -1093,7 +1093,6 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    fmt::print(stderr, "traceid {}, ==0 {}\n", client_info.opentelemetry_trace_id, client_info.opentelemetry_trace_id == 0);
     if (client_info.opentelemetry_trace_id == 0)
     {
         // If trace_id is not initialized, it means that this is an initial query
@@ -1109,7 +1108,6 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
         client_info.opentelemetry_span_id = thread_local_rng();
     }
-    fmt::print(stderr, "traceid {}, ==0 {}\n{}\n", client_info.opentelemetry_trace_id, client_info.opentelemetry_trace_id == 0, StackTrace().toString());
 
     String query_id_to_set = query_id;
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
