@@ -48,8 +48,8 @@ String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { 
 String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal256> & x) const { return formatQuotedWithPrefix(x, "Decimal256_"); }
-String FieldVisitorDump::operator() (const bUInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
-String FieldVisitorDump::operator() (const bInt256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
+String FieldVisitorDump::operator() (const UInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
+String FieldVisitorDump::operator() (const Int256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
 String FieldVisitorDump::operator() (const Int128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
 String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
 
@@ -141,8 +141,8 @@ String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) c
 {
     return formatQuoted(x.data);
 }
-String FieldVisitorToString::operator() (const bUInt256 & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const bInt256 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -286,16 +286,16 @@ void FieldVisitorHash::operator() (const AggregateFunctionStateData & x) const
     hash.update(x.data.data(), x.data.size());
 }
 
-void FieldVisitorHash::operator() (const bUInt256 & x) const
+void FieldVisitorHash::operator() (const UInt256 & x) const
 {
-    UInt8 type = Field::Types::bUInt256;
+    UInt8 type = Field::Types::UInt256;
     hash.update(type);
     hash.update(x);
 }
 
-void FieldVisitorHash::operator() (const bInt256 & x) const
+void FieldVisitorHash::operator() (const Int256 & x) const
 {
-    UInt8 type = Field::Types::bInt256;
+    UInt8 type = Field::Types::Int256;
     hash.update(type);
     hash.update(x);
 }

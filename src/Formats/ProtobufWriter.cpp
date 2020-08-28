@@ -319,8 +319,8 @@ public:
     virtual void writeUInt64(UInt64) override { cannotConvertType("UInt64"); }
     virtual void writeInt128(Int128) override { cannotConvertType("Int128"); }
     virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
-    virtual void writebInt256(const bInt256 &) override { cannotConvertType("Int256"); }
-    virtual void writebUInt256(const bUInt256 &) override { cannotConvertType("UInt256"); }
+    virtual void writeInt256(const Int256 &) override { cannotConvertType("Int256"); }
+    virtual void writeUInt256(const UInt256 &) override { cannotConvertType("UInt256"); }
     virtual void writeFloat32(Float32) override { cannotConvertType("Float32"); }
     virtual void writeFloat64(Float64) override { cannotConvertType("Float64"); }
     virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}

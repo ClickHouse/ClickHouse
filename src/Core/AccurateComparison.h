@@ -52,7 +52,7 @@ template <typename TInt, typename TUInt>
 constexpr bool is_le_int_vs_uint = is_any_int_vs_uint<TInt, TUInt> && (sizeof(TInt) <= sizeof(TUInt));
 
 static_assert(is_le_int_vs_uint<Int128, DB::UInt128>);
-static_assert(is_le_int_vs_uint<Int128, bUInt256>);
+static_assert(is_le_int_vs_uint<Int128, DB::UInt256>);
 
 template <typename TInt, typename TUInt>
 using bool_if_le_int_vs_uint_t = std::enable_if_t<is_le_int_vs_uint<TInt, TUInt>, bool>;
@@ -104,7 +104,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
     if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
         return static_cast<TInt>(static_cast<UInt16>(a)) > static_cast<TInt>(b);
     else if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>)
-        return static_cast<bUInt256>(a) > b;
+        return static_cast<DB::UInt256>(a) > b;
     else
         return static_cast<TInt>(a) > b;
 }
