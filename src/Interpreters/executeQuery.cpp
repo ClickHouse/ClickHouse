@@ -152,8 +152,6 @@ static void logQuery(const String & query, const Context & context, bool interna
             "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
             context.getClientInfo().opentelemetry_trace_id, context.getClientInfo().opentelemetry_span_id,
             context.getClientInfo().opentelemetry_parent_span_id);
-
-        std::cerr << StackTrace().toString() << std::endl;
     }
 }
 
