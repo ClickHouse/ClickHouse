@@ -104,6 +104,23 @@ std::optional<UUID> MultipleAccessStorage::findImpl(EntityType type, const Strin
 }
 
 
+std::optional<UUID> MultipleAccessStorage::findOrGenerateImpl(EntityType type, const String & name) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        auto id = storage->findOrGenerate(type, name);
+        if (id)
+        {
+            std::lock_guard lock{mutex};
+            ids_cache.set(*id, storage);
+            return id;
+        }
+    }
+    return {};
+}
+
+
 std::vector<UUID> MultipleAccessStorage::findAllImpl(EntityType type) const
 {
     std::vector<UUID> all_ids;
