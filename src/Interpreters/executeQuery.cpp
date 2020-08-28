@@ -149,9 +149,11 @@ static void logQuery(const String & query, const Context & context, bool interna
             joinLines(query));
         
         LOG_TRACE(&Poco::Logger::get("executeQuery"),
-            "OpenTelemetry trace id {:x}, span id {:x}, parent span id {:x}",
-            context.getClientInfo().trace_id, context.getClientInfo().span_id,
-            context.getClientInfo().parent_span_id);
+            "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
+            context.getClientInfo().opentelemetry_trace_id, context.getClientInfo().opentelemetry_span_id,
+            context.getClientInfo().opentelemetry_parent_span_id);
+
+        std::cerr << StackTrace().toString() << std::endl;
     }
 }
 
@@ -225,9 +227,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     if (auto opentelemetry_log = context.getOpenTelemetryLog())
     {
         OpenTelemetrySpanLogElement span;
-        span.trace_id = context.getClientInfo().trace_id;
-        span.span_id = context.getClientInfo().span_id;
-        span.parent_span_id = context.getClientInfo().parent_span_id;
+        span.trace_id = context.getClientInfo().opentelemetry_trace_id;
+        span.span_id = context.getClientInfo().opentelemetry_span_id;
+        span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
         span.operation_name = "query";
         span.start_time = current_time;
         span.finish_time = current_time;
@@ -241,6 +243,13 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
         span.attribute_names.push_back("query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
+
+        if (!context.getClientInfo().opentelemetry_tracestate.empty())
+        {
+            span.attribute_names.push_back("tracestate");
+            span.attribute_values.push_back(
+                context.getClientInfo().opentelemetry_tracestate);
+        }
 
         opentelemetry_log->add(span);
     }
@@ -617,9 +626,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (auto opentelemetry_log = context.getOpenTelemetryLog())
                 {
                     OpenTelemetrySpanLogElement span;
-                    span.trace_id = context.getClientInfo().trace_id;
-                    span.span_id = context.getClientInfo().span_id;
-                    span.parent_span_id = context.getClientInfo().parent_span_id;
+                    span.trace_id = context.getClientInfo().opentelemetry_trace_id;
+                    span.span_id = context.getClientInfo().opentelemetry_span_id;
+                    span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
                     span.operation_name = "query";
                     span.start_time = elem.query_start_time;
                     span.finish_time = time(nullptr); // current time
@@ -633,6 +642,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     span.attribute_names.push_back("query_id");
                     span.attribute_values.push_back(elem.client_info.current_query_id);
+                    if (!context.getClientInfo().opentelemetry_tracestate.empty())
+                    {
+                        span.attribute_names.push_back("tracestate");
+                        span.attribute_values.push_back(
+                            context.getClientInfo().opentelemetry_tracestate);
+                    }
 
                     opentelemetry_log->add(span);
                 }

@@ -845,12 +845,16 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
-    query_context->setCurrentQueryId(state.query_id);
-
     /// Client info
     ClientInfo & client_info = query_context->getClientInfo();
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         client_info.read(*in, client_revision);
+
+    // It is convenient to generate default OpenTelemetry trace id and default
+    // query id together. ClientInfo might contain upstream trace id, so we
+    // decide whether to use the default ids after we have received the ClientInfo.
+    // We also set up the parent span id while we're at it.
+    query_context->setCurrentQueryId(state.query_id);
 
     /// For better support of old clients, that does not send ClientInfo.
     if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
