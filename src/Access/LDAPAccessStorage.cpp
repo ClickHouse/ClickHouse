@@ -49,16 +49,16 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
         roles_cfg.insert(role_names.begin(), role_names.end());
     }
 
-    ldap_server = ldap_server_cfg;
-    roles.swap(roles_cfg);
     access_control_manager = access_control_manager_;
+    ldap_server = ldap_server_cfg;
+    default_role_names.swap(roles_cfg);
+    roles_of_interest.clear();
     role_change_subscription = access_control_manager->subscribeForChanges<Role>(
         [this] (const UUID & id, const AccessEntityPtr & entity)
         {
             return this->processRoleChange(id, entity);
         }
     );
-    roles_of_interest.clear();
 }
 
 
@@ -73,7 +73,7 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
     auto role_ptr = typeid_cast<std::shared_ptr<const Role>>(entity);
     if (role_ptr)
     {
-        if (roles.find(role_ptr->getName()) != roles.end())
+        if (default_role_names.find(role_ptr->getName()) != default_role_names.end())
         {
             auto update_func = [&id](const AccessEntityPtr & cached_entity) -> AccessEntityPtr
             {
@@ -163,7 +163,7 @@ std::optional<UUID> LDAPAccessStorage::findOrGenerateImpl(EntityType type, const
         user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
         user->authentication.setServerName(ldap_server);
 
-        for (const auto& role_name : roles)
+        for (const auto& role_name : default_role_names)
         {
             std::optional<UUID> role_id;
 
