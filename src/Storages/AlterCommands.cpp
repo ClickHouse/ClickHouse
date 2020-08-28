@@ -44,10 +44,9 @@ namespace ErrorCodes
 }
 
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-    const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -75,7 +74,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
+            command.codec = ast_col_decl.codec;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -132,7 +131,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
+            command.codec = ast_col_decl.codec;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -279,7 +278,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         if (comment)
             column.comment = *comment;
 
-        column.codec = codec;
+        if (codec)
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false);
+
         column.ttl = ttl;
 
         metadata.columns.add(column, after_column, first);
@@ -298,16 +299,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (codec)
-            {
-                /// User doesn't specify data type, it means that datatype doesn't change
-                /// let's use info about old type
-                if (data_type == nullptr)
-                    codec->useInfoAboutType(column.type);
-                else /// use info about new DataType
-                    codec->useInfoAboutType(data_type);
-
-                column.codec = codec;
-            }
+                column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false);
 
             if (comment)
                 column.comment = *comment;
@@ -840,6 +832,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
+            if (command.codec)
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
@@ -856,6 +851,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             if (renamed_columns.count(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
+
+            if (command.codec)
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)

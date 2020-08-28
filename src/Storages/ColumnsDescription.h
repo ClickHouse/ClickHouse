@@ -7,6 +7,7 @@
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnCodec.h>
 #include <optional>
+#include <Compression/CompressionFactory.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
@@ -30,7 +31,7 @@ struct ColumnDescription
     DataTypePtr type;
     ColumnDefault default_desc;
     String comment;
-    CompressionCodecPtr codec;
+    ASTPtr codec;
     ASTPtr ttl;
 
     ColumnDescription() = default;
