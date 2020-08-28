@@ -19,29 +19,29 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n-clickhouse_path/format_schemas/rabbitmq.proto\"*\n\x0cKeyValuePair\x12\x0b\n\x03key\x18\x01 \x01(\x04\x12\r\n\x05value\x18\x02 \x01(\tb\x06proto3'
+  serialized_pb=b'\n-clickhouse_path/format_schemas/rabbitmq.proto\"+\n\rKeyValueProto\x12\x0b\n\x03key\x18\x01 \x01(\x04\x12\r\n\x05value\x18\x02 \x01(\tb\x06proto3'
 )
 
 
 
 
-_KEYVALUEPAIR = _descriptor.Descriptor(
-  name='KeyValuePair',
-  full_name='KeyValuePair',
+_KEYVALUEPROTO = _descriptor.Descriptor(
+  name='KeyValueProto',
+  full_name='KeyValueProto',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='key', full_name='KeyValuePair.key', index=0,
+      name='key', full_name='KeyValueProto.key', index=0,
       number=1, type=4, cpp_type=4, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='value', full_name='KeyValuePair.value', index=1,
+      name='value', full_name='KeyValueProto.value', index=1,
       number=2, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -60,18 +60,18 @@ _KEYVALUEPAIR = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=49,
-  serialized_end=91,
+  serialized_end=92,
 )
 
-DESCRIPTOR.message_types_by_name['KeyValuePair'] = _KEYVALUEPAIR
+DESCRIPTOR.message_types_by_name['KeyValueProto'] = _KEYVALUEPROTO
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
-KeyValuePair = _reflection.GeneratedProtocolMessageType('KeyValuePair', (_message.Message,), {
-  'DESCRIPTOR' : _KEYVALUEPAIR,
+KeyValueProto = _reflection.GeneratedProtocolMessageType('KeyValueProto', (_message.Message,), {
+  'DESCRIPTOR' : _KEYVALUEPROTO,
   '__module__' : 'clickhouse_path.format_schemas.rabbitmq_pb2'
-  # @@protoc_insertion_point(class_scope:KeyValuePair)
+  # @@protoc_insertion_point(class_scope:KeyValueProto)
   })
-_sym_db.RegisterMessage(KeyValuePair)
+_sym_db.RegisterMessage(KeyValueProto)
 
 
 # @@protoc_insertion_point(module_scope)

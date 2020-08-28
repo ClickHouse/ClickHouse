@@ -33,7 +33,7 @@ Block RabbitMQBlockOutputStream::getHeader() const
 
 void RabbitMQBlockOutputStream::writePrefix()
 {
-    if (storage.checkBridge())
+    if (!storage.exchangeRemoved())
         storage.unbindExchange();
 
     buffer = storage.createWriteBuffer();

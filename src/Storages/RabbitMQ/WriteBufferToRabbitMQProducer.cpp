@@ -120,19 +120,20 @@ void WriteBufferToRabbitMQProducer::countRow()
 bool WriteBufferToRabbitMQProducer::setupConnection(bool reconnecting)
 {
     size_t cnt_retries = 0;
+
     if (reconnecting)
     {
-        /* connection->close() is called in onError() method (called by the AMQP library when a fatal error occurs on the connection)
-         * inside event_handler, but it is not closed immediately (firstly, all pending operations are completed, and then an AMQP
-         * closing-handshake is  performed). But cannot open a new connection untill previous one is properly closed.
-         */
-        while (!connection->closed() && ++cnt_retries != (RETRIES_MAX >> 1))
+        connection->close();
+
+        while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
             event_handler->iterateLoop();
+
         if (!connection->closed())
             connection->close(true);
+
+        LOG_TRACE(log, "Trying to set up connection");
     }
 
-    LOG_TRACE(log, "Trying to set up connection");
     connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
             AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
@@ -143,7 +144,7 @@ bool WriteBufferToRabbitMQProducer::setupConnection(bool reconnecting)
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
-    return connection->ready();
+    return event_handler->connectionRunning();
 }
 
 
@@ -159,7 +160,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         producer_channel->close();
 
         /* Save records that have not received ack/nack from server before channel closure. They are removed and pushed back again once
-         * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid.
+         * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid
          */
         for (const auto & record : delivery_record)
             returned.tryPush(record.second);
@@ -235,31 +236,31 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
     std::pair<UInt64, String> payload;
 
     /* It is important to make sure that delivery_record.size() is never bigger than returned.size(), i.e. number if unacknowledged
-     * messages cannot exceed returned.size(), because they all might end up there.
+     * messages cannot exceed returned.size(), because they all might end up there
      */
     while (!messages.empty() && producer_channel->usable() && delivery_record.size() < RETURNED_LIMIT)
     {
         messages.pop(payload);
         AMQP::Envelope envelope(payload.second.data(), payload.second.size());
 
-        /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty.
+        /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty
         AMQP::Table message_settings = key_arguments;
 
         /* There is the case when connection is lost in the period after some messages were published and before ack/nack was sent by the
          * server, then it means that publisher will never know whether those messages were delivered or not, and therefore those records
          * that received no ack/nack before connection loss will be republished (see onError() callback), so there might be duplicates. To
-         * let consumer know that received message might be a possible duplicate - a "republished" field is added to message metadata.
+         * let consumer know that received message might be a possible duplicate - a "republished" field is added to message metadata
          */
         message_settings["republished"] = std::to_string(republishing);
         envelope.setHeaders(message_settings);
 
         /* Adding here a messageID property to message metadata. Since RabbitMQ does not guarantee exactly-once delivery, then on the
          * consumer side "republished" field of message metadata can be checked and, if it set to 1, consumer might also check "messageID"
-         * property. This way detection of duplicates is guaranteed.
+         * property. This way detection of duplicates is guaranteed
          */
         envelope.setMessageID(std::to_string(payload.first));
 
-        /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse.
+        /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse
         if (persistent)
             envelope.setDeliveryMode(2);
 
@@ -276,11 +277,11 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
             producer_channel->publish(exchange_name, routing_keys[0], envelope);
         }
 
-        /// This is needed for "publisher confirms", which guarantees at-least-once delivery.
+        /// This is needed for "publisher confirms", which guarantees at-least-once delivery
         ++delivery_tag;
         delivery_record.insert(delivery_record.end(), {delivery_tag, payload});
 
-        /// Need to break at some point to let event loop run, because no publishing actually happens before looping.
+        /// Need to break at some point to let event loop run, because no publishing actually happens before looping
         if (delivery_tag % BATCH == 0)
             break;
     }
@@ -291,11 +292,11 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
 
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
-    /// wait_confirm == false when shutdown is called, needed because table might be dropped before all acks are received.
+    /// wait_confirm == false when shutdown is called, needed because table might be dropped before all acks are received
     while ((!payloads.empty() || wait_all) && wait_confirm.load())
     {
         /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
-         * as fast as possible and no new publishes are made before returned messages are handled.
+         * as fast as possible and no new publishes are made before returned messages are handled
          */
         if (!returned.empty() && producer_channel->usable())
             publish(returned, true);
@@ -306,11 +307,11 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         /* wait_num != 0 if there will be no new payloads pushed to payloads.queue in countRow(), delivery_record is empty if there are
          * no more pending acknowldgements from the server (if receieved ack(), records are deleted, if received nack(), records are pushed
-         * to returned.queue and deleted, because server will attach new delivery tags to them).
+         * to returned.queue and deleted, because server will attach new delivery tags to them)
          */
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
-        else if ((!producer_channel->usable() && connection->usable()) || (!connection->usable() && setupConnection(true)))
+        else if ((!producer_channel->usable() && event_handler->connectionRunning()) || (!event_handler->connectionRunning() && setupConnection(true)))
             setupChannel();
     }
 

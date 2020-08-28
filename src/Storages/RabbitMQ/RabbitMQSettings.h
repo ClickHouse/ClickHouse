@@ -18,7 +18,6 @@ namespace DB
     M(String, rabbitmq_exchange_type, "default", "The exchange type.", 0) \
     M(UInt64, rabbitmq_num_consumers, 1, "The number of consumer channels per table.", 0) \
     M(UInt64, rabbitmq_num_queues, 1, "The number of queues per consumer.", 0) \
-    M(Bool, rabbitmq_transactional_channel, false, "Use transactional channel for publishing.", 0) \
     M(String, rabbitmq_queue_base, "", "Base for queue names to be able to reopen non-empty queues in case of failure.", 0) \
     M(String, rabbitmq_deadletter_exchange, "", "Exchange name to be passed as a dead-letter-exchange name.", 0) \
     M(Bool, rabbitmq_persistent_mode, false, "If set, delivery mode will be set to 2 (makes messages 'persistent', durable).", 0) \

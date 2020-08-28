@@ -56,12 +56,18 @@ public:
         AckTracker track;
     };
 
-    void allowNext() { allowed = true; } // Allow to read next message.
     bool channelUsable() { return !channel_error.load(); }
-    void restoreChannel(ChannelPtr new_channel);
+    /// Do not allow to update channel untill current channel is properly set up and subscribed
+    bool channelAllowed() { return !wait_subscription.load(); }
 
-    void ackMessages();
-    void updateAckTracker(AckTracker record);
+    ChannelPtr & getChannel() { return consumer_channel; }
+    void setupChannel();
+
+    bool ackMessages();
+    void updateAckTracker(AckTracker record = AckTracker());
+
+    bool queueEmpty() { return received.empty(); }
+    void allowNext() { allowed = true; } // Allow to read next message.
 
     auto getChannelID() const { return current.track.channel_id; }
     auto getDeliveryTag() const { return current.track.delivery_tag; }
@@ -93,10 +99,11 @@ private:
     const std::atomic<bool> & stopped;
 
     String channel_id;
-    std::atomic<bool> channel_error = true;
+    std::atomic<bool> channel_error = true, wait_subscription = false;
     std::vector<String> queues;
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
+    size_t subscribed = 0;
 
     AckTracker last_inserted_record;
     UInt64 prev_tag = 0, channel_id_counter = 0;

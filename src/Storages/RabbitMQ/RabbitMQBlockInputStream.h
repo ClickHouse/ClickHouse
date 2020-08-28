@@ -16,8 +16,9 @@ public:
     RabbitMQBlockInputStream(
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
-            const Context & context_,
-            const Names & columns);
+            const std::shared_ptr<Context> & context_,
+            const Names & columns,
+            bool ack_in_suffix = true);
 
     ~RabbitMQBlockInputStream() override;
 
@@ -28,13 +29,18 @@ public:
     Block readImpl() override;
     void readSuffixImpl() override;
 
+    void updateChannel();
+    bool needManualChannelUpdate();
+    bool sendAck();
+
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    Context context;
+    const std::shared_ptr<Context> context;
     Names column_names;
+    bool ack_in_suffix;
+
     bool finished = false;
-    bool claimed = false;
     const Block non_virtual_header;
     const Block virtual_header;
 
