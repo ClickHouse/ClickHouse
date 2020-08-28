@@ -352,7 +352,7 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
-            if (compareAt(new_first, j, *this, nan_direction_hint) != 0)
+            if (compareAt(res[new_first], res[j], *this, nan_direction_hint) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
