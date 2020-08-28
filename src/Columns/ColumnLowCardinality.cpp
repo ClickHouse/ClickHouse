@@ -376,7 +376,7 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
-            if (getDictionary().compareAt(getIndexes().getUInt(new_first), getIndexes().getUInt(j), getDictionary(), nan_direction_hint) != 0)
+            if (getDictionary().compareAt(getIndexes().getUInt(res[new_first]), getIndexes().getUInt(res[j]), getDictionary(), nan_direction_hint) != 0)
             {
                 if (j - new_first > 1)
                     new_ranges.emplace_back(new_first, j);
@@ -387,7 +387,7 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
         auto new_last = limit;
         for (auto j = limit; j < last; ++j)
         {
-            if (getDictionary().compareAt(getIndexes().getUInt(new_first), getIndexes().getUInt(j), getDictionary(), nan_direction_hint) == 0)
+            if (getDictionary().compareAt(getIndexes().getUInt(res[new_first]), getIndexes().getUInt(res[j]), getDictionary(), nan_direction_hint) == 0)
             {
                 std::swap(res[new_last], res[j]);
                 ++new_last;
