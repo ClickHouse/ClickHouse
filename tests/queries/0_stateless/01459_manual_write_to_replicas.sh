@@ -5,13 +5,14 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n -q "
-    DROP TABLE IF EXISTS r1;
-    DROP TABLE IF EXISTS r2;
+NUM_REPLICAS=10
 
-    CREATE TABLE r1 (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/r', 'r1') ORDER BY x;
-    CREATE TABLE r2 (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/r', 'r2') ORDER BY x;
-"
+for i in $(seq 1 $NUM_REPLICAS); do
+    $CLICKHOUSE_CLIENT -n -q "
+        DROP TABLE IF EXISTS r$i;
+        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/r', 'r$i') ORDER BY x;
+    "
+done
 
 function thread {
     for x in {0..99}; do
@@ -19,20 +20,16 @@ function thread {
     done
 }
 
-thread 1 &
-thread 2 &
+for i in $(seq 1 $NUM_REPLICAS); do
+    thread $i &
+done
 
 wait
 
-$CLICKHOUSE_CLIENT -n -q "
-    SYSTEM SYNC REPLICA r1;
-    SYSTEM SYNC REPLICA r2;
+for i in $(seq 1 $NUM_REPLICAS); do
+    $CLICKHOUSE_CLIENT -n -q "
+        SYSTEM SYNC REPLICA r$i;
+        SELECT count(), min(x), max(x), sum(x) FROM r$i;
+        DROP TABLE IF EXISTS r$i;
 "
-
-$CLICKHOUSE_CLIENT -q "SELECT count(), min(x), max(x), sum(x) FROM r1";
-$CLICKHOUSE_CLIENT -q "SELECT count(), min(x), max(x), sum(x) FROM r2";
-
-$CLICKHOUSE_CLIENT -n -q "
-    DROP TABLE IF EXISTS r1;
-    DROP TABLE IF EXISTS r2;
-"
+done
