@@ -147,7 +147,7 @@ static void logQuery(const String & query, const Context & context, bool interna
             (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             joinLines(query));
-        
+
         LOG_TRACE(&Poco::Logger::get("executeQuery"),
             "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
             context.getClientInfo().opentelemetry_trace_id, context.getClientInfo().opentelemetry_span_id,

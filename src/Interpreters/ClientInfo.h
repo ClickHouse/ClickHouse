@@ -58,7 +58,7 @@ public:
     String initial_user;
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
-    
+
     // OpenTelemetry things
     __uint128_t opentelemetry_trace_id = 0;
     // Span ID is not strictly the client info, but convenient to keep here.
