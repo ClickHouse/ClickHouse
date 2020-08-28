@@ -58,11 +58,11 @@ private:
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
     mutable std::recursive_mutex mutex;
-    String ldap_server;
-    std::set<String> roles;
     AccessControlManager * access_control_manager = nullptr;
-    ext::scope_guard role_change_subscription;
+    String ldap_server;
+    std::set<String> default_role_names;
     mutable std::set<UUID> roles_of_interest;
+    ext::scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;
 };
 }
