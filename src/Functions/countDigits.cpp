@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnConst.h>
 
 
 namespace DB
@@ -17,8 +16,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
-/// Precision could be set as second argument or omitted. If ommited function uses Decimal presicion of the first argument.
+/// Returns number of decimal digits you need to represent the value.
+/// For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale).
+/// countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4.
+/// I.e. you may check decimal overflow for Decimal64 with 'countDecimal(x) > 18'. It's a slow variant of isDecimalOverflow().
 class FunctionCountDigits : public IFunction
 {
 public:
@@ -30,7 +31,7 @@ public:
     }
 
     String getName() const override { return name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -58,18 +59,7 @@ public:
             using Type = typename Types::RightType;
             using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
-            if (const ColumnConst * const_column = checkAndGetColumnConst<ColVecType>(src_column.column.get()))
-            {
-                Type const_value = checkAndGetColumn<ColVecType>(const_column->getDataColumnPtr().get())->getData()[0];
-                UInt32 num_digits = 0;
-                if constexpr (IsDecimalNumber<Type>)
-                    num_digits = digits(const_value.value);
-                else
-                    num_digits = digits(const_value);
-                result_column->getData().resize_fill(input_rows_count, num_digits);
-                return true;
-            }
-            else if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
+            if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
                 execute<Type>(*col_vec, *result_column, input_rows_count);
                 return true;
