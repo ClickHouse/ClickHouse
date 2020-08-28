@@ -146,107 +146,42 @@ void ClientInfo::setInitialQuery()
     client_name = (DBMS_NAME " ") + client_name;
 }
 
-template <typename T>
-bool readLowercaseHexDigits(const char *& begin, const char * end, T & dest_value, std::string & error)
-{
-    char * dest_begin = reinterpret_cast<char *>(&dest_value);
-    char * dest_end = dest_begin + sizeof(dest_value);
-    bool odd_character = true;
-    for (;;)
-    {
-        if (begin == end)
-        {
-            if (dest_begin == dest_end)
-            {
-                return true;
-            }
-            error = fmt::format("Not enough charaters in the input, got {}, need {} more", end - begin, dest_end - dest_begin);
-            return false;
-        }
-
-        if (dest_begin == dest_end)
-        {
-            return true;
-        }
-
-        int cur = 0;
-        if (*begin >= '0' && *begin <= '9')
-        {
-            cur = *begin - '0';
-        }
-        else if (*begin >= 'a' && *begin <= 'f')
-        {
-            cur = 10 + *begin - 'a';
-        }
-        else
-        {
-            error = fmt::format("Encountered '{}' which is not a lowercase hexadecimal digit", *begin);
-            return false;
-        }
-
-        // Two characters per byte, little-endian.
-        if (odd_character)
-        {
-            *(dest_end - 1) = cur;
-        }
-        else
-        {
-            *(dest_end - 1) = *(dest_end - 1) << 8 | cur;
-            --dest_end;
-        }
-
-        begin++;
-        odd_character = !odd_character;
-    }
-}
-
 bool ClientInfo::setOpenTelemetryTraceparent(const std::string & traceparent,
     std::string & error)
 {
     uint8_t version = -1;
-    __uint128_t trace_id = 0;
+    __uint64_t trace_id_high = 0;
+    __uint64_t trace_id_low = 0;
     uint64_t trace_parent = 0;
     uint8_t trace_flags = 0;
 
-    const char * begin = &traceparent[0];
-    const char * end = begin + traceparent.length();
+    int result = sscanf(&traceparent[0],
+        "%2" SCNx8 "-%16" SCNx64 "%16" SCNx64 "-%16" SCNx64 "-%2" SCNx8,
+        &version, &trace_id_high, &trace_id_low, &trace_parent, &trace_flags);
 
-#define CHECK_CONDITION(condition, ...) \
-    ((condition) || (error = fmt::format(__VA_ARGS__), false))
-
-#define CHECK_DELIMITER \
-    (begin >= end \
-        ? (error = fmt::format( \
-                "Expected '-' delimiter, got EOL at position {}", \
-                begin - &traceparent[0]), \
-            false) \
-        : *begin != '-' \
-            ? (error = fmt::format( \
-                    "Expected '-' delimiter, got '{}' at position {}", \
-                    *begin, begin - &traceparent[0]), \
-                false) \
-            : (++begin, true))
-
-    bool result = readLowercaseHexDigits(begin, end, version, error)
-        && CHECK_CONDITION(version == 0, "Expected version 00, got {}", version)
-        && CHECK_DELIMITER
-        && readLowercaseHexDigits(begin, end, trace_id, error)
-        && CHECK_DELIMITER
-        && readLowercaseHexDigits(begin, end, trace_parent, error)
-        && CHECK_DELIMITER
-        && readLowercaseHexDigits(begin, end, trace_flags, error)
-        && CHECK_CONDITION(begin == end,
-            "Expected end of string, got {} at position {}", *begin, end - begin);
-
-#undef CHECK
-#undef CHECK_DELIMITER
-
-    if (!result)
+    if (result == EOF)
     {
+        error = "Failed to parse traceparent header (EOF)";
         return false;
     }
 
-    opentelemetry_trace_id = trace_id;
+    if (result != 5)
+    {
+        error = fmt::format("Failed to parse traceparent header"
+            "(could only read {} parts instead of the expected 5)",
+            result);
+        return false;
+    }
+
+    if (version != 0)
+    {
+        error = fmt::format("Unexpected version {} of traceparent header:"
+            "expected 00", version);
+        return false;
+    }
+
+    opentelemetry_trace_id = static_cast<__uint128_t>(trace_id_high) << 64
+        | trace_id_low;
     opentelemetry_parent_span_id = trace_parent;
     opentelemetry_trace_flags = trace_flags;
     return true;
