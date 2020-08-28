@@ -35,6 +35,7 @@ public:
 
 protected:
     std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    std::optional<UUID> findOrGenerateImpl(EntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
