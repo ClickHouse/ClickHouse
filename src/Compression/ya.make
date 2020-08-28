@@ -29,7 +29,6 @@ SRCS(
     CompressionFactory.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
-    getCompressionCodecForFile.cpp
 
 )
 
