@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
+#include <Common/CurrentThread.h>
 #include <common/getThreadId.h>
 
 
@@ -125,8 +126,8 @@ namespace
 }
 
 
-StorageSystemStackTrace::StorageSystemStackTrace(const String & name_)
-    : IStorageSystemOneBlock<StorageSystemStackTrace>(name_)
+StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
+    : IStorageSystemOneBlock<StorageSystemStackTrace>(table_id_)
 {
     notification_pipe.open();
 

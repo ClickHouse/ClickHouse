@@ -3,9 +3,9 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-[ -e ${CLICKHOUSE_TMP}/test_squashing_block_without_column.out ] && rm ${CLICKHOUSE_TMP}/test_squashing_block_without_column.out
+[ -e "${CLICKHOUSE_TMP}"/test_squashing_block_without_column.out ] && rm "${CLICKHOUSE_TMP}"/test_squashing_block_without_column.out
 
 ${CLICKHOUSE_CLIENT} --query "select number as SomeID, number+1 as OtherID from system.numbers limit 1000 into outfile '${CLICKHOUSE_TMP}/test_squashing_block_without_column.out' format Native"
 

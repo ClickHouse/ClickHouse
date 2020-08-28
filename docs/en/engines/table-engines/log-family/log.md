@@ -5,7 +5,7 @@ toc_title: Log
 
 # Log {#log}
 
-Engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/log-family.md) article.
+Engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
 Log differs from [TinyLog](../../../engines/table-engines/log-family/tinylog.md) in that a small file of “marks” resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
 For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.

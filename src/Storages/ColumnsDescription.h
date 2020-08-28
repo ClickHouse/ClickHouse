@@ -121,6 +121,11 @@ public:
         return columns.size();
     }
 
+    bool empty() const
+    {
+        return columns.empty();
+    }
+
     /// Keep the sequence of columns and allow to lookup by name.
     using Container = boost::multi_index_container<
         ColumnDescription,

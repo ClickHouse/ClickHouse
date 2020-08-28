@@ -169,17 +169,6 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 }
 
 
-String createCommaSeparatedStringFrom(const Names & names)
-{
-    std::ostringstream ss;
-    if (!names.empty())
-    {
-        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
-        ss << names.back();
-    }
-    return ss.str();
-}
-
 Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 {
     const auto sorting_key_ast = extractOrderBy(storage_ast);

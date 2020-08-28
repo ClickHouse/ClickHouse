@@ -233,13 +233,13 @@ public:
     AsofRowRefs() {}
     AsofRowRefs(TypeIndex t);
 
-    static std::optional<TypeIndex> getTypeSize(const IColumn * asof_column, size_t & type_size);
+    static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
     // This will be synchronized by the rwlock mutex in Join.h
-    void insert(TypeIndex type, const IColumn * asof_column, const Block * block, size_t row_num);
+    void insert(TypeIndex type, const IColumn & asof_column, const Block * block, size_t row_num);
 
     // This will internally synchronize
-    const RowRef * findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn * asof_column, size_t row_num) const;
+    const RowRef * findAsof(TypeIndex type, ASOF::Inequality inequality, const IColumn & asof_column, size_t row_num) const;
 
 private:
     // Lookups can be stored in a HashTable because it is memmovable

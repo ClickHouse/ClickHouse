@@ -16,6 +16,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     size_t group_length;
     size_t group_offset;
@@ -23,5 +25,3 @@ private:
 };
 
 }
-
-

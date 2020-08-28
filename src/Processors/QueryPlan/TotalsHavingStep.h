@@ -26,6 +26,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
+    void describeActions(FormatSettings & settings) const override;
+
 private:
     bool overflow_row;
     ExpressionActionsPtr expression;

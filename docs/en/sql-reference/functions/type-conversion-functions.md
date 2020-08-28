@@ -523,7 +523,7 @@ Result:
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
-This function is similar to ['parseDateTimeBestEffort'](#parsedatetimebesteffort), the only difference is that this function prefers US style (`MM/DD/YYYY` etc) in case of ambiguouty.
+This function is similar to [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), the only difference is that this function prefers US style (`MM/DD/YYYY` etc) in case of ambiguouty.
 
 **Syntax**
 

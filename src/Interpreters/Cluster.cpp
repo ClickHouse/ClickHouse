@@ -86,18 +86,20 @@ Cluster::Address::Address(
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
+    priority = config.getInt(config_prefix + ".priority", 1);
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     is_local = isLocal(config.getInt(port_type, 0));
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_)
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_, Int64 priority_)
     : user(user_), password(password_)
 {
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    priority = priority_;
     is_local = isLocal(clickhouse_port);
 }
 
@@ -209,6 +211,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
         address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
         address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
         address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+        // address.priority ignored
         return address;
     }
 }
@@ -302,7 +305,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
                 address.default_database, address.user, address.password,
-                "server", address.compression, address.secure);
+                "server", address.compression,
+                address.secure, address.priority);
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(
                 ConnectionPoolPtrs{pool}, settings.load_balancing);
@@ -375,7 +379,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                     settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
                     replica.default_database, replica.user, replica.password,
-                    "server", replica.compression, replica.secure);
+                    "server", replica.compression,
+                    replica.secure, replica.priority);
 
                 all_replicas_pools.emplace_back(replica_pool);
                 if (replica.is_local)
@@ -414,7 +419,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote, bool secure)
+                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote,
+                 bool secure, Int64 priority)
 {
     UInt32 current_shard_num = 1;
 
@@ -422,7 +428,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (const auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port, secure);
+            current.emplace_back(replica, username, password, clickhouse_port, secure, priority);
 
         addresses_with_failover.emplace_back(current);
 
@@ -436,7 +442,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
-                        "server", replica.compression, replica.secure);
+                        "server", replica.compression, replica.secure, replica.priority);
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
                 shard_local_addresses.push_back(replica);
@@ -455,7 +461,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
             std::move(shard_local_addresses),
             std::move(shard_pool),
             std::move(all_replicas),
-            false
+            false // has_internal_replication
         });
         ++current_shard_num;
     }
@@ -542,7 +548,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 address.password,
                 "server",
                 address.compression,
-                address.secure);
+                address.secure,
+                address.priority);
 
             info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
             info.per_replica_pools = {std::move(pool)};

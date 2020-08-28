@@ -33,8 +33,8 @@ struct Int64Hasher
 /*
     Class for storing cache index.
     It consists of two arrays.
-    The first one is splitted into buckets (each stores 8 elements (cells)) determined by hash of the element key.
-    The second one is splitted into 4bit numbers, which are positions in bucket for next element write (So cache uses FIFO eviction algorithm inside each bucket).
+    The first one is split into buckets (each stores 8 elements (cells)) determined by hash of the element key.
+    The second one is split into 4bit numbers, which are positions in bucket for next element write (So cache uses FIFO eviction algorithm inside each bucket).
 */
 template <typename K, typename V, typename Hasher, typename Deleter = EmptyDeleter>
 class BucketCacheIndex

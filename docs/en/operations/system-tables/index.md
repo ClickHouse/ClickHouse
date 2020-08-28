@@ -20,9 +20,9 @@ System tables:
 
 Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
-Unlike other system tables, the system tables [metric\_log](metric_log.md#system_tables-metric_log), [query\_log](query_log.md#system_tables-query_log), [query\_thread\_log](query_thread_log.md#system_tables-query_thread_log), [trace\_log](trace_log.md#system_tables-trace_log) are served by [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
+Unlike other system tables, the system tables [metric\_log](../../operations/system-tables/metric_log.md#system_tables-metric_log), [query\_log](../../operations/system-tables/query_log.md#system_tables-query_log), [query\_thread\_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log), [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) are served by [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
 
-By default, table growth is unlimited. To control a size of a table, you can use [TTL](../../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
+By default, table growth is unlimited. To control a size of a table, you can use [TTL](../../sql-reference/statements/alter/ttl.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
 
 ## Sources of System Metrics {#system-tables-sources-of-system-metrics}
 
@@ -44,6 +44,5 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/system-tables/) <!--hide-->
