@@ -5,7 +5,7 @@
 Столбцы:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — Имя политики строк.
 
--    `short_name` ([String](../../sql-reference/data-types/string.md)) — Короткое имя политики строк. Имена политик строк являются составными, например: myfilter ON mydb.mytable. Здесь "myfilter ON mydb.mytable" — это имя политики строк, "myfilter" — короткое имя.
+-    `short_name` ([String](../../sql-reference/data-types/string.md)) — Короткое имя политики строк. Имена политик строк являются составными, например: `myfilter ON mydb.mytable`. Здесь `myfilter ON mydb.mytable` — это имя политики строк, `myfilter` — короткое имя.
 
 -    `database` ([String](../../sql-reference/data-types/string.md)) — Имя базы данных.
 
