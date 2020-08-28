@@ -1,9 +1,12 @@
 #include "ICompressionCodec.h"
 
-#include <cassert>
-
+#include <Compression/LZ4_decompress_faster.h>
 #include <common/unaligned.h>
-#include <Common/Exception.h>
+#include <Common/hex.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Common/typeid_cast.h>
+#include <Compression/CompressionFactory.h>
 
 
 namespace DB
@@ -36,12 +39,12 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 
     UInt8 header_size = getHeaderSize();
     if (source_size < header_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: the compressed data size ({}), this should include header size) is less than the header size ({})", source_size, size_t(header_size));
+        throw Exception("Can't decompress data: the compressed data size (" + toString(source_size)
+            + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
 
-    uint8_t our_method = getMethodByte();
     uint8_t method = source[0];
-    if (method != our_method)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Can't decompress data with codec byte {} using codec with byte {}", method, our_method);
+    if (method != getMethodByte())
+        throw Exception("Can't decompress data with codec byte " + toString(method) + " from codec with byte " + toString(method), ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt32 decompressed_size = readDecompressedBlockSize(source);
     doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);

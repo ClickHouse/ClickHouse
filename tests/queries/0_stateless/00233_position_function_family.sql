@@ -1,4 +1,4 @@
-SET send_logs_level = 'fatal';
+SET send_logs_level = 'none';
 select 1 = position('', '');
 select 1 = position('abc', '');
 select 0 = position('', 'abc');

@@ -1007,7 +1007,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     MergeTreeData & data,
     std::lock_guard<std::mutex> & state_lock) const
 {
-    /// If our entry produce part which is already covered by
+    /// If our entry produce part which is alredy covered by
     /// some other entry which is currently executing, then we can postpone this entry.
     if (entry.type == LogEntry::MERGE_PARTS
         || entry.type == LogEntry::GET_PART
@@ -1045,12 +1045,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
             if (part)
-            {
-                if (auto part_in_memory = asInMemoryPart(part))
-                    sum_parts_size_in_bytes += part_in_memory->block.bytes();
-                else
-                    sum_parts_size_in_bytes += part->getBytesOnDisk();
-            }
+                sum_parts_size_in_bytes += part->getBytesOnDisk();
         }
 
         if (merger_mutator.merges_blocker.isCancelled())
@@ -1086,6 +1081,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 entry.typeToString(), entry.new_part_name,
                 ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
 
+            return false;
+        }
+    }
+
+    /// TODO: it makes sense to check DROP_RANGE also
+    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::REPLACE_RANGE)
+    {
+        String conflicts_description;
+        String range_name = (entry.type == LogEntry::REPLACE_RANGE) ? entry.replace_range_entry->drop_range_part_name : entry.new_part_name;
+        auto range = MergeTreePartInfo::fromPartName(range_name, format_version);
+
+        if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
+        {
+            LOG_DEBUG(log, conflicts_description);
             return false;
         }
     }
@@ -1266,7 +1275,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
     try
     {
         /// We don't have any backoff for failed entries
-        /// we just count amount of tries for each of them.
+        /// we just count amount of tries for each ot them.
         if (func(entry))
             removeProcessedEntry(get_zookeeper(), entry);
     }
@@ -1579,43 +1588,6 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
     out_max_processed_insert_time = max_processed_insert_time;
 }
 
-
-std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMutationsStatus(const String & znode_name, std::set<String> * mutation_ids) const
-{
-
-    std::lock_guard lock(state_mutex);
-    auto current_mutation_it = mutations_by_znode.find(znode_name);
-    /// killed
-    if (current_mutation_it == mutations_by_znode.end())
-        return {};
-
-    const MutationStatus & status = current_mutation_it->second;
-    MergeTreeMutationStatus result
-    {
-        .is_done = status.is_done,
-        .latest_failed_part = status.latest_failed_part,
-        .latest_fail_time = status.latest_fail_time,
-        .latest_fail_reason = status.latest_fail_reason,
-    };
-
-    if (mutation_ids && !status.latest_fail_reason.empty())
-    {
-        const auto & latest_failed_part_info = status.latest_failed_part_info;
-        auto in_partition = mutations_by_partition.find(latest_failed_part_info.partition_id);
-        if (in_partition != mutations_by_partition.end())
-        {
-            const auto & version_to_status = in_partition->second;
-            auto begin_it = version_to_status.upper_bound(latest_failed_part_info.getDataVersion());
-            for (auto it = begin_it; it != version_to_status.end(); ++it)
-            {
-                /// All mutations with the same failure
-                if (!it->second->is_done && it->second->latest_fail_reason == status.latest_fail_reason)
-                    mutation_ids->insert(it->second->entry->znode_name);
-            }
-        }
-    }
-    return result;
-}
 
 std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
 {
@@ -1947,7 +1919,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
         if (mutation_status->entry->isAlterMutation())
         {
             /// We want to assign mutations for part which version is bigger
-            /// than part current version. But it doesn't make sense to assign
+            /// than part current version. But it doesn't make sence to assign
             /// more fresh versions of alter-mutations if previous alter still
             /// not done because alters execute one by one in strict order.
             if (mutation_version > current_version || !mutation_status->is_done)

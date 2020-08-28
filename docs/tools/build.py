@@ -169,8 +169,7 @@ def build_docs(args):
         if lang:
             tasks.append((lang, args,))
     util.run_function_in_parallel(build_for_lang, tasks, threads=False)
-    if not args.version_prefix:
-        redirects.build_docs_redirects(args)
+    redirects.build_docs_redirects(args)
 
 
 def build(args):

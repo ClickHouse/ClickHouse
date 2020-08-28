@@ -29,9 +29,8 @@ public:
         Names column_names_,
         BlocksList::iterator first_,
         BlocksList::iterator last_,
-        const StorageMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot)
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
+        const StorageMemory & storage)
+        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
         , column_names(std::move(column_names_))
         , current(first_)
         , last(last_) /// [first, last]
@@ -75,47 +74,38 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit MemoryBlockOutputStream(
-        StorageMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-    {}
+    explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
-        metadata_snapshot->check(block, true);
+        storage.check(block, true);
         std::lock_guard lock(storage.mutex);
         storage.data.push_back(block);
     }
 private:
     StorageMemory & storage;
-    StorageMetadataPtr metadata_snapshot;
 };
 
 
 StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(std::move(columns_description_));
-    storage_metadata.setConstraints(std::move(constraints_));
-    setInMemoryMetadata(storage_metadata);
+    setColumns(std::move(columns_description_));
+    setConstraints(std::move(constraints_));
 }
 
 
-Pipe StorageMemory::read(
+Pipes StorageMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     std::lock_guard lock(mutex);
 
@@ -139,16 +129,17 @@ Pipe StorageMemory::read(
         else
             --last;
 
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this, metadata_snapshot));
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageMemory::write(
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<MemoryBlockOutputStream>(*this);
 }
 
 
@@ -158,8 +149,7 @@ void StorageMemory::drop()
     data.clear();
 }
 
-void StorageMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageMemory::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();
@@ -179,7 +169,7 @@ std::optional<UInt64> StorageMemory::totalBytes() const
     UInt64 bytes = 0;
     std::lock_guard lock(mutex);
     for (const auto & buffer : data)
-        bytes += buffer.allocatedBytes();
+        bytes += buffer.bytes();
     return bytes;
 }
 

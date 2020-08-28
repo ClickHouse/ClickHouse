@@ -433,20 +433,11 @@ public:
     {
         if constexpr (StatFunc::num_args == 2)
             this->data(place).add(
-                static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
-                static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
+                static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num],
+                static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]);
         else
-        {
-            if constexpr (std::is_same_v<T1, Decimal256>)
-            {
-                this->data(place).add(static_cast<ResultType>(
-                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value
-                ));
-            }
-            else
-                this->data(place).add(
-                    static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
-        }
+            this->data(place).add(
+                static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -464,7 +455,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();

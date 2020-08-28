@@ -22,27 +22,27 @@ class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public ISt
 public:
     std::string getName() const override { return "Null"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo &,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t,
         unsigned) override
     {
-        return Pipe(
-            std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<NullSource>(getSampleBlockForColumns(column_names)));
+        return pipes;
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
     {
-        return std::make_shared<NullBlockOutputStream>(metadata_snapshot->getSampleBlock());
+        return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows() const override
     {
@@ -59,10 +59,8 @@ protected:
     StorageNull(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
         : IStorage(table_id_)
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(columns_description_);
-        metadata_.setConstraints(constraints_);
-        setInMemoryMetadata(metadata_);
+        setColumns(std::move(columns_description_));
+        setConstraints(std::move(constraints_));
     }
 };
 

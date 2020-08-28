@@ -117,7 +117,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto value = static_cast<const ColumnSource &>(*columns[0]).getData()[row_num];
-        this->data(place).add(static_cast<ResultT>(value), arena);
+        this->data(place).add(value, arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -154,16 +154,15 @@ public:
         if (unlikely(size > AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        if (size > 0)
-        {
-            auto & value = this->data(place).value;
-            value.resize(size, arena);
-            buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
-            this->data(place).sum = value.back();
-        }
+        auto & value = this->data(place).value;
+
+        value.resize(size, arena);
+        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+
+        this->data(place).sum = value.back();
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & data = this->data(place);
         size_t size = data.value.size();

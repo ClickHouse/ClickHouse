@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -26,7 +25,6 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
         {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
         {"origin", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
@@ -59,23 +57,30 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
 
-        StorageID dict_id = StorageID::createEmpty();
+        String database, short_name;
         if (dict_ptr)
-            dict_id = dict_ptr->getDictionaryID();
-        else if (load_result.config)
-            dict_id = StorageID::fromDictionaryConfig(*load_result.config->config, load_result.config->key_in_config);
+        {
+            database = dict_ptr->getDatabase();
+            short_name = dict_ptr->getName();
+        }
         else
-            dict_id.table_name = load_result.name;
+        {
+            short_name = load_result.name;
+            String repository_name = load_result.config ? load_result.config->repository_name : "";
+            if (!repository_name.empty() && startsWith(short_name, repository_name + "."))
+            {
+                database = repository_name;
+                short_name = short_name.substr(database.length() + 1);
+            }
+        }
 
-        String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
         if (check_access_for_dictionaries
-            && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
+            && !access->isGranted(AccessType::SHOW_DICTIONARIES, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
             continue;
 
         size_t i = 0;
-        res_columns[i++]->insert(dict_id.database_name);
-        res_columns[i++]->insert(dict_id.table_name);
-        res_columns[i++]->insert(dict_id.uuid);
+        res_columns[i++]->insert(database);
+        res_columns[i++]->insert(short_name);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 

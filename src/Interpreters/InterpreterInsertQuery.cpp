@@ -68,22 +68,19 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     return DatabaseCatalog::instance().getTable(query.table_id, context);
 }
 
-Block InterpreterInsertQuery::getSampleBlock(
-    const ASTInsertQuery & query,
-    const StoragePtr & table,
-    const StorageMetadataPtr & metadata_snapshot) const
+Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
 {
-    Block table_sample_non_materialized = metadata_snapshot->getSampleBlockNonMaterialized();
+    Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
     {
         if (no_destination)
-            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
+            return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
     }
 
-    Block table_sample = metadata_snapshot->getSampleBlock();
+    Block table_sample = table->getSampleBlock();
     /// Form the block based on the column names from the query
     Block res;
     for (const auto & identifier : query.columns->children)
@@ -113,10 +110,10 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
-    auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto table_lock = table->lockStructureForShare(
+            true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
+    auto query_sample_block = getSampleBlock(query, table);
     if (!query.table_function)
         context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
@@ -190,7 +187,7 @@ BlockIO InterpreterInsertQuery::execute()
                 }
             }
 
-            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {});
+            res.pipeline.unitePipelines(std::move(pipelines), {});
         }
     }
 
@@ -224,21 +221,21 @@ BlockIO InterpreterInsertQuery::execute()
             /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
             ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
             if (table->noPushingToViews() && !no_destination)
-                out = table->write(query_ptr, metadata_snapshot, context);
+                out = table->write(query_ptr, context);
             else
-                out = std::make_shared<PushingToViewsBlockOutputStream>(table, metadata_snapshot, context, query_ptr, no_destination);
+                out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
 
             /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
             /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
-            if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
+            if (const auto & constraints = table->getConstraints(); !constraints.empty())
                 out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), context);
+                    query.table_id, out, out->getHeader(), table->getConstraints(), context);
 
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), metadata_snapshot->getColumns().getDefaults(), context);
+                out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
@@ -289,7 +286,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         if (!allow_materialized)
         {
-            for (const auto & column : metadata_snapshot->getColumns())
+            for (const auto & column : table->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && header.has(column.name))
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }

@@ -34,8 +34,6 @@ struct ColumnDescription
     ASTPtr ttl;
 
     ColumnDescription() = default;
-    ColumnDescription(ColumnDescription &&) = default;
-    ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
 
     bool operator==(const ColumnDescription & other) const;
@@ -54,7 +52,7 @@ public:
     explicit ColumnsDescription(NamesAndTypesList ordinary_);
 
     /// `after_column` can be a Nested column name;
-    void add(ColumnDescription column, const String & after_column = String(), bool first = false);
+    void add(ColumnDescription column, const String & after_column = String());
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
@@ -87,19 +85,11 @@ public:
     template <typename F>
     void modify(const String & column_name, F && f)
     {
-        modify(column_name, String(), false, std::forward<F>(f));
-    }
-
-    template <typename F>
-    void modify(const String & column_name, const String & after_column, bool first, F && f)
-    {
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
             throw Exception("Cannot find column " + column_name + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
-
-        modifyColumnOrder(column_name, after_column, first);
     }
 
     Names getNamesOfPhysical() const;
@@ -121,11 +111,6 @@ public:
         return columns.size();
     }
 
-    bool empty() const
-    {
-        return columns.empty();
-    }
-
     /// Keep the sequence of columns and allow to lookup by name.
     using Container = boost::multi_index_container<
         ColumnDescription,
@@ -135,8 +120,6 @@ public:
 
 private:
     Container columns;
-
-    void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.

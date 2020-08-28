@@ -74,7 +74,6 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         thread_group->thread_ids.emplace_back(thread_id);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
-        fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
 
         if (!global_context)
@@ -192,10 +191,6 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
-    // We want to close perf file descriptors if the perf events were enabled for
-    // one query. What this code does in practice is less clear -- e.g., if I run
-    // 'select 1 settings metrics_perf_events_enabled = 1', I still get
-    // query_context->getSettingsRef().metrics_perf_events_enabled == 0 *shrug*.
     bool close_perf_descriptors = true;
     if (query_context)
         close_perf_descriptors = !query_context->getSettingsRef().metrics_perf_events_enabled;

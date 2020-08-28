@@ -35,7 +35,7 @@ private:
     /// Main server config (config.xml).
     const Poco::Util::AbstractConfiguration & main_config;
 
-    /// Key which contains path to directory with .xml configs for entries
+    /// Key which contains path to dicrectory with .xml configs for entries
     std::string config_key;
 };
 

@@ -82,29 +82,18 @@ static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & bl
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-    const Context & context_,
-    StorageDistributed & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const ASTPtr & query_ast_,
-    const ClusterPtr & cluster_,
-    bool insert_sync_,
-    UInt64 insert_timeout_)
-    : context(context_)
-    , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
-    , query_ast(query_ast_)
-    , query_string(queryToString(query_ast_))
-    , cluster(cluster_)
-    , insert_sync(insert_sync_)
-    , insert_timeout(insert_timeout_)
-    , log(&Poco::Logger::get("DistributedBlockOutputStream"))
+        const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_, const ClusterPtr & cluster_,
+        bool insert_sync_, UInt64 insert_timeout_)
+        : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
+        cluster(cluster_), insert_sync(insert_sync_),
+        insert_timeout(insert_timeout_), log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
 }
 
 
 Block DistributedBlockOutputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlock();
+    return storage.getSampleBlock();
 }
 
 
@@ -119,7 +108,7 @@ void DistributedBlockOutputStream::write(const Block & block)
 
     /* They are added by the AddingDefaultBlockOutputStream, and we will get
      * different number of columns eventually */
-    for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
+    for (const auto & col : storage.getColumns().getMaterialized())
     {
         if (ordinary_block.has(col.name))
         {
@@ -561,9 +550,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
-    auto disk = reservation->getDisk()->getPath();
-    auto data_path = storage.getRelativeDataPath();
+    const auto & [disk, data_path] = storage.getPath();
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -591,7 +578,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             WriteBufferFromOwnString header_buf;
             writeVarUInt(ClickHouseRevision::get(), header_buf);
             writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().write(header_buf);
+            context.getSettingsRef().serialize(header_buf);
             context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
             /// Add new fields here, for example:

@@ -73,7 +73,6 @@ def test_system_tables(start_cluster):
             "volume_name": "main",
             "volume_priority": "1",
             "disks": ["jbod1"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -82,7 +81,6 @@ def test_system_tables(start_cluster):
             "volume_name": "external",
             "volume_priority": "2",
             "disks": ["external"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -91,7 +89,6 @@ def test_system_tables(start_cluster):
             "volume_name": "m",
             "volume_priority": "1",
             "disks": ["jbod1"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -100,7 +97,6 @@ def test_system_tables(start_cluster):
             "volume_name": "e",
             "volume_priority": "2",
             "disks": ["external"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -109,7 +105,6 @@ def test_system_tables(start_cluster):
             "volume_name": "main",
             "volume_priority": "1",
             "disks": ["jbod1", "jbod2"],
-            "volume_type": "JBOD",
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
         },
@@ -118,7 +113,6 @@ def test_system_tables(start_cluster):
             "volume_name": "external",
             "volume_priority": "2",
             "disks": ["external"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -127,7 +121,6 @@ def test_system_tables(start_cluster):
             "volume_name": "main",
             "volume_priority": "1",
             "disks": ["jbod1"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
         },
@@ -136,7 +129,6 @@ def test_system_tables(start_cluster):
             "volume_name": "external",
             "volume_priority": "2",
             "disks": ["external"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
         },
@@ -145,7 +137,6 @@ def test_system_tables(start_cluster):
             "volume_name": "small",
             "volume_priority": "1",
             "disks": ["default"],
-            "volume_type": "JBOD",
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
         },
@@ -154,7 +145,6 @@ def test_system_tables(start_cluster):
             "volume_name": "big",
             "volume_priority": "2",
             "disks": ["external"],
-            "volume_type": "JBOD",
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
         },
@@ -163,7 +153,6 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_zero_volume",
             "volume_priority": "1",
             "disks": ["default"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -172,7 +161,6 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_default_volume",
             "volume_priority": "2",
             "disks": ["external"],
-            "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
         },
@@ -181,7 +169,6 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_small_volume",
             "volume_priority": "3",
             "disks": ["jbod1"],
-            "volume_type": "JBOD",
             "max_data_part_size": "1024",
             "move_factor": 0.1,
         },
@@ -190,7 +177,6 @@ def test_system_tables(start_cluster):
             "volume_name": "special_warning_big_volume",
             "volume_priority": "4",
             "disks": ["jbod2"],
-            "volume_type": "JBOD",
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
         },
@@ -531,6 +517,7 @@ def test_start_stop_moves(start_cluster, name, engine):
         assert used_disks[0] == 'jbod1'
 
         node1.query("SYSTEM START MOVES {}".format(name))
+        node1.query("SYSTEM START MERGES {}".format(name))
 
         # wait sometime until background backoff finishes
         retry = 30
@@ -539,8 +526,6 @@ def test_start_stop_moves(start_cluster, name, engine):
             time.sleep(1)
             used_disks = get_used_disks_for_table(node1, name)
             i += 1
-
-        node1.query("SYSTEM START MERGES {}".format(name))
 
         assert sum(1 for x in used_disks if x == 'jbod1') <= 2
 

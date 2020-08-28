@@ -102,9 +102,7 @@ StorageDictionary::StorageDictionary(
     , dictionary_name(dictionary_name_)
     , location(location_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(columns_);
 }
 
 
@@ -123,9 +121,8 @@ void StorageDictionary::checkTableCanBeDropped() const
         throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
-Pipe StorageDictionary::read(
+Pipes StorageDictionary::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -134,8 +131,11 @@ Pipe StorageDictionary::read(
 {
     auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
+    auto source = std::make_shared<SourceFromInputStream>(stream);
     /// TODO: update dictionary interface for processors.
-    return Pipe(std::make_shared<SourceFromInputStream>(stream));
+    Pipes pipes;
+    pipes.emplace_back(std::move(source));
+    return pipes;
 }
 
 

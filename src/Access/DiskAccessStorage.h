@@ -11,15 +11,10 @@ namespace DB
 class DiskAccessStorage : public IAccessStorage
 {
 public:
-    static constexpr char STORAGE_TYPE[] = "local directory";
-
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_ = false);
-    DiskAccessStorage(const String & directory_path_, bool readonly_ = false);
+    DiskAccessStorage();
     ~DiskAccessStorage() override;
 
-    const char * getStorageType() const override { return STORAGE_TYPE; }
-    String getStoragePath() const override { return directory_path; }
-    bool isStorageReadOnly() const override { return readonly; }
+    void setDirectory(const String & directory_path_);
 
 private:
     std::optional<UUID> findImpl(EntityType type, const String & name) const override;
@@ -36,6 +31,7 @@ private:
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
 
+    void initialize(const String & directory_path_, Notifications & notifications);
     void clear();
     bool readLists();
     bool writeLists();
@@ -67,7 +63,7 @@ private:
     void prepareNotifications(const UUID & id, const Entry & entry, bool remove, Notifications & notifications) const;
 
     String directory_path;
-    bool readonly;
+    bool initialized = false;
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
     boost::container::flat_set<EntityType> types_of_lists_to_write;

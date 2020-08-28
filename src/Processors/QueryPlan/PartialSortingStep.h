@@ -6,7 +6,6 @@
 namespace DB
 {
 
-/// Sort separate chunks of data.
 class PartialSortingStep : public ITransformingStep
 {
 public:
@@ -19,11 +18,6 @@ public:
     String getName() const override { return "PartialSorting"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
-
-    void describeActions(FormatSettings & settings) const override;
-
-    /// Add limit or change it to lower value.
-    void updateLimit(size_t limit_);
 
 private:
     SortDescription sort_description;
