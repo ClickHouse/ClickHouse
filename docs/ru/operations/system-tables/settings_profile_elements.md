@@ -9,7 +9,7 @@
 
 -    `role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Имя роли.
 
--    `index` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 
+-    `index` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Порядковый номер элемента профиля настроек.
 
 -    `setting_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Имя настройки.
 

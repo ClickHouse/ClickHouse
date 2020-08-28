@@ -9,7 +9,7 @@ Columns:
 
 -    `role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Role name.
 
--    `index` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 
+-    `index` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Sequential number of the settings profile element.
 
 -    `setting_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Setting name.
 
