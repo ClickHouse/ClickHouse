@@ -70,7 +70,7 @@ namespace
             ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
 
             // Propagate OpenTelemetry trace context, if any, downstream.
-            auto & client_info = context.getClientInfo();
+            const auto & client_info = context.getClientInfo();
             if (client_info.opentelemetry_trace_id)
             {
                 header.emplace_back("traceparent",
