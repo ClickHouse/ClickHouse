@@ -35,7 +35,8 @@ public:
         visitDDLChildren(ast);
 
         if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
-            !tryVisitDynamicCast<ASTRenameQuery>(ast))
+            !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
+            !tryVisitDynamicCast<ASTFunction>(ast))
         {}
     }
 
@@ -112,12 +113,6 @@ private:
 
     void visit(ASTFunction & function, ASTPtr & node) const
     {
-        if (function.name == "currentDatabase")
-        {
-            node = std::make_shared<ASTLiteral>(database_name);
-            return;
-        }
-
         bool is_operator_in = false;
         for (auto name : {"in", "notIn", "globalIn", "globalNotIn"})
         {
@@ -183,6 +178,15 @@ private:
                 elem.from.database = database_name;
             if (elem.to.database.empty())
                 elem.to.database = database_name;
+        }
+    }
+
+    void visitDDL(ASTFunction & function, ASTPtr & node) const
+    {
+        if (function.name == "currentDatabase")
+        {
+            node = std::make_shared<ASTLiteral>(database_name);
+            return;
         }
     }
 
