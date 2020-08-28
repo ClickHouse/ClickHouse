@@ -1,6 +1,6 @@
 # system.grants {#system_tables-grants}
 
-Привилегии предоставленные аккаунту пользователя ClickHouse.
+Привилегии пользовательских аккаунтов ClickHouse.
 
 Столбцы:
 -    `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Имя пользователя.
