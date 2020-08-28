@@ -109,7 +109,7 @@ public:
         bool deduplicate,
         const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const Context & query_context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
 
     Pipe alterPartition(
         const ASTPtr & query,

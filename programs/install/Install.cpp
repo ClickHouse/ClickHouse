@@ -3,6 +3,7 @@
 #include <boost/program_options.hpp>
 
 #include <sys/stat.h>
+#include <pwd.h>
 
 #if defined(__linux__)
     #include <syscall.h>
@@ -643,9 +644,14 @@ namespace
 
         if (!user.empty())
         {
-            bool need_sudo = geteuid() != 0;
-            if (need_sudo)
-                command = fmt::format("sudo -u '{}' {}", user, command);
+            bool may_need_sudo = geteuid() != 0;
+            if (may_need_sudo)
+            {
+                struct passwd *p = getpwuid(geteuid());
+                // Only use sudo when we are not the given user
+                if (p == nullptr || std::string(p->pw_name) != user)
+                    command = fmt::format("sudo -u '{}' {}", user, command);
+            }
             else
                 command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
         }
