@@ -84,20 +84,19 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
     const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
 
-    bool access_denied = false;
-    std::optional<bool> is_kill_query_granted_value;
-    auto is_kill_query_granted = [&]() -> bool
+    std::optional<bool> can_kill_query_started_by_another_user_cached;
+    auto can_kill_query_started_by_another_user = [&]() -> bool
     {
-        if (!is_kill_query_granted_value)
+        if (!can_kill_query_started_by_another_user_cached)
         {
-            is_kill_query_granted_value = context.getAccess()->isGranted(AccessType::KILL_QUERY);
-            if (!*is_kill_query_granted_value)
-                access_denied = true;
+            can_kill_query_started_by_another_user_cached
+                = context.getAccess()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_QUERY);
         }
-        return *is_kill_query_granted_value;
+        return *can_kill_query_started_by_another_user_cached;
     };
 
     String query_user;
+    bool access_denied = false;
 
     for (size_t i = 0; i < num_processes; ++i)
     {
@@ -108,8 +107,11 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         auto query_id = query_id_col.getDataAt(i).toString();
         query_user = user_col.getDataAt(i).toString();
 
-        if ((my_client.current_user != query_user) && !is_kill_query_granted())
+        if ((my_client.current_user != query_user) && !can_kill_query_started_by_another_user())
+        {
+            access_denied = true;
             continue;
+        }
 
         res.emplace_back(std::move(query_id), query_user, i, false);
     }
@@ -259,7 +261,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
@@ -267,7 +269,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                     ParserAlterCommand parser;
                     auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0, context.getSettingsRef().max_parser_depth);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
-                    if (!access->isGranted(required_access_rights))
+                    if (!access->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), required_access_rights))
                     {
                         access_denied = true;
                         continue;
@@ -300,11 +302,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true);
-    auto stream = block_io.getInputStream();
-    Block res = stream->read();
+    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true, QueryProcessingStage::Complete, false, false);
+    Block res = block_io.in->read();
 
-    if (res && stream->read())
+    if (res && block_io.in->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;

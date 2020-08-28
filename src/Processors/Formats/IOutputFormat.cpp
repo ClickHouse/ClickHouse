@@ -46,12 +46,6 @@ IOutputFormat::Status IOutputFormat::prepare()
 
 void IOutputFormat::work()
 {
-    if (!prefix_written)
-    {
-        doWritePrefix();
-        prefix_written = true;
-    }
-
     if (finished && !finalized)
     {
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
@@ -86,14 +80,6 @@ void IOutputFormat::work()
 void IOutputFormat::flush()
 {
     out.next();
-}
-
-void IOutputFormat::write(const Block & block)
-{
-    consume(Chunk(block.getColumns(), block.rows()));
-
-    if (auto_flush)
-        flush();
 }
 
 }

@@ -53,7 +53,10 @@ public:
     {
         return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id, global_context); }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
@@ -67,8 +70,6 @@ public:
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
-
-    NamesAndTypesList getVirtuals() const override;
 
     bool isTemporary() { return is_temporary; }
 
@@ -124,9 +125,8 @@ public:
 
     void refresh(const Context & context);
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -166,7 +166,6 @@ public:
         const Context & context);
 
 private:
-    /// TODO move to common struct SelectQueryDescription
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any

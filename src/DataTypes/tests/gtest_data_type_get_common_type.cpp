@@ -14,6 +14,11 @@ static bool operator==(const IDataType & left, const IDataType & right)
     return left.equals(right);
 }
 
+std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
+{
+    return ostr << dt.getName();
+}
+
 }
 
 using namespace DB;

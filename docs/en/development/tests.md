@@ -1,6 +1,6 @@
 ---
 toc_priority: 69
-toc_title: Testing
+toc_title: How to Run ClickHouse Tests
 ---
 
 # ClickHouse Testing {#clickhouse-testing}
@@ -25,19 +25,12 @@ Tests should use (create, drop, etc) only tables in `test` database that is assu
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively.
-
-### Running a particular test locally {#functional-test-locally}
-
-Start the ClickHouse server locally, listening on the default port (9000). To
-run, for example, the test `01428_hash_set_nan_key`, change to the repository
-folder and run the following command:
-
-```
-PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
-```
-
-For more options, see `tests/clickhouse-test --help`.
+Some tests are marked with `zookeeper`, `shard` or `long` in their names.
+`zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that
+requires server to listen `127.0.0.*`; `distributed` or `global` have the same
+meaning. `long` is for tests that run slightly longer that one second. You can
+disable these groups of tests using `--no-zookeeper`, `--no-shard` and
+`--no-long` options, respectively.
 
 ## Known Bugs {#known-bugs}
 
@@ -160,11 +153,11 @@ Motivation:
 
 Normally we release and run all tests on a single variant of ClickHouse build. But there are alternative build variants that are not thoroughly tested. Examples:
 
--   build on FreeBSD
--   build on Debian with libraries from system packages
--   build with shared linking of libraries
--   build on AArch64 platform
--   build on PowerPc platform
+-   build on FreeBSD;
+-   build on Debian with libraries from system packages;
+-   build with shared linking of libraries;
+-   build on AArch64 platform;
+-   build on PowerPc platform.
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 
@@ -180,47 +173,37 @@ Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall 
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang, `libc++` is used instead of `libstdc++` and when building with debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
 ## Sanitizers {#sanitizers}
 
-### Address sanitizer
+**Address sanitizer**.
 We run functional and integration tests under ASan on per-commit basis.
 
-### Valgrind (Memcheck)
+**Valgrind (Memcheck)**.
 We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
 
-### Undefined behaviour sanitizer
+**Undefined behaviour sanitizer.**
 We run functional and integration tests under ASan on per-commit basis.
 
-### Thread sanitizer
+**Thread sanitizer**.
 We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
 
-### Memory sanitizer
+**Memory sanitizer**.
 Currently we still don’t use MSan.
 
-### Debug allocator
+**Debug allocator.**
 Debug version of `jemalloc` is used for debug build.
 
 ## Fuzzing {#fuzzing}
 
-ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/LibFuzzer.html) and random SQL queries.
-All the fuzz testing should be performed with sanitizers (Address and Undefined).
+We use simple fuzz test to generate random SQL queries and to check that the server doesn’t die. Fuzz testing is performed with Address sanitizer. You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
-LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “\_fuzzer” name postfixes.
-Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
-We encourage you to write fuzz tests for every functionality that handles user input.
-
-Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.
-We recommend to disable Jemalloc while building fuzzers. Configuration used to integrate ClickHouse fuzzing to
-Google OSS-Fuzz can be found at `docker/fuzz`.
-
-We also use simple fuzz test to generate random SQL queries and to check that the server doesn’t die executing them.
-You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+As of December 2018, we still don’t use isolated fuzz testing of library code.
 
 ## Security Audit {#security-audit}
 
-People from Yandex Security Team do some basic overview of ClickHouse capabilities from the security standpoint.
+People from Yandex Cloud department do some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 
@@ -234,7 +217,7 @@ If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of t
 
 ## Code Style {#code-style}
 
-Code style rules are described [here](style.md).
+Code style rules are described [here](https://clickhouse.tech/docs/en/development/style/).
 
 To check for some common style violations, you can use `utils/check-style` script.
 

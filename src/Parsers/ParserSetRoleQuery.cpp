@@ -1,31 +1,29 @@
 #include <Parsers/ParserSetRoleQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
-#include <Parsers/ParserRolesOrUsersSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
 
 
 namespace DB
 {
 namespace
 {
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & roles)
+    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoleNames().allowAll();
-            if (!roles_p.parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).parse(pos, ast, expected))
                 return false;
 
-            roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            roles->allow_user_names = false;
+            roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            roles->can_contain_users = false;
             return true;
         });
     }
 
-    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTRolesOrUsersSet> & to_users)
+    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTExtendedRoleSet> & to_users)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -33,13 +31,11 @@ namespace
                 return false;
 
             ASTPtr ast;
-            ParserRolesOrUsersSet users_p;
-            users_p.allowUserNames().allowCurrentUser();
-            if (!users_p.parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).parse(pos, ast, expected))
                 return false;
 
-            to_users = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
-            to_users->allow_role_names = false;
+            to_users = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            to_users->can_contain_roles = false;
             return true;
         });
     }
@@ -59,8 +55,8 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_users;
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTExtendedRoleSet> to_users;
 
     if ((kind == Kind::SET_ROLE) || (kind == Kind::SET_DEFAULT_ROLE))
     {

@@ -13,7 +13,7 @@ EXAMPLE:
     - start version 20.1:
        clickhouse-docker 20.1
 
-    - list available versions:
+    - list avaliable versions:
        clickhouse-docker list
 HELP
 exit

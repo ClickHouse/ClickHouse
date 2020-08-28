@@ -5,7 +5,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/File.h>
-#include <filesystem>
 
 
 namespace DB
@@ -16,8 +15,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, const Context & context)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context)
+DatabaseMemory::DatabaseMemory(const String & name_)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
@@ -58,13 +57,13 @@ void DatabaseMemory::dropTable(
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->database = database_name;
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
     return create_query;
 }
 
-ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
+ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
@@ -80,15 +79,9 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const 
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name, global_context))
+    if (auto table = tryGetTable(table_name))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
-}
-
-void DatabaseMemory::drop(const Context & context)
-{
-    /// Remove data on explicit DROP DATABASE
-    std::filesystem::remove_all(context.getPath() + data_path);
 }
 
 }

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
 toc_priority: 68
 toc_title: "C++ kodu nas\u0131l yaz\u0131l\u0131r"
 ---
@@ -88,7 +88,7 @@ Gerekirse, operatör bir sonraki satıra sarılabilir. Bu durumda, önündeki of
 
 **11.** Tekli operatörleri ayırmak için boşluk kullanmayın (`--`, `++`, `*`, `&`, …) from the argument.
 
-**12.** Virgülden sonra bir boşluk koyun, ancak ondan önce değil. Aynı kural, bir içindeki noktalı virgül için de geçerlidir `for` İfade.
+**12.** Virgülden sonra bir boşluk koyun, ancak ondan önce değil. Aynı kural, bir içindeki noktalı virgül için de geçerlidir `for` ifade.
 
 **13.** Ayırmak için boşluk kullanmayın `[]` operatör.
 
@@ -662,7 +662,7 @@ Kullan... `DB/IO` kütüphane yerine.
 
 Görmek `DateLUT` kitaplık.
 
-**22.** İçermek.
+**22.** içermek.
 
 Her zaman kullanın `#pragma once` korumaları dahil etmek yerine.
 
@@ -701,11 +701,11 @@ auto s = std::string{"Hello"};
 
 Ama diğer şeyler eşit olmak, çapraz platform veya taşınabilir kod tercih edilir.
 
-**2.** Dil: C++20.
+**2.** Dil: C++17.
 
-**3.** Derleyici: `gcc`. Şu anda (Ağustos 2020), kod sürüm 9.3 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 8`.)
+**3.** Derleyici: `gcc`. Şu anda (Aralık 2017), kod sürüm 7.2 kullanılarak derlenmiştir. (Ayrıca kullanılarak derlenebilir `clang 4`.)
 
-Standart kütüphane kullanılır (`libc++`).
+Standart kütüphane kullanılır (`libstdc++` veya `libc++`).
 
 **4.**OS: Linux UB .untu, daha eski değil.
 
@@ -749,7 +749,7 @@ Eğer kod inunuz `master` şube henüz imara değil, önce inşa onu hariç `pus
 
 ## Kitaplık {#libraries}
 
-**1.** C++20 standart Kütüphanesi kullanılır (deneysel uzantılara izin verilir) ve `boost` ve `Poco` çerçeveler.
+**1.** C++14 standart Kütüphanesi kullanılır (deneysel uzantılara izin verilir) ve `boost` ve `Poco` çerçeveler.
 
 **2.** Gerekirse, OS paketinde bulunan iyi bilinen kütüphaneleri kullanabilirsiniz.
 

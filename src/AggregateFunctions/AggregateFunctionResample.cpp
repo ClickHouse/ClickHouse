@@ -43,7 +43,6 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties &,
         const DataTypes & arguments,
         const Array & params) const override
     {

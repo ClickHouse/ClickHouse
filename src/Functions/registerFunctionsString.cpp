@@ -22,7 +22,6 @@ void registerFunctionReverse(FunctionFactory &);
 void registerFunctionReverseUTF8(FunctionFactory &);
 void registerFunctionsConcat(FunctionFactory &);
 void registerFunctionFormat(FunctionFactory &);
-void registerFunctionFormatRow(FunctionFactory &);
 void registerFunctionSubstring(FunctionFactory &);
 void registerFunctionCRC(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
@@ -30,8 +29,6 @@ void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
 void registerFunctionTrim(FunctionFactory &);
 void registerFunctionRegexpQuoteMeta(FunctionFactory &);
-void registerFunctionNormalizeQuery(FunctionFactory &);
-void registerFunctionNormalizedQueryHash(FunctionFactory &);
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
@@ -57,15 +54,12 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionReverseUTF8(factory);
     registerFunctionsConcat(factory);
     registerFunctionFormat(factory);
-    registerFunctionFormatRow(factory);
     registerFunctionSubstring(factory);
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
     registerFunctionTrim(factory);
     registerFunctionRegexpQuoteMeta(factory);
-    registerFunctionNormalizeQuery(factory);
-    registerFunctionNormalizedQueryHash(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

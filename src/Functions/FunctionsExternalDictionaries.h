@@ -29,17 +29,11 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/CacheDictionary.h>
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-#include <Dictionaries/SSDCacheDictionary.h>
-#include <Dictionaries/SSDComplexKeyCacheDictionary.h>
-#endif
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
-#include <Dictionaries/PolygonDictionaryImplementations.h>
-#include <Dictionaries/DirectDictionary.h>
+#include <Dictionaries/PolygonDictionary.h>
 
 #include <ext/range.h>
 
@@ -58,7 +52,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
-
 
 /** Functions that use plug-ins (external) dictionaries_loader.
   *
@@ -85,9 +78,8 @@ public:
         auto dict = std::atomic_load(&dictionary);
         if (dict)
             return dict;
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        dict = external_loader.getDictionary(resolved_name);
-        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+        dict = external_loader.getDictionary(dictionary_name);
+        context.checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getName());
         std::atomic_store(&dictionary, dict);
         return dict;
     }
@@ -132,10 +124,12 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictHas>(context);
+        return std::make_shared<FunctionDictHas>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictHas(const Context & context_) : helper(context_) {}
+    FunctionDictHas(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_) {}
 
     String getName() const override { return name; }
 
@@ -161,8 +155,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         /** Do not require existence of the dictionary if the function is called for empty block.
           * This is needed to allow successful query analysis on a server,
           *  that is the initiator of a distributed query,
@@ -177,35 +175,27 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatchSimple<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
-            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+        if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
-            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatchSimple(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -226,9 +216,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -250,9 +240,26 @@ private:
         return true;
     }
 
-private:
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
 };
+
+
+static bool isDictGetFunctionInjective(const ExternalDictionariesLoader & dictionaries_loader, const Block & sample_block)
+{
+    if (sample_block.columns() != 3 && sample_block.columns() != 4)
+        throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+    const auto dict_name_col = checkAndGetColumnConst<ColumnString>(sample_block.getByPosition(0).column.get());
+    if (!dict_name_col)
+        throw Exception{"First argument of function dictGet... must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+    const auto attr_name_col = checkAndGetColumnConst<ColumnString>(sample_block.getByPosition(1).column.get());
+    if (!attr_name_col)
+        throw Exception{"Second argument of function dictGet... must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
+    return dictionaries_loader.getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
+}
 
 
 /** For ColumnVector. Either returns a reference to internal data,
@@ -269,10 +276,12 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictGetString>(context);
+        return std::make_shared<FunctionDictGetString>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictGetString(const Context & context_) : helper(context_) {}
+    FunctionDictGetString(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_) {}
 
     String getName() const override { return name; }
 
@@ -285,7 +294,7 @@ private:
 
     bool isInjective(const Block & sample_block) const override
     {
-        return helper.isDictGetFunctionInjective(sample_block);
+        return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -326,8 +335,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
@@ -335,36 +348,28 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
-            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
-            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict) &&
-            !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -393,9 +398,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -430,9 +435,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchRange(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -461,8 +466,8 @@ private:
         return true;
     }
 
-private:
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
 };
 
 
@@ -473,10 +478,12 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictGetStringOrDefault>(context);
+        return std::make_shared<FunctionDictGetStringOrDefault>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictGetStringOrDefault(const Context & context_) : helper(context_) {}
+    FunctionDictGetStringOrDefault(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_) {}
 
     String getName() const override { return name; }
 
@@ -512,8 +519,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
@@ -521,35 +532,27 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
-            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
-            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -572,8 +575,8 @@ private:
 
     template <typename DictionaryType>
     void executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnUInt64 * id_col) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+        const std::string & attr_name, const ColumnUInt64 * id_col)
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -582,7 +585,7 @@ private:
             /// vector ids, vector defaults
             auto out = ColumnString::create();
             const auto & ids = id_col->getData();
-            dict->getString(attr_name, ids, default_col, out.get());
+            dictionary->getString(attr_name, ids, default_col, out.get());
             block.getByPosition(result).column = std::move(out);
         }
         else if (const auto default_col_const = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
@@ -591,7 +594,7 @@ private:
             auto out = ColumnString::create();
             const auto & ids = id_col->getData();
             String def = default_col_const->getValue<String>();
-            dict->getString(attr_name, ids, def, out.get());
+            dictionary->getString(attr_name, ids, def, out.get());
             block.getByPosition(result).column = std::move(out);
         }
         else
@@ -600,8 +603,8 @@ private:
 
     template <typename DictionaryType>
     void executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnConst * id_col) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+        const std::string & attr_name, const ColumnConst * id_col)
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -610,11 +613,11 @@ private:
             /// const ids, vector defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
             PaddedPODArray<UInt8> flags(1);
-            dict->has(ids, flags);
+            dictionary->has(ids, flags);
             if (flags.front())
             {
                 auto out = ColumnString::create();
-                dict->getString(attr_name, ids, String(), out.get());
+                dictionary->getString(attr_name, ids, String(), out.get());
                 block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
             }
             else
@@ -626,7 +629,7 @@ private:
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
             auto out = ColumnString::create();
             String def = default_col_const->getValue<String>();
-            dict->getString(attr_name, ids, def, out.get());
+            dictionary->getString(attr_name, ids, def, out.get());
             block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
@@ -635,9 +638,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -673,7 +676,8 @@ private:
         return true;
     }
 
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
 };
 
 
@@ -796,11 +800,12 @@ public:
 
     static FunctionPtr create(const Context & context, UInt32 dec_scale = 0)
     {
-        return std::make_shared<FunctionDictGet>(context, dec_scale);
+        return std::make_shared<FunctionDictGet>(context.getExternalDictionariesLoader(), context, dec_scale);
     }
 
-    FunctionDictGet(const Context & context_, UInt32 dec_scale = 0)
-        : helper(context_)
+    FunctionDictGet(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_, UInt32 dec_scale = 0)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_)
         , decimal_scale(dec_scale)
     {}
 
@@ -815,7 +820,7 @@ private:
 
     bool isInjective(const Block & sample_block) const override
     {
-        return helper.isDictGetFunctionInjective(sample_block);
+        return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -854,8 +859,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
@@ -863,35 +872,28 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
-            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
-            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict) &&
-            !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
-    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+        const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -945,9 +947,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -988,9 +990,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchRange(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -1024,7 +1026,8 @@ private:
         return true;
     }
 
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
     UInt32 decimal_scale;
 };
 
@@ -1074,11 +1077,12 @@ public:
 
     static FunctionPtr create(const Context & context, UInt32 dec_scale = 0)
     {
-        return std::make_shared<FunctionDictGetOrDefault>(context, dec_scale);
+        return std::make_shared<FunctionDictGetOrDefault>(context.getExternalDictionariesLoader(), context, dec_scale);
     }
 
-    FunctionDictGetOrDefault(const Context & context_, UInt32 dec_scale = 0)
-        : helper(context_)
+    FunctionDictGetOrDefault(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_, UInt32 dec_scale = 0)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_)
         , decimal_scale(dec_scale)
     {}
 
@@ -1117,8 +1121,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
@@ -1126,34 +1134,27 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<CacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatch<SSDCacheDictionary>(block, arguments, result, dict) &&
-#endif
-            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            !executeDispatchComplex<SSDComplexKeyCacheDictionary>(block, arguments, result, dict) &&
-#endif
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict) &&
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
-            !executeDispatchComplex<PolygonDictionarySimple>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexEach>(block, arguments, result, dict) &&
-            !executeDispatchComplex<PolygonDictionaryIndexCell>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
-    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+        const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -1176,8 +1177,8 @@ private:
 
     template <typename DictionaryType>
     void executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnUInt64 * id_col) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+        const std::string & attr_name, const ColumnUInt64 * id_col)
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1192,7 +1193,7 @@ private:
             const auto & ids = id_col->getData();
             auto & data = out->getData();
             const auto & defs = default_col->getData();
-            DictGetTraits<DataType>::getOrDefault(dict, attr_name, ids, defs, data);
+            DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, defs, data);
             block.getByPosition(result).column = std::move(out);
         }
         else if (const auto default_col_const = checkAndGetColumnConst<ColVec>(default_col_untyped))
@@ -1206,7 +1207,7 @@ private:
             const auto & ids = id_col->getData();
             auto & data = out->getData();
             const auto def = default_col_const->template getValue<Type>();
-            DictGetTraits<DataType>::getOrDefault(dict, attr_name, ids, def, data);
+            DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
             block.getByPosition(result).column = std::move(out);
         }
         else
@@ -1215,8 +1216,8 @@ private:
 
     template <typename DictionaryType>
     void executeDispatch(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dict,
-        const std::string & attr_name, const ColumnConst * id_col) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
+        const std::string & attr_name, const ColumnConst * id_col)
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
@@ -1225,13 +1226,13 @@ private:
             /// const ids, vector defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
             PaddedPODArray<UInt8> flags(1);
-            dict->has(ids, flags);
+            dictionary->has(ids, flags);
             if (flags.front())
             {
                 if constexpr (IsDataTypeDecimal<DataType>)
                 {
                     DecimalPaddedPODArray<Type> data(1, decimal_scale);
-                    DictGetTraits<DataType>::getOrDefault(dict, attr_name, ids, Type(), data);
+                    DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, Type(), data);
                     block.getByPosition(result).column =
                         DataType(DataType::maxPrecision(), decimal_scale).createColumnConst(
                             id_col->size(), toField(data.front(), decimal_scale));
@@ -1239,7 +1240,7 @@ private:
                 else
                 {
                     PaddedPODArray<Type> data(1);
-                    DictGetTraits<DataType>::getOrDefault(dict, attr_name, ids, Type(), data);
+                    DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, Type(), data);
                     block.getByPosition(result).column = DataType().createColumnConst(id_col->size(), toField(data.front()));
                 }
             }
@@ -1255,7 +1256,7 @@ private:
             {
                 DecimalPaddedPODArray<Type> data(1, decimal_scale);
                 const auto & def = default_col_const->template getValue<Type>();
-                DictGetTraits<DataType>::getOrDefault(dict, attr_name, ids, def, data);
+                DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
                 block.getByPosition(result).column =
                     DataType(DataType::maxPrecision(), decimal_scale).createColumnConst(
                         id_col->size(), toField(data.front(), decimal_scale));
@@ -1264,7 +1265,7 @@ private:
             {
                 PaddedPODArray<Type> data(1);
                 const auto & def = default_col_const->template getValue<Type>();
-                DictGetTraits<DataType>::getOrDefault(dict, attr_name, ids, def, data);
+                DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
                 block.getByPosition(result).column = DataType().createColumnConst(id_col->size(), toField(data.front()));
             }
         }
@@ -1274,9 +1275,9 @@ private:
 
     template <typename DictionaryType>
     bool executeDispatchComplex(
-        Block & block, const ColumnNumbers & arguments, const size_t result, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -1324,7 +1325,8 @@ private:
         return true;
     }
 
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
     UInt32 decimal_scale;
 };
 
@@ -1371,10 +1373,10 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictGetNoType>(context);
+        return std::make_shared<FunctionDictGetNoType>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictGetNoType(const Context & context_) : context(context_), helper(context_) {}
+    FunctionDictGetNoType(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_) : dictionaries_loader(dictionaries_loader_), context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1387,7 +1389,7 @@ private:
 
     bool isInjective(const Block & sample_block) const override
     {
-        return helper.isDictGetFunctionInjective(sample_block);
+        return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -1427,7 +1429,7 @@ private:
                     + ", must be convertible to " + TypeName<Int64>::get() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        auto dict = helper.getDictionary(dict_name);
+        auto dict = dictionaries_loader.getDictionary(dict_name);
         const DictionaryStructure & structure = dict->getStructure();
 
         for (const auto idx : ext::range(0, structure.attributes.size()))
@@ -1501,14 +1503,14 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         impl->executeImpl(block, arguments, result, input_rows_count);
     }
 
 private:
+    const ExternalDictionariesLoader & dictionaries_loader;
     const Context & context;
-    mutable FunctionDictHelper helper;
     mutable FunctionPtr impl; // underlying function used by dictGet function without explicit type info
 };
 
@@ -1520,10 +1522,10 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictGetNoTypeOrDefault>(context);
+        return std::make_shared<FunctionDictGetNoTypeOrDefault>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictGetNoTypeOrDefault(const Context & context_) : context(context_), helper(context_) {}
+    FunctionDictGetNoTypeOrDefault(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_) : dictionaries_loader(dictionaries_loader_), context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1535,7 +1537,7 @@ private:
 
     bool isInjective(const Block & sample_block) const override
     {
-        return helper.isDictGetFunctionInjective(sample_block);
+        return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -1563,7 +1565,7 @@ private:
             throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        auto dict = helper.getDictionary(dict_name);
+        auto dict = dictionaries_loader.getDictionary(dict_name);
         const DictionaryStructure & structure = dict->getStructure();
 
         for (const auto idx : ext::range(0, structure.attributes.size()))
@@ -1643,14 +1645,14 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         impl->executeImpl(block, arguments, result, input_rows_count);
     }
 
 private:
+    const ExternalDictionariesLoader & dictionaries_loader;
     const Context & context;
-    mutable FunctionDictHelper helper;
     mutable FunctionPtr impl; // underlying function used by dictGet function without explicit type info
 };
 
@@ -1663,10 +1665,12 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictGetHierarchy>(context);
+        return std::make_shared<FunctionDictGetHierarchy>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictGetHierarchy(const Context & context_) : helper(context_) {}
+    FunctionDictGetHierarchy(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1692,8 +1696,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
@@ -1701,20 +1709,21 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<DirectDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<HashedDictionary>(block, arguments, result, dict) &&
-            !executeDispatch<CacheDictionary>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -1805,7 +1814,8 @@ private:
         return true;
     }
 
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
 };
 
 
@@ -1816,11 +1826,12 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictIsIn>(context);
+        return std::make_shared<FunctionDictIsIn>(context.getExternalDictionariesLoader(), context);
     }
 
-    FunctionDictIsIn(const Context & context_)
-        : helper(context_) {}
+    FunctionDictIsIn(const ExternalDictionariesLoader & dictionaries_loader_, const Context & context_)
+        : dictionaries_loader(dictionaries_loader_)
+        , context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1849,8 +1860,12 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        if (!dict_name_col)
+            throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+
         if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
@@ -1858,20 +1873,21 @@ private:
             return;
         }
 
-        auto dict = helper.getDictionary(block.getByPosition(arguments[0]));
+        auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
+        const auto dict_ptr = dict.get();
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
-        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict)
-            && !executeDispatch<DirectDictionary>(block, arguments, result, dict)
-            && !executeDispatch<HashedDictionary>(block, arguments, result, dict)
-            && !executeDispatch<CacheDictionary>(block, arguments, result, dict))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
+            && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)
+            && !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+            throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
     template <typename DictionaryType>
     bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                         const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+        const IDictionaryBase * dictionary)
     {
-        const auto dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
+        const auto dict = typeid_cast<const DictionaryType *>(dictionary);
         if (!dict)
             return false;
 
@@ -1893,8 +1909,8 @@ private:
     }
 
     template <typename DictionaryType>
-    bool execute(Block & block, const size_t result, const DictionaryType * dict,
-        const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped) const
+    bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
+        const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped)
     {
         if (const auto ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
         {
@@ -1906,7 +1922,7 @@ private:
             const auto size = child_id_col->size();
             data.resize(size);
 
-            dict->isInVectorVector(child_ids, ancestor_ids, data);
+            dictionary->isInVectorVector(child_ids, ancestor_ids, data);
             block.getByPosition(result).column = std::move(out);
         }
         else if (const auto ancestor_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
@@ -1919,7 +1935,7 @@ private:
             const auto size = child_id_col->size();
             data.resize(size);
 
-            dict->isInVectorConstant(child_ids, ancestor_id, data);
+            dictionary->isInVectorConstant(child_ids, ancestor_id, data);
             block.getByPosition(result).column = std::move(out);
         }
         else
@@ -1932,8 +1948,8 @@ private:
     }
 
     template <typename DictionaryType>
-    bool execute(Block & block, const size_t result, const DictionaryType * dict,
-        const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped) const
+    bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
+        const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped)
     {
         if (const auto ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
         {
@@ -1945,7 +1961,7 @@ private:
             const auto size = child_id_col->size();
             data.resize(size);
 
-            dict->isInConstantVector(child_id, ancestor_ids, data);
+            dictionary->isInConstantVector(child_id, ancestor_ids, data);
             block.getByPosition(result).column = std::move(out);
         }
         else if (const auto ancestor_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
@@ -1954,7 +1970,7 @@ private:
             const auto ancestor_id = ancestor_id_col_const->getValue<UInt64>();
             UInt8 res = 0;
 
-            dict->isInConstantConstant(child_id, ancestor_id, res);
+            dictionary->isInConstantConstant(child_id, ancestor_id, res);
             block.getByPosition(result).column = DataTypeUInt8().createColumnConst(child_id_col->size(), res);
         }
         else
@@ -1964,7 +1980,8 @@ private:
         return true;
     }
 
-    mutable FunctionDictHelper helper;
+    const ExternalDictionariesLoader & dictionaries_loader;
+    const Context & context;
 };
 
 

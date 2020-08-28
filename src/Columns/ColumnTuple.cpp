@@ -1,5 +1,4 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/IColumnImpl.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -195,12 +194,6 @@ void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
         column->updateWeakHash32(hash);
 }
 
-void ColumnTuple::updateHashFast(SipHash & hash) const
-{
-    for (const auto & column : columns)
-        column->updateHashFast(hash);
-}
-
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const size_t tuple_size = columns.size();
@@ -285,14 +278,6 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
     return 0;
 }
 
-void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnTuple>(assert_cast<const ColumnTuple &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
 template <bool positive>
 struct ColumnTuple::Less
 {
@@ -341,19 +326,6 @@ void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_h
             std::sort(res.begin(), res.end(), Less<false>(columns, nan_direction_hint));
         else
             std::sort(res.begin(), res.end(), Less<true>(columns, nan_direction_hint));
-    }
-}
-
-void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
-{
-    for (const auto& column : columns)
-    {
-        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
-        while (limit && !equal_range.empty() && limit <= equal_range.back().first)
-            equal_range.pop_back();
-
-        if (equal_range.empty())
-            break;
     }
 }
 

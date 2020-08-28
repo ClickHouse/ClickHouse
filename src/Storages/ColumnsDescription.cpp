@@ -26,7 +26,7 @@
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -42,8 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
-    : name(std::move(name_)), type(std::move(type_))
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_)
+    : name(std::move(name_)), type(std::move(type_)), is_virtual(is_virtual_)
 {
 }
 
@@ -120,7 +120,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
+            codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
@@ -130,10 +130,10 @@ void ColumnDescription::readText(ReadBuffer & buf)
 }
 
 
-ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
+ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, bool all_virtuals)
 {
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type), all_virtuals));
 }
 
 
@@ -167,7 +167,7 @@ static auto getNameRange(const ColumnsDescription::Container & columns, const St
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -175,9 +175,7 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
 
     auto insert_it = columns.cend();
 
-    if (first)
-        insert_it = columns.cbegin();
-    else if (!after_column.empty())
+    if (!after_column.empty())
     {
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
@@ -213,38 +211,6 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     });
 }
 
-void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
-{
-    const auto & reorder_column = [&](auto get_new_pos)
-    {
-        auto column_range = getNameRange(columns, column_name);
-
-        if (column_range.first == column_range.second)
-            throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        std::vector<ColumnDescription> moving_columns;
-        for (auto list_it = column_range.first; list_it != column_range.second;)
-        {
-            moving_columns.emplace_back(*list_it);
-            list_it = columns.get<0>().erase(list_it);
-        }
-
-        columns.get<0>().insert(get_new_pos(), moving_columns.begin(), moving_columns.end());
-    };
-
-    if (first)
-        reorder_column([&]() { return columns.cbegin(); });
-    else if (!after_column.empty() && column_name != after_column)
-    {
-        /// Checked first
-        auto range = getNameRange(columns, after_column);
-        if (range.first == range.second)
-            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        reorder_column([&]() { return getNameRange(columns, after_column).second; });
-    }
-}
 
 void ColumnsDescription::flattenNested()
 {
@@ -294,7 +260,7 @@ NamesAndTypesList ColumnsDescription::getOrdinary() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind == ColumnDefaultKind::Default)
+        if (col.default_desc.kind == ColumnDefaultKind::Default && !col.is_virtual)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -315,6 +281,15 @@ NamesAndTypesList ColumnsDescription::getAliases() const
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
     return ret;
+}
+
+NamesAndTypesList ColumnsDescription::getVirtuals() const
+{
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+        if (column.is_virtual)
+            result.emplace_back(column.name, column.type);
+    return result;
 }
 
 NamesAndTypesList ColumnsDescription::getAll() const
@@ -352,7 +327,7 @@ NamesAndTypesList ColumnsDescription::getAllPhysical() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias && !col.is_virtual)
             ret.emplace_back(col.name, col.type);
     return ret;
 }
@@ -361,7 +336,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 {
     Names ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind != ColumnDefaultKind::Alias)
+        if (col.default_desc.kind != ColumnDefaultKind::Alias && !col.is_virtual)
             ret.emplace_back(col.name);
     return ret;
 }
@@ -369,7 +344,7 @@ Names ColumnsDescription::getNamesOfPhysical() const
 NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
+    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias || it->is_virtual)
         throw Exception("There is no physical column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     return NameAndTypePair(it->name, it->type);
 }
@@ -377,7 +352,7 @@ NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) cons
 bool ColumnsDescription::hasPhysical(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias && !it->is_virtual;
 }
 
 
@@ -477,7 +452,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 
     try
     {
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
+        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)

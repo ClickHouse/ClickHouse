@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
 toc_priority: 27
 toc_title: "Int\xE9gration"
 ---
@@ -14,7 +14,6 @@ toc_title: "Int\xE9gration"
 
 -   Systèmes de gestion de bases de données relationnelles
     -   [MySQL](https://www.mysql.com)
-        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-lecteur de données](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-réplicateur](https://github.com/larsnovikov/horgh-replicator)
@@ -27,11 +26,7 @@ toc_title: "Int\xE9gration"
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Files d'attente de messages
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (utiliser [Allez client](https://github.com/ClickHouse/clickhouse-go/))
-        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
--   Traitement de flux
-    -   [Flink](https://flink.apache.org)
-        -   [flink-clickhouse-évier](https://github.com/ivi-ru/flink-clickhouse-sink)
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (utiliser [Allez client](https://github.com/kshvakov/clickhouse/))
 -   Objet de stockages
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [clickhouse-sauvegarde](https://github.com/AlexAkulov/clickhouse-backup)
@@ -47,7 +42,7 @@ toc_title: "Int\xE9gration"
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbone-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-CH-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimise les partitions calées dans [\* GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) si les règles de [configuration de cumul](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) pourrait être appliquée
+        -   [graphite-CH-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimise les partitions calées dans [\* GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) si les règles de [configuration de cumul](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) pourrait être appliquée
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -79,15 +74,15 @@ toc_title: "Int\xE9gration"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (utiliser [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [Panda](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
--   PHP
+- PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
-        -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (utiliser [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
+        -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (utiliser [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-HDFS-chargeur](https://github.com/jaykelin/clickhouse-hdfs-loader) (utiliser [JDBC](../../sql-reference/table-functions/jdbc.md))
+        -   [clickhouse-HDFS-chargeur](https://github.com/jaykelin/clickhouse-hdfs-loader) (utiliser [JDBC](../../sql_reference/table_functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-Scala-client](https://github.com/crobox/clickhouse-scala-client)
@@ -100,11 +95,5 @@ toc_title: "Int\xE9gration"
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
--   Ruby
-    -   [Ruby on Rails](https://rubyonrails.org/)
-        -   [activecube](https://github.com/bitquery/activecube)
-        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
-    -   [GraphQL](https://github.com/graphql)
-        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
 [Article Original](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

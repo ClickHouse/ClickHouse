@@ -56,9 +56,6 @@ struct BlockIO
             exception_callback();
     }
 
-    /// Returns in or converts pipeline to stream. Throws if out is not empty.
-    BlockInputStreamPtr getInputStream();
-
 private:
     void reset();
 };

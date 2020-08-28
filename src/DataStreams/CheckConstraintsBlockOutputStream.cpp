@@ -1,3 +1,4 @@
+#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/ExpressionActions.h>
@@ -49,8 +50,8 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
             ColumnWithTypeAndName res_column = block_to_calculate.getByPosition(block_to_calculate.columns() - 1);
 
             if (!isUInt8(res_column.type))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Constraint {} does not return a value of type UInt8",
-                    backQuote(constraint_ptr->name));
+                throw Exception("Constraint " + backQuote(constraint_ptr->name) + " does not return a value of type UInt8",
+                    ErrorCodes::LOGICAL_ERROR);
 
             if (const ColumnConst * res_const = typeid_cast<const ColumnConst *>(res_column.column.get()))
             {

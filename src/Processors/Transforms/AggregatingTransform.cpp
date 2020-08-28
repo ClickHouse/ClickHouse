@@ -2,8 +2,8 @@
 
 #include <Common/ClickHouseRevision.h>
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <Processors/ISource.h>
-#include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
 
@@ -20,23 +20,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Convert block to chunk.
-/// Adds additional info about aggregation.
-Chunk convertToChunk(const Block & block)
-{
-    auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = block.info.bucket_num;
-    info->is_overflows = block.info.is_overflows;
-
-    UInt64 num_rows = block.rows();
-    Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
-
-    return chunk;
-}
-
 namespace
 {
+    /// Convert block to chunk.
+    /// Adds additional info about aggregation.
+    Chunk convertToChunk(const Block & block)
+    {
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = block.info.bucket_num;
+        info->is_overflows = block.info.is_overflows;
+
+        UInt64 num_rows = block.rows();
+        Chunk chunk(block.getColumns(), num_rows);
+        chunk.setChunkInfo(std::move(info));
+
+        return chunk;
+    }
+
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
         const auto & info = chunk.getChunkInfo();
@@ -540,11 +540,10 @@ void AggregatingTransform::initGenerate()
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
-
-    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
-        src_rows, rows, ReadableSize(src_bytes),
-        elapsed_seconds, src_rows / elapsed_seconds,
-        ReadableSize(src_bytes / elapsed_seconds));
+    LOG_TRACE(log, std::fixed << std::setprecision(3)
+                              << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
+                              << " in " << elapsed_seconds << " sec."
+                              << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
     if (params->aggregator.hasTemporaryFiles())
     {
@@ -586,24 +585,25 @@ void AggregatingTransform::initGenerate()
             }
         }
 
+        auto header = params->aggregator.getHeader(false);
+
         const auto & files = params->aggregator.getTemporaryFiles();
-        Pipe pipe;
+        BlockInputStreams input_streams;
+        for (const auto & file : files.files)
+            processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
 
-        {
-            auto header = params->aggregator.getHeader(false);
-            Pipes pipes;
+        LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size "
+                                     << (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
+                                     << (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-            for (const auto & file : files.files)
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(header, file->path())));
+        auto pipe = createMergingAggregatedMemoryEfficientPipe(
+                header, params, files.files.size(), temporary_data_merge_threads);
 
-            pipe = Pipe::unitePipes(std::move(pipes));
-        }
+        auto input = pipe.front()->getInputs().begin();
+        for (auto & processor : processors)
+            connect(processor->getOutputs().front(), *(input++));
 
-        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), ReadableSize(files.sum_size_compressed), ReadableSize(files.sum_size_uncompressed));
-
-        addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
-
-        processors = Pipe::detachProcessors(std::move(pipe));
+        processors.insert(processors.end(), pipe.begin(), pipe.end());
     }
 }
 

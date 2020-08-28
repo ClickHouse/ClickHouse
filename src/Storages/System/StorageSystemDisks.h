@@ -20,9 +20,8 @@ class StorageSystemDisks final : public ext::shared_ptr_helper<StorageSystemDisk
 public:
     std::string getName() const override { return "SystemDisks"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -30,7 +29,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemDisks(const StorageID & table_id_);
+    StorageSystemDisks(const std::string & name_);
 };
 
 }

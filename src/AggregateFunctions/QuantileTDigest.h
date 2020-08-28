@@ -103,7 +103,6 @@ class QuantileTDigest
     struct RadixSortTraits
     {
         using Element = Centroid;
-        using Result = Element;
         using Key = Value;
         using CountType = UInt32;
         using KeyBits = UInt32;
@@ -115,7 +114,6 @@ class QuantileTDigest
 
         /// The function to get the key from an array element.
         static Key & extractKey(Element & elem) { return elem.mean; }
-        static Result & extractResult(Element & elem) { return elem; }
     };
 
     /** Adds a centroid `c` to the digest

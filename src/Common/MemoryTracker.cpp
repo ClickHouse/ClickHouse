@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <cmath>
-#include <random>
 #include <cstdlib>
 
 
@@ -18,12 +17,13 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
-        extern const int LOGICAL_ERROR;
     }
 }
 
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
+/// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
+static constexpr Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
@@ -50,22 +50,21 @@ MemoryTracker::~MemoryTracker()
 
 void MemoryTracker::logPeakMemoryUsage() const
 {
-    const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
+    LOG_DEBUG(&Logger::get("MemoryTracker"),
+        "Peak memory usage" << (description ? " " + std::string(description) : "")
+        << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
-    const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Poco::Logger::get("MemoryTracker"), "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
+    LOG_DEBUG(&Logger::get("MemoryTracker"),
+        "Current memory usage" << (description ? " " + std::string(description) : "")
+        << ": " << formatReadableSizeWithBinarySuffix(current) << ".");
 }
 
 
 void MemoryTracker::alloc(Int64 size)
 {
-    if (size < 0)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
-
     if (blocker.isCancelled())
         return;
 
@@ -83,7 +82,7 @@ void MemoryTracker::alloc(Int64 size)
 
     /// Cap the limit to the total_memory_tracker, since it may include some drift.
     ///
-    /// And since total_memory_tracker is reset to the process resident
+    /// And since total_memory_tracker is reseted to the process resident
     /// memory peridically (in AsynchronousMetrics::update()), any limit can be
     /// capped to it, to avoid possible drift.
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
@@ -96,8 +95,9 @@ void MemoryTracker::alloc(Int64 size)
         }
     }
 
-    std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)))
+    /// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
+    /// In this case, it doesn't matter.
+    if (unlikely(fault_probability && drand48() < fault_probability))
     {
         free(size);
 
@@ -106,7 +106,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory tracker";
-        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
+        if (description)
             message << " " << description;
         message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
@@ -122,23 +122,16 @@ void MemoryTracker::alloc(Int64 size)
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
     }
 
-    std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
-    {
-        auto no_track = blocker.cancel();
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
-    }
-
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
         free(size);
 
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        auto no_track = blocker.cancel(); // NOLINT
+        auto untrack_lock = blocker.cancel(); // NOLINT
 
         std::stringstream message;
         message << "Memory limit";
-        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
+        if (description)
             message << " " << description;
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
@@ -172,13 +165,6 @@ void MemoryTracker::free(Int64 size)
 {
     if (blocker.isCancelled())
         return;
-
-    std::bernoulli_distribution sample(sample_probability);
-    if (unlikely(sample_probability && sample(thread_local_rng)))
-    {
-        auto no_track = blocker.cancel();
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
-    }
 
     if (level == VariableContext::Thread)
     {
@@ -254,19 +240,18 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 
 namespace CurrentMemoryTracker
 {
-    using DB::current_thread;
-
     void alloc(Int64 size)
     {
         if (auto * memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
-            current_thread->untracked_memory += size;
-            if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
+            Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
+            untracked += size;
+            if (untracked > untracked_memory_limit)
             {
                 /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
                 /// more. It could be useful to enlarge Exception message in rethrow logic.
-                Int64 tmp = current_thread->untracked_memory;
-                current_thread->untracked_memory = 0;
+                Int64 tmp = untracked;
+                untracked = 0;
                 memory_tracker->alloc(tmp);
             }
         }
@@ -282,11 +267,12 @@ namespace CurrentMemoryTracker
     {
         if (auto * memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
-            current_thread->untracked_memory -= size;
-            if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
+            Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
+            untracked -= size;
+            if (untracked < -untracked_memory_limit)
             {
-                memory_tracker->free(-current_thread->untracked_memory);
-                current_thread->untracked_memory = 0;
+                memory_tracker->free(-untracked);
+                untracked = 0;
             }
         }
     }

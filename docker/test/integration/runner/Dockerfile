@@ -22,11 +22,9 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
-    python-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \
-    libcurl4-openssl-dev \
     gdb \
     && rm -rf \
         /var/lib/apt/lists/* \
@@ -37,7 +35,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry grpcio grpcio-tools cassandra-driver
+RUN pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio rpm-confluent-schemaregistry
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -63,7 +61,6 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
-COPY compose/ /compose/
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -76,3 +73,4 @@ VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+

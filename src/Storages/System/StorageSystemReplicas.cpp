@@ -16,11 +16,10 @@ namespace DB
 {
 
 
-StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
+    : IStorage({"system", name_})
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({
+    setColumns(ColumnsDescription({
         { "database",                             std::make_shared<DataTypeString>()   },
         { "table",                                std::make_shared<DataTypeString>()   },
         { "engine",                               std::make_shared<DataTypeString>()   },
@@ -53,20 +52,18 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
     }));
-    setInMemoryMetadata(storage_metadata);
 }
 
 
-Pipe StorageSystemReplicas::read(
+Pipes StorageSystemReplicas::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     const auto access = context.getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -79,7 +76,7 @@ Pipe StorageSystemReplicas::read(
         if (db.second->getEngineName() == "Lazy")
             continue;
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             const auto & table = iterator->table();
             if (!table)
@@ -139,14 +136,14 @@ Pipe StorageSystemReplicas::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
-            return {};
+            return Pipes();
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
@@ -187,7 +184,7 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.zookeeper_exception);
     }
 
-    Block header = metadata_snapshot->getSampleBlock();
+    Block header = getSampleBlock();
 
     Columns fin_columns;
     fin_columns.reserve(res_columns.size());
@@ -202,7 +199,9 @@ Pipe StorageSystemReplicas::read(
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    return pipes;
 }
 
 

@@ -5,7 +5,6 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     IdentifierQuoteHandler.cpp
     MainHandler.cpp
     ODBCBlockInputStream.cpp
-    ODBCBlockOutputStream.cpp
     ODBCBridge.cpp
     PingHandler.cpp
     SchemaAllowedHandler.cpp
@@ -21,6 +20,31 @@ set (CLICKHOUSE_ODBC_BRIDGE_LINK
     PUBLIC
         Poco::Data::ODBC
 )
+
+set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_parsers PUBLIC daemon)
+set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE PUBLIC ${ClickHouse_SOURCE_DIR}/base)
+
+if (USE_POCO_SQLODBC)
+    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_SQLODBC_LIBRARY})
+    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
+    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR})
+endif ()
+if (Poco_SQL_FOUND)
+    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_SQL_LIBRARY})
+    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
+    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
+endif ()
+
+if (USE_POCO_DATAODBC)
+    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_DataODBC_LIBRARY})
+    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
+    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
+endif()
+if (Poco_Data_FOUND)
+    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_Data_LIBRARY})
+    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
+    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
+endif ()
 
 clickhouse_program_add_library(odbc-bridge)
 

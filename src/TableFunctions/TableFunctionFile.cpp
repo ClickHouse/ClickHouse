@@ -3,7 +3,6 @@
 #include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFile.h>
-#include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
 
 namespace DB

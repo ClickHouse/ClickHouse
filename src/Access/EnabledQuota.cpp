@@ -1,5 +1,5 @@
 #include <Access/EnabledQuota.h>
-#include <Access/QuotaUsage.h>
+#include <Access/QuotaUsageInfo.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <ext/chrono_io.h>
@@ -30,10 +30,9 @@ struct EnabledQuota::Impl
         if (resource_type == Quota::EXECUTION_TIME)
             amount_to_string = [&](UInt64 amount) { return ext::to_string(std::chrono::nanoseconds(amount)); };
 
-        const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
         throw Exception(
             "Quota for user " + backQuote(user_name) + " for " + ext::to_string(duration) + " has been exceeded: "
-                + type_info.outputWithAmount(used) + "/" + type_info.amountToString(max) + ". "
+                + Quota::getNameOfResourceType(resource_type) + " = " + amount_to_string(used) + "/" + amount_to_string(max) + ". "
                 + "Interval will end at " + ext::to_string(end_of_interval) + ". " + "Name of quota template: " + backQuote(quota_name),
             ErrorCodes::QUOTA_EXPIRED);
     }
@@ -84,7 +83,7 @@ struct EnabledQuota::Impl
         {
             ResourceAmount used = (interval.used[resource_type] += amount);
             ResourceAmount max = interval.max[resource_type];
-            if (!max)
+            if (max == Quota::UNLIMITED)
                 continue;
             if (used > max)
             {
@@ -112,7 +111,7 @@ struct EnabledQuota::Impl
         {
             ResourceAmount used = interval.used[resource_type];
             ResourceAmount max = interval.max[resource_type];
-            if (!max)
+            if (max == Quota::UNLIMITED)
                 continue;
             if (used > max)
             {
@@ -129,20 +128,10 @@ struct EnabledQuota::Impl
         const Intervals & intervals,
         std::chrono::system_clock::time_point current_time)
     {
-        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+        for (auto resource_type : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
             checkExceeded(user_name, intervals, resource_type, current_time);
     }
 };
-
-
-EnabledQuota::Interval::Interval()
-{
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
-    {
-        used[resource_type].store(0);
-        max[resource_type] = 0;
-    }
-}
 
 
 EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src)
@@ -162,30 +151,27 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
 }
 
 
-std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_clock::time_point current_time) const
+QuotaUsageInfo EnabledQuota::Intervals::getUsageInfo(std::chrono::system_clock::time_point current_time) const
 {
-    if (!quota_id)
-        return {};
-    QuotaUsage usage;
-    usage.quota_id = *quota_id;
-    usage.quota_name = quota_name;
-    usage.quota_key = quota_key;
-    usage.intervals.reserve(intervals.size());
+    QuotaUsageInfo info;
+    info.quota_id = quota_id;
+    info.quota_name = quota_name;
+    info.quota_key = quota_key;
+    info.intervals.reserve(intervals.size());
     for (const auto & in : intervals)
     {
-        usage.intervals.push_back({});
-        auto & out = usage.intervals.back();
+        info.intervals.push_back({});
+        auto & out = info.intervals.back();
         out.duration = in.duration;
         out.randomize_interval = in.randomize_interval;
         out.end_of_interval = Impl::getEndOfInterval(in, current_time);
         for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
         {
-            if (in.max[resource_type])
-                out.max[resource_type] = in.max[resource_type];
+            out.max[resource_type] = in.max[resource_type];
             out.used[resource_type] = in.used[resource_type];
         }
     }
-    return usage;
+    return info;
 }
 
 
@@ -252,10 +238,10 @@ void EnabledQuota::checkExceeded(ResourceType resource_type) const
 }
 
 
-std::optional<QuotaUsage> EnabledQuota::getUsage() const
+QuotaUsageInfo EnabledQuota::getUsageInfo() const
 {
     auto loaded = intervals.load();
-    return loaded->getUsage(std::chrono::system_clock::now());
+    return loaded->getUsageInfo(std::chrono::system_clock::now());
 }
 
 

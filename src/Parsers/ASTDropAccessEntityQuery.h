@@ -7,7 +7,6 @@
 
 namespace DB
 {
-class ASTRowPolicyNames;
 
 /** DROP USER [IF EXISTS] name [,...]
   * DROP ROLE [IF EXISTS] name [,...]
@@ -18,18 +17,24 @@ class ASTRowPolicyNames;
 class ASTDropAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    using EntityType = IAccessEntity::Type;
+    enum class Kind
+    {
+        USER,
+        ROLE,
+        QUOTA,
+        ROW_POLICY,
+        SETTINGS_PROFILE,
+    };
 
-    EntityType type;
+    const Kind kind;
     bool if_exists = false;
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    std::vector<RowPolicy::FullNameParts> row_policies_names;
 
+    ASTDropAccessEntityQuery(Kind kind_);
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
-
-    void replaceEmptyDatabaseWithCurrent(const String & current_database) const;
 };
 }

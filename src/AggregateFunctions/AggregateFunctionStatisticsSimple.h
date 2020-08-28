@@ -80,28 +80,20 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
-    T getPopulation() const
+    T NO_SANITIZE_UNDEFINED getPopulation() const
+    {
+        return (m[2] - m[1] * m[1] / m[0]) / m[0];
+    }
+
+    T NO_SANITIZE_UNDEFINED getSample() const
     {
         if (m[0] == 0)
             return std::numeric_limits<T>::quiet_NaN();
-
-        /// Due to numerical errors, the result can be slightly less than zero,
-        /// but it should be impossible. Trim to zero.
-
-        return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / m[0]);
+        return (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1);
     }
 
-    T getSample() const
+    T NO_SANITIZE_UNDEFINED getMoment3() const
     {
-        if (m[0] <= 1)
-            return std::numeric_limits<T>::quiet_NaN();
-        return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1));
-    }
-
-    T getMoment3() const
-    {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
         // to avoid accuracy problem
         if (m[0] == 1)
             return 0;
@@ -112,10 +104,8 @@ struct VarMoments
         ) / m[0];
     }
 
-    T getMoment4() const
+    T NO_SANITIZE_UNDEFINED getMoment4() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
         // to avoid accuracy problem
         if (m[0] == 1)
             return 0;
@@ -190,7 +180,7 @@ struct VarMomentsDecimal
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return std::max(Float64{}, convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale));
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
 
     Float64 getSample(UInt32 scale) const
@@ -204,7 +194,7 @@ struct VarMomentsDecimal
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return std::max(Float64{}, convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale));
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale);
     }
 
     Float64 getMoment3(UInt32 scale) const
@@ -433,20 +423,11 @@ public:
     {
         if constexpr (StatFunc::num_args == 2)
             this->data(place).add(
-                static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
-                static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
+                static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num],
+                static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]);
         else
-        {
-            if constexpr (std::is_same_v<T1, Decimal256>)
-            {
-                this->data(place).add(static_cast<ResultType>(
-                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value
-                ));
-            }
-            else
-                this->data(place).add(
-                    static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
-        }
+            this->data(place).add(
+                static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -464,7 +445,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();

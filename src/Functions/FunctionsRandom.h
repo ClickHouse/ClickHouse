@@ -3,8 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunctionImpl.h>
-#include <Functions/TargetSpecific.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -36,21 +34,19 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each block.
   */
 
-DECLARE_MULTITARGET_CODE(
-
 struct RandImpl
 {
     /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
 };
 
-) // DECLARE_MULTITARGET_CODE
 
-template <typename RandImpl, typename ToType, typename Name>
-class FunctionRandomImpl : public IFunction
+template <typename ToType, typename Name>
+class FunctionRandom : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandom>(); }
 
     String getName() const override
     {
@@ -74,7 +70,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
@@ -85,35 +81,6 @@ public:
 
         block.getByPosition(result).column = std::move(col_to);
     }
-};
-
-template <typename ToType, typename Name>
-class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
-{
-public:
-    explicit FunctionRandom(const Context & context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
-    #endif
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
-    {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);
-    }
-
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<FunctionRandom<ToType, Name>>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 }

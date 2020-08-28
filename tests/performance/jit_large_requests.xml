@@ -1,4 +1,6 @@
 <test>
+    
+
     <create_query>
         CREATE TABLE jit_test (
             a UInt64,
@@ -41,7 +43,7 @@
         SETTINGS
             compile_expressions = 0;
     </query>
-    <query short="1">
+    <query>
         SELECT
             COUNT()
         FROM
