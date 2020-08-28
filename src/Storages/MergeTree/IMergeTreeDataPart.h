@@ -332,18 +332,10 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
-    /// Detect default codec for part based on compression section from
-    /// config.xml (require total size of all parts in table)
-    void detectAndSetDefaultCompressionCodec(size_t total_storage_size);
 
     /// Return set of metadat file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
-
-    /// Load default compression codec from file default_compression_codec.txt
-    /// return false if load was not successful (for example file doesn't
-    /// exists)
-    bool loadDefaultCompressionCodec();
 
     /// File with compression codec name which was used to compress part columns
     /// by default. Some columns may have their own compression codecs, but
@@ -403,6 +395,15 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    /// Load default compression codec from file default_compression_codec.txt
+    /// if it not exists tries to deduce codec from compressed column without
+    /// any specifial compression.
+    void loadDefaultCompressionCodec();
+
+    /// Found column without specific compression and return codec
+    /// for this column with default parameters.
+    CompressionCodecPtr detectDefaultCompressionCodec() const;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

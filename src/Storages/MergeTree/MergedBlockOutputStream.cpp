@@ -122,7 +122,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsSizesOnDisk();
-    new_part->default_codec = default_codec;
+    if (default_codec != nullptr)
+        new_part->default_codec = default_codec;
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
@@ -165,9 +166,15 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         part_columns.writeText(*out);
     }
 
+    if (default_codec != nullptr)
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
+    }
+    else
+    {
+        throw Exception("Compression codec have to be specified for part on disk, empty for" + new_part->name
+                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
 
     {

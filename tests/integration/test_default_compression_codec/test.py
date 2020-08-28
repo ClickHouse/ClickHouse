@@ -8,6 +8,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', main_configs=['configs/default_compression.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/default_compression.xml'], with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/default_compression.xml'], image='yandex/clickhouse-server:20.3.16', stay_alive=True, with_installed_binary=True)
 
 
 @pytest.fixture(scope="module")
@@ -172,3 +173,28 @@ def test_default_codec_multiple(start_cluster):
 
     assert node1.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
     assert node2.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
+
+
+def test_default_codec_version_update(start_cluster):
+    node3.query("""
+    CREATE TABLE compression_table (
+        key UInt64 CODEC(LZ4HC(7)),
+        data1 String
+    ) ENGINE = MergeTree ORDER BY tuple() PARTITION BY key;
+    """)
+
+    node3.query("INSERT INTO compression_table VALUES (1, 'x')")
+    node3.query("INSERT INTO compression_table VALUES (2, '{}')".format(get_random_string(2048)))
+    node3.query("INSERT INTO compression_table VALUES (3, '{}')".format(get_random_string(22048)))
+
+    node3.restart_with_latest_version()
+
+    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'") == "ZSTD(1)\n"
+    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_0'") == "ZSTD(1)\n"
+    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_0'") == "ZSTD(1)\n"
+
+    node3.query("OPTIMIZE TABLE compression_table FINAL")
+
+    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_1'") == "ZSTD(10)\n"
+    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'") == "LZ4HC(5)\n"
+    assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'") == "LZ4\n"

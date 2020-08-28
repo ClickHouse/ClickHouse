@@ -316,7 +316,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
     new_data_part->partition.create(metadata_snapshot, block, 0);
 
-    MergedBlockOutputStream part_out(new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, nullptr);
+    MergedBlockOutputStream part_out(new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
     part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
@@ -401,8 +401,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
-    if (!new_data_part->loadDefaultCompressionCodec())
-        new_data_part->detectAndSetDefaultCompressionCodec(data.getTotalActiveSizeInBytes());
     new_data_part->checksums.checkEqual(checksums, false);
 
     return new_data_part;
