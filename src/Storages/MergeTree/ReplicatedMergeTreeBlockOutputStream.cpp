@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int DUPLICATE_DATA_PART;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -98,7 +99,8 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 
     auto quorum_status = quorum_status_future.get();
     if (quorum_status.error != Coordination::Error::ZNONODE)
-        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data, ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data,
+                        ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
@@ -305,7 +307,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                         storage.replica_path + "/is_active",
                         quorum_info.is_active_node_version));
 
-                /// Unfortunately, just checking the above is not enough, because `is_active` node can be deleted and reappear with the same version.
+                /// Unfortunately, just checking the above is not enough, because `is_active`
+                /// node can be deleted and reappear with the same version.
                 /// But then the `host` value will change. We will check this.
                 /// It's great that these two nodes change in the same transaction (see MergeTreeRestartingThread).
                 ops.emplace_back(
@@ -360,18 +363,22 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::DUPLICATE_DATA_PART)
+            if (e.code() != ErrorCodes::DUPLICATE_DATA_PART
+                && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
                 throw;
         }
         if (!renamed)
         {
             if (is_already_existing_part)
             {
-                LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request; ignoring it.", block_id, existing_part_name);
+                LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.",
+                         block_id, existing_part_name);
                 return;
             }
             else
-                throw Exception("Part with name {} is already written by concurrent request. It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Part with name {} is already written by concurrent request."
+                    " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
+                    ErrorCodes::LOGICAL_ERROR);
         }
 
         Coordination::Responses responses;
@@ -485,7 +492,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                     throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
             }
 
-            /// And what if it is possible that the current replica at this time has ceased to be active and the quorum is marked as failed and deleted?
+            /// And what if it is possible that the current replica at this time has ceased to be active
+            /// and the quorum is marked as failed and deleted?
             String value;
             if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
                 || value != quorum_info.is_active_node_value)
