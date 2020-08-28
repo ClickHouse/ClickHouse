@@ -16,7 +16,7 @@ done
 
 function thread {
     for x in {0..99}; do
-        $CLICKHOUSE_CLIENT --query "INSERT INTO r$1 SELECT $x"
+        $CLICKHOUSE_CLIENT --query "INSERT INTO r$1 SELECT $x % $NUM_REPLICAS = $1 ? $x - 1 : $x"  # Replace some records as duplicates so they will be written by other replicas
     done
 }
 
