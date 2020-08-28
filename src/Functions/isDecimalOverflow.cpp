@@ -32,7 +32,6 @@ public:
     }
 
     String getName() const override { return name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
