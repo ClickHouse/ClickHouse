@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -109,8 +110,14 @@ private:
         tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
-    void visit(ASTFunction & function, ASTPtr &) const
+    void visit(ASTFunction & function, ASTPtr & node) const
     {
+        if (function.name == "currentDatabase")
+        {
+            node = std::make_shared<ASTLiteral>(database_name);
+            return;
+        }
+
         bool is_operator_in = false;
         for (auto name : {"in", "notIn", "globalIn", "globalNotIn"})
         {
