@@ -48,6 +48,7 @@ CreateTableQuery::CreateTableQuery(
     children.push_back(schema);
     children.push_back(engine);
     children.push_back(query);
+
     (void)if_not_exists, (void)temporary; // TODO
 }
 

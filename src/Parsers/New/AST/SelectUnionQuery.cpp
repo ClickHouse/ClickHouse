@@ -9,6 +9,11 @@
 namespace DB::AST
 {
 
+SelectUnionQuery::SelectUnionQuery(std::list<PtrTo<SelectStmt>> stmts)
+{
+    children.insert(children.end(), stmts.begin(), stmts.end());
+}
+
 void SelectUnionQuery::appendSelect(PtrTo<SelectStmt> stmt)
 {
     children.push_back(stmt);

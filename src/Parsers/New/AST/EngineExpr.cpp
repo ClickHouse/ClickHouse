@@ -71,7 +71,7 @@ void EngineClause::setSettingsClause(PtrTo<SettingsClause> clause)
 EngineExpr::EngineExpr(PtrTo<Identifier> identifier, PtrTo<ColumnExprList> args)
 {
     children.push_back(identifier);
-    children.insert(children.end(), args->begin(), args->end());
+    if (args) children.insert(children.end(), args->begin(), args->end());
 }
 
 TTLExpr::TTLExpr(PtrTo<ColumnExpr> expr, TTLType type, PtrTo<StringLiteral> literal) : ttl_type(type)

@@ -10,7 +10,7 @@
 namespace DB::AST
 {
 
-OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<Literal>> list, bool final_, bool deduplicate_)
+OptimizeQuery::OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionExprList> list, bool final_, bool deduplicate_)
     : final(final_), deduplicate(deduplicate_)
 {
     children.push_back(identifier);

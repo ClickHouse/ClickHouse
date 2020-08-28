@@ -1,8 +1,5 @@
-#include <Parsers/New/ParseTreeVisitor.h>
-
 #include <Parsers/New/AST/AlterPartitionQuery.h>
 #include <Parsers/New/AST/AlterTableQuery.h>
-#include <Parsers/New/AST/AttachQuery.h>
 #include <Parsers/New/AST/CheckQuery.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/CreateDatabaseQuery.h>
@@ -11,7 +8,6 @@
 #include <Parsers/New/AST/CreateViewQuery.h>
 #include <Parsers/New/AST/DDLQuery.h>
 #include <Parsers/New/AST/DescribeQuery.h>
-#include <Parsers/New/AST/DetachQuery.h>
 #include <Parsers/New/AST/DropQuery.h>
 #include <Parsers/New/AST/EngineExpr.h>
 #include <Parsers/New/AST/ExistsQuery.h>
@@ -27,6 +23,9 @@
 #include <Parsers/New/AST/ShowQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
 #include <Parsers/New/AST/UseQuery.h>
+
+// antlr-runtime undefines EOF macros, which is required in boost multiprecision numbers
+#include <Parsers/New/ParseTreeVisitor.h>
 
 
 namespace DB
@@ -46,15 +45,40 @@ antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContex
     auto query = visit(ctx->query()).as<PtrTo<Query>>();
 
     if (ctx->OUTFILE()) query->setOutFile(Literal::createString(ctx->STRING_LITERAL()));
-    if (ctx->FORMAT()) query->setFormat(visit(ctx->identifier()));
+    if (ctx->FORMAT())
+    {
+        auto format = ctx->identifier() ? visit(ctx->identifier()).as<PtrTo<Identifier>>() : std::make_shared<Identifier>("Null");
+        query->setFormat(format);
+    }
 
     return query;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 {
-    if (ctx->selectUnionStmt()) return std::static_pointer_cast<Query>(visit(ctx->selectUnionStmt()).as<PtrTo<SelectUnionQuery>>());
-    if (ctx->setStmt()) return std::static_pointer_cast<Query>(visit(ctx->setStmt()).as<PtrTo<SetQuery>>());
+    auto query = visit(ctx->children[0]);
+
+#define TRY_POINTER_CAST(TYPE) if (query.is<PtrTo<TYPE>>()) return std::static_pointer_cast<Query>(query.as<PtrTo<TYPE>>());
+    TRY_POINTER_CAST(AlterPartitionQuery)
+    TRY_POINTER_CAST(AlterTableQuery)
+    TRY_POINTER_CAST(AlterPartitionQuery)
+    TRY_POINTER_CAST(CheckQuery)
+    TRY_POINTER_CAST(CreateDatabaseQuery)
+    TRY_POINTER_CAST(CreateMaterializedViewQuery)
+    TRY_POINTER_CAST(CreateTableQuery)
+    TRY_POINTER_CAST(CreateViewQuery)
+    TRY_POINTER_CAST(DescribeQuery)
+    TRY_POINTER_CAST(DropQuery)
+    TRY_POINTER_CAST(ExistsQuery)
+    TRY_POINTER_CAST(InsertQuery)
+    TRY_POINTER_CAST(OptimizeQuery)
+    TRY_POINTER_CAST(RenameQuery)
+    TRY_POINTER_CAST(SelectUnionQuery)
+    TRY_POINTER_CAST(SetQuery)
+    TRY_POINTER_CAST(ShowCreateTableQuery)
+    TRY_POINTER_CAST(UseQuery)
+#undef TRY_POINTER_CAST
+
     __builtin_unreachable();
 }
 
@@ -72,7 +96,7 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTable
 
 antlrcpp::Any ParseTreeVisitor::visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx)
 {
-    return std::make_shared<CheckQuery>(visit(ctx->tableIdentifier()));
+    return std::make_shared<CheckQuery>(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx)
@@ -104,7 +128,7 @@ antlrcpp::Any ParseTreeVisitor::visitCreateViewStmt(ClickHouseParser::CreateView
 
 antlrcpp::Any ParseTreeVisitor::visitDescribeStmt(ClickHouseParser::DescribeStmtContext *ctx)
 {
-    return std::make_shared<DescribeQuery>(visit(ctx->tableIdentifier()));
+    return std::make_shared<DescribeQuery>(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx)
@@ -131,8 +155,8 @@ antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtCont
 
 antlrcpp::Any ParseTreeVisitor::visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx)
 {
-    return std::make_shared<OptimizeQuery>(
-        visit(ctx->tableIdentifier()), visit(ctx->partitionClause()), !!ctx->FINAL(), !!ctx->DEDUPLICATE());
+    auto clause = ctx->partitionClause() ? visit(ctx->partitionClause()).as<PtrTo<PartitionExprList>>() : nullptr;
+    return std::make_shared<OptimizeQuery>(visit(ctx->tableIdentifier()), clause, !!ctx->FINAL(), !!ctx->DEDUPLICATE());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitRenameStmt(ClickHouseParser::RenameStmtContext *ctx)
@@ -147,26 +171,6 @@ antlrcpp::Any ParseTreeVisitor::visitSelectUnionStmt(ClickHouseParser::SelectUni
     auto select_union_query = std::make_shared<SelectUnionQuery>();
     for (auto * stmt : ctx->selectStmt()) select_union_query->appendSelect(visit(stmt));
     return select_union_query;
-}
-
-antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
-{
-    auto select_stmt = std::make_shared<SelectStmt>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
-
-    if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
-    if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));
-    if (ctx->sampleClause()) select_stmt->setSampleClause(visit(ctx->sampleClause()));
-    if (ctx->arrayJoinClause()) select_stmt->setArrayJoinClause(visit(ctx->arrayJoinClause()));
-    if (ctx->prewhereClause()) select_stmt->setPrewhereClause(visit(ctx->prewhereClause()));
-    if (ctx->whereClause()) select_stmt->setWhereClause(visit(ctx->whereClause()));
-    if (ctx->groupByClause()) select_stmt->setGroupByClause(visit(ctx->groupByClause()));
-    if (ctx->havingClause()) select_stmt->setHavingClause(visit(ctx->havingClause()));
-    if (ctx->orderByClause()) select_stmt->setOrderByClause(visit(ctx->orderByClause()));
-    if (ctx->limitByClause()) select_stmt->setLimitByClause(visit(ctx->limitByClause()));
-    if (ctx->limitClause()) select_stmt->setLimitClause(visit(ctx->limitClause()));
-    if (ctx->settingsClause()) select_stmt->setSettingsClause(visit(ctx->settingsClause()));
-
-    return select_stmt;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitSetStmt(ClickHouseParser::SetStmtContext *ctx)
@@ -214,7 +218,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
         std::make_shared<WhereClause>(ColumnExpr::createFunction(std::make_shared<Identifier>("and"), nullptr, and_args)));
     select_stmt->setLimitClause(ctx->limitClause() ? visit(ctx->limitClause()).as<PtrTo<LimitClause>>() : nullptr);
 
-    return select_stmt;
+    return PtrTo<SelectUnionQuery>(new SelectUnionQuery({select_stmt}));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitUseStmt(ClickHouseParser::UseStmtContext *ctx)

@@ -1,7 +1,6 @@
 set (SRCS
     AST/AlterPartitionQuery.cpp
     AST/AlterTableQuery.cpp
-    AST/AttachQuery.cpp
     AST/CheckQuery.cpp
     AST/ColumnExpr.cpp
     AST/ColumnTypeExpr.cpp
@@ -11,7 +10,6 @@ set (SRCS
     AST/CreateViewQuery.cpp
     AST/DDLQuery.cpp
     AST/DescribeQuery.cpp
-    AST/DetachQuery.cpp
     AST/DropQuery.cpp
     AST/EngineExpr.cpp
     AST/ExistsQuery.cpp

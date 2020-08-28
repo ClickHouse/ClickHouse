@@ -10,7 +10,7 @@ namespace DB::AST
 class OptimizeQuery : public DDLQuery
 {
     public:
-        OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<Literal>> list, bool final, bool deduplicate);
+        OptimizeQuery(PtrTo<TableIdentifier> identifier, PtrTo<PartitionExprList> list, bool final, bool deduplicate);
 
     private:
         enum ChildIndex : UInt8

@@ -3,6 +3,7 @@
 #include <Parsers/New/AST/Literal.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>
+#include "Parsers/New/AST/fwd_decl.h"
 
 
 namespace DB::AST
@@ -11,7 +12,9 @@ namespace DB::AST
 // static
 PtrTo<ValueExpr> ValueExpr::createArray(PtrTo<ValueExprList> array)
 {
-    return PtrTo<ValueExpr>(new ValueExpr(ExprType::ARRAY, {array->begin(), array->end()}));
+    PtrList exprs;
+    if (array) exprs = {array->begin(), array->end()};
+    return PtrTo<ValueExpr>(new ValueExpr(ExprType::ARRAY, exprs));
 }
 
 // static
@@ -29,6 +32,7 @@ PtrTo<ValueExpr> ValueExpr::createTuple(PtrTo<ValueExprList> tuple)
 ValueExpr::ValueExpr(ExprType type, PtrList exprs) : expr_type(type)
 {
     children = exprs;
+
     (void)expr_type; // TODO
 }
 
@@ -41,7 +45,8 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitValueExprArray(ClickHouseParser::ValueExprArrayContext *ctx)
 {
-    return ValueExpr::createArray(visit(ctx->valueExprList()));
+    auto list = ctx->valueExprList() ? visit(ctx->valueExprList()).as<PtrTo<ValueExprList>>() : nullptr;
+    return ValueExpr::createArray(list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitValueExprList(ClickHouseParser::ValueExprListContext *ctx)

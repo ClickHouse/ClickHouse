@@ -262,4 +262,24 @@ antlrcpp::Any ParseTreeVisitor::visitSettingsClause(ClickHouseParser::SettingsCl
     return std::make_shared<SettingsClause>(visit(ctx->settingExprList()).as<PtrTo<SettingExprList>>());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx)
+{
+    auto select_stmt = std::make_shared<SelectStmt>(visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>());
+
+    if (ctx->withClause()) select_stmt->setWithClause(visit(ctx->withClause()));
+    if (ctx->fromClause()) select_stmt->setFromClause(visit(ctx->fromClause()));
+    if (ctx->sampleClause()) select_stmt->setSampleClause(visit(ctx->sampleClause()));
+    if (ctx->arrayJoinClause()) select_stmt->setArrayJoinClause(visit(ctx->arrayJoinClause()));
+    if (ctx->prewhereClause()) select_stmt->setPrewhereClause(visit(ctx->prewhereClause()));
+    if (ctx->whereClause()) select_stmt->setWhereClause(visit(ctx->whereClause()));
+    if (ctx->groupByClause()) select_stmt->setGroupByClause(visit(ctx->groupByClause()));
+    if (ctx->havingClause()) select_stmt->setHavingClause(visit(ctx->havingClause()));
+    if (ctx->orderByClause()) select_stmt->setOrderByClause(visit(ctx->orderByClause()));
+    if (ctx->limitByClause()) select_stmt->setLimitByClause(visit(ctx->limitByClause()));
+    if (ctx->limitClause()) select_stmt->setLimitClause(visit(ctx->limitClause()));
+    if (ctx->settingsClause()) select_stmt->setSettingsClause(visit(ctx->settingsClause()));
+
+    return select_stmt;
+}
+
 }
