@@ -701,11 +701,11 @@ auto s = std::string{"Hello"};
 
 Pero en igualdad de condiciones, se prefiere el código multiplataforma o portátil.
 
-**2.** Idioma: C ++ 17.
+**2.** Idioma: C++20.
 
-**3.** Compilación: `gcc`. En este momento (diciembre de 2017), el código se compila utilizando la versión 7.2. (También se puede compilar usando `clang 4`.)
+**3.** Compilación: `gcc`. En este momento (agosto 2020), el código se compila utilizando la versión 9.3. (También se puede compilar usando `clang 8`.)
 
-Se utiliza la biblioteca estándar (`libstdc++` o `libc++`).
+Se utiliza la biblioteca estándar (`libc++`).
 
 **4.**OS: Linux Ubuntu, no más viejo que Precise.
 
@@ -749,7 +749,7 @@ Si su código en el `master` branch todavía no se puede construir, excluirlo de
 
 ## Biblioteca {#libraries}
 
-**1.** Se utiliza la biblioteca estándar de C ++ 14 (se permiten extensiones experimentales), así como `boost` y `Poco` marco.
+**1.** Se utiliza la biblioteca estándar de C++20 (se permiten extensiones experimentales), así como `boost` y `Poco` marco.
 
 **2.** Si es necesario, puede usar cualquier biblioteca conocida disponible en el paquete del sistema operativo.
 

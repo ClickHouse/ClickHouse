@@ -78,6 +78,7 @@ SRCS(
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
+    InterpreterExternalDDLQuery.cpp
     InterpreterFactory.cpp
     InterpreterGrantQuery.cpp
     InterpreterInsertQuery.cpp
@@ -110,6 +111,7 @@ SRCS(
     MergeJoin.cpp
     MetricLog.cpp
     MutationsInterpreter.cpp
+    MySQL/InterpretersMySQLDDLQuery.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp

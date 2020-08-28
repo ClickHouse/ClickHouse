@@ -422,7 +422,7 @@ public:
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
-    /// If increment != nullptr, part index is determing using increment. Otherwise part index remains unchanged.
+    /// If increment != nullptr, part index is determining using increment. Otherwise part index remains unchanged.
     /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
@@ -850,7 +850,7 @@ protected:
         const MergeListEntry * merge_entry);
 
     /// If part is assigned to merge or mutation (possibly replicated)
-    /// Should be overriden by childs, because they can have different
+    /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 

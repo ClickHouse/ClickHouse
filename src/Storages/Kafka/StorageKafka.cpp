@@ -197,7 +197,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 }
 
 
-Pipes StorageKafka::read(
+Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /* query_info */,
@@ -226,7 +226,7 @@ Pipes StorageKafka::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

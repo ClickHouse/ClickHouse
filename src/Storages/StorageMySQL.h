@@ -37,7 +37,7 @@ public:
 
     std::string getName() const override { return "MySQL"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

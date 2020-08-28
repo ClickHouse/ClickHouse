@@ -15,7 +15,7 @@ def feature(self, node="clickhouse1"):
     ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | MONTH}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
         NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
@@ -93,7 +93,7 @@ def feature(self, node="clickhouse1"):
             with When("I alter quota on a randomized interval"):
                 node.query("ALTER QUOTA quota0 FOR RANDOMIZED INTERVAL 1 DAY NO LIMITS")
 
-        intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'MONTH']
+        intervals = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
         for i, interval in enumerate(intervals):
             with Scenario(f"I alter quota for interval {interval}", flags=TE, requirements=[
                     RQ_SRS_006_RBAC_Quota_Alter_Interval("1.0")]):
