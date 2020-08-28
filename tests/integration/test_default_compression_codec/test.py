@@ -10,7 +10,6 @@ node1 = cluster.add_instance('node1', main_configs=['configs/default_compression
 node2 = cluster.add_instance('node2', main_configs=['configs/default_compression.xml'], with_zookeeper=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/default_compression.xml'], image='yandex/clickhouse-server:20.3.16', stay_alive=True, with_installed_binary=True)
 
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -151,7 +150,6 @@ def test_default_codec_multiple(start_cluster):
     assert node1.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'") == "ZSTD(10)\n"
     assert node2.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table_multiple' and name = '3_0_0_0'") == "ZSTD(10)\n"
 
-
     node2.query("SYSTEM SYNC REPLICA compression_table_multiple", timeout=15)
 
     node1.query("OPTIMIZE TABLE compression_table_multiple FINAL")
@@ -198,3 +196,10 @@ def test_default_codec_version_update(start_cluster):
     assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_1'") == "ZSTD(10)\n"
     assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'") == "LZ4HC(5)\n"
     assert node3.query("SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'") == "LZ4\n"
+    assert get_compression_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['Multiple']
+    assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "2_0_0_1") == CODECS_MAPPING['LZ4HC']
+    assert get_compression_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['Multiple']
+    assert get_second_multiple_codec_byte(node1, "compression_table_multiple", "3_0_0_1") == CODECS_MAPPING['LZ4']
+
+    assert node1.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
+    assert node2.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"

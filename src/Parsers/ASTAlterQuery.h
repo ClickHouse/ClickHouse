@@ -31,6 +31,7 @@ public:
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
@@ -77,6 +78,10 @@ public:
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
+
+    /** For MODIFY SAMPLE BY
+     */
+    ASTPtr sample_by;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */

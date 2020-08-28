@@ -65,6 +65,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool supportsParallelInsert() const override { return true; }
+
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void startup() override;
