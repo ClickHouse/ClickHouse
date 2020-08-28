@@ -50,26 +50,12 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , row_delimiter(row_delimiter_)
         , stopped(stopped_)
         , received(QUEUE_SIZE * num_queues)
+        , last_inserted_record(AckTracker())
 {
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
         bindQueue(queue_id);
 
-    consumer_channel->onReady([&]()
-    {
-        channel_id = std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++) + "_" + channel_base;
-        LOG_TRACE(log, "Channel {} is created", channel_id);
-
-        consumer_channel->onError([&](const char * message)
-        {
-            LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
-            channel_error.store(true);
-        });
-
-        updateAckTracker(AckTracker());
-        subscribe();
-
-        channel_error.store(false);
-    });
+    setupChannel();
 }
 
 
@@ -93,7 +79,7 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
 
        /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
         * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
-        * fanout exchange it can be arbitrary.
+        * fanout exchange it can be arbitrary
         */
         setup_channel->bindQueue(exchange_name, queue_name, std::to_string(channel_id_base))
         .onSuccess([&]
@@ -118,7 +104,7 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
     }
 
     /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
-     * specific queue when its name is specified in queue_base setting.
+     * specific queue when its name is specified in queue_base setting
      */
     const String queue_name = !hash_exchange ? queue_base : std::to_string(channel_id_base) + "_" + std::to_string(queue_id) + "_" + queue_base;
     setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
@@ -138,6 +124,9 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         .onSuccess([&](const std::string & /* consumer_tag */)
         {
             LOG_TRACE(log, "Consumer on channel {} is subscribed to queue {}", channel_id, queue_name);
+
+            if (++subscribed == queues.size())
+                wait_subscription.store(false);
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
@@ -155,39 +144,39 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
         })
         .onError([&](const char * message)
         {
+            /* End up here either if channel ends up in an error state (then there will be resubscription) or consume call error, which
+             * arises from queue settings mismatch or queue level error, which should not happen as noone else is supposed to touch them
+             */
             LOG_ERROR(log, "Consumer failed on channel {}. Reason: {}", channel_id, message);
+            wait_subscription.store(false);
         });
     }
 }
 
 
-void ReadBufferFromRabbitMQConsumer::ackMessages()
+bool ReadBufferFromRabbitMQConsumer::ackMessages()
 {
-    /* Delivery tags are scoped per channel, so if channel fails, then all previous delivery tags become invalid. Also this check ensures
-     * that there is no data race with onReady callback in restoreChannel() (they can be called at the same time from different threads).
-     * And there is no need to synchronize this method with updateAckTracker() as they are not supposed to be called at the same time.
-     */
-    if (channel_error.load())
-        return;
-
     AckTracker record = last_inserted_record;
 
-    /// Do not send ack to server if message's channel is not the same as current running channel.
-    if (record.channel_id == channel_id && record.delivery_tag && record.delivery_tag > prev_tag && event_handler->connectionRunning())
+    /* Do not send ack to server if message's channel is not the same as current running channel because delivery tags are scoped per
+     * channel, so if channel fails, all previous delivery tags become invalid
+     */
+    if (record.channel_id == channel_id && record.delivery_tag && record.delivery_tag > prev_tag)
     {
-        consumer_channel->ack(record.delivery_tag, AMQP::multiple); /// Will ack all up to last tag starting from last acked.
-        prev_tag = record.delivery_tag;
+        /// Commit all received messages with delivery tags from last commited to last inserted
+        if (!consumer_channel->ack(record.delivery_tag, AMQP::multiple))
+            return false;
 
-        LOG_TRACE(log, "Consumer acknowledged messages with deliveryTags up to {} on the channel {}", record.delivery_tag, channel_id);
+        prev_tag = record.delivery_tag;
+        LOG_TRACE(log, "Consumer acknowledged messages with deliveryTags up to {} on channel {}", record.delivery_tag, channel_id);
     }
+
+    return true;
 }
 
 
 void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record)
 {
-    /* This method can be called from readImpl and from channel->onError() callback, but channel_error check ensures that it is not done
-     * at the same time, so no synchronization needed.
-     */
     if (record.delivery_tag && channel_error.load())
         return;
 
@@ -198,28 +187,30 @@ void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record)
 }
 
 
-void ReadBufferFromRabbitMQConsumer::restoreChannel(ChannelPtr new_channel)
+void ReadBufferFromRabbitMQConsumer::setupChannel()
 {
-    consumer_channel = std::move(new_channel);
+    wait_subscription.store(true);
+
     consumer_channel->onReady([&]()
     {
         /* First number indicates current consumer buffer; second number indicates serial number of created channel for current buffer,
          * i.e. if channel fails - another one is created and its serial number is incremented; channel_base is to guarantee that
-         * channel_id is unique for each table.
+         * channel_id is unique for each table
          */
         channel_id = std::to_string(channel_id_base) + "_" + std::to_string(channel_id_counter++) + "_" + channel_base;
         LOG_TRACE(log, "Channel {} is created", channel_id);
 
-        consumer_channel->onError([&](const char * message)
-        {
-            LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
-            channel_error.store(true);
-        });
-
-        updateAckTracker(AckTracker());
+        subscribed = 0;
         subscribe();
-
         channel_error.store(false);
+    });
+
+    consumer_channel->onError([&](const char * message)
+    {
+        LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
+
+        channel_error.store(true);
+        wait_subscription.store(false);
     });
 }
 

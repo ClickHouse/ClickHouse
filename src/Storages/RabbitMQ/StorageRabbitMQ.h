@@ -55,15 +55,14 @@ public:
 
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
-    const auto & getSchemaName() const { return schema_name; }
 
     const String getExchange() const { return exchange_name; }
-    bool checkBridge() const { return !exchange_removed.load(); }
     void unbindExchange();
+    bool exchangeRemoved() { return exchange_removed.load(); }
 
     bool connectionRunning() { return event_handler->connectionRunning(); }
-    bool restoreConnection();
-    ChannelPtr getChannel();
+    bool restoreConnection(bool reconnecting);
+    void updateChannel(ChannelPtr & channel);
 
 protected:
     StorageRabbitMQ(
@@ -85,7 +84,6 @@ protected:
 
 private:
     Context global_context;
-    Context rabbitmq_context;
 
     Names routing_keys;
     const String exchange_name;
@@ -117,11 +115,10 @@ private:
     String unique_strbase;
     String sharding_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag;
-    size_t producer_id = 0, consumer_id = 0;
-    bool loop_started = false;
-    std::atomic<bool> exchange_removed = false, wait_confirm = true;
+    size_t consumer_id = 0;
+    std::atomic<size_t> producer_id = 1;
+    std::atomic<bool> wait_confirm = true, exchange_removed = false;
     ChannelPtr setup_channel;
-    std::mutex connection_mutex, restore_connection;
 
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder heartbeat_task;
@@ -134,6 +131,7 @@ private:
     void threadFunc();
     void heartbeatFunc();
     void loopingFunc();
+
     void initExchange();
     void bindExchange();
 

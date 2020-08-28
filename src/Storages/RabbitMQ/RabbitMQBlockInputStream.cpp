@@ -14,24 +14,24 @@ namespace DB
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Context & context_,
-    const Names & columns)
+    const std::shared_ptr<Context> & context_,
+    const Names & columns,
+    bool ack_in_suffix_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , context(context_)
         , column_names(columns)
+        , ack_in_suffix(ack_in_suffix_)
         , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
         , virtual_header(metadata_snapshot->getSampleBlockForColumns(
                     {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id"}, storage.getVirtuals(), storage.getStorageID()))
 {
-    if (!storage.getSchemaName().empty())
-        context.setSetting("format_schema", storage.getSchemaName());
 }
 
 
 RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
 {
-    if (!claimed)
+    if (!buffer)
         return;
 
     storage.pushReadBuffer(buffer);
@@ -46,16 +46,29 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
-
+    auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
-    claimed = !!buffer;
+}
 
-    if (!buffer || finished)
+
+bool RabbitMQBlockInputStream::needManualChannelUpdate()
+{
+    if (!buffer)
+        return false;
+
+    return !buffer->channelUsable() && buffer->channelAllowed() && storage.connectionRunning();
+}
+
+
+void RabbitMQBlockInputStream::updateChannel()
+{
+    if (!buffer)
         return;
 
-    if (!buffer->channelUsable() && (storage.connectionRunning() || storage.restoreConnection()))
-        buffer->restoreChannel(storage.getChannel());
+    buffer->updateAckTracker();
+
+    storage.updateChannel(buffer->getChannel());
+    buffer->setupChannel();
 }
 
 
@@ -70,7 +83,7 @@ Block RabbitMQBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, context, 1);
+            storage.getFormatName(), *buffer, non_virtual_header, *context, 1);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
@@ -151,7 +164,7 @@ Block RabbitMQBlockInputStream::readImpl()
 
         buffer->allowNext();
 
-        if (!new_rows || !checkTimeLimit())
+        if (buffer->queueEmpty() || !checkTimeLimit())
             break;
     }
 
@@ -162,9 +175,7 @@ Block RabbitMQBlockInputStream::readImpl()
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-    {
         result_block.insert(column);
-    }
 
     return result_block;
 }
@@ -172,10 +183,19 @@ Block RabbitMQBlockInputStream::readImpl()
 
 void RabbitMQBlockInputStream::readSuffixImpl()
 {
-    if (!buffer)
-        return;
+    if (ack_in_suffix)
+        sendAck();
+}
 
-    buffer->ackMessages();
+bool RabbitMQBlockInputStream::sendAck()
+{
+    if (!buffer || !buffer->channelUsable())
+        return false;
+
+    if (!buffer->ackMessages())
+        return false;
+
+    return true;
 }
 
 }

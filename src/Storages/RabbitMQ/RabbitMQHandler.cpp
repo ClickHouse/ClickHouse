@@ -13,17 +13,16 @@ RabbitMQHandler::RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_) :
     loop(loop_),
     log(log_),
     connection_running(false),
+    loop_running(false),
     loop_state(Loop::STOP)
 {
 }
 
 ///Method that is called when the connection ends up in an error state.
-void RabbitMQHandler::onError(AMQP::TcpConnection * connection, const char * message)
+void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char * message)
 {
     LOG_ERROR(log, "Library error report: {}", message);
     connection_running.store(false);
-    if (connection)
-        connection->close();
 }
 
 void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
@@ -36,11 +35,15 @@ void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 void RabbitMQHandler::startLoop()
 {
     std::lock_guard lock(startup_mutex);
+
     LOG_DEBUG(log, "Background loop started");
+    loop_running.store(true);
+
     while (loop_state.load() == Loop::RUN)
         uv_run(loop, UV_RUN_NOWAIT);
 
     LOG_DEBUG(log, "Background loop ended");
+    loop_running.store(false);
 }
 
 void RabbitMQHandler::iterateLoop()
