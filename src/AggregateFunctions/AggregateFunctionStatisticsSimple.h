@@ -433,8 +433,8 @@ public:
     {
         if constexpr (StatFunc::num_args == 2)
             this->data(place).add(
-                static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
-                static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
+                bigint_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
+                bigint_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
         {
             if constexpr (std::is_same_v<T1, Decimal256>)
@@ -445,7 +445,7 @@ public:
             }
             else
                 this->data(place).add(
-                    static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
+                    bigint_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
         }
     }
 

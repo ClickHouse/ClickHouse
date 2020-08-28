@@ -57,9 +57,9 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
                 throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
             }
             else if constexpr (IsDecimalNumber<T>)
-                dst = static_cast<NativeU>(src.value);
+                dst = bigint_cast<NativeU>(src.value);
             else
-                dst = static_cast<NativeU>(src);
+                dst = bigint_cast<NativeU>(src);
         }
         else
             dst = static_cast<NativeU>(src);
@@ -568,6 +568,10 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
         return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
     else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
+#if 1
+    else if constexpr (std::is_same_v<T, UInt256> || std::is_same_v<U, UInt256>)
+        return false;
+#endif
     else
         return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
 }

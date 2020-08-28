@@ -8,6 +8,13 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#include <common/generic_template_uintwide_t.h>
+namespace wider = wide_integer::generic_template;
+#pragma GCC diagnostic pop
+
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
@@ -30,6 +37,7 @@ using Int128 = __int128;
 using bInt256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
     255, 255, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void> >;
 using bUInt256 = boost::multiprecision::uint256_t;
+using wUInt256 = wider::uint256_t;
 
 
 using String = std::string;
@@ -56,6 +64,7 @@ struct is_unsigned
 };
 
 template <> struct is_unsigned<bUInt256> { static constexpr bool value = true; };
+template <> struct is_unsigned<wUInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
@@ -71,6 +80,7 @@ struct is_integer
 template <> struct is_integer<Int128> { static constexpr bool value = true; };
 template <> struct is_integer<bInt256> { static constexpr bool value = true; };
 template <> struct is_integer<bUInt256> { static constexpr bool value = true; };
+template <> struct is_integer<wUInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_integer_v = is_integer<T>::value;
@@ -93,9 +103,10 @@ struct make_unsigned
     typedef std::make_unsigned_t<T> type;
 };
 
-template <> struct make_unsigned<__int128> { using type = unsigned __int128; };
+template <> struct make_unsigned<Int128> { using type = unsigned __int128; };
 template <> struct make_unsigned<bInt256>  { using type = bUInt256; };
 template <> struct make_unsigned<bUInt256> { using type = bUInt256; };
+template <> struct make_unsigned<wUInt256> { using type = wUInt256; };
 
 template <typename T> using make_unsigned_t = typename make_unsigned<T>::type;
 
@@ -105,8 +116,9 @@ struct make_signed
     typedef std::make_signed_t<T> type;
 };
 
-template <> struct make_signed<bInt256>  { typedef bInt256 type; };
-template <> struct make_signed<bUInt256> { typedef bInt256 type; };
+template <> struct make_signed<bInt256>  { using type = bInt256; };
+template <> struct make_signed<bUInt256> { using type = bInt256; };
+template <> struct make_signed<wUInt256> { using type = bInt256; }; /// TODO
 
 template <typename T> using make_signed_t = typename make_signed<T>::type;
 
@@ -116,8 +128,34 @@ struct is_big_int
     static constexpr bool value = false;
 };
 
-template <> struct is_big_int<bUInt256> { static constexpr bool value = true; };
 template <> struct is_big_int<bInt256> { static constexpr bool value = true; };
+template <> struct is_big_int<bUInt256> { static constexpr bool value = true; };
+template <> struct is_big_int<wUInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
+
+template <typename T>
+inline std::string bigintToString(const T & x [[maybe_unused]])
+{
+    if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+        return x.str();
+    else
+        return "TODO";
+}
+
+template <typename To, typename From>
+inline To bigint_cast(const From & x [[maybe_unused]])
+{
+    /// TODO
+    if constexpr (std::is_same_v<From, wUInt256> &&
+        (std::is_floating_point_v<To> || std::is_same_v<To, Int128> || std::is_same_v<To, bInt256> || std::is_same_v<To, bUInt256>))
+        return To{};
+    else if constexpr (std::is_same_v<To, wUInt256> &&
+        (std::is_floating_point_v<From> || std::is_same_v<From, Int128> || std::is_same_v<From, bInt256> || std::is_same_v<From, bUInt256>))
+        return To{};
+    else if constexpr ((is_big_int_v<From> && std::is_same_v<To, UInt8>) || (is_big_int_v<To> && std::is_same_v<From, UInt8>))
+        return static_cast<uint8_t>(x);
+    else
+        return static_cast<To>(x);
+}

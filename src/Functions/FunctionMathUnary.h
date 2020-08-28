@@ -67,7 +67,7 @@ private:
             {
                 PODArray<Float64> tmp_vec(size);
                 for (size_t i = 0; i < size; ++i)
-                    tmp_vec[i] = static_cast<Float64>(src_data[i]);
+                    tmp_vec[i] = bigint_cast<Float64>(src_data[i]);
 
                 Impl::execute(tmp_vec.data(), size, dst_data);
             }
@@ -182,7 +182,7 @@ struct UnaryFunctionPlain
     template <typename T>
     static void execute(const T * src, Float64 * dst)
     {
-        dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
+        dst[0] = static_cast<Float64>(Function(bigint_cast<Float64>(src[0])));
     }
 };
 

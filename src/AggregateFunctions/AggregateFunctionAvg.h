@@ -32,9 +32,9 @@ struct AggregateFunctionAvgData
             if constexpr (std::numeric_limits<ResultT>::is_iec559)
             {
                 if constexpr (is_big_int_v<Denominator>)
-                    return static_cast<ResultT>(numerator) / static_cast<ResultT>(denominator);
+                    return bigint_cast<ResultT>(numerator) / bigint_cast<ResultT>(denominator);
                 else
-                    return static_cast<ResultT>(numerator) / denominator; /// allow division by zero
+                    return bigint_cast<ResultT>(numerator) / denominator; /// allow division by zero
             }
 
         if (denominator == static_cast<Denominator>(0))
@@ -43,7 +43,7 @@ struct AggregateFunctionAvgData
         if constexpr (std::is_same_v<T, Decimal256>)
             return static_cast<ResultT>(numerator / static_cast<T>(denominator));
         else
-            return static_cast<ResultT>(numerator / denominator);
+            return bigint_cast<ResultT>(numerator / denominator);
     }
 };
 

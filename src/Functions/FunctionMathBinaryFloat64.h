@@ -261,7 +261,7 @@ struct BinaryFunctionPlain
     template <typename T1, typename T2>
     static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
-        dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
+        dst[0] = bigint_cast<Float64>(Function(bigint_cast<Float64>(src_left[0]), bigint_cast<Float64>(src_right[0])));
     }
 };
 

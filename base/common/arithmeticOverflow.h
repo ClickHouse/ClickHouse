@@ -52,6 +52,13 @@ namespace common
         return x > std::numeric_limits<bUInt256>::max() - y;
     }
 
+    template <>
+    inline bool addOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    {
+        res = x + y;
+        return (res < x) || (res < y);
+    }
+
     template <typename T>
     inline bool subOverflow(T x, T y, T & res)
     {
@@ -95,6 +102,13 @@ namespace common
 
     template <>
     inline bool subOverflow(bUInt256 x, bUInt256 y, bUInt256 & res)
+    {
+        res = x - y;
+        return x < y;
+    }
+
+    template <>
+    inline bool subOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
     {
         res = x - y;
         return x < y;
@@ -150,6 +164,15 @@ namespace common
 
     template <>
     inline bool mulOverflow(bUInt256 x, bUInt256 y, bUInt256 & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+        return (x * y) / y != x;
+    }
+
+    template <>
+    inline bool mulOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
     {
         res = x * y;
         if (!x || !y)

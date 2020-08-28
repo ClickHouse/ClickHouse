@@ -228,27 +228,23 @@ private:
         CompareInt x;
         if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<A>)
             x = a.value;
-        else if constexpr (is_big_int_v<CompareInt> && std::is_same_v<A, UInt8>)
-            x = static_cast<UInt16>(a);
         else
-            x = static_cast<CompareInt>(a);
+            x = bigint_cast<CompareInt>(a);
 
         CompareInt y;
         if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<B>)
             y = b.value;
-        else if constexpr (is_big_int_v<CompareInt> && std::is_same_v<B, UInt8>)
-            y = static_cast<UInt16>(b);
         else
-            y = static_cast<CompareInt>(b);
+            y = bigint_cast<CompareInt>(b);
 
         if constexpr (_check_overflow)
         {
             bool overflow = false;
 
             if constexpr (sizeof(A) > sizeof(CompareInt))
-                overflow |= (A(x) != a);
+                overflow |= (bigint_cast<A>(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
-                overflow |= (B(y) != b);
+                overflow |= (bigint_cast<B>(y) != b);
             if constexpr (is_unsigned_v<A>)
                 overflow |= (x < 0);
             if constexpr (is_unsigned_v<B>)

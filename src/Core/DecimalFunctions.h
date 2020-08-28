@@ -192,8 +192,18 @@ To convertTo(const DecimalType & decimal, size_t scale)
         if constexpr (is_unsigned_v<To>)
             if (whole < 0)
                 throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return static_cast<To>(whole);
+        return bigint_cast<To>(whole);
     }
+#if 1 /// Special case for big int without other ints comparison
+    else if constexpr (std::is_same_v<To, UInt256>)
+    {
+        if (decimal.value < 0)
+            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
+        const NativeT whole = getWholePart(decimal, scale);
+        return bigint_cast<To>(whole);
+    }
+#endif
     else if constexpr (is_integer_v<To>)
     {
         using ToNativeT = typename NativeType<To>::Type;

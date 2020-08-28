@@ -25,7 +25,7 @@ struct BitShiftRightImpl
         else if constexpr (is_big_int_v<ResultType>)
             return static_cast<Result>(a) >> static_cast<CastB>(b);
         else
-            return static_cast<Result>(a) >> static_cast<Result>(b);
+            return bigint_cast<Result>(a) >> static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER

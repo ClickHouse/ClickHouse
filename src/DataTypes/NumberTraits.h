@@ -225,13 +225,4 @@ using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>,
 
 }
 
-template <typename T>
-static inline auto littleBits(const T & x)
-{
-    if constexpr (is_big_int_v<T>)
-        return x. template convert_to<UInt32>();
-    else
-        return UInt8(x);
-}
-
 }

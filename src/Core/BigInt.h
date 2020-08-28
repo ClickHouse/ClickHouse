@@ -78,6 +78,49 @@ struct BigInt : BigIntPayload<T>
             return x;
         }
     }
+
+    static std::vector<UInt64> toIntArray(const T & x)
+    {
+        std::vector<UInt64> parts;
+        export_bits(x, std::back_inserter(parts), sizeof(UInt64), false);
+        return parts;
+    }
+};
+
+template <>
+struct BigInt<wUInt256>
+{
+    static_assert(sizeof(wUInt256) == 32);
+    static constexpr size_t size = 32;
+
+    static StringRef serialize(const wUInt256 & x, char * pos)
+    {
+        //unalignedStore<wUInt256>(pos, x);
+        memcpy(pos, &x, size);
+        return StringRef(pos, size);
+    }
+
+    static String serialize(const wUInt256 & x)
+    {
+        String str(size, '\0');
+        serialize(x, str.data());
+        return str;
+    }
+
+    static wUInt256 deserialize(const char * pos)
+    {
+        //return unalignedLoad<wUInt256>(pos);
+        wUInt256 res;
+        memcpy(&res, pos, size);
+        return res;
+    }
+
+    static std::vector<UInt64> toIntArray(const wUInt256 &)
+    {
+        /// FIXME
+        std::vector<UInt64> parts(4, 0);
+        return parts;
+    }
 };
 
 }

@@ -835,8 +835,8 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-inline void writeText(const UInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
-inline void writeText(const Int256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const UInt256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
+inline void writeText(const Int256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
 
 template <typename T>
 String decimalFractional(const T & x, UInt32 scale)

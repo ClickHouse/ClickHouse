@@ -28,8 +28,8 @@ namespace DB
             if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
                 throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskAnd.", ErrorCodes::BAD_ARGUMENTS);
 
-            auto left_bits = littleBits<A>(left);
-            auto right_bits = littleBits<B>(right);
+            auto left_bits = bigint_cast<UInt8>(left);
+            auto right_bits = bigint_cast<UInt8>(right);
             return static_cast<ResultType>((left_bits & right_bits & 1) | ((((left_bits >> 1) | (right_bits >> 1)) & 1) << 1));
         }
 

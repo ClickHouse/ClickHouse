@@ -156,7 +156,7 @@ struct ConvertImpl
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
-                        vec_to[i] = static_cast<CastTo>(static_cast<CastFrom>(vec_from[i]));
+                        vec_to[i] = bigint_cast<CastTo>(bigint_cast<CastFrom>(vec_from[i]));
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
                     vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
@@ -1461,10 +1461,11 @@ struct ToNumberMonotonicity
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
-            if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
-                && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
-                && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
-                && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
+            Float64 min_t = bigint_cast<Float64>(std::numeric_limits<T>::min());
+            Float64 max_t = bigint_cast<Float64>(std::numeric_limits<T>::max());
+
+            if (left_float >= min_t && left_float <= max_t &&
+                right_float >= min_t && right_float <= max_t)
                 return { true };
 
             return {};

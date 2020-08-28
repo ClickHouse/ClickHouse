@@ -58,7 +58,8 @@ using UInt8 = ::UInt8;
 using UInt16 = ::UInt16;
 using UInt32 = ::UInt32;
 using UInt64 = ::UInt64;
-using UInt256 = ::bUInt256;
+//using UInt256 = ::bUInt256;
+using UInt256 = ::wUInt256;
 
 using Int8 = ::Int8;
 using Int16 = ::Int16;
@@ -162,12 +163,8 @@ struct Decimal
         {
             return convertTo<typename U::NativeType>();
         }
-        else if constexpr (is_big_int_v<NativeType>)
-        {
-            return value. template convert_to<U>();
-        }
         else
-            return static_cast<U>(value);
+            return bigint_cast<U>(value);
     }
 
     const Decimal<T> & operator += (const T & x) { value += x; return *this; }

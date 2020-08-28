@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Core/BigInt.h>
 #include <Common/UInt128.h>
 #include <common/unaligned.h>
 
@@ -89,8 +90,7 @@ template <typename T>
 inline typename std::enable_if<is_big_int_v<T>, DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
-    std::vector<UInt64> parts;
-    export_bits(x, std::back_inserter(parts), sizeof(UInt64), false);
+    std::vector<UInt64> parts = DB::BigInt<T>::toIntArray(x);
     for (const auto & part : parts)
         updated_value = intHashCRC32(part, updated_value);
 

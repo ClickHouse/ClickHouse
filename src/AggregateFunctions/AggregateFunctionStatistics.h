@@ -55,7 +55,7 @@ public:
     void update(const IColumn & column, size_t row_num)
     {
         T received = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
-        Float64 val = static_cast<Float64>(received);
+        Float64 val = bigint_cast<Float64>(received);
         Float64 delta = val - mean;
 
         ++count;
@@ -266,11 +266,11 @@ public:
     void update(const IColumn & column_left, const IColumn & column_right, size_t row_num)
     {
         T left_received = assert_cast<const ColumnVector<T> &>(column_left).getData()[row_num];
-        Float64 left_val = static_cast<Float64>(left_received);
+        Float64 left_val = bigint_cast<Float64>(left_received);
         Float64 left_delta = left_val - left_mean;
 
         U right_received = assert_cast<const ColumnVector<U> &>(column_right).getData()[row_num];
-        Float64 right_val = static_cast<Float64>(right_received);
+        Float64 right_val = bigint_cast<Float64>(right_received);
         Float64 right_delta = right_val - right_mean;
 
         Float64 old_right_mean = right_mean;

@@ -25,7 +25,7 @@ namespace DB
                 // Need to investigate this.
                 throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_ARGUMENTS);
 
-            auto little_bits = littleBits<A>(a);
+            auto little_bits = bigint_cast<UInt8>(a);
             return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));
         }
 
