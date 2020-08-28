@@ -18,6 +18,7 @@ void registerFunctionBlockSerializedSize(FunctionFactory &);
 void registerFunctionToColumnTypeName(FunctionFactory &);
 void registerFunctionDumpColumnStructure(FunctionFactory &);
 void registerFunctionDefaultValueOfArgumentType(FunctionFactory &);
+void registerFunctionDefaultValueOfTypeName(FunctionFactory &);
 void registerFunctionBlockSize(FunctionFactory &);
 void registerFunctionBlockNumber(FunctionFactory &);
 void registerFunctionRowNumberInBlock(FunctionFactory &);
@@ -56,8 +57,11 @@ void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
+void registerFunctionGetSetting(FunctionFactory &);
 void registerFunctionIsConstant(FunctionFactory &);
 void registerFunctionGlobalVariable(FunctionFactory &);
+void registerFunctionHasThreadFuzzer(FunctionFactory &);
+void registerFunctionInitializeAggregation(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -76,6 +80,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionToColumnTypeName(factory);
     registerFunctionDumpColumnStructure(factory);
     registerFunctionDefaultValueOfArgumentType(factory);
+    registerFunctionDefaultValueOfTypeName(factory);
     registerFunctionBlockSize(factory);
     registerFunctionBlockNumber(factory);
     registerFunctionRowNumberInBlock(factory);
@@ -114,8 +119,11 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTransform(factory);
     registerFunctionGetMacro(factory);
     registerFunctionGetScalar(factory);
+    registerFunctionGetSetting(factory);
     registerFunctionIsConstant(factory);
     registerFunctionGlobalVariable(factory);
+    registerFunctionHasThreadFuzzer(factory);
+    registerFunctionInitializeAggregation(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

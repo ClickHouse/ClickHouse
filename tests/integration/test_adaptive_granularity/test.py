@@ -301,11 +301,16 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
 
 def test_version_update_two_nodes(start_dynamic_cluster):
     node11.query("INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
-    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity")
+    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)
     assert node12.query("SELECT COUNT() FROM table_with_default_granularity") == '2\n'
-    node12.restart_with_latest_version()
+    def callback(n):
+        n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml", "<yandex><merge_tree><enable_mixed_granularity_parts>0</enable_mixed_granularity_parts></merge_tree></yandex>")
+        n.replace_config("/etc/clickhouse-server/config.d/merge_tree_settings.xml", "<yandex><merge_tree><enable_mixed_granularity_parts>0</enable_mixed_granularity_parts></merge_tree></yandex>")
+
+    node12.restart_with_latest_version(callback_onstop=callback)
+
     node12.query("INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 3, 333), (toDate('2018-10-02'), 4, 444)")
-    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity")
+    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)
     assert node11.query("SELECT COUNT() FROM table_with_default_granularity") == '4\n'
 
     node12.query(
@@ -326,17 +331,17 @@ def test_version_update_two_nodes(start_dynamic_cluster):
 
     node12.query("INSERT INTO table_with_default_granularity_new VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
     with pytest.raises(QueryTimeoutExceedException):
-        node11.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=5)
+        node11.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=20)
     node12.query("INSERT INTO table_with_default_granularity_new VALUES (toDate('2018-10-01'), 3, 333), (toDate('2018-10-02'), 4, 444)")
 
-    node11.restart_with_latest_version() # just to be sure
+    node11.restart_with_latest_version(callback_onstop=callback) # just to be sure
 
-    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=5)
-    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=5)
+    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=20)
+    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity_new", timeout=20)
     node11.query("SELECT COUNT() FROM table_with_default_granularity_new") == "4\n"
     node12.query("SELECT COUNT() FROM table_with_default_granularity_new") == "4\n"
 
-    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity")
+    node11.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)
     node11.query("INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 5, 333), (toDate('2018-10-02'), 6, 444)")
-    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity")
+    node12.query("SYSTEM SYNC REPLICA table_with_default_granularity", timeout=20)
     assert node12.query("SELECT COUNT() FROM table_with_default_granularity") == '6\n'

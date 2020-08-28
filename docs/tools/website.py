@@ -55,6 +55,13 @@ def adjust_markdown_html(content):
         if a_href and a_href.startswith('http'):
             a.attrs['target'] = '_blank'
 
+    for code in soup.find_all('code'):
+        code_class = code.attrs.get('class')
+        if code_class:
+            code.attrs['class'] = code_class + ['syntax']
+        else:
+            code.attrs['class'] = 'syntax'
+
     for iframe in soup.find_all('iframe'):
         handle_iframe(iframe, soup)
 
@@ -117,15 +124,7 @@ def adjust_markdown_html(content):
 
 
 def minify_html(content):
-    return htmlmin.minify(content,
-                          remove_comments=False,
-                          remove_empty_space=True,
-                          remove_all_empty_space=False,
-                          reduce_empty_attributes=True,
-                          reduce_boolean_attributes=False,
-                          remove_optional_attribute_quotes=True,
-                          convert_charrefs=False,
-                          keep_pre=True)
+    return htmlmin.minify(content)
 
 
 def build_website(args):

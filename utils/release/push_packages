@@ -188,7 +188,7 @@ def _fix_args(args):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="Programm to push clickhouse packages to repository")
+    parser = argparse.ArgumentParser(description="Program to push clickhouse packages to repository")
     parser.add_argument('--deb-directory')
     parser.add_argument('--rpm-directory')
     parser.add_argument('--tgz-directory')

@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
 
-try:
-    import git # `pip install gitpython`
-except ImportError:
-    import sys
-    sys.exit("Package 'gitpython' not found. Try run: `pip install [--user] gitpython`")
-
 import functools
 import logging
 import os
@@ -14,6 +8,8 @@ import re
 
 class RepositoryBase(object):
     def __init__(self, repo_path):
+        import git
+
         self._repo = git.Repo(repo_path, search_parent_directories=(not repo_path))
 
         # commit comparator
@@ -34,10 +30,12 @@ class RepositoryBase(object):
         for commit in self._repo.iter_commits(rev_range, first_parent=True):
             yield commit
 
+
 class Repository(RepositoryBase):
     def __init__(self, repo_path, remote_name, default_branch_name):
         super(Repository, self).__init__(repo_path)
         self._remote = self._repo.remotes[remote_name]
+        self._remote.fetch()
         self._default = self._remote.refs[default_branch_name]
 
     def get_release_branches(self):
@@ -62,6 +60,7 @@ class Repository(RepositoryBase):
                 release_branches.append((os.path.basename(branch.name), base[0]))
 
         return sorted(release_branches, key=lambda x : self.comparator(x[1]))
+
 
 class BareRepository(RepositoryBase):
     def __init__(self, repo_path, default_branch_name):

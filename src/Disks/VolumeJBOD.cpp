@@ -17,8 +17,8 @@ VolumeJBOD::VolumeJBOD(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    DiskSelectorPtr disk_selector
-) : IVolume(name_, config, config_prefix, disk_selector)
+    DiskSelectorPtr disk_selector)
+    : IVolume(name_, config, config_prefix, disk_selector)
 {
     Poco::Logger * logger = &Poco::Logger::get("StorageConfiguration");
 
@@ -55,7 +55,7 @@ VolumeJBOD::VolumeJBOD(
         LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
 }
 
-DiskPtr VolumeJBOD::getNextDisk()
+DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
 {
     size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
     size_t index = start_from % disks.size();
@@ -64,7 +64,8 @@ DiskPtr VolumeJBOD::getNextDisk()
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 {
-    /// This volume can not store files which size greater than max_data_part_size
+    /// This volume can not store data which size is greater than `max_data_part_size`
+    /// to ensure that parts of size greater than that go to another volume(s).
 
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};

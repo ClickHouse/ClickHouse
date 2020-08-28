@@ -11,7 +11,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
     , volume(data_part->volume)
-    , part_path(data_part->getFullRelativePath())
+    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
 {
 }
 

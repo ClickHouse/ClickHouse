@@ -36,7 +36,7 @@ Memory usage is not monitored for the states of certain aggregate functions.
 
 Memory usage is not fully tracked for states of the aggregate functions `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` from `String` and `Array` arguments.
 
-Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and [max_server_memory_usage](../server-configuration-parameters/settings.md#max_server_memory_usage).
+Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and [max\_server\_memory\_usage](../../operations/server-configuration-parameters/settings.md#max_server_memory_usage).
 
 ## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
 
@@ -45,7 +45,6 @@ The maximum amount of RAM to use for running a user’s queries on a single serv
 Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
-
 
 ## max\_rows\_to\_read {#max-rows-to-read}
 

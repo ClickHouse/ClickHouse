@@ -1,4 +1,4 @@
-# system.table\_engines {#system-table-engines}
+# system.table_engines {#system-table-engines}
 
 Contains description of table engines supported by server and their feature support information.
 
@@ -33,3 +33,5 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 -   MergeTree family [query clauses](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses)
 -   Kafka [settings](../../engines/table-engines/integrations/kafka.md#table_engine-kafka-creating-a-table)
 -   Join [settings](../../engines/table-engines/special/join.md#join-limitations-and-settings)
+
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/table_engines) <!--hide-->

@@ -39,7 +39,7 @@
 23.0
 24.0
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.
 
 === Try load data from fixed_length_decimal_1.parquet
 1.0
