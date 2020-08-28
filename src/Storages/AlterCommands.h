@@ -147,7 +147,7 @@ private:
 
 public:
     /// Validate that commands can be applied to metadata.
-    /// Checks that all columns exist and dependecies between them.
+    /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;

@@ -86,7 +86,7 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::initExchange()
 {
-    /* This direct-exchange is used for default implemenation and for INSERT query (so it is always declared). If exchange_type
+    /* This direct-exchange is used for default implementation and for INSERT query (so it is always declared). If exchange_type
      * is not set, then there are only two exchanges - external, defined by the client, and local, unique for each table (default).
      * This strict division to external and local exchanges is needed to avoid too much complexity with defining exchange_name
      * for INSERT query producer and, in general, it is better to distinguish them into separate ones.

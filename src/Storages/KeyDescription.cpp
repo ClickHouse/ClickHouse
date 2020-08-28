@@ -55,7 +55,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     /// additional_column is constant property It should never be lost.
     if (additional_column.has_value() && !other.additional_column.has_value())
-        throw Exception("Wrong key assignment, loosing additional_column", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Wrong key assignment, losing additional_column", ErrorCodes::LOGICAL_ERROR);
     additional_column = other.additional_column;
     return *this;
 }

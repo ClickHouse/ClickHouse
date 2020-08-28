@@ -464,7 +464,7 @@ If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact numb
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output.
+ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
 See also the [JSONEachRow](#jsoneachrow) format.
 

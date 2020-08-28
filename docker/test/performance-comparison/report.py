@@ -179,10 +179,10 @@ def advanceRowAnchor():
     return currentRowAnchor()
 
 
-def tr(x):
-    a = advanceRowAnchor()
+def tr(x, anchor=None):
     #return '<tr onclick="location.href=\'#{a}\'" id={a}>{x}</tr>'.format(a=a, x=str(x))
-    return '<tr id={a}>{x}</tr>'.format(a=a, x=str(x))
+    anchor = anchor if anchor else advanceRowAnchor()
+    return f'<tr id={anchor}>{x}</tr>'
 
 def td(value, cell_attributes = ''):
     return '<td {cell_attributes}>{value}</td>'.format(
@@ -192,12 +192,14 @@ def td(value, cell_attributes = ''):
 def th(x):
     return '<th>' + str(x) + '</th>'
 
-def tableRow(cell_values, cell_attributes = []):
-    return tr(''.join([td(v, a)
-        for v, a in itertools.zip_longest(
-            cell_values, cell_attributes,
-            fillvalue = '')
-        if a is not None and v is not None]))
+def tableRow(cell_values, cell_attributes = [], anchor=None):
+    return tr(
+        ''.join([td(v, a)
+            for v, a in itertools.zip_longest(
+                cell_values, cell_attributes,
+                fillvalue = '')
+            if a is not None and v is not None]),
+        anchor)
 
 def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
@@ -288,8 +290,18 @@ def add_report_errors():
     errors_explained.append([f'<a href="#{currentTableAnchor()}">There were some errors while building the report</a>']);
 
 def add_errors_explained():
+    if not errors_explained:
+        return
+
+    text = '<a name="fail1"/>'
+    text += tableStart('Error summary')
+    text += tableHeader(['Description'])
+    for row in errors_explained:
+        text += tableRow(row)
+    text += tableEnd()
+
     global tables
-    addSimpleTable('Error summary', ['Description'], errors_explained, 1)
+    tables.insert(1, text)
 
 
 if args.report == 'main':
@@ -332,19 +344,20 @@ if args.report == 'main':
         text += tableHeader(columns)
         attrs = ['' for c in columns]
         for row in rows:
+            anchor = f'{currentTableAnchor()}.{row[2]}.{row[3]}'
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
                 unstable_partial_queries += 1
-                errors_explained.append([f'<a href="#{nextRowAnchor()}">The query no. {row[3]} of test \'{row[2]}\' has excessive variance of run time. Keep it below 10%</a>'])
+                errors_explained.append([f'<a href="#{anchor}">The query no. {row[3]} of test \'{row[2]}\' has excessive variance of run time. Keep it below 10%</a>'])
             else:
                 attrs[1] = ''
             if float(row[0]) > allowed_single_run_time:
                 attrs[0] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="#{nextRowAnchor()}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run} seconds"</a>'])
+                errors_explained.append([f'<a href="#{anchor}">The query no. {row[3]} of test \'{row[2]}\' is taking too long to run. Keep the run time below {allowed_single_run_time} seconds"</a>'])
                 slow_average_tests += 1
             else:
                 attrs[0] = ''
-            text += tableRow(row, attrs)
+            text += tableRow(row, attrs, anchor)
         text += tableEnd()
         tables.append(text)
 
@@ -375,6 +388,7 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         attrs[5] = None
         for row in rows:
+            anchor = f'{currentTableAnchor()}.{row[6]}.{row[7]}'
             if int(row[5]):
                 if float(row[3]) < 0.:
                     faster_queries += 1
@@ -382,11 +396,11 @@ if args.report == 'main':
                 else:
                     slower_queries += 1
                     attrs[2] = attrs[3] = f'style="background: {color_bad}"'
-                    errors_explained.append([f'<a href="#{nextRowAnchor()}">The query no. {row[7]} of test \'{row[6]}\' has slowed down</a>'])
+                    errors_explained.append([f'<a href="#{anchor}">The query no. {row[7]} of test \'{row[6]}\' has slowed down</a>'])
             else:
                 attrs[2] = attrs[3] = ''
 
-            text += tableRow(row, attrs)
+            text += tableRow(row, attrs, anchor)
 
         text += tableEnd()
         tables.append(text)
@@ -419,13 +433,14 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         attrs[4] = None
         for r in unstable_rows:
+            anchor = f'{currentTableAnchor()}.{r[5]}.{r[6]}'
             if int(r[4]):
                 very_unstable_queries += 1
                 attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[3] = ''
 
-            text += tableRow(r, attrs)
+            text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
         tables.append(text)
@@ -467,14 +482,14 @@ if args.report == 'main':
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="./all-queries.html#all-query-times.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
+                errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
                 attrs[6] = ''
 
             if float(r[5]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[5] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="./all-queries.html#all-query-times.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
+                errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
             else:
                 attrs[5] = ''
 
@@ -649,6 +664,7 @@ elif args.report == 'all-queries':
         attrs[0] = None
         attrs[1] = None
         for r in rows:
+            anchor = f'{currentTableAnchor()}.{r[7]}.{r[8]}'
             if int(r[1]):
                 attrs[6] = f'style="background: {color_bad}"'
             else:
@@ -669,7 +685,7 @@ elif args.report == 'all-queries':
                 attrs[2] = ''
                 attrs[3] = ''
 
-            text += tableRow(r, attrs)
+            text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
         tables.append(text)

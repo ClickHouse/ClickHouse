@@ -29,7 +29,7 @@ class StorageSystemNumbers final : public ext::shared_ptr_helper<StorageSystemNu
 public:
     std::string getName() const override { return "SystemNumbers"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,

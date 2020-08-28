@@ -3333,9 +3333,9 @@ RQ_SRS_006_RBAC_Quota_Create_Interval = Requirement(
         '`FOR INTERVAL` clause in the `CREATE QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number\n'
+        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some real number\n'
         'to define the interval.\n'
         ),
         link=None
@@ -3354,9 +3354,9 @@ RQ_SRS_006_RBAC_Quota_Create_Interval_Randomized = Requirement(
         '`FOR RANDOMIZED INTERVAL` clause in the `CREATE QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some\n'
+        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some\n'
         'real number to define the interval.\n'
         ),
         link=None
@@ -3590,7 +3590,7 @@ RQ_SRS_006_RBAC_Quota_Create_Syntax = Requirement(
         '```sql\n'
         'CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]\n'
         "    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]\n"
-        '    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}\n'
+        '    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}\n'
         '        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |\n'
         '         NO LIMITS | TRACKING ONLY} [,...]]\n'
         '    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]\n'
@@ -3669,9 +3669,9 @@ RQ_SRS_006_RBAC_Quota_Alter_Interval = Requirement(
         '`FOR INTERVAL` clause in the `ALTER QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some real number\n'
+        '`FOR INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some real number\n'
         'to define the interval.\n'
         ),
         link=None
@@ -3690,9 +3690,9 @@ RQ_SRS_006_RBAC_Quota_Alter_Interval_Randomized = Requirement(
         '`FOR RANDOMIZED INTERVAL` clause in the `ALTER QUOTA` statement.\n'
         '\n'
         'This statement SHALL also support a number and a time period which will be one\n'
-        'of `{SECOND | MINUTE | HOUR | DAY | MONTH}`. Thus, the complete syntax SHALL be:\n'
+        'of `{SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}`. Thus, the complete syntax SHALL be:\n'
         '\n'
-        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}` where number is some\n'
+        '`FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}` where number is some\n'
         'real number to define the interval.\n'
         ),
         link=None

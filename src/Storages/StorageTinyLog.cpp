@@ -420,7 +420,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const Storage
 }
 
 
-Pipes StorageTinyLog::read(
+Pipe StorageTinyLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -431,14 +431,10 @@ Pipes StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    Pipes pipes;
-
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
-    pipes.emplace_back(std::make_shared<TinyLogSource>(
+    return Pipe(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(metadata_snapshot->getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
-
-    return pipes;
 }
 
 

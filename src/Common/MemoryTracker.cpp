@@ -18,6 +18,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -62,6 +63,9 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
 
 void MemoryTracker::alloc(Int64 size)
 {
+    if (size < 0)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
+
     if (blocker.isCancelled())
         return;
 
@@ -79,7 +83,7 @@ void MemoryTracker::alloc(Int64 size)
 
     /// Cap the limit to the total_memory_tracker, since it may include some drift.
     ///
-    /// And since total_memory_tracker is reseted to the process resident
+    /// And since total_memory_tracker is reset to the process resident
     /// memory peridically (in AsynchronousMetrics::update()), any limit can be
     /// capped to it, to avoid possible drift.
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
