@@ -36,7 +36,7 @@ color_good='#b0d050'
 
 header_template = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <style>
 @font-face {{
     font-family:'Yandex Sans Display Web';
@@ -48,7 +48,8 @@ header_template = """
             url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
     font-weight:400;
     font-style:normal;
-    font-stretch:normal
+    font-stretch:normal;
+    font-display: swap;
 }}
 
 body {{
