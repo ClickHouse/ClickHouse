@@ -214,7 +214,7 @@ ClickHouse 不要求主键惟一，所以你可以插入多条具有相同主键
 
 在这种情况下合理的做法是，只保留少量的列在主键当中用于提升扫描效率，将维度列添加到排序键中。
 
-对排序键进行 [ALTER](../../../sql-reference/statements/alter/index.md) 是轻量级的操作，因为当一个新列同时被加入到表里和排序键里时，已存在的数据片段并不需要修改。由于旧的排序键是新排序键的前缀，并且新添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
+对排序键进行 [ALTER](../../../sql-reference/statements/alter.md) 是轻量级的操作，因为当一个新列同时被加入到表里和排序键里时，已存在的数据片段并不需要修改。由于旧的排序键是新排序键的前缀，并且新添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
 
 ### 索引和分区在查询中的应用 {#use-of-indexes-and-partitions-in-queries}
 
@@ -491,7 +491,7 @@ ClickHouse 在数据片段合并时会删除掉过期的数据。
 
 MergeTree 系列表引擎可以将数据存储在多块设备上。这对某些可以潜在被划分为“冷”“热”的表来说是很有用的。近期数据被定期的查询但只需要很小的空间。相反，详尽的历史数据很少被用到。如果有多块磁盘可用，那么“热”的数据可以放置在快速的磁盘上（比如 NVMe 固态硬盘或内存），“冷”的数据可以放在相对较慢的磁盘上（比如机械硬盘）。
 
-数据片段是 `MergeTree` 引擎表的最小可移动单元。属于同一个数据片段的数据被存储在同一块磁盘上。数据片段会在后台自动的在磁盘间移动，也可以通过 [ALTER](../../../sql-reference/statements/alter/partition.md#alter_move-partition) 查询来移动。
+数据片段是 `MergeTree` 引擎表的最小可移动单元。属于同一个数据片段的数据被存储在同一块磁盘上。数据片段会在后台自动的在磁盘间移动，也可以通过 [ALTER](../../../sql-reference/statements/alter.md#alter_move-partition) 查询来移动。
 
 ### 术语 {#terms}
 
@@ -635,9 +635,9 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 对于 `MergeTree` 表，数据通过以下不同的方式写入到磁盘当中：
 
 -   作为插入（`INSERT`查询）的结果
--   在后台合并和[数据变异](../../../sql-reference/statements/alter/index.md#alter-mutations)期间
+-   在后台合并和[数据变异](../../../sql-reference/statements/alter.md#alter-mutations)期间
 -   当从另一个副本下载时
--   作为 [ALTER TABLE … FREEZE PARTITION](../../../sql-reference/statements/alter/partition.md#alter_freeze-partition) 冻结分区的结果
+-   作为 [ALTER TABLE … FREEZE PARTITION](../../../sql-reference/statements/alter.md#alter_freeze-partition) 冻结分区的结果
 
 除了数据变异和冻结分区以外的情况下，数据按照以下逻辑存储到卷或磁盘上：
 
@@ -648,7 +648,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 在后台，数据片段基于剩余空间（`move_factor`参数）根据卷在配置文件中定义的顺序进行转移。数据永远不会从最后一个移出也不会从第一个移入。可以通过系统表 [system.part\_log](../../../operations/system-tables/part_log.md#system_tables-part-log) (字段 `type = MOVE_PART`) 和 [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) (字段 `path` 和 `disk`) 来监控后台的移动情况。同时，具体细节可以通过服务器日志查看。
 
-用户可以通过 [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter/partition.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
+用户可以通过 [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition) 强制移动一个数据片段或分区到另外一个卷，所有后台移动的限制都会被考虑在内。这个查询会自行启动，无需等待后台操作完成。如果没有足够的可用空间或任何必须条件没有被满足，用户会收到报错信息。
 
 数据移动不会妨碍到数据复制。也就是说，同一张表的不同副本可以指定不同的存储策略。
 
