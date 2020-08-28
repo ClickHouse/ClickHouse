@@ -82,7 +82,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
         # each file/symlink in that dir (except of tab and localtime) store the info about timezone
         execute_process(COMMAND
-            bash -c "cd ${TZDIR} && find * -type f,l -and ! -name '*.tab' -and ! -name 'localtime' | sort | paste -sd ';'"
+            bash -c "cd ${TZDIR} && find * -type f -and ! -name '*.tab' -and ! -name 'localtime' | sort | paste -sd ';'"
             OUTPUT_STRIP_TRAILING_WHITESPACE
             OUTPUT_VARIABLE TIMEZONES)
 
