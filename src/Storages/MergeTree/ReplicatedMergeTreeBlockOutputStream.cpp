@@ -216,7 +216,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_name = part->name;
+    String temporary_part_relative_path = part->relative_path;
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -344,6 +344,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             /// Used only for exception messages.
             block_number = part->info.min_block;
+
+            /// Do not check for duplicate on commit to ZK.
+            block_id_path.clear();
         }
 
         /// Information about the part.
@@ -362,7 +365,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
         if (!renamed)
         {
-            if (!existing_part_name.empty())
+            if (is_already_existing_part)
             {
                 LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request; ignoring it.", block_id, existing_part_name);
                 return;
@@ -404,14 +407,14 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             {
                 /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
-                    block_id, part->name, temporary_part_name);
+                    block_id, part->name, temporary_part_relative_path);
 
                 transaction.rollback();
 
                 part->is_duplicate = true;
                 part->is_temp = true;
                 part->state = MergeTreeDataPartState::Temporary;
-                part->renameTo(temporary_part_name, false);
+                part->renameTo(temporary_part_relative_path, false);
 
                 ++loop_counter;
                 if (loop_counter == max_iterations)
