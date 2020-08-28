@@ -1,6 +1,6 @@
 # system.users {#system_tables-users}
 
-User accounts parameters which is authorized in ClickHouse.
+Contains a list of [user accounts](../../operations/access-rights.md#user-account-management) configured at the server.
 
 Columns:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — User name.

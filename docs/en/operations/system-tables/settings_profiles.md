@@ -1,6 +1,6 @@
 # system.settings_profiles {#system_tables-settings_profiles}
 
-Collection of settings for authorized users. 
+Contains properties of configured setting profiles.
 
 Columns:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — Setting profile name.

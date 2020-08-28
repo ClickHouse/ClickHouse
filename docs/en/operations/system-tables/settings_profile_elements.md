@@ -1,6 +1,10 @@
 # system.settings_profile_elements {#system_tables-settings_profile_elements}
 
-Contains settings and constraints, as well as a list of roles and/or users to which this profile is applied.
+Describes the content of the settings profile:
+
+- Сonstraints.
+- Roles and users that the setting applies to.
+- Parent settings profiles.
 
 Columns:
 -    `profile_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Setting profile name.

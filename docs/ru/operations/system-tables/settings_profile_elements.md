@@ -1,6 +1,10 @@
 # system.settings_profile_elements {#system_tables-settings_profile_elements}
 
-Содержит настройки и ограничения, а также список ролей и/или пользователей, к которым применяется этот профиль.
+Описывает содержимое профиля настроек:
+
+- Ограничения.
+- Роли и пользователи, к которым применяется настройка.
+- Родительские профили настроек.
 
 Столбцы:
 -    `profile_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Имя профиля настроек.

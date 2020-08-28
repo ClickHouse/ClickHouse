@@ -1,6 +1,6 @@
 # system.settings_profiles {#system_tables-settings_profiles}
 
-Коллекция настроек для авторизованных пользователей.
+Содержит свойства сконфигурированных профилей настроек.
 
 Столбцы:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — Имя профиля настроек.

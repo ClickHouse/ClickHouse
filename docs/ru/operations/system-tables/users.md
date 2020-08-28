@@ -1,6 +1,6 @@
 # system.users {#system_tables-users}
 
-Параметры учетных записей пользователей, которые авторизованы в ClickHouse.
+Содержит список [аккаунтов пользователей](../../operations/access-rights.md#user-account-management), настроенных на сервере.
 
 Столбцы:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — Имя пользователя.
