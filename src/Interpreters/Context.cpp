@@ -1092,7 +1092,7 @@ void Context::setCurrentQueryId(const String & query_id)
 
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
-    
+
     fmt::print(stderr, "traceid {}, ==0 {}\n", client_info.opentelemetry_trace_id, client_info.opentelemetry_trace_id == 0);
     if (client_info.opentelemetry_trace_id == 0)
     {
@@ -1120,7 +1120,7 @@ void Context::setCurrentQueryId(const String & query_id)
             QueryUUID(const char * bytes, Poco::UUID::Version version)
                 : Poco::UUID(bytes, version) {}
         };
-    
+
         query_id_to_set = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
     }
 

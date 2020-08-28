@@ -70,7 +70,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         writeBinary(opentelemetry_parent_span_id, out);
         writeBinary(opentelemetry_tracestate, out);
         writeBinary(opentelemetry_trace_flags, out);
-        std::cerr << fmt::format("wrote {:x}, {}, {}\n", opentelemetry_trace_id, opentelemetry_span_id, opentelemetry_parent_span_id) << StackTrace().toString() << std::endl;
     }
 }
 
@@ -155,28 +154,44 @@ bool ClientInfo::setOpenTelemetryTraceparent(const std::string & traceparent,
     uint64_t trace_parent = 0;
     uint8_t trace_flags = 0;
 
+    // Version 00, which is the only one we can parse, is fixed width. Use this
+    // fact for an additional sanity check.
+    const int expected_length = 2 + 1 + 32 + 1 + 16 + 1 + 2;
+    if (traceparent.length() != expected_length)
+    {
+        error = fmt::format("unexpected length {}, expected {}",
+            traceparent.length(), expected_length);
+        return false;
+    }
+
+    // clang-tidy doesn't like sscanf:
+    //   error: 'sscanf' used to convert a string to an unsigned integer value,
+    //   but function will not report conversion errors; consider using 'strtoul'
+    //   instead [cert-err34-c,-warnings-as-errors]
+    // There is no other ready solution, and hand-rolling a more complicated
+    // parser for an HTTP header in C++ sounds like RCE.
+    // NOLINTNEXTLINE(cert-err34-c)
     int result = sscanf(&traceparent[0],
         "%2" SCNx8 "-%16" SCNx64 "%16" SCNx64 "-%16" SCNx64 "-%2" SCNx8,
         &version, &trace_id_high, &trace_id_low, &trace_parent, &trace_flags);
 
     if (result == EOF)
     {
-        error = "Failed to parse traceparent header (EOF)";
+        error = "EOF";
         return false;
     }
 
+    // We read uint128 as two uint64, so 5 parts and not 4.
     if (result != 5)
     {
-        error = fmt::format("Failed to parse traceparent header"
-            "(could only read {} parts instead of the expected 5)",
+        error = fmt::format("could only read {} parts instead of the expected 5",
             result);
         return false;
     }
 
     if (version != 0)
     {
-        error = fmt::format("Unexpected version {} of traceparent header:"
-            "expected 00", version);
+        error = fmt::format("unexpected version {}, expected 00", version);
         return false;
     }
 
