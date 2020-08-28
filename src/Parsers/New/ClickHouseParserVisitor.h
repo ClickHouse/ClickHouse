@@ -240,6 +240,8 @@ public:
 
     virtual antlrcpp::Any visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *context) = 0;
 
+    virtual antlrcpp::Any visitNestedIdentifier(ClickHouseParser::NestedIdentifierContext *context) = 0;
+
     virtual antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *context) = 0;
 
     virtual antlrcpp::Any visitTableExprSubquery(ClickHouseParser::TableExprSubqueryContext *context) = 0;
@@ -255,6 +257,8 @@ public:
     virtual antlrcpp::Any visitTableArgExpr(ClickHouseParser::TableArgExprContext *context) = 0;
 
     virtual antlrcpp::Any visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *context) = 0;
+
+    virtual antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *context) = 0;
 
     virtual antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *context) = 0;
 

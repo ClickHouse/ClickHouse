@@ -65,7 +65,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableColumnDfnt(ClickHouseParser::TableColu
     if (ctx->columnTypeExpr()) type = visit(ctx->columnTypeExpr());
     if (ctx->TTL()) ttl = visit(ctx->columnExpr());
 
-    return TableElementExpr::createColumn(visit(ctx->identifier()), type, property, ttl);
+    return TableElementExpr::createColumn(visit(ctx->nestedIdentifier()), type, property, ttl);
 }
 
 }

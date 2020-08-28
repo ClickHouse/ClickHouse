@@ -63,10 +63,11 @@ public:
     RuleUseStmt = 55, RuleValueExprList = 56, RuleValueExpr = 57, RuleColumnTypeExpr = 58, 
     RuleColumnExprList = 59, RuleColumnsExpr = 60, RuleColumnExpr = 61, 
     RuleColumnParamList = 62, RuleColumnArgList = 63, RuleColumnArgExpr = 64, 
-    RuleColumnLambdaExpr = 65, RuleColumnIdentifier = 66, RuleTableExpr = 67, 
-    RuleTableIdentifier = 68, RuleTableArgList = 69, RuleTableArgExpr = 70, 
-    RuleDatabaseIdentifier = 71, RuleLiteral = 72, RuleKeyword = 73, RuleIdentifier = 74, 
-    RuleUnaryOp = 75, RuleBinaryOp = 76, RuleEnumValue = 77
+    RuleColumnLambdaExpr = 65, RuleColumnIdentifier = 66, RuleNestedIdentifier = 67, 
+    RuleTableExpr = 68, RuleTableIdentifier = 69, RuleTableArgList = 70, 
+    RuleTableArgExpr = 71, RuleDatabaseIdentifier = 72, RuleNumberLiteral = 73, 
+    RuleLiteral = 74, RuleKeyword = 75, RuleIdentifier = 76, RuleUnaryOp = 77, 
+    RuleBinaryOp = 78, RuleEnumValue = 79
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -146,11 +147,13 @@ public:
   class ColumnArgExprContext;
   class ColumnLambdaExprContext;
   class ColumnIdentifierContext;
+  class NestedIdentifierContext;
   class TableExprContext;
   class TableIdentifierContext;
   class TableArgListContext;
   class TableArgExprContext;
   class DatabaseIdentifierContext;
+  class NumberLiteralContext;
   class LiteralContext;
   class KeywordContext;
   class IdentifierContext;
@@ -280,7 +283,7 @@ public:
 
     antlr4::tree::TerminalNode *DROP();
     antlr4::tree::TerminalNode *COLUMN();
-    IdentifierContext *identifier();
+    NestedIdentifierContext *nestedIdentifier();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
 
@@ -311,7 +314,7 @@ public:
     antlr4::tree::TerminalNode *NOT();
     antlr4::tree::TerminalNode *EXISTS();
     antlr4::tree::TerminalNode *AFTER();
-    IdentifierContext *identifier();
+    NestedIdentifierContext *nestedIdentifier();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -322,7 +325,7 @@ public:
 
     antlr4::tree::TerminalNode *COMMENT();
     antlr4::tree::TerminalNode *COLUMN();
-    IdentifierContext *identifier();
+    NestedIdentifierContext *nestedIdentifier();
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *IF();
     antlr4::tree::TerminalNode *EXISTS();
@@ -652,7 +655,7 @@ public:
   public:
     TableColumnDfntContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    IdentifierContext *identifier();
+    NestedIdentifierContext *nestedIdentifier();
     ColumnTypeExprContext *columnTypeExpr();
     TableColumnPropertyExprContext *tableColumnPropertyExpr();
     antlr4::tree::TerminalNode *TTL();
@@ -1959,11 +1962,9 @@ public:
   public:
     ColumnIdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<IdentifierContext *> identifier();
-    IdentifierContext* identifier(size_t i);
+    NestedIdentifierContext *nestedIdentifier();
     TableIdentifierContext *tableIdentifier();
-    std::vector<antlr4::tree::TerminalNode *> DOT();
-    antlr4::tree::TerminalNode* DOT(size_t i);
+    antlr4::tree::TerminalNode *DOT();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1971,6 +1972,21 @@ public:
   };
 
   ColumnIdentifierContext* columnIdentifier();
+
+  class  NestedIdentifierContext : public antlr4::ParserRuleContext {
+  public:
+    NestedIdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<IdentifierContext *> identifier();
+    IdentifierContext* identifier(size_t i);
+    antlr4::tree::TerminalNode *DOT();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  NestedIdentifierContext* nestedIdentifier();
 
   class  TableExprContext : public antlr4::ParserRuleContext {
   public:
@@ -2088,9 +2104,9 @@ public:
 
   DatabaseIdentifierContext* databaseIdentifier();
 
-  class  LiteralContext : public antlr4::ParserRuleContext {
+  class  NumberLiteralContext : public antlr4::ParserRuleContext {
   public:
-    LiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    NumberLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *FLOATING_LITERAL();
     antlr4::tree::TerminalNode *HEXADECIMAL_LITERAL();
@@ -2099,6 +2115,19 @@ public:
     antlr4::tree::TerminalNode *NAN_SQL();
     antlr4::tree::TerminalNode *PLUS();
     antlr4::tree::TerminalNode *DASH();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  NumberLiteralContext* numberLiteral();
+
+  class  LiteralContext : public antlr4::ParserRuleContext {
+  public:
+    LiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    NumberLiteralContext *numberLiteral();
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *NULL_SQL();
     IdentifierContext *identifier();
@@ -2300,7 +2329,7 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *EQ_SINGLE();
-    antlr4::tree::TerminalNode *INTEGER_LITERAL();
+    NumberLiteralContext *numberLiteral();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

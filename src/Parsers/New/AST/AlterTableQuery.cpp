@@ -65,18 +65,18 @@ using namespace AST;
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx)
 {
-    auto after = ctx->AFTER() ? visit(ctx->identifier()).as<PtrTo<Identifier>>() : nullptr;
+    auto after = ctx->AFTER() ? visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>() : nullptr;
     return AlterTableClause::createAdd(!!ctx->IF(), visit(ctx->tableColumnDfnt()), after);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx)
 {
-    return AlterTableClause::createComment(!!ctx->IF(), visit(ctx->identifier()), Literal::createString(ctx->STRING_LITERAL()));
+    return AlterTableClause::createComment(!!ctx->IF(), visit(ctx->nestedIdentifier()), Literal::createString(ctx->STRING_LITERAL()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx)
 {
-    return AlterTableClause::createDrop(!!ctx->IF(), visit(ctx->identifier()));
+    return AlterTableClause::createDrop(!!ctx->IF(), visit(ctx->nestedIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx)

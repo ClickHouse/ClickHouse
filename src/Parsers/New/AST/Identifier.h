@@ -10,6 +10,7 @@ class Identifier : public INode
 {
     public:
         explicit Identifier(const String & name_);
+        Identifier(const String & name_, const String & nested_name);
 
         const auto & getName() const { return name; }
 
@@ -46,7 +47,7 @@ class TableIdentifier : public Identifier
 class ColumnIdentifier : public Identifier
 {
     public:
-        ColumnIdentifier(PtrTo<TableIdentifier> table, PtrTo<Identifier> name, PtrTo<Identifier> nested);
+        ColumnIdentifier(PtrTo<TableIdentifier> table, PtrTo<Identifier> name);
 
         auto getTable() const { return table; }
         void makeCompound() const;
@@ -55,7 +56,6 @@ class ColumnIdentifier : public Identifier
 
     private:
         mutable PtrTo<TableIdentifier> table;
-        mutable PtrTo<Identifier> nested;
 };
 
 }

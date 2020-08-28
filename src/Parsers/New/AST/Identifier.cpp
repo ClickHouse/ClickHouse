@@ -12,6 +12,10 @@ Identifier::Identifier(const String & name_) : name(name_)
 {
 }
 
+Identifier::Identifier(const String & name_, const String & nested_name) : name(name_ + "." + nested_name)
+{
+}
+
 ASTPtr Identifier::convertToOld() const
 {
     return std::make_shared<ASTIdentifier>(getQualifiedName());
@@ -34,16 +38,14 @@ void TableIdentifier::makeCompound() const
     }
 }
 
-ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifier> name, PtrTo<Identifier> nested_)
-    : Identifier(name->getName() + (nested_ ? "." + nested_->getName() : String())), table(table_), nested(nested_)
+ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifier> name) : Identifier(name->getName()), table(table_)
 {
 }
 
 void ColumnIdentifier::makeCompound() const
 {
-    if (table && !nested)
+    if (table)
     {
-        nested = std::make_shared<Identifier>(getName());
         name = table->getName() + "." + getName();
         if (table->getDatabase()) table->makeCompound();
         else table.reset();
@@ -65,17 +67,14 @@ antlrcpp::Any ParseTreeVisitor::visitDatabaseIdentifier(ClickHouseParser::Databa
 antlrcpp::Any ParseTreeVisitor::visitTableIdentifier(ClickHouseParser::TableIdentifierContext *ctx)
 {
     // TODO: not complete!
-    return std::make_shared<TableIdentifier>(
-        ctx->databaseIdentifier() ? visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>() : nullptr,
-        visit(ctx->identifier()));
+    auto database = ctx->databaseIdentifier() ? visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>() : nullptr;
+    return std::make_shared<TableIdentifier>(database, visit(ctx->identifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnIdentifier(ClickHouseParser::ColumnIdentifierContext *ctx)
 {
-    return std::make_shared<ColumnIdentifier>(
-        ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr,
-        ctx->identifier(0)->accept(this),
-        ctx->identifier().size() == 2 ? ctx->identifier(1)->accept(this).as<PtrTo<Identifier>>() : nullptr);
+    auto table = ctx->tableIdentifier() ? visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>() : nullptr;
+    return std::make_shared<ColumnIdentifier>(table, visit(ctx->nestedIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierContext *ctx)
@@ -89,6 +88,17 @@ antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierCont
 antlrcpp::Any ParseTreeVisitor::visitKeyword(ClickHouseParser::KeywordContext *)
 {
     __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitNestedIdentifier(ClickHouseParser::NestedIdentifierContext *ctx)
+{
+    if (ctx->identifier().size() == 2)
+    {
+        auto name1 = visit(ctx->identifier(0)).as<PtrTo<Identifier>>()->getName();
+        auto name2 = visit(ctx->identifier(1)).as<PtrTo<Identifier>>()->getName();
+        return std::make_shared<Identifier>(name1, name2);
+    }
+    else return visit(ctx->identifier(0));
 }
 
 }

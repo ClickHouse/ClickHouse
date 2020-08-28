@@ -187,7 +187,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 {
     // TODO: don't forget to convert TEMPORARY into 'is_temporary=1' condition.
 
-    auto table_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"), nullptr);
+    auto table_name = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("name"));
     auto expr_list = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(table_name)});
     auto select_stmt = std::make_shared<SelectStmt>(expr_list);
 
@@ -195,7 +195,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 
     if (ctx->databaseIdentifier())
     {
-        auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"), nullptr);
+        auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"));
         auto args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createIdentifier(database), Literal::createString("db")});
         and_args->append(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, args));
     }

@@ -34,10 +34,10 @@ alterStmt
     ;
 
 alterTableClause
-    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER identifier)?  # AlterTableAddClause
-    | COMMENT COLUMN (IF EXISTS)? identifier STRING_LITERAL            # AlterTableCommentClause
-    | DROP COLUMN (IF EXISTS)? identifier                              # AlterTableDropClause
-    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                       # AlterTableModifyClause
+    : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?  # AlterTableAddClause
+    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL            # AlterTableCommentClause
+    | DROP COLUMN (IF EXISTS)? nestedIdentifier                              # AlterTableDropClause
+    | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableModifyClause
     ;
 alterPartitionClause
     : DROP partitionClause  # AlterPartitionDropClause
@@ -83,8 +83,8 @@ tableElementExpr
     // TODO: CONSTRAINT
     ;
 tableColumnDfnt
-    : identifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?
-    | identifier columnTypeExpr? tableColumnPropertyExpr /*TODO: codexExpr?*/ (TTL columnExpr)?
+    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?
+    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr /*TODO: codexExpr?*/ (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
@@ -262,7 +262,8 @@ columnLambdaExpr:
     )
     ARROW columnExpr
     ;
-columnIdentifier: (tableIdentifier DOT)? identifier (DOT identifier)?;
+columnIdentifier: (tableIdentifier DOT)? nestedIdentifier;
+nestedIdentifier: identifier (DOT identifier)?;
 
 // Tables
 
@@ -285,8 +286,9 @@ databaseIdentifier: identifier;
 
 // Basics
 
+numberLiteral: (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL);
 literal
-    : (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL)
+    : numberLiteral
     | STRING_LITERAL
     | NULL_SQL
     | identifier LPAREN RPAREN
@@ -300,7 +302,7 @@ keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE
     | PREWHERE | PRIMARY | QUARTER | RENAME | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN
     | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
-identifier: IDENTIFIER | INTERVAL_TYPE | keyword; // TODO: not complete!
+identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 unaryOp: DASH | NOT;
 binaryOp
     : CONCAT
@@ -321,4 +323,4 @@ binaryOp
     | NOT? LIKE
     | GLOBAL? NOT? IN
     ;
-enumValue: STRING_LITERAL EQ_SINGLE INTEGER_LITERAL;
+enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;

@@ -457,6 +457,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitNestedIdentifier(ClickHouseParser::NestedIdentifierContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitTableExprIdentifier(ClickHouseParser::TableExprIdentifierContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -486,6 +490,10 @@ public:
   }
 
   virtual antlrcpp::Any visitDatabaseIdentifier(ClickHouseParser::DatabaseIdentifierContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx) override {
     return visitChildren(ctx);
   }
 

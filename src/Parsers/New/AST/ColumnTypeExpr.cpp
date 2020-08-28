@@ -103,7 +103,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprNested(ClickHouseParser::Colu
 
 antlrcpp::Any ParseTreeVisitor::visitEnumValue(ClickHouseParser::EnumValueContext *ctx)
 {
-    return std::make_shared<EnumValue>(Literal::createString(ctx->STRING_LITERAL()), Literal::createNumber(ctx->INTEGER_LITERAL()));
+    return std::make_shared<EnumValue>(Literal::createString(ctx->STRING_LITERAL()), visit(ctx->numberLiteral()));
 }
 
 }

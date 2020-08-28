@@ -81,21 +81,28 @@ antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *c
 {
     if (ctx->NULL_SQL())
         return Literal::createNull(ctx->NULL_SQL());
-    if (ctx->FLOATING_LITERAL())
-        return static_pointer_cast<Literal>(Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH()));
-    if (ctx->HEXADECIMAL_LITERAL())
-        return static_pointer_cast<Literal>(Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH()));
-    if (ctx->INTEGER_LITERAL())
-        return static_pointer_cast<Literal>(Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH()));
-    if (ctx->INF())
-        return static_pointer_cast<Literal>(Literal::createNumber(ctx->INF(), !!ctx->DASH()));
-    if (ctx->NAN_SQL())
-        return static_pointer_cast<Literal>(Literal::createNumber(ctx->NAN_SQL()));
     if (ctx->STRING_LITERAL())
         return static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
     if (ctx->identifier())
         // TODO: store as function.
         return static_pointer_cast<Literal>(Literal::createString(ctx->identifier()->IDENTIFIER()));
+    if (ctx->numberLiteral())
+        return static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
+    __builtin_unreachable();
+}
+
+antlrcpp::Any ParseTreeVisitor::visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx)
+{
+    if (ctx->FLOATING_LITERAL())
+        return Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH());
+    if (ctx->HEXADECIMAL_LITERAL())
+        return Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH());
+    if (ctx->INTEGER_LITERAL())
+        return Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH());
+    if (ctx->INF())
+        return Literal::createNumber(ctx->INF(), !!ctx->DASH());
+    if (ctx->NAN_SQL())
+        return Literal::createNumber(ctx->NAN_SQL());
     __builtin_unreachable();
 }
 
