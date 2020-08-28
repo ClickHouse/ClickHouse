@@ -3,7 +3,7 @@
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_00690;"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_00690 (val Int64) engine = Memory;"

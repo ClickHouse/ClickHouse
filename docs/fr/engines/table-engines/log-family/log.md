@@ -7,7 +7,7 @@ toc_title: Journal
 
 # Journal {#log}
 
-Moteur appartient à la famille de journal des moteurs. Voir les propriétés communes des moteurs de journal et leurs différences dans le [Famille De Moteurs En Rondins](log-family.md) article.
+Moteur appartient à la famille de journal des moteurs. Voir les propriétés communes des moteurs de journal et leurs différences dans le [Famille De Moteurs En Rondins](index.md) article.
 
 Journal diffère de [TinyLog](tinylog.md) dans un petit fichier de “marks” réside avec les fichiers de colonne. Ces marques sont écrites sur chaque bloc de données et contiennent des décalages qui indiquent où commencer à lire le fichier afin d'ignorer le nombre de lignes spécifié. Cela permet de lire les données de table dans plusieurs threads.
 Pour l'accès aux données simultanées, les opérations de lecture peuvent être effectuées simultanément, tandis que les opérations d'écriture bloc lit et l'autre.

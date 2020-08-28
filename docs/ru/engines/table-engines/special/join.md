@@ -16,7 +16,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Параметры движка**
 
--   `join_strictness` – [строгость JOIN](../../../engines/table-engines/special/join.md#select-join-strictness).
+-   `join_strictness` – [строгость JOIN](../../../engines/table-engines/special/join.md#select-join-types).
 -   `join_type` – [тип JOIN](../../../engines/table-engines/special/join.md#select-join-types).
 -   `k1[, k2, ...]` – ключевые столбцы секции `USING` с которыми выполняется операция `JOIN`.
 

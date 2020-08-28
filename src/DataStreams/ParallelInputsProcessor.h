@@ -327,7 +327,7 @@ private:
       * - the queue (just processed source will be processed the next time later than the rest)
       * - stack (just processed source will be processed as soon as possible).
       *
-      * The stack is better than the queue when you need to do work on reading one source more consequentially,
+      * The stack is better than the queue when you need to do work on reading one source more consequently,
       *  and theoretically, this allows you to achieve more consequent/consistent reads from the disk.
       *
       * But when using the stack, there is a problem with distributed query processing:

@@ -249,7 +249,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
             return;
     }
 
-    /// We have read all data. Ask childs to cancel providing more data.
+    /// We have read all data. Ask children to cancel providing more data.
     cancel(false);
     finished = true;
 }

@@ -34,10 +34,11 @@ struct FixedClearableHashTableCell
 
 
 template <typename Key, typename Allocator = HashTableAllocator>
-class FixedClearableHashSet : public FixedHashTable<Key, FixedClearableHashTableCell<Key>, Allocator>
+class FixedClearableHashSet : public FixedHashTable<
+    Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, Allocator>;
+    using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, FixedHashTableStoredSize<FixedClearableHashTableCell<Key>>, Allocator>;
     using LookupResult = typename Base::LookupResult;
 
     void clear()

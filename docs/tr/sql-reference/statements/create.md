@@ -78,7 +78,7 @@ Sonra başka maddeler olabilir `ENGINE` sorguda yan tümcesi. Açıklamalarda ta
 Sütun açıklaması, aşağıdaki yollardan biriyle varsayılan değer için bir ifade belirtebilir:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Örnek: `URLDomain String DEFAULT domain(URL)`.
 
-Varsayılan değer için bir ifade tanımlanmamışsa, varsayılan değerler sayılar için sıfırlar, dizeler için boş dizeler, diziler için boş diziler ve `0000-00-00` tarihler için veya `0000-00-00 00:00:00` zamanla tarihler için. Boş alanlar desteklenmez.
+Varsayılan değer için bir ifade tanımlanmamışsa, varsayılan değerler sayılar için sıfırlar, dizeler için boş dizeler, diziler için boş diziler ve `1970-01-01` tarihler için veya zero unix timestamp zamanla tarihler için. Boş alanlar desteklenmez.
 
 Varsayılan ifade tanımlanmışsa, sütun türü isteğe bağlıdır. Açıkça tanımlanmış bir tür yoksa, varsayılan ifade türü kullanılır. Örnek: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ türü için kullanılacak ‘EventDate’ sütun.
 
@@ -155,7 +155,7 @@ Bir codec bileşeni belirtilmişse, varsayılan codec bileşeni geçerli değild
 Sıkıştırma Aşağıdaki tablo motorları için desteklenir:
 
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) aile. Sütun sıkıştırma kodeklerini destekler ve varsayılan sıkıştırma yöntemini seçerek [sıkıştırma](../../operations/server-configuration-parameters/settings.md#server-settings-compression) ayarlar.
--   [Günlük](../../engines/table-engines/log-family/log-family.md) aile. Kullanır `lz4` sıkıştırma yöntemi varsayılan olarak ve sütun sıkıştırma codec destekler.
+-   [Günlük](../../engines/table-engines/log-family/index.md) aile. Kullanır `lz4` sıkıştırma yöntemi varsayılan olarak ve sütun sıkıştırma codec destekler.
 -   [Koymak](../../engines/table-engines/special/set.md). Yalnızca varsayılan sıkıştırmayı destekledi.
 -   [Katmak](../../engines/table-engines/special/join.md). Yalnızca varsayılan sıkıştırmayı destekledi.
 
@@ -466,7 +466,7 @@ Oluşturur bir [kota](../../operations/access-rights.md#quotas-management) bu bi
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

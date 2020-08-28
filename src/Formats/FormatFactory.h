@@ -134,7 +134,6 @@ public:
     }
 
 private:
-    /// FormatsDictionary dict;
     FormatsDictionary dict;
 
     FormatFactory();
@@ -175,6 +174,9 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory);
 void registerOutputFormatProcessorTemplate(FormatFactory & factory);
 void registerInputFormatProcessorMsgPack(FormatFactory & factory);
 void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
+void registerOutputFormatProcessorORC(FormatFactory & factory);
+
 
 /// File Segmentation Engines for parallel reading
 
@@ -191,12 +193,12 @@ void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatProcessorPretty(FormatFactory & factory);
 void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
 void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
+void registerOutputFormatProcessorPrettyASCII(FormatFactory & factory);
 void registerOutputFormatProcessorVertical(FormatFactory & factory);
 void registerOutputFormatProcessorJSON(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatProcessorXML(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
 void registerOutputFormatProcessorNull(FormatFactory & factory);
 void registerOutputFormatProcessorMySQLWire(FormatFactory & factory);
@@ -207,6 +209,5 @@ void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
 
 }

@@ -125,7 +125,6 @@ StorageKafka::StorageKafka(
     std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
-    , kafka_context(std::make_shared<Context>(global_context))
     , kafka_settings(std::move(kafka_settings_))
     , topics(parseTopics(global_context.getMacros()->expand(kafka_settings->kafka_topic_list.value)))
     , brokers(global_context.getMacros()->expand(kafka_settings->kafka_broker_list.value))
@@ -145,9 +144,6 @@ StorageKafka::StorageKafka(
     setInMemoryMetadata(storage_metadata);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
-
-    kafka_context->makeQueryContext();
-    kafka_context->applySettingsChanges(settings_adjustments);
 }
 
 SettingsChanges StorageKafka::createSettingsAdjustments()
@@ -173,12 +169,11 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
 
-    for (auto & it : *kafka_settings)
+    for (const auto & setting : *kafka_settings)
     {
-        if (it.isChanged() && it.getName().toString().rfind("kafka_",0) == std::string::npos)
-        {
-            result.emplace_back(it.getName().toString(), it.getValueAsString());
-        }
+        const auto & name = setting.getName();
+        if (name.find("kafka_") == std::string::npos)
+            result.emplace_back(name, setting.getValue());
     }
     return result;
 }
@@ -202,7 +197,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 }
 
 
-Pipes StorageKafka::read(
+Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /* query_info */,
@@ -231,7 +226,7 @@ Pipes StorageKafka::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -274,9 +269,10 @@ void StorageKafka::shutdown()
     LOG_TRACE(log, "Waiting for cleanup");
     task->deactivate();
 
-    // Close all consumers
+    LOG_TRACE(log, "Closing consumers");
     for (size_t i = 0; i < num_created_consumers; ++i)
         auto buffer = popReadBuffer();
+    LOG_TRACE(log, "Consumers closed");
 
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
 }
@@ -530,6 +526,10 @@ bool StorageKafka::streamToViews()
 
     size_t block_size = getMaxBlockSize();
 
+    auto kafka_context = std::make_shared<Context>(global_context);
+    kafka_context->makeQueryContext();
+    kafka_context->applySettingsChanges(settings_adjustments);
+
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, *kafka_context, false, true, true);
@@ -631,8 +631,8 @@ void registerStorageKafka(StorageFactory & factory)
                                 engine_args[(ARG_NUM)-1],                   \
                                 args.local_context);                        \
                     }                                                       \
-                    kafka_settings->PAR_NAME.set(                           \
-                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value);\
+                    kafka_settings->PAR_NAME =                              \
+                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
                 }                                                           \
             }
 

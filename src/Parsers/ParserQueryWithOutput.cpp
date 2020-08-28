@@ -14,11 +14,15 @@
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/ParserShowAccessQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowPrivilegesQuery.h>
+#include <Parsers/ParserExplainQuery.h>
+#include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
 
 
 namespace DB
@@ -44,21 +48,13 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
     ParserShowGrantsQuery show_grants_p;
     ParserShowPrivilegesQuery show_privileges_p;
+    ParserExplainQuery explain_p(enable_debug_queries);
 
     ASTPtr query;
 
-    ParserKeyword s_ast("AST");
-    ParserKeyword s_analyze("ANALYZE");
-    bool explain_ast = false;
-    bool analyze_syntax = false;
-
-    if (enable_explain && s_ast.ignore(pos, expected))
-        explain_ast = true;
-
-    if (enable_explain && s_analyze.ignore(pos, expected))
-        analyze_syntax = true;
-
-    bool parsed = select_p.parse(pos, query, expected)
+    bool parsed =
+           explain_p.parse(pos, query, expected)
+        || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
@@ -114,21 +110,17 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
             return false;
         query_with_output.children.push_back(query_with_output.settings_ast);
+
+        // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
+        // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
+        if (query->as<ASTSelectWithUnionQuery>())
+        {
+            QueryWithOutputSettingsPushDownVisitor::Data data{query_with_output.settings_ast};
+            QueryWithOutputSettingsPushDownVisitor(data).visit(query);
+        }
     }
 
-    if (explain_ast)
-    {
-        node = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ParsedAST);
-        node->children.push_back(query);
-    }
-    else if (analyze_syntax)
-    {
-        node = std::make_shared<ASTExplainQuery>(ASTExplainQuery::AnalyzedSyntax);
-        node->children.push_back(query);
-    }
-    else
-        node = query;
-
+    node = std::move(query);
     return true;
 }
 

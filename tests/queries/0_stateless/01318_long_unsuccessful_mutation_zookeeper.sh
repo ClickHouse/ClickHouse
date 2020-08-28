@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mutation_table"
 
@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query "
         key UInt64,
         value String
     )
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/mutation_table', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01318/mutation_table', '1')
     ORDER BY key
     PARTITION BY key % 10
 "
@@ -36,19 +36,34 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE mutation_table MODIFY COLUMN value UInt3
 #### just check that both mutations started
 check_query="SELECT count() FROM system.mutations WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
 
-query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 
 while [ "$query_result" != "2" ]
 do
-    query_result=`$CLICKHOUSE_CLIENT --query="$check_query" 2>&1`
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
     sleep 0.5
 done
 
-echo $query_result
+echo "$query_result"
 
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$first_mutation_id'"
 
-sleep 7
+check_query="SELECT sum(parts_to_do) FROM system.mutations WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
+
+query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+counter=0
+
+while [ "$query_result" != "1" ]
+do
+    if [ "$counter" -gt 120 ]
+    then
+        break
+    fi
+    query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
+    sleep 0.5
+    counter=$(($counter + 1))
+done
+
 
 $CLICKHOUSE_CLIENT --query "SELECT is_done, parts_to_do FROM system.mutations where table='mutation_table' and database='$CLICKHOUSE_DATABASE' FORMAT TSVWithNames"
 

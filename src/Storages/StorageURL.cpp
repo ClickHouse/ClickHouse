@@ -13,7 +13,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -131,6 +130,25 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
     writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
 }
 
+
+void StorageURLBlockOutputStream::write(const Block & block)
+{
+    writer->write(block);
+}
+
+void StorageURLBlockOutputStream::writePrefix()
+{
+    writer->writePrefix();
+}
+
+void StorageURLBlockOutputStream::writeSuffix()
+{
+    writer->writeSuffix();
+    writer->flush();
+    write_buf->finalize();
+}
+
+
 std::string IStorageURLBase::getReadMethod() const
 {
     return Poco::Net::HTTPRequest::HTTP_GET;
@@ -159,7 +177,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 }
 
 
-Pipes IStorageURLBase::read(
+Pipe IStorageURLBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -173,8 +191,7 @@ Pipes IStorageURLBase::read(
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<StorageURLSource>(
+    return Pipe(std::make_shared<StorageURLSource>(
         request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(
@@ -188,8 +205,6 @@ Pipes IStorageURLBase::read(
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
-
-    return pipes;
 }
 
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

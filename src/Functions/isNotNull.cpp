@@ -37,7 +37,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))

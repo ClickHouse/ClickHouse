@@ -116,7 +116,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
-        /** We should remember last modification time if and only if config was sucessfully loaded
+        /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:
          *  File is contain raw (and non-valid) data, therefore config is not applied.
          *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.

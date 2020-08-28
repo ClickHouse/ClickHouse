@@ -66,12 +66,6 @@ public:
         return none;
     }
 
-    /// If this stream generates data in order by some keys, return true.
-    virtual bool isSortedOutput() const { return false; }
-
-    /// In case of isSortedOutput, return corresponding SortDescription
-    virtual const SortDescription & getSortDescription() const;
-
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
       * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.

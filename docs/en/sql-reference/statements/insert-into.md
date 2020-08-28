@@ -3,7 +3,7 @@ toc_priority: 34
 toc_title: INSERT INTO
 ---
 
-## INSERT {#insert}
+## INSERT INTO Statement {#insert}
 
 Adding data.
 
@@ -46,7 +46,7 @@ You can insert data separately from the query by using the command-line client o
 
 ### Constraints {#constraints}
 
-If table has [constraints](../../sql-reference/statements/create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
+If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
 ### Inserting the Results of `SELECT` {#insert_query_insert-select}
 

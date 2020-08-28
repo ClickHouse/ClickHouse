@@ -4,9 +4,9 @@
 
 功能性测试是最简便使用的。绝大部分 ClickHouse 的功能可以通过功能性测试来测试，任何代码的更改都必须通过该测试。
 
-每个功能测试会向正在运行的 ClickHouse服 务器发送一个或多个查询，并将结果与预期结果进行比较。
+每个功能测试会向正在运行的 ClickHouse服务器发送一个或多个查询，并将结果与预期结果进行比较。
 
-测试用例在 `tests/queries` 目录中。这里有两个子目录：`stateless` 和 `stateful`目录。 无状态的测试无需预加载测试数据集 - 通常是在测试运行期间动态创建小量的数据集。有状态测试需要来自 Yandex.Metrica 的预加载测试数据，而不向一般公众提供。 我们倾向于仅使用«无状态»测试并避免添加新的«有状态»测试。
+测试用例在 `tests/queries` 目录中。这里有两个子目录：`stateless` 和 `stateful`目录。无状态的测试无需预加载测试数据集 - 通常是在测试运行期间动态创建小量的数据集。有状态测试需要来自 Yandex.Metrica 的预加载测试数据，而不向一般公众提供。我们倾向于仅使用«无状态»测试并避免添加新的«有状态»测试。
 
 每个测试用例可以是两种类型之一：`.sql` 和 `.sh`。`.sql` 测试文件是用于管理`clickhouse-client --multiquery --testmode`的简单SQL脚本。`.sh` 测试文件是一个可以自己运行的脚本。
 
@@ -28,7 +28,7 @@
 
 ## 集成测试 {#ji-cheng-ce-shi}
 
-集成测试允许在集群配置中测试 ClickHouse，并与其他服务器（如MySQL，Postgres，MongoDB）进行 ClickHouse 交互。它们可用于模拟网络拆分，数据包丢弃等。这些测试在Docker 下运行，并使用各种软件创建多个容器。
+集成测试允许在集群配置中测试 ClickHouse，并与其他服务器（如MySQL，Postgres，MongoDB）进行 ClickHouse 交互。它们可用于模拟网络拆分，数据包丢弃等。这些测试在Docker下运行，并使用各种软件创建多个容器。
 
 参考 `tests/integration/README.md` 文档关于如何使用集成测试。
 
@@ -93,7 +93,7 @@
 
 ## 测试环境 {#ce-shi-huan-jing}
 
-在将版本发布为稳定之前，我们将其部署在测试环境中 测试环境是一个处理\[Yandex.Metrica\]（https://metrica.yandex.com/）总数据的1/39部分大小的集群。 我们与 Yandex.Metrica 团队公用我们的测试环境。ClickHouse 在现有数据的基础上无需停机即可升级。 我们首先看到数据处理成功而不会实时滞后，复制继续工作，并且 Yandex.Metrica 团队无法看到问题。 首先的检查可以通过以下方式完成：
+在将版本发布为稳定之前，我们将其部署在测试环境中测试环境是一个处理\[Yandex.Metrica\]（https://metrica.yandex.com/）总数据的1/39部分大小的集群。我们与 Yandex.Metrica 团队公用我们的测试环境。ClickHouse 在现有数据的基础上无需停机即可升级。我们首先看到数据处理成功而不会实时滞后，复制继续工作，并且 Yandex.Metrica 团队无法看到问题。首先的检查可以通过以下方式完成：
 
     SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 
@@ -101,7 +101,7 @@
 
 ## 负载测试 {#fu-zai-ce-shi}
 
-部署到测试环境后，我们使用生产群集中的查询运行负载测试。 这是手动完成的。
+部署到测试环境后，我们使用生产群集中的查询运行负载测试。这是手动完成的。
 
 确保在生产集群中开启了 `query_log` 选项。
 
@@ -125,11 +125,11 @@
 
 ## 编译测试 {#bian-yi-ce-shi}
 
-构建测试允许检查构建在各种替代配置和某些外部系统上是否被破坏。测试位于`ci`目录。 它们从 Docker，Vagrant 中的源代码运行构建，有时在 Docker 中运行 `qemu-user-static`。这些测试正在开发中，测试运行不是自动化的。
+构建测试允许检查构建在各种替代配置和某些外部系统上是否被破坏。测试位于`ci`目录。它们从 Docker，Vagrant 中的源代码运行构建，有时在 Docker 中运行 `qemu-user-static`。这些测试正在开发中，测试运行不是自动化的。
 
 动机：
 
-通常我们会在 ClickHouse 构建的单个版本上发布并运行所有测试。 但是有一些未经过彻底测试的替代构建版本。 例子：
+通常我们会在 ClickHouse 构建的单个版本上发布并运行所有测试。但是有一些未经过彻底测试的替代构建版本。例子：
 
 -   在 FreeBSD 中的构建；
 -   在 Debian 中使用系统包中的库进行构建；
@@ -152,33 +152,41 @@ Clang 有更多有用的警告 - 您可以使用 `-Weverything` 查找它们并�
 
 对于生产构建，使用 gcc（它仍然生成比 clang 稍高效的代码）。对于开发来说，clang 通常更方便使用。您可以使用调试模式在自己的机器上构建（以节省笔记本电脑的电量），但请注意，由于更好的控制流程和过程分析，编译器使用 `-O3` 会生成更多警告。 当使用 clang 构建时，使用 `libc++` 而不是 `libstdc++`，并且在使用调试模式构建时，使用调试版本的 `libc++`，它允许在运行时捕获更多错误。
 
-## 消毒剂 {#sanitizers}
+## Sanitizers {#sanitizers}
 
-**地址消毒剂**.
-我们在每个提交的基础上在 ASan 下运行功能和集成测试。
+### Address sanitizer
+我们使用Asan对每个提交进行功能和集成测试。
 
-**ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人)**.
-我们在 Valgrind 过夜进行功能测试。 这需要几个小时。 目前在 `re2` 库中有一个已知的误报，请参阅 [文章](https://research.swtch.com/sparse)。
+### Valgrind (Memcheck)
+我们在夜间使用Valgrind进行功能测试。这需要几个小时。目前在 `re2` 库中有一个已知的误报，请参阅[文章](https://research.swtch.com/sparse)。
 
-**螺纹消毒剂**.
-我们在 TSan 下进行功能测试。ClickHouse 必须通过所有测试。在 TSan 下运行不是自动化的，只是偶尔执行。
+### Undefined behaviour sanitizer
+我们使用Asan对每个提交进行功能和集成测试。
 
-**记忆消毒剂**.
+### Thread sanitizer
+我们使用TSan对每个提交进行功能测试。目前不使用TSan对每个提交进行集成测试。
+
+### Memory sanitizer
 目前我们不使用 MSan。
 
-**未定义的行为消毒剂。**
-我们仍然不会在每次提交的基础上使用 UBSan。 有一些地方需要解决。
-
-**调试分alloc。**
+### Debug allocator
 您可以使用 `DEBUG_TCMALLOC` CMake 选项启用 `tcmalloc` 的调试版本。我们在每次提交的基础上使用调试分配器运行测试。
 
 更多请参阅 `tests/instructions/sanitizers.txt`。
 
 ## 模糊测试 {#mo-hu-ce-shi}
 
-我们使用简单的模糊测试来生成随机SQL查询并检查服务器是否正常，使用 Address sanitizer 执行模糊测试。你可以在`00746_sql_fuzzy.pl` 找到它。 测试应连续进行（过夜和更长时间）。
+ClickHouse模糊测试可以通过[libFuzzer](https://llvm.org/docs/LibFuzzer.html)和随机SQL查询实现。
+所有的模糊测试都应使用sanitizers（Address及Undefined）。
 
-截至2018年12月，我们仍然不使用库代码的孤立模糊测试。
+LibFuzzer用于对库代码进行独立的模糊测试。模糊器作为测试代码的一部分实现，并具有“\_fuzzer”名称后缀。
+模糊测试示例在`src/Parsers/tests/lexer_fuzzer.cpp`。LibFuzzer配置、字典及语料库存放在`tests/fuzz`。
+我们鼓励您为每个处理用户输入的功能编写模糊测试。
+
+默认情况下不构建模糊器。可通过设置`-DENABLE_FUZZING=1`和`-DENABLE_TESTS=1`来构建模糊器。 我们建议在构建模糊器时关闭Jemalloc。 
+用于将ClickHouse模糊测试集成到的Google OSS-Fuzz的配置文件位于`docker/fuzz`。
+
+此外，我们使用简单的模糊测试来生成随机SQL查询并检查服务器是否正常。你可以在`00746_sql_fuzzy.pl` 找到它。测试应连续进行（过夜和更长时间）。
 
 ## 安全审计 {#an-quan-shen-ji}
 
@@ -208,7 +216,7 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 ## Metrica B2B 测试 {#metrica-b2b-ce-shi}
 
-每个 ClickHouse 版本都经过 Yandex Metrica 和 AppMetrica 引擎的测试。测试和稳定版本的 ClickHouse 部署在虚拟机上，并使用处理输入数据固定样本的度量引擎的小副本运行。 将度量引擎的两个实例的结果一起进行比较
+每个 ClickHouse 版本都经过 Yandex Metrica 和 AppMetrica 引擎的测试。测试和稳定版本的 ClickHouse 部署在虚拟机上，并使用处理输入数据固定样本的度量引擎的小副本运行。将度量引擎的两个实例的结果一起进行比较
 
 这些测试是由单独的团队自动完成的。由于移动部件的数量很多，大部分时间的测试都是完全无关的，很难弄清楚。很可能这些测试对我们来说是负值。然而，这些测试被证明是有用的大约一个或两个倍的数百。
 
@@ -218,12 +226,12 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 ## 自动化测试 {#zi-dong-hua-ce-shi}
 
-我们使用 Yandex 内部 CI 和名为«沙箱»的作业自动化系统运行测试。 我们还继续使用 Jenkins（可在Yandex内部使用）。
+我们使用 Yandex 内部 CI 和名为«沙箱»的作业自动化系统运行测试。我们还继续使用 Jenkins（可在Yandex内部使用）。
 
 构建作业和测试在沙箱中按每次提交的基础上运行。结果包和测试结果发布在 GitHub 上，可以通过直接链接下载，结果会被永久存储。当您在 GitHub 上发送拉取请求时，我们将其标记为«可以测试»，我们的 CI 系统将为您构建 ClickHouse 包（发布，调试，地址消除等）。
 
 由于时间和计算能力的限制，我们不使用 Travis CI。
 
-在 Jenkins，我们运行字典测试，指标B2B测试。 我们使用 Jenkins 来准备和发布版本。 Jenkins是一种传统的技术，所有的工作将被转移到沙箱中。
+在 Jenkins，我们运行字典测试，指标B2B测试。我们使用 Jenkins 来准备和发布版本。Jenkins是一种传统的技术，所有的工作将被转移到沙箱中。
 
 [来源文章](https://clickhouse.tech/docs/zh/development/tests/) <!--hide-->

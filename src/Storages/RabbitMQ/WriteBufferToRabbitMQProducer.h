@@ -68,7 +68,6 @@ private:
     const std::optional<char> delim;
     const size_t max_rows;
     const size_t chunk_size;
-    size_t count_mes = 0;
     size_t rows = 0;
     std::list<std::string> chunks;
 };
