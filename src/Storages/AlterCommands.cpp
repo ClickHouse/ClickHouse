@@ -161,6 +161,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.order_by = command_ast->order_by;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_SAMPLE_BY;
+        command.sample_by = command_ast->sample_by;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
     {
         AlterCommand command;
@@ -334,6 +342,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
 
         /// Recalculate key with new order_by expression.
         sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
+    }
+    else if (type == MODIFY_SAMPLE_BY)
+    {
+        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -699,6 +711,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY COLUMN";
     case AlterCommand::Type::MODIFY_ORDER_BY:
         return "MODIFY ORDER BY";
+    case AlterCommand::Type::MODIFY_SAMPLE_BY:
+        return "MODIFY SAMPLE BY";
     case AlterCommand::Type::MODIFY_TTL:
         return "MODIFY TTL";
     case AlterCommand::Type::MODIFY_SETTING:
@@ -736,6 +750,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+
+    // /// And in sample key expression
+    if (metadata_copy.sampling_key.definition_ast != nullptr)
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
