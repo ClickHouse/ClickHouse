@@ -113,6 +113,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
     extern const int CANNOT_ASSIGN_ALTER;
+    extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
 namespace ActionLocks
@@ -3256,6 +3257,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             part->renameTo("detached/" + part_name, true);
         }
     }
+    catch (const Exception & e)
+    {
+        /// The same part is being written right now (but probably it's not committed yet).
+        /// We will check the need for fetch later.
+        if (e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
+            return false;
+
+        throw;
+    }
     catch (...)
     {
         if (!to_detached)
@@ -4689,9 +4699,11 @@ void StorageReplicatedMergeTree::fetchPartition(
         missing_parts.clear();
         for (const String & part : parts_to_fetch)
         {
+            bool fetched = false;
+
             try
             {
-                fetchPart(part, metadata_snapshot, best_replica_path, true, 0);
+                fetched = fetchPart(part, metadata_snapshot, best_replica_path, true, 0);
             }
             catch (const DB::Exception & e)
             {
@@ -4700,8 +4712,10 @@ void StorageReplicatedMergeTree::fetchPartition(
                     throw;
 
                 LOG_INFO(log, e.displayText());
-                missing_parts.push_back(part);
             }
+
+            if (!fetched)
+                missing_parts.push_back(part);
         }
 
         ++try_no;
