@@ -113,6 +113,7 @@ SRCS(
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
     NullableUtils.cpp
+    OpenTelemetryLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
     PartLog.cpp
