@@ -166,7 +166,7 @@ SHOW CREATE [SETTINGS] PROFILE name
 
 ## SHOW USERS {#show-users-statement}
 
-Shows a list of usernames. See [user account](../../operations/access-rights.md#user-account-management).
+Returns a list of [user account](../../operations/access-rights.md#user-account-management) names.
 
 ### Syntax {#show-users-syntax}
 
