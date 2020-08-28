@@ -280,13 +280,13 @@ DEFINE_HASH(DB::UInt16)
 DEFINE_HASH(DB::UInt32)
 DEFINE_HASH(DB::UInt64)
 DEFINE_HASH(DB::UInt128)
-DEFINE_HASH(DB::bUInt256)
+DEFINE_HASH(DB::UInt256)
 DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)
 DEFINE_HASH(DB::Int64)
 DEFINE_HASH(DB::Int128)
-DEFINE_HASH(DB::bInt256)
+DEFINE_HASH(DB::Int256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 
@@ -297,7 +297,7 @@ template <>
 struct DefaultHash<DB::UInt128> : public DB::UInt128Hash {};
 
 template <>
-struct DefaultHash<DB::UInt256> : public DB::UInt256Hash {};
+struct DefaultHash<DB::DummyUInt256> : public DB::UInt256Hash {};
 
 
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.

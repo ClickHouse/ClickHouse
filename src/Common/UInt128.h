@@ -136,7 +136,7 @@ struct UInt128TrivialHash
 
 /** Used for aggregation, for putting a large number of constant-length keys in a hash table.
   */
-struct UInt256
+struct DummyUInt256
 {
 
 /// Suppress gcc7 warnings: 'prev_key.DB::UInt256::a' may be used uninitialized in this function
@@ -150,7 +150,7 @@ struct UInt256
     UInt64 c;
     UInt64 d;
 
-    bool operator== (const UInt256 rhs) const
+    bool operator== (const DummyUInt256 rhs) const
     {
         return a == rhs.a && b == rhs.b && c == rhs.c && d == rhs.d;
 
@@ -164,7 +164,7 @@ struct UInt256
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(&rhs.c)))));*/
     }
 
-    bool operator!= (const UInt256 rhs) const { return !operator==(rhs); }
+    bool operator!= (const DummyUInt256 rhs) const { return !operator==(rhs); }
 
     bool operator== (const UInt64 rhs) const { return a == rhs && b == 0 && c == 0 && d == 0; }
     bool operator!= (const UInt64 rhs) const { return !operator==(rhs); }
@@ -173,12 +173,12 @@ struct UInt256
 #pragma GCC diagnostic pop
 #endif
 
-    UInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
+    DummyUInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
 };
 
 struct UInt256Hash
 {
-    size_t operator()(UInt256 x) const
+    size_t operator()(DummyUInt256 x) const
     {
         /// NOTE suboptimal
         return CityHash_v1_0_2::Hash128to64({CityHash_v1_0_2::Hash128to64({x.a, x.b}), CityHash_v1_0_2::Hash128to64({x.c, x.d})});
@@ -189,7 +189,7 @@ struct UInt256Hash
 
 struct UInt256HashCRC32
 {
-    size_t operator()(UInt256 x) const
+    size_t operator()(DummyUInt256 x) const
     {
         UInt64 crc = -1ULL;
         crc = _mm_crc32_u64(crc, x.a);
