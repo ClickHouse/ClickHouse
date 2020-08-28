@@ -508,7 +508,7 @@ Processors AggregatingTransform::expandPipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
-    UInt64 num_rows = chunk.getNumRows();
+    const UInt64 num_rows = chunk.getNumRows();
 
     if (num_rows == 0 && params->params.empty_result_for_aggregation_by_empty_set)
         return;
@@ -519,7 +519,7 @@ void AggregatingTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    src_rows += chunk.getNumRows();
+    src_rows += num_rows;
     src_bytes += chunk.bytes();
 
     if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
