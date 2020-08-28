@@ -90,15 +90,24 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
 }
 
+Int64 ConnectionPoolWithFailover::getPriority() const
+{
+    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto &a, const auto &b)
+    {
+        return a->getPriority() - b->getPriority();
+    }))->getPriority();
+}
+
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 {
-    const Base::PoolStates states = getPoolStates();
-    const Base::NestedPools pools = nested_pools;
+    const auto [states, pools, error_decrease_time] = getPoolExtendedStates();
+    // NOTE: to avoid data races do not touch any data of ConnectionPoolWithFailover or PoolWithFailoverBase in the code below.
+
     assert(states.size() == pools.size());
 
     ConnectionPoolWithFailover::Status result;
     result.reserve(states.size());
-    const time_t since_last_error_decrease = time(nullptr) - last_error_decrease_time;
+    const time_t since_last_error_decrease = time(nullptr) - error_decrease_time;
 
     for (size_t i = 0; i < states.size(); ++i)
     {
@@ -106,7 +115,7 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
         const auto seconds_to_zero_errors = std::max(static_cast<time_t>(0), rounds_to_zero_errors * decrease_error_period - since_last_error_decrease);
 
         result.emplace_back(NestedPoolStatus{
-            pools[i].get(),
+            pools[i],
             states[i].error_count,
             std::chrono::seconds{seconds_to_zero_errors}
         });

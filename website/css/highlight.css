@@ -6,15 +6,16 @@
     Pygments template by Jan T. Sott (https://github.com/idleberg)
     Created with Base16 Builder by Chris Kempson (https://github.com/chriskempson/base16-builder)
 
+    Edited for ClickHouse to improve legibility.
 */
 .syntax .hll { background-color: #b9b6b0 }
 .syntax  { background: #f8f9fa; color: #2f1e2e }
 .syntax .c { color: #8d8687 } /* Comment */
 .syntax .err { color: #ef6155 } /* Error */
-.syntax .k { color: #815ba4 } /* Keyword */
-.syntax .l { color: #f99b15 } /* Literal */
+.syntax .k { color: #000000; font-weight: bold } /* Keyword */
+.syntax .l { color: #0088ff } /* Literal */
 .syntax .n { color: #2f1e2e } /* Name */
-.syntax .o { color: #5bc4bf } /* Operator */
+.syntax .o { color: #880000 } /* Operator */
 .syntax .p { color: #2f1e2e } /* Punctuation */
 .syntax .cm { color: #8d8687 } /* Comment.Multiline */
 .syntax .cp { color: #8d8687 } /* Comment.Preproc */
@@ -34,7 +35,7 @@
 .syntax .kr { color: #815ba4 } /* Keyword.Reserved */
 .syntax .kt { color: #fec418 } /* Keyword.Type */
 .syntax .ld { color: #48b685 } /* Literal.Date */
-.syntax .m { color: #f99b15 } /* Literal.Number */
+.syntax .m { color: #0088ff } /* Literal.Number */
 .syntax .s { color: #48b685 } /* Literal.String */
 .syntax .na { color: #06b6ef } /* Name.Attribute */
 .syntax .nb { color: #2f1e2e } /* Name.Builtin */
@@ -52,23 +53,47 @@
 .syntax .nv { color: #ef6155 } /* Name.Variable */
 .syntax .ow { color: #5bc4bf } /* Operator.Word */
 .syntax .w { color: #2f1e2e } /* Text.Whitespace */
-.syntax .mf { color: #f99b15 } /* Literal.Number.Float */
-.syntax .mh { color: #f99b15 } /* Literal.Number.Hex */
-.syntax .mi { color: #f99b15 } /* Literal.Number.Integer */
-.syntax .mo { color: #f99b15 } /* Literal.Number.Oct */
+.syntax .mf { color: #0088ff } /* Literal.Number.Float */
+.syntax .mh { color: #0088ff } /* Literal.Number.Hex */
+.syntax .mi { color: #0088ff } /* Literal.Number.Integer */
+.syntax .mo { color: #0088ff } /* Literal.Number.Oct */
 .syntax .sb { color: #48b685 } /* Literal.String.Backtick */
 .syntax .sc { color: #2f1e2e } /* Literal.String.Char */
 .syntax .sd { color: #8d8687 } /* Literal.String.Doc */
 .syntax .s2 { color: #48b685 } /* Literal.String.Double */
-.syntax .se { color: #f99b15 } /* Literal.String.Escape */
+.syntax .se { color: #0088ff } /* Literal.String.Escape */
 .syntax .sh { color: #48b685 } /* Literal.String.Heredoc */
-.syntax .si { color: #f99b15 } /* Literal.String.Interpol */
+.syntax .si { color: #0088ff } /* Literal.String.Interpol */
 .syntax .sx { color: #48b685 } /* Literal.String.Other */
 .syntax .sr { color: #48b685 } /* Literal.String.Regex */
-.syntax .s1 { color: #48b685 } /* Literal.String.Single */
+.syntax .s1 { color: #008800 } /* Literal.String.Single */
 .syntax .ss { color: #48b685 } /* Literal.String.Symbol */
 .syntax .bp { color: #2f1e2e } /* Name.Builtin.Pseudo */
 .syntax .vc { color: #ef6155 } /* Name.Variable.Class */
 .syntax .vg { color: #ef6155 } /* Name.Variable.Global */
 .syntax .vi { color: #ef6155 } /* Name.Variable.Instance */
-.syntax .il { color: #f99b15 } /* Literal.Number.Integer.Long */
+.syntax .il { color: #0088ff } /* Literal.Number.Integer.Long */
+
+@media (prefers-color-scheme: dark) {
+.syntax .k { color: #c78cff } /* Keyword */
+.syntax .gi { color: #64ffbb } /* Generic.Inserted */
+.syntax .ld { color: #64ffbb } /* Literal.Date */
+.syntax .s { color: #64ffbb } /* Literal.String */
+.syntax .sb { color: #64ffbb } /* Literal.String.Backtick */
+.syntax .s2 { color: #64ffbb } /* Literal.String.Double */
+.syntax .sh { color: #64ffbb } /* Literal.String.Heredoc */
+.syntax .sx { color: #64ffbb } /* Literal.String.Other */
+.syntax .sr { color: #64ffbb } /* Literal.String.Regex */
+.syntax .s1 { color: #64ffbb } /* Literal.String.Single */
+.syntax .ss { color: #64ffbb } /* Literal.String.Symbol */
+.syntax .c { color: #64ffbb } /* Comment */
+.syntax .n { color: #f8f9fa } /* Name */
+.syntax .p { color: #f8f9fa } /* Punctuation */
+.syntax .gh { color: #f8f9fa; font-weight: bold } /* Generic.Heading */
+.syntax .nb { color: #f8f9fa } /* Name.Builtin */
+.syntax .ni { color: #f8f9fa } /* Name.Entity */
+.syntax .nl { color: #f8f9fa } /* Name.Label */
+.syntax .py { color: #f8f9fa } /* Name.Property */
+.syntax .w { color: #f8f9fa } /* Text.Whitespace */
+.syntax .sc { color: #f8f9fa } /* Literal.String.Char */
+}

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/types.h>
+
 namespace common
 {
     template <typename T>
@@ -35,6 +37,21 @@ namespace common
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
 
+    template <>
+    inline bool addOverflow(bInt256 x, bInt256 y, bInt256 & res)
+    {
+        res = x + y;
+        return (y > 0 && x > std::numeric_limits<bInt256>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<bInt256>::min() - y);
+    }
+
+    template <>
+    inline bool addOverflow(bUInt256 x, bUInt256 y, bUInt256 & res)
+    {
+        res = x + y;
+        return x > std::numeric_limits<bUInt256>::max() - y;
+    }
+
     template <typename T>
     inline bool subOverflow(T x, T y, T & res)
     {
@@ -66,6 +83,21 @@ namespace common
         static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
         res = x - y;
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
+    }
+
+    template <>
+    inline bool subOverflow(bInt256 x, bInt256 y, bInt256 & res)
+    {
+        res = x - y;
+        return (y < 0 && x > std::numeric_limits<bInt256>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<bInt256>::min() + y);
+    }
+
+    template <>
+    inline bool subOverflow(bUInt256 x, bUInt256 y, bUInt256 & res)
+    {
+        res = x - y;
+        return x < y;
     }
 
     template <typename T>
@@ -102,5 +134,26 @@ namespace common
         unsigned __int128 a = (x > 0) ? x : -x;
         unsigned __int128 b = (y > 0) ? y : -y;
         return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(bInt256 x, bInt256 y, bInt256 & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+
+        bInt256 a = (x > 0) ? x : -x;
+        bInt256 b = (y > 0) ? y : -y;
+        return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(bUInt256 x, bUInt256 y, bUInt256 & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+        return (x * y) / y != x;
     }
 }

@@ -12,8 +12,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(
-        data_part_, columns_list_, metadata_snapshot_, indices_to_recalc_, marks_file_extension_, default_codec_, settings_, index_granularity_)
+    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
+        indices_to_recalc_, marks_file_extension_,
+        default_codec_, settings_, index_granularity_)
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;
@@ -98,14 +99,13 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
         for (const auto & column : columns_list)
         {
-            /// There could already be enough data to compress into the new block.
-            if (stream->compressed.offset() >= settings.min_compress_block_size)
-                stream->compressed.next();
-
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
 
             writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+
+            /// Write one compressed block per column in granule for more optimal reading.
+            stream->compressed.next();
         }
 
         ++from_mark;

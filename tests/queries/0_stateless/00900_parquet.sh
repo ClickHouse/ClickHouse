@@ -3,7 +3,7 @@
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CUR_DIR/../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 #${CLICKHOUSE_CLIENT} --max_block_size=1 --query="SELECT * FROM system.numbers LIMIT 10 FORMAT Parquet" > ${CLICKHOUSE_TMP}/t1.pq
 #${CLICKHOUSE_CLIENT} --max_block_size=5 --query="SELECT * FROM system.numbers LIMIT 10 FORMAT Parquet" > ${CLICKHOUSE_TMP}/t5.pq
@@ -88,13 +88,13 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types1 values (      127,     
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types2 FORMAT Parquet"
 
 echo original:
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 ORDER BY int8" | tee ${CLICKHOUSE_TMP}/parquet_all_types_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 ORDER BY int8" | tee "${CLICKHOUSE_TMP}"/parquet_all_types_1.dump
 echo converted:
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types2 ORDER BY int8" | tee ${CLICKHOUSE_TMP}/parquet_all_types_2.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 ORDER BY int8 FORMAT Parquet" > ${CLICKHOUSE_TMP}/parquet_all_types_1.parquet
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types2 ORDER BY int8 FORMAT Parquet" > ${CLICKHOUSE_TMP}/parquet_all_types_2.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types2 ORDER BY int8" | tee "${CLICKHOUSE_TMP}"/parquet_all_types_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 ORDER BY int8 FORMAT Parquet" > "${CLICKHOUSE_TMP}"/parquet_all_types_1.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types2 ORDER BY int8 FORMAT Parquet" > "${CLICKHOUSE_TMP}"/parquet_all_types_2.parquet
 echo diff:
-diff ${CLICKHOUSE_TMP}/parquet_all_types_1.dump ${CLICKHOUSE_TMP}/parquet_all_types_2.dump
+diff "${CLICKHOUSE_TMP}"/parquet_all_types_1.dump "${CLICKHOUSE_TMP}"/parquet_all_types_2.dump
 
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE parquet_types2"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types3 values (       79,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str01',                  'fstr1', '2003-03-04', '2004-05-06')"
@@ -119,7 +119,7 @@ ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE parquet_types2"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_types5       (int8 Nullable(Int8), uint8 Nullable(UInt8), int16 Nullable(Int16), uint16 Nullable(UInt16), int32 Nullable(Int32), uint32 Nullable(UInt32), int64 Nullable(Int64), uint64 Nullable(UInt64), float32 Nullable(Float32), float64 Nullable(Float64), string Nullable(String), fixedstring Nullable(FixedString(15)), date Nullable(Date), datetime Nullable(DateTime)) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_types6       (int8 Nullable(Int8), uint8 Nullable(UInt8), int16 Nullable(Int16), uint16 Nullable(UInt16), int32 Nullable(Int32), uint32 Nullable(UInt32), int64 Nullable(Int64), uint64 Nullable(UInt64), float32 Nullable(Float32), float64 Nullable(Float64), string Nullable(String), fixedstring Nullable(FixedString(15)), date Nullable(Date), datetime Nullable(DateTime)) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types5 values (               NULL,                  NULL,                  NULL,                    NULL,                  NULL,                    NULL,                  NULL,                    NULL,                      NULL,                      NULL,                    NULL,                                  NULL,                NULL,                        NULL)"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types5 ORDER BY int8 FORMAT Parquet" > ${CLICKHOUSE_TMP}/parquet_all_types_5.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types5 ORDER BY int8 FORMAT Parquet" > "${CLICKHOUSE_TMP}"/parquet_all_types_5.parquet
 #${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types5 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types6 FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types5 ORDER BY int8 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types6 FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_types1 ORDER BY int8 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_types6 FORMAT Parquet"

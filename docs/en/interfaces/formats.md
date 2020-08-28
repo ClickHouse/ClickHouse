@@ -13,7 +13,7 @@ The supported formats are:
 | Format                                                          | Input | Output |
 |-----------------------------------------------------------------|-------|--------|
 | [TabSeparated](#tabseparated)                                   | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                             | ✗     | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✔     | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔     | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔     | ✔      |
 | [Template](#format-template)                                    | ✔     | ✔      |
@@ -72,7 +72,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-22      1031592
 2014-03-23      1046491
 
-0000-00-00      8873898
+1970-01-01      8873898
 
 2014-03-17      1031592
 2014-03-23      1406958
@@ -143,7 +143,7 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedRaw {#tabseparatedraw}
 
 Differs from `TabSeparated` format in that the rows are written without escaping.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+When parsing with this format, tabs or linefeeds are not allowed in each field.
 
 This format is also available under the name `TSVRaw`.
 
@@ -464,7 +464,7 @@ If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact numb
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output.
+ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output\_format\_json\_quote\_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
 See also the [JSONEachRow](#jsoneachrow) format.
 
@@ -708,7 +708,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Totals:
 ┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
+│ 1970-01-01 │ 8873898 │
 └────────────┴─────────┘
 
 Extremes:
@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-are not applied; the [table defaults](../sql-reference/statements/create.md#create-default-values) are used instead of them.
+are not applied; the [table defaults](../sql-reference/statements/create/table.md#create-default-values) are used instead of them.
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -1015,7 +1015,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 
 Unsupported Avro data types: `record` (non-root), `map`
 
-Unsupported Avro logical data types: `uuid`, `time-millis`, `time-micros`, `duration`
+Unsupported Avro logical data types: `time-millis`, `time-micros`, `duration`
 
 ### Inserting Data {#inserting-data-1}
 

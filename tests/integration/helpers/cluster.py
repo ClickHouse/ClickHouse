@@ -31,7 +31,7 @@ from .hdfs_api import HDFSApi
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
-DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/compose/")
+LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/runner/compose/")
 DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
@@ -52,7 +52,7 @@ def subprocess_check_call(args):
 
 
 def subprocess_call(args):
-    # Uncomment for debugging
+    # Uncomment for debugging..;
     # print('run:', ' ' . join(args))
     subprocess.call(args)
 
@@ -66,6 +66,17 @@ def get_odbc_bridge_path():
         else:
             return '/usr/bin/clickhouse-odbc-bridge'
     return path
+
+def get_docker_compose_path():
+    compose_path = os.environ.get('DOCKER_COMPOSE_DIR')
+    if compose_path is not None:
+        return os.path.dirname(compose_path)
+    else:
+        if os.path.exists(os.path.dirname('/compose/')):
+            return os.path.dirname('/compose/') #default in docker runner container
+        else:
+            print("Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {}".format(LOCAL_DOCKER_COMPOSE_DIR))
+            return LOCAL_DOCKER_COMPOSE_DIR
 
 
 class ClickHouseCluster:
@@ -126,12 +137,13 @@ class ClickHouseCluster:
         self.with_cassandra = False
 
         self.with_minio = False
+        self.minio_certs_dir = None
         self.minio_host = "minio1"
         self.minio_bucket = "root"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
-        self.minio_redirect_host = "redirect"
-        self.minio_redirect_port = 80
+        self.minio_redirect_host = "proxy1"
+        self.minio_redirect_port = 8080
 
         # available when with_kafka == True
         self.schema_registry_client = None
@@ -155,7 +167,7 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -181,17 +193,19 @@ class ClickHouseCluster:
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
 
+        docker_compose_yml_dir = get_docker_compose_path()
+
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
             self.with_net_trics = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_net.yml')])
 
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
             if not zookeeper_docker_compose_path:
-                zookeeper_docker_compose_path = p.join(DOCKER_COMPOSE_DIR, 'docker_compose_zookeeper.yml')
+                zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper.yml')
 
             self.with_zookeeper = True
             self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
@@ -202,86 +216,87 @@ class ClickHouseCluster:
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
                 self.with_mysql = True
-                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
+                self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
+                                       self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
-                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
+                self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                           self.project_name, '--file',
-                                          p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
+                                          p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_rabbitmq and not self.with_rabbitmq:
             self.with_rabbitmq = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_rabbitmq.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
             self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_rabbitmq.yml')]
+                                      self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
             cmds.append(self.base_rabbitmq_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
             for cmd in cmds:
-                cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
+                cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_net.yml')])
 
         if with_redis and not self.with_redis:
             self.with_redis = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
             self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')])
+            self.minio_certs_dir = minio_certs_dir
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')]
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
-            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')])
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
             self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_cassandra.yml')]
+                                       self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
 
         return instance
 
@@ -330,7 +345,7 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id)
 
-    def exec_in_container(self, container_id, cmd, detach=False, **kwargs):
+    def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, **kwargs):
         exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
         output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
@@ -346,7 +361,11 @@ class ClickHouseCluster:
             print("Container {} uses image {}: ".format(container_id, image_id))
             pprint.pprint(image_info)
             print("")
-            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output))
+            message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output)
+            if nothrow:
+                print(message)
+            else:
+                raise Exception(message)
         return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
@@ -429,11 +448,11 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=30):
+    def wait_minio_to_start(self, timeout=30, secure=False):
         minio_client = Minio('localhost:9001',
                              access_key='minio',
                              secret_key='minio123',
-                             secure=False)
+                             secure=secure)
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -555,11 +574,34 @@ class ClickHouseCluster:
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
+                env = os.environ.copy()
+                prev_ca_certs = os.environ.get('SSL_CERT_FILE')
+                if self.minio_certs_dir:
+                    minio_certs_dir = p.join(self.base_dir, self.minio_certs_dir)
+                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+                    # Minio client (urllib3) uses SSL_CERT_FILE for certificate validation.
+                    os.environ['SSL_CERT_FILE'] = p.join(minio_certs_dir, 'public.crt')
+                else:
+                    # Attach empty certificates directory to ensure non-secure mode.
+                    minio_certs_dir = p.join(self.instances_dir, 'empty_minio_certs_dir')
+                    os.mkdir(minio_certs_dir)
+                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+
                 minio_start_cmd = self.base_minio_cmd + common_opts
+
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                subprocess_check_call(minio_start_cmd)
-                logging.info("Trying to connect to Minio...")
-                self.wait_minio_to_start()
+                subprocess.check_call(minio_start_cmd, env=env)
+
+                try:
+                    logging.info("Trying to connect to Minio...")
+                    self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+                finally:
+                    # Safely return previous value of SSL_CERT_FILE environment variable.
+                    if self.minio_certs_dir:
+                        if prev_ca_certs:
+                            os.environ['SSL_CERT_FILE'] = prev_ca_certs
+                        else:
+                            os.environ.pop('SSL_CERT_FILE')
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
@@ -850,9 +892,9 @@ class ClickHouseInstance:
         from helpers.test_tools import assert_eq_with_retry
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
-    def exec_in_container(self, cmd, detach=False, **kwargs):
+    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         container_id = self.get_docker_handle().id
-        return self.cluster.exec_in_container(container_id, cmd, detach, **kwargs)
+        return self.cluster.exec_in_container(container_id, cmd, detach, nothrow, **kwargs)
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
@@ -890,7 +932,8 @@ class ClickHouseInstance:
 
         # force kill if server hangs
         if self.get_process_pid("clickhouse server"):
-            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], nothrow=True, user='root')
 
         if callback_onstop:
             callback_onstop(self)
@@ -1082,7 +1125,6 @@ class ClickHouseInstance:
 
         if self.with_minio:
             depends_on.append("minio1")
-            depends_on.append("redirect")
 
         env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
 
@@ -1154,4 +1196,3 @@ class ClickHouseKiller(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.restore_clickhouse()
-

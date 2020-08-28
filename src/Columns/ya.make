@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -29,6 +30,7 @@ SRCS(
     FilterDescription.cpp
     getLeastSuperColumn.cpp
     IColumn.cpp
+
 )
 
 END()

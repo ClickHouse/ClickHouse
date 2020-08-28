@@ -69,12 +69,12 @@ public:
 
     Field operator[](size_t index) const override
     {
-        return String(reinterpret_cast<const char *>(&chars[n * index]), n);
+        return Field{&chars[n * index], n};
     }
 
     void get(size_t index, Field & res) const override
     {
-        res.assignString(reinterpret_cast<const char *>(&chars[n * index]), n);
+        res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     StringRef getDataAt(size_t index) const override
@@ -110,6 +110,8 @@ public:
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
+
+    void updateHashFast(SipHash & hash) const override;
 
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {

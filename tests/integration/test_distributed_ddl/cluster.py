@@ -68,8 +68,8 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         assert len(set(codes)) == 1, "\n" + tsv_content
         assert codes[0] == "0", "\n" + tsv_content
 
-    def ddl_check_query(self, instance, query, num_hosts=None):
-        contents = instance.query(query)
+    def ddl_check_query(self, instance, query, num_hosts=None, settings=None):
+        contents = instance.query(query, settings=settings)
         self.check_all_hosts_successfully_executed(contents, num_hosts)
         return contents
 

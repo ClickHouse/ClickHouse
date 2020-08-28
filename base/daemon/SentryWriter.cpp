@@ -2,23 +2,27 @@
 
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <common/defines.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/logger_useful.h>
+
+#include <Common/SymbolIndex.h>
+#include <Common/StackTrace.h>
+
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"
 #    include <Common/config.h>
 #endif
 
 #if USE_SENTRY
+
 #    include <sentry.h> // Y_IGNORE
 #    include <stdio.h>
 #    include <filesystem>
-#endif
 
 
-#if USE_SENTRY
 namespace
 {
 
@@ -42,7 +46,7 @@ void setExtras()
     sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
 }
 
-void sentry_logger(sentry_level_t level, const char * message, va_list args)
+void sentry_logger(sentry_level_e level, const char * message, va_list args, void *)
 {
     auto * logger = &Poco::Logger::get("SentryWriter");
     size_t size = 1024;
@@ -76,12 +80,12 @@ void sentry_logger(sentry_level_t level, const char * message, va_list args)
         }
     }
 }
+
 }
-#endif
+
 
 void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 {
-#if USE_SENTRY
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
     auto * logger = &Poco::Logger::get("SentryWriter");
@@ -103,7 +107,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
         sentry_options_t * options = sentry_options_new();  /// will be freed by sentry_init or sentry_shutdown
         sentry_options_set_release(options, VERSION_STRING_SHORT);
-        sentry_options_set_logger(options, &sentry_logger);
+        sentry_options_set_logger(options, &sentry_logger, nullptr);
         if (debug)
         {
             sentry_options_set_debug(options, 1);
@@ -146,35 +150,28 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     {
         LOG_INFO(logger, "Sending crash reports is disabled");
     }
-#else
-    UNUSED(config);
-#endif
 }
 
 void SentryWriter::shutdown()
 {
-#if USE_SENTRY
     if (initialized)
-    {
         sentry_shutdown();
-    }
-#endif
 }
 
-void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, const String & build_id_hex)
+void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace)
 {
-#if USE_SENTRY
     auto * logger = &Poco::Logger::get("SentryWriter");
     if (initialized)
     {
-        const std::string & error_message = signalToErrorMessage(sig, info, context);
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
         sentry_set_tag("signal", strsignal(sig));
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
-        if (!build_id_hex.empty())
-        {
+
+        #if defined(__ELF__) && !defined(__FreeBSD__)
+            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
-        }
+        #endif
+
         setExtras();
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/
@@ -240,11 +237,12 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
     {
         LOG_INFO(logger, "Not sending crash report");
     }
-#else
-    UNUSED(sig);
-    UNUSED(info);
-    UNUSED(context);
-    UNUSED(stack_trace);
-    UNUSED(build_id_hex);
-#endif
 }
+
+#else
+
+void SentryWriter::initialize(Poco::Util::LayeredConfiguration &) {}
+void SentryWriter::shutdown() {}
+void SentryWriter::onFault(int, const std::string &, const StackTrace &) {}
+
+#endif

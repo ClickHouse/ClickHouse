@@ -35,7 +35,7 @@ public:
     void readSuffixImpl() override;
 
     void commit();
-    bool isStalled() const { return buffer->isStalled(); }
+    bool isStalled() const { return !buffer || buffer->isStalled(); }
 
 private:
     StorageKafka & storage;

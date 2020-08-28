@@ -7,7 +7,7 @@
 #
 # Sets values of:
 #   OPENLDAP_FOUND              - TRUE if found
-#   OPENLDAP_INCLUDE_DIR        - path to the include directory
+#   OPENLDAP_INCLUDE_DIRS       - paths to the include directories
 #   OPENLDAP_LIBRARIES          - paths to the libldap and liblber libraries
 #   OPENLDAP_LDAP_LIBRARY       - paths to the libldap library
 #   OPENLDAP_LBER_LIBRARY       - paths to the liblber library
@@ -28,11 +28,11 @@ if(OPENLDAP_USE_REENTRANT_LIBS)
 endif()
 
 if(OPENLDAP_ROOT_DIR)
-    find_path(OPENLDAP_INCLUDE_DIR NAMES "ldap.h" "lber.h" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "include" NO_DEFAULT_PATH)
+    find_path(OPENLDAP_INCLUDE_DIRS NAMES "ldap.h" "lber.h" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "include" NO_DEFAULT_PATH)
     find_library(OPENLDAP_LDAP_LIBRARY NAMES "ldap${_r_suffix}" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "lib" NO_DEFAULT_PATH)
     find_library(OPENLDAP_LBER_LIBRARY NAMES "lber" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "lib" NO_DEFAULT_PATH)
 else()
-    find_path(OPENLDAP_INCLUDE_DIR NAMES "ldap.h" "lber.h")
+    find_path(OPENLDAP_INCLUDE_DIRS NAMES "ldap.h" "lber.h")
     find_library(OPENLDAP_LDAP_LIBRARY NAMES "ldap${_r_suffix}")
     find_library(OPENLDAP_LBER_LIBRARY NAMES "lber")
 endif()
@@ -44,10 +44,10 @@ set(OPENLDAP_LIBRARIES ${OPENLDAP_LDAP_LIBRARY} ${OPENLDAP_LBER_LIBRARY})
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(
     OpenLDAP DEFAULT_MSG
-    OPENLDAP_INCLUDE_DIR OPENLDAP_LDAP_LIBRARY OPENLDAP_LBER_LIBRARY
+    OPENLDAP_INCLUDE_DIRS OPENLDAP_LDAP_LIBRARY OPENLDAP_LBER_LIBRARY
 )
 
-mark_as_advanced(OPENLDAP_INCLUDE_DIR OPENLDAP_LIBRARIES OPENLDAP_LDAP_LIBRARY OPENLDAP_LBER_LIBRARY)
+mark_as_advanced(OPENLDAP_INCLUDE_DIRS OPENLDAP_LIBRARIES OPENLDAP_LDAP_LIBRARY OPENLDAP_LBER_LIBRARY)
 
 if(OPENLDAP_USE_STATIC_LIBS)
     set(CMAKE_FIND_LIBRARY_SUFFIXES ${_orig_CMAKE_FIND_LIBRARY_SUFFIXES})

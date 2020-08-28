@@ -5,6 +5,7 @@
 #include <Storages/Kafka/Buffer_fwd.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Interpreters/Context.h>
+#include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
@@ -37,7 +38,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -70,7 +71,6 @@ protected:
 private:
     // Configuration and state
     Context & global_context;
-    std::shared_ptr<Context> kafka_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
     const Names topics;
     const String brokers;

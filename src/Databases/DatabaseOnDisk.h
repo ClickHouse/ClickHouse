@@ -49,7 +49,8 @@ public:
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        bool exchange) override;
+        bool exchange,
+        bool dictionary) override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 

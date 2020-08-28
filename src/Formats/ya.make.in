@@ -1,0 +1,13 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/protobuf
+    contrib/libs/protoc
+)
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <DataStreams/SizeLimits.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -20,6 +19,21 @@ public:
     String getName() const override { return "Limit"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
+
+    void describeActions(FormatSettings & settings) const override;
+
+    size_t getLimitForSorting() const
+    {
+        if (limit > std::numeric_limits<UInt64>::max() - offset)
+            return 0;
+
+        return limit + offset;
+    }
+
+    /// Change input stream when limit is pushed up. TODO: add clone() for steps.
+    void updateInputStream(DataStream input_stream);
+
+    bool withTies() const { return with_ties; }
 
 private:
     size_t limit;

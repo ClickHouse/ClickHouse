@@ -11,7 +11,7 @@ Syntax:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -33,17 +33,13 @@ Additional join types available in ClickHouse:
 
 -   `LEFT SEMI JOIN` and `RIGHT SEMI JOIN`, a whitelist on “join keys”, without producing a cartesian product.
 -   `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on “join keys”, without producing a cartesian product.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
+-   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Strictness {#select-join-strictness}
-
-Modifies how matching by “join keys” is performed
-
--   `ALL` — The standard `JOIN` behavior in SQL as described above. The default.
--   `ANY` — Partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
--   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
+## Setting {#join-settings}
 
 !!! note "Note"
-    The default strictness value can be overriden using [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+    The default join type can be overriden using [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
 
     Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 

@@ -18,6 +18,7 @@ ADDINCL(
 
 PEERDIR(
     clickhouse/src/Common
+    clickhouse/src/Parsers
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
@@ -96,6 +97,7 @@ SRCS(
     array/hasSubstr.cpp
     array/indexOf.cpp
     array/length.cpp
+    array/mapOp.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
@@ -134,7 +136,9 @@ SRCS(
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
+    date_trunc.cpp
     defaultValueOfArgumentType.cpp
+    defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
     dumpColumnStructure.cpp
@@ -156,6 +160,7 @@ SRCS(
     filesystem.cpp
     finalizeAggregation.cpp
     formatDateTime.cpp
+    formatRow.cpp
     formatString.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
@@ -201,6 +206,7 @@ SRCS(
     geoToH3.cpp
     getMacro.cpp
     getScalar.cpp
+    getSetting.cpp
     getSizeOfEnumType.cpp
     globalVariable.cpp
     greatCircleDistance.cpp
@@ -219,6 +225,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     hasColumnInTable.cpp
+    hasThreadFuzzer.cpp
     hasTokenCaseInsensitive.cpp
     hasToken.cpp
     hostName.cpp
@@ -230,6 +237,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
     intExp10.cpp
@@ -241,6 +249,7 @@ SRCS(
     isNotNull.cpp
     isNull.cpp
     isValidUTF8.cpp
+    isZeroOrNull.cpp
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
@@ -287,6 +296,8 @@ SRCS(
     multiSearchFirstPositionUTF8.cpp
     negate.cpp
     neighbor.cpp
+    normalizedQueryHash.cpp
+    normalizeQuery.cpp
     notEmpty.cpp
     notEquals.cpp
     notILike.cpp
