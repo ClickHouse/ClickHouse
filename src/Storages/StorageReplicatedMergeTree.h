@@ -449,7 +449,6 @@ private:
         const String & merged_name,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
-        bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version);
 
