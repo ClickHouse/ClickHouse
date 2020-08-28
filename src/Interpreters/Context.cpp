@@ -1455,7 +1455,12 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
+    {
+        if (!getConfigRef().has("auxiliary_zookeepers." + name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+
         zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+    }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
 
