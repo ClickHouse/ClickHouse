@@ -1258,7 +1258,7 @@ ClickHouse генерирует исключение
 
 ## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
 
-Контролирует настройку [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+Контролирует настройку [`force_optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
 
 Возможные значения:
 
