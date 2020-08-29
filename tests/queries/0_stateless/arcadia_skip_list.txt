@@ -136,3 +136,4 @@
 01401_FORMAT_SETTINGS
 01411_bayesian_ab_testing
 01456_ast_optimizations_over_distributed
+01460_DistributedFilesToInsert
