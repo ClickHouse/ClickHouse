@@ -1,38 +1,59 @@
 # ClickHouse Playground {#clickhouse-playground}
 
-ClickHouse Playground позволяет моментально выполнить запросы к ClickHouse из бразуера.
-В Playground доступны несколько тестовых массивов данных и примеры запросов, которые показывают некоторые отличительные черты ClickHouse.
+[ClickHouse Playground] (https://play.clickhouse.tech) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
+В Playground доступны несколько примеров c пакетами данных, а также образцы запросов, которые отображают возможности ClickHouse. Кроме того, там есть несколько релизов ClickHouse LTS, которые можно протестировать.
+
+ClickHouse Playground дает возможность поработать с m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) (4 vCPU, 32 ГБ ОЗУ), который находится в [Яндекс.Облаке](https://cloud.yandex.com/). Дополнительная информация об [облачных провайдерах](../commercial/cloud.md).
+
+Вы можете создавать запросы к Playground с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), также можно установить соединение с помощью драйверов [JDBC](../ interfaces / jdbc.md) или [ODBC](../ interfaces / odbc.md). Более подробная информация о программных продуктах, поддерживающих ClickHouse, доступна [здесь](../ interfaces / index.md).
+
+## Credentials {#credentials}
+
+| Параметр            | Значение                                |
+|:--------------------|:----------------------------------------|
+| Конечная точка HTTPS| `https://play-api.clickhouse.tech:8443` |
+| Конечная точка TCP  | `play-api.clickhouse.tech:9440`         |
+| Пользователь        | `playground`                            |
+| Пароль              | `clickhouse`                            |
+
+Также существуют дополнительные конечные точки с определенными релизами ClickHouse, которые нужны для тестирования их различий (порты и пользователь / пароль остаются неизменными):
+
+-   20.3 LTS: `play-api-v20-3.clickhouse.tech`
+-   19.14 LTS: `play-api-v19-14.clickhouse.tech`
+
+!!! note "Примечание"
+    Для всех этих конечных точек требуется безопасное соединение TLS.
+
+## Limitations {#limitations}
 
 Запросы выполняются под пользователем с правами `readonly` для которого есть следующие ограничения:
 - запрещены DDL запросы
 - запрещены INSERT запросы
 
 Также установлены следующие опции:
-- [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes)
-- [`max_result_rows=2000`](../operations/settings/query_complexity/#setting-max_result_rows)
-- [`result_overflow_mode=break`](../operations/settings/query_complexity/#result-overflow-mode)
-- [`max_execution_time=60000`](../operations/settings/query_complexity/#max-execution-time)
+- [max\_result\_bytes=10485760](../operations/settings/query_complexity/#max-result-bytes)
+- [max\_result\_rows=2000](../operations/settings/query_complexity/#setting-max_result_rows)
+- [result\_overflow\_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
+- [max\_execution\_time=60000](../operations/settings/query_complexity/#max-execution-time)
 
-ClickHouse Playground соответствует конфигурации m2.small хосту
-[Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse)
-запущеному в [Яндекс.Облаке](https://cloud.yandex.com/).
-Больше информации про [облачных провайдерах](../commercial/cloud.md).
+## Examples {#examples}
 
-Веб интерфейс ClickHouse Playground делает запросы через ClickHouse HTTP API.
-Бекендом служит обычный кластер ClickHouse.
-ClickHouse HTTP интерфейс также доступен как часть Playground.
-
-Запросы к Playground могут быть выполнены с помощью curl/wget, а также через соединеие JDBC/ODBC драйвера
-Больше информации про приложения с поддержкой ClickHouse доступно в разделе [Интерфейсы](../interfaces/index.md).
-
-| Параметр         | Значение                              |
-|:-----------------|:--------------------------------------|
-| Адрес            | https://play-api.clickhouse.tech:8443 |
-| Имя пользователя | `playground`                          |
-| Пароль           | `clickhouse`                          |
-
-Требуется SSL соединение.
+Пример конечной точки HTTPS с `curl`:
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
 ```
+
+Пример конечной точки TCP с [CLI](../interfaces/cli.md):
+
+``` bash
+clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+```
+
+## Implementation Details {#implementation-details}
+
+Веб-интерфейс ClickHouse Playground выполняет запросы через ClickHouse [HTTP API](../interfaces/http.md).
+Бэкэнд Playground - это просто кластер ClickHouse без каких-либо дополнительных серверных приложений. Как упоминалось выше, конечные точки ClickHouse HTTPS и TCP / TLS также являются общедоступными как часть Playground. Они проксируются через [Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) для добавления дополнительного уровня защиты и улучшенного глобального подключения.
+
+!!! warning "Предупреждение"
+Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации ** настоятельно не рекомендуется **. Убедитесь, что он прослушивается только в частной сети и защищен правильно настроенным брандмауэром.
