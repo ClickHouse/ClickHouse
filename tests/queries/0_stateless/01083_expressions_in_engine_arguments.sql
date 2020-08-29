@@ -1,7 +1,3 @@
-DROP DATABASE IF EXISTS test_01083;
-CREATE DATABASE test_01083;
-USE test_01083;
-
 CREATE TABLE file (n Int8) ENGINE = File(upper('tsv') || 'WithNames' || 'AndTypes');
 CREATE TABLE buffer (n Int8) ENGINE = Buffer(currentDatabase(), file, 16, 10, 200, 10000, 1000000, 10000000, 1000000000);
 CREATE TABLE merge (n Int8) ENGINE = Merge('', lower('DISTRIBUTED'));
@@ -28,7 +24,7 @@ CREATE VIEW view AS SELECT toInt64(n) as n FROM (SELECT toString(n) as n from me
 SELECT nonexistentsomething; -- { serverError 47 }
 
 CREATE DICTIONARY dict (n UInt64, col String DEFAULT '42') PRIMARY KEY n
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9440 SECURE 1 USER 'default' TABLE 'url' DB 'test_01083')) LIFETIME(1) LAYOUT(CACHE(SIZE_IN_CELLS 1));
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9440 SECURE 1 USER 'default' TABLE 'url')) LIFETIME(1) LAYOUT(CACHE(SIZE_IN_CELLS 1));
 
 -- dict --> url --> merge |-> distributed -> file (1)
 --                        |-> distributed_tf -> buffer -> file (1)
@@ -72,5 +68,3 @@ INSERT INTO buffer VALUES (1);
 --                                                     |                              |-> file (1)
 --                                                     |-> remote(127.0.0.2) --> ...
 SELECT sum(n) from rich_syntax;
-
-DROP DATABASE test_01083;

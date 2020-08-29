@@ -1,5 +1,13 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#    include "config_core.h"
+#endif
+
+
+#if USE_MSGPACK
+
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
@@ -37,6 +45,8 @@ public:
 
     void insert_integer(UInt64 value);
 
+    void reset();
+
 private:
     /// Stack is needed to process nested arrays
     std::stack<Info> info_stack;
@@ -49,13 +59,17 @@ public:
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "MagPackRowInputFormat"; }
+    void resetParser() override;
+
 private:
     bool readObject();
 
     PeekableReadBuffer buf;
     MsgPackVisitor visitor;
     msgpack::detail::parse_helper<MsgPackVisitor> parser;
-    DataTypes data_types;
+    const DataTypes data_types;
 };
 
 }
+
+#endif

@@ -1,41 +1,41 @@
 ---
-machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_priority: 21
-toc_title: "Yandex\u306E\u3002Metrica\u30C7\u30FC\u30BF"
+toc_priority: 14
+toc_title: "Yandex.Metrica データ"
 ---
 
-# 匿名のyandexの。metricaデータ {#anonymized-yandex-metrica-data}
+# 匿名化された Yandex.Metrica データ {#anonymized-yandex-metrica-data}
 
-データセットのテーブルを含む匿名化されたデーター (`hits_v1`)および訪問 (`visits_v1`）Yandexの。メトリカ につなげていくかを学びますYandex.Metrica in [クリックハウスの歴史](../../introduction/history.md) セクション。
+データセットは、Yandex.Metricaのヒット数(`hits_v1`)と訪問数(`visits_v1`)に関する匿名化されたデータを含む2つのテーブルから構成されています。
+Yandex.Metricaについての詳細は [ClickHouse history](../../introduction/history.md) のセクションを参照してください。
 
-どちらのテーブルも圧縮形式でダウンロードできます `tsv.xz` ファイルに対して割. それに加えて、の拡張バージョン `hits` 100万行を含むテーブルは、TSVとして利用可能ですhttps://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz そして準備された仕切りとしてhttps://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz。
+データセットは2つのテーブルから構成されており、どちらも圧縮された `tsv.xz` ファイルまたは準備されたパーティションとしてダウンロードすることができます。
+さらに、1億行を含む`hits`テーブルの拡張版が TSVとして https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz に、準備されたパーティションとして https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz にあります。
 
-## 取得のテーブルから調の間仕切り {#obtaining-tables-from-prepared-partitions}
+## パーティション済みテーブルの取得 {#obtaining-tables-from-prepared-partitions}
 
-ダウンロード、輸入のヒットテーブル:
+hits テーブルのダウンロードとインポート:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar
-tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-# check permissions on unpacked data, fix if required
+tar xvf hits_v1.tar -C /var/lib/clickhouse # ClickHouse のデータディレクトリへのパス
+# 展開されたデータのパーミッションをチェックし、必要に応じて修正します。
 sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-ダウンロードと読み込み:
+visits のダウンロードとインポート:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/visits/partitions/visits_v1.tar
-tar xvf visits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-# check permissions on unpacked data, fix if required
+tar xvf visits_v1.tar -C /var/lib/clickhouse # ClickHouse のデータディレクトリへのパス
+# 展開されたデータのパーミッションをチェックし、必要に応じて修正します。
 sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## 圧縮されたtsvファイルからの表の取得 {#obtaining-tables-from-compressed-tsv-file}
+## 圧縮されたTSVファイルからのテーブルの取得 {#obtaining-tables-from-compressed-tsv-file}
 
-圧縮されたtsvファ:
+ 圧縮TSVファイルのダウンロードと hits テーブルのインポート:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -49,7 +49,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-圧縮tsv-fileからの訪問のダウンロードとインポート:
+圧縮TSVファイルのダウンロードと visits テーブルのインポート:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
@@ -63,8 +63,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## クエリ例 {#example-queries}
+## クエリの例 {#example-queries}
 
-[ClickHouseチュートリアル](../../getting-started/tutorial.md) は、Yandexのに基づいています。Metricaデータの推奨使うことができるようにこのデータやトランザクションデータだけを通してチュートリアルです。
+[ClickHouse tutorial](../../getting-started/tutorial.md) は Yandex.Metrica のデータセットに基づいているため、このチュートリアルを実施するのがおすすめです。
 
-これらのテーブルへのクエリの追加の例は、 [ステートフルテスト](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) ClickHouseの（彼らは名前が付けられています `test.hists` と `test.visits` そこ）。
+これらのテーブルに関する他のクエリ例は、ClickHouse の [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) で見つけることができます。(それらは`test.hirsts` と`test.visits` という名前です)

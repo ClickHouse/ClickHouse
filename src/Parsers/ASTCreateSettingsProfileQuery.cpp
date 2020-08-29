@@ -1,6 +1,6 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTSettingsProfileElement.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 
 
@@ -8,6 +8,18 @@ namespace DB
 {
 namespace
 {
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << " ";
+        bool need_comma = false;
+        for (const String & name : names)
+        {
+            if (std::exchange(need_comma, true))
+                settings.ostr << ", ";
+            settings.ostr << backQuoteIfNeed(name);
+        }
+    }
+
     void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
@@ -20,7 +32,7 @@ namespace
         settings.format(format);
     }
 
-    void formatToRoles(const ASTExtendedRoleSet & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -59,8 +71,7 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
     else if (or_replace)
         format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    format.ostr << " " << backQuoteIfNeed(name);
-
+    formatNames(names, format);
     formatOnCluster(format);
 
     if (!new_name.empty())

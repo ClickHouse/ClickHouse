@@ -11,6 +11,7 @@ void registerFunctionToDayOfWeek(FunctionFactory &);
 void registerFunctionToDayOfYear(FunctionFactory &);
 void registerFunctionToHour(FunctionFactory &);
 void registerFunctionToMinute(FunctionFactory &);
+void registerFunctionToStartOfSecond(FunctionFactory &);
 void registerFunctionToSecond(FunctionFactory &);
 void registerFunctionToStartOfDay(FunctionFactory &);
 void registerFunctionToMonday(FunctionFactory &);
@@ -64,6 +65,7 @@ void registerFunctionSubtractYears(FunctionFactory &);
 void registerFunctionDateDiff(FunctionFactory &);
 void registerFunctionToTimeZone(FunctionFactory &);
 void registerFunctionFormatDateTime(FunctionFactory &);
+void registerFunctionDateTrunc(FunctionFactory &);
 
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
@@ -84,6 +86,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionToStartOfMonth(factory);
     registerFunctionToStartOfQuarter(factory);
     registerFunctionToStartOfYear(factory);
+    registerFunctionToStartOfSecond(factory);
     registerFunctionToStartOfMinute(factory);
     registerFunctionToStartOfFiveMinute(factory);
     registerFunctionToStartOfTenMinutes(factory);
@@ -128,6 +131,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionDateDiff(factory);
     registerFunctionToTimeZone(factory);
     registerFunctionFormatDateTime(factory);
+    registerFunctionDateTrunc(factory);
 }
 
 }

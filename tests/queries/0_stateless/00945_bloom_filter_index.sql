@@ -43,7 +43,7 @@ SELECT COUNT() FROM bloom_filter_types_test WHERE f32 = 1 SETTINGS max_rows_to_r
 SELECT COUNT() FROM bloom_filter_types_test WHERE f64 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE date = '1970-01-02' SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_types_test WHERE date_time = toDateTime('1970-01-01 03:00:01', 'Europe/Moscow') SETTINGS max_rows_to_read = 6;
-SELECT COUNT() FROM bloom_filter_types_test WHERE str = '1' SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
 SELECT COUNT() FROM bloom_filter_types_test WHERE str IN ( SELECT str FROM bloom_filter_types_test);
@@ -122,7 +122,7 @@ SELECT COUNT() FROM bloom_filter_null_types_test WHERE f32 = 1 SETTINGS max_rows
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE f64 = 1 SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE date = '1970-01-02' SETTINGS max_rows_to_read = 6;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE date_time = toDateTime('1970-01-01 03:00:01', 'Europe/Moscow') SETTINGS max_rows_to_read = 6;
-SELECT COUNT() FROM bloom_filter_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
 SELECT COUNT() FROM bloom_filter_null_types_test WHERE isNull(i8);
@@ -150,7 +150,7 @@ CREATE TABLE bloom_filter_lc_null_types_test (order_key UInt64, str LowCardinali
 INSERT INTO bloom_filter_lc_null_types_test SELECT number AS order_key, toString(number) AS str, toFixedString(toString(number), 5) AS fixed_string FROM system.numbers LIMIT 100;
 INSERT INTO bloom_filter_lc_null_types_test SELECT 0 AS order_key, NULL AS str, NULL AS fixed_string;
 
-SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 6;
+SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE str = '1' SETTINGS max_rows_to_read = 12;
 SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE fixed_string = toFixedString('1', 5) SETTINGS max_rows_to_read = 12;
 
 SELECT COUNT() FROM bloom_filter_lc_null_types_test WHERE isNull(str);
@@ -162,8 +162,47 @@ DROP TABLE IF EXISTS bloom_filter_lc_null_types_test;
 
 DROP TABLE IF EXISTS bloom_filter_array_lc_null_types_test;
 
-CREATE TABLE bloom_filter_array_lc_null_types_test (order_key   Array(LowCardinality(Nullable((UInt64)))), i8 Array(LowCardinality(Nullable((Int8)))), i16 Array(LowCardinality(Nullable((Int16)))), i32 Array(LowCardinality(Nullable((Int32)))), i64 Array(LowCardinality(Nullable((Int64)))), u8 Array(LowCardinality(Nullable((UInt8)))), u16 Array(LowCardinality(Nullable((UInt16)))), u32 Array(LowCardinality(Nullable((UInt32)))), u64 Array(LowCardinality(Nullable((UInt64)))), f32 Array(LowCardinality(Nullable((Float32)))), f64 Array(LowCardinality(Nullable((Float64)))), date Array(LowCardinality(Nullable((Date)))), date_time Array(LowCardinality(Nullable(DateTime('Europe/Moscow')))), str Array(LowCardinality(Nullable((String)))), fixed_string Array(LowCardinality(Nullable(FixedString(5)))), INDEX idx (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, date, date_time, str, fixed_string) TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 6;
-INSERT INTO bloom_filter_array_lc_null_types_test SELECT groupArray(number) AS order_key, groupArray(toInt8(number)) AS i8, groupArray(toInt16(number)) AS i16, groupArray(toInt32(number)) AS i32, groupArray(toInt64(number)) AS i64, groupArray(toUInt8(number)) AS u8, groupArray(toUInt16(number)) AS u16, groupArray(toUInt32(number)) AS u32, groupArray(toUInt64(number)) AS u64, groupArray(toFloat32(number)) AS f32, groupArray(toFloat64(number)) AS f64, groupArray(toDate(number, 'Europe/Moscow')) AS date, groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time, groupArray(toString(number)) AS str, groupArray(toFixedString(toString(number), 5)) AS fixed_string FROM (SELECT number FROM system.numbers LIMIT 15);
+CREATE TABLE bloom_filter_array_lc_null_types_test (
+    order_key   Array(LowCardinality(Nullable((UInt64)))),
+
+    i8 Array(LowCardinality(Nullable((Int8)))),
+    i16 Array(LowCardinality(Nullable((Int16)))),
+    i32 Array(LowCardinality(Nullable((Int32)))),
+    i64 Array(LowCardinality(Nullable((Int64)))),
+    u8 Array(LowCardinality(Nullable((UInt8)))),
+    u16 Array(LowCardinality(Nullable((UInt16)))),
+    u32 Array(LowCardinality(Nullable((UInt32)))),
+    u64 Array(LowCardinality(Nullable((UInt64)))),
+    f32 Array(LowCardinality(Nullable((Float32)))),
+    f64 Array(LowCardinality(Nullable((Float64)))),
+
+    date Array(LowCardinality(Nullable((Date)))),
+    date_time Array(LowCardinality(Nullable(DateTime('Europe/Moscow')))),
+
+    str Array(LowCardinality(Nullable((String)))),
+    fixed_string Array(LowCardinality(Nullable(FixedString(5)))),
+    INDEX idx (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, date, date_time, str, fixed_string)
+    TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 6;
+
+INSERT INTO bloom_filter_array_lc_null_types_test
+SELECT groupArray(number) AS order_key,
+    groupArray(toInt8(number)) AS i8,
+    groupArray(toInt16(number)) AS i16,
+    groupArray(toInt32(number)) AS i32,
+    groupArray(toInt64(number)) AS i64,
+    groupArray(toUInt8(number)) AS u8,
+    groupArray(toUInt16(number)) AS u16,
+    groupArray(toUInt32(number)) AS u32,
+    groupArray(toUInt64(number)) AS u64,
+    groupArray(toFloat32(number)) AS f32,
+    groupArray(toFloat64(number)) AS f64,
+    groupArray(toDate(number, 'Europe/Moscow')) AS date,
+    groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time,
+    groupArray(toString(number)) AS str,
+    groupArray(toFixedString(toString(number), 5)) AS fixed_string
+    FROM (SELECT number FROM system.numbers LIMIT 15);
+
 INSERT INTO bloom_filter_array_lc_null_types_test SELECT groupArray(number) AS order_key, groupArray(toInt8(number)) AS i8, groupArray(toInt16(number)) AS i16, groupArray(toInt32(number)) AS i32, groupArray(toInt64(number)) AS i64, groupArray(toUInt8(number)) AS u8, groupArray(toUInt16(number)) AS u16, groupArray(toUInt32(number)) AS u32, groupArray(toUInt64(number)) AS u64, groupArray(toFloat32(number)) AS f32, groupArray(toFloat64(number)) AS f64, groupArray(toDate(number, 'Europe/Moscow')) AS date, groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time, groupArray(toString(number)) AS str, groupArray(toFixedString(toString(number), 5)) AS fixed_string FROM (SELECT number FROM system.numbers WHERE number >= 5 LIMIT 15);
 INSERT INTO bloom_filter_array_lc_null_types_test SELECT groupArray(number) AS order_key, groupArray(toInt8(number)) AS i8, groupArray(toInt16(number)) AS i16, groupArray(toInt32(number)) AS i32, groupArray(toInt64(number)) AS i64, groupArray(toUInt8(number)) AS u8, groupArray(toUInt16(number)) AS u16, groupArray(toUInt32(number)) AS u32, groupArray(toUInt64(number)) AS u64, groupArray(toFloat32(number)) AS f32, groupArray(toFloat64(number)) AS f64, groupArray(toDate(number, 'Europe/Moscow')) AS date, groupArray(toDateTime(number, 'Europe/Moscow')) AS date_time, groupArray(toString(number)) AS str, groupArray(toFixedString(toString(number), 5)) AS fixed_string FROM (SELECT number FROM system.numbers WHERE number >= 10 LIMIT 15);
 INSERT INTO bloom_filter_array_lc_null_types_test SELECT n AS order_key, n AS i8, n AS i16, n AS i32, n AS i64, n AS u8, n AS u16, n AS u32, n AS u64, n AS f32, n AS f64, n AS date, n AS date_time, n AS str, n AS fixed_string FROM (SELECT [NULL] AS n);

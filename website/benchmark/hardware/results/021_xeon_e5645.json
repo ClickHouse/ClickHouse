@@ -1,7 +1,9 @@
 [
     {
-        "system":       "E5645 @ 2.40GHz, 2 sockets, 12 threads, 96 GiB, 14 x 2TB HDD RAID-10",
+        "system":       "Xeon E5645",
+        "system_full":      "Xeon E5645 @ 2.40GHz, 2 sockets, 12 threads, 96 GiB, 14 x 2TB HDD RAID-10",
         "time":         "2020-01-18 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.061, 0.003, 0.003],

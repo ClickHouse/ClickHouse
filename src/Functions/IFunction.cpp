@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
@@ -148,7 +147,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
             }
             else
             {
-                MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
+                MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
 
                 NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
@@ -519,10 +518,11 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(
         }
         if (null_presence.has_nullable)
         {
-            Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
+            Block nested_block = createBlockWithNestedColumns(
+                Block(arguments),
+                ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
             auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
             return makeNullable(return_type);
-
         }
     }
 

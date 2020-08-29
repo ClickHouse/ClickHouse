@@ -20,8 +20,9 @@
 #include <sys/mman.h>
 
 #include <Core/Defines.h>
-#ifdef THREAD_SANITIZER
-    /// Thread sanitizer does not intercept mremap. The usage of mremap will lead to false positives.
+#if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+    /// Thread and memory sanitizers do not intercept mremap. The usage of
+    /// mremap will lead to false positives.
     #define DISABLE_MREMAP 1
 #endif
 #include <common/mremap.h>
@@ -56,16 +57,7 @@
   * third-party applications which may already use own allocator doing mmaps
   * in the implementation of alloc/realloc.
   */
-#ifdef NDEBUG
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
-#else
-    /**
-      * In debug build, use small mmap threshold to reproduce more memory
-      * stomping bugs. Along with ASLR it will hopefully detect more issues than
-      * ASan. The program may fail due to the limit on number of memory mappings.
-      */
-    __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 4096;
-#endif
+extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
@@ -78,6 +70,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -98,6 +91,7 @@ public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
     {
+        checkSize(size);
         CurrentMemoryTracker::alloc(size);
         return allocNoTrack(size, alignment);
     }
@@ -105,6 +99,7 @@ public:
     /// Free memory range.
     void free(void * buf, size_t size)
     {
+        checkSize(size);
         freeNoTrack(buf, size);
         CurrentMemoryTracker::free(size);
     }
@@ -115,6 +110,8 @@ public:
       */
     void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
     {
+        checkSize(new_size);
+
         if (old_size == new_size)
         {
             /// nothing to do.
@@ -128,7 +125,7 @@ public:
 
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
-                DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             buf = new_buf;
             if constexpr (clear_memory)
@@ -144,7 +141,8 @@ public:
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
                                     PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
-                DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot mremap memory chunk from {} to {}.",
+                    ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_MREMAP);
 
             /// No need for zero-fill, because mmap guarantees it.
         }
@@ -200,13 +198,13 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (alignment > MMAP_MIN_ALIGNMENT)
-                throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
-                    + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
+                throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
+                    ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
 
             buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
                        mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
-                DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             /// No need for zero-fill, because mmap guarantees it.
         }
@@ -220,7 +218,7 @@ private:
                     buf = ::malloc(size);
 
                 if (nullptr == buf)
-                    DB::throwFromErrno("Allocator: Cannot malloc " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                    DB::throwFromErrno(fmt::format("Allocator: Cannot malloc {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
             }
             else
             {
@@ -228,7 +226,8 @@ private:
                 int res = posix_memalign(&buf, alignment, size);
 
                 if (0 != res)
-                    DB::throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+                    DB::throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign) {}.", ReadableSize(size)),
+                        DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
                 if constexpr (clear_memory)
                     memset(buf, 0, size);
@@ -242,12 +241,19 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (0 != munmap(buf, size))
-                DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
         }
         else
         {
             ::free(buf);
         }
+    }
+
+    void checkSize(size_t size)
+    {
+        /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
+        if (size >= 0x8000000000000000ULL)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
     }
 
 #ifndef NDEBUG
@@ -277,13 +283,15 @@ private:
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
-template <typename Base, size_t N, size_t Alignment>
+template <typename Base, size_t _initial_bytes, size_t Alignment>
 class AllocatorWithStackMemory : private Base
 {
 private:
-    alignas(Alignment) char stack_memory[N];
+    alignas(Alignment) char stack_memory[_initial_bytes];
 
 public:
+    static constexpr size_t initial_bytes = _initial_bytes;
+
     /// Do not use boost::noncopyable to avoid the warning about direct base
     /// being inaccessible due to ambiguity, when derived classes are also
     /// noncopiable (-Winaccessible-base).
@@ -294,10 +302,10 @@ public:
 
     void * alloc(size_t size)
     {
-        if (size <= N)
+        if (size <= initial_bytes)
         {
             if constexpr (Base::clear_memory)
-                memset(stack_memory, 0, N);
+                memset(stack_memory, 0, initial_bytes);
             return stack_memory;
         }
 
@@ -306,18 +314,18 @@ public:
 
     void free(void * buf, size_t size)
     {
-        if (size > N)
+        if (size > initial_bytes)
             Base::free(buf, size);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size)
     {
         /// Was in stack_memory, will remain there.
-        if (new_size <= N)
+        if (new_size <= initial_bytes)
             return buf;
 
         /// Already was big enough to not fit in stack_memory.
-        if (old_size > N)
+        if (old_size > initial_bytes)
             return Base::realloc(buf, old_size, new_size, Alignment);
 
         /// Was in stack memory, but now will not fit there.
@@ -329,9 +337,19 @@ public:
 protected:
     static constexpr size_t getStackThreshold()
     {
-        return N;
+        return initial_bytes;
     }
 };
+
+// A constant that gives the number of initially available bytes in
+// the allocator. Used to check that this number is in sync with the
+// initial size of array or hash table that uses the allocator.
+template<typename TAllocator>
+constexpr size_t allocatorInitialBytes = 0;
+
+template<typename Base, size_t initial_bytes, size_t Alignment>
+constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
+    Base, initial_bytes, Alignment>> = initial_bytes;
 
 
 #if !__clang__

@@ -1,20 +1,20 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
-toc_title: "Mac OS X\u7528\u306ELinux\u3067ClickHouse\u3092\u69CB\u7BC9\u3059\u308B\
-  \u65B9\u6CD5"
+toc_title: "Mac OS X\u7528\u306ELinux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u3059\
+  \u308B\u65B9\u6CD5"
 ---
 
-# Mac OS X用のLinuxでClickHouseを構築する方法 {#how-to-build-clickhouse-on-linux-for-mac-os-x}
+# Mac OS X用のLinux上でClickHouseを構築する方法 {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
-これは、linuxマシンがあり、それを使ってビルドしたい場合のためのものです `clickhouse` OS X上で実行されるバイナリこれは、Linuxサーバー上で実行される継続的な統合チェックを目的としています。 Mac OS XでClickHouseを直接ビルドする場合は、次の手順に進んでください [別の命令](build-osx.md).
+これは、Linuxマシンを使用してビルドする場合のためのものです `clickhouse` これは、Linuxサーバー上で実行される継続的な統合チェックを目的としています。 Mac OS X上でClickHouseを直接ビルドする場合は、次の手順に進みます [別の命令](build-osx.md).
 
-Mac OS X用のクロスビルドは、以下に基づいています。 [ビルド手順](build.md)、最初にそれらに続きなさい。
+Mac OS X用のクロスビルドは [ビルド命令](build.md) 先について来い
 
-# インストールclang-8 {#install-clang-8}
+# Clang-8をインストール {#install-clang-8}
 
-以下の指示に従ってくださいhttps://apt.llvm.org/あなたのubuntuやdebianの設定のために.
+の指示に従ってくださいhttps://apt.llvm.org/あなたのUbuntuまたはDebianのセットアップ用。
 例えば、コマンドバイオニックのような:
 
 ``` bash
@@ -24,7 +24,7 @@ sudo apt-get install clang-8
 
 # クロスコンパイルツールセット {#install-cross-compilation-toolset}
 
-いっしょうにパスを設置 `cctools` として${CCTOOLS}
+インストール先のパスを覚えてみましょう `cctools` として${CCTOOLS}
 
 ``` bash
 mkdir ${CCTOOLS}
@@ -41,7 +41,7 @@ cd cctools-port/cctools
 make install
 ```
 
-また、macos x sdkを作業ツリーにダウンロードする必要があります。
+また、作業ツリーにmacOS X SDKをダウンロードする必要があります。
 
 ``` bash
 cd ClickHouse
@@ -50,7 +50,7 @@ mkdir -p build-darwin/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX10.14.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
-# クリックハウスを構築 {#build-clickhouse}
+# ビルドClickHouse {#build-clickhouse}
 
 ``` bash
 cd ClickHouse
@@ -62,4 +62,4 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_TOOLCHAIN_FILE=cmake/darwin
 ninja -C build-osx
 ```
 
-結果のバイナリはmach-o実行可能フォーマットを持ち、linuxでは実行できません。
+結果のバイナリはmach-O実行可能フォーマットを持ち、Linux上で実行することはできません。

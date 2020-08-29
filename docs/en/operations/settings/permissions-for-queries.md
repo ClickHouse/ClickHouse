@@ -37,7 +37,7 @@ After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl`
 When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
 
 Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user
-from changing only specific settings, for details see [constraints on settings](constraints-on-settings.md).
+from changing only specific settings, for details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
 
 Default value: 0
 

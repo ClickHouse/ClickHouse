@@ -1,14 +1,14 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
 class ColumnsDescription;
+class Context;
 
 /*
- * function(source, format, structure) - creates a temporary storage from formated source
+ * function(source, format, structure) - creates a temporary storage from formatted source
  */
 class ITableFunctionFileLike : public ITableFunction
 {

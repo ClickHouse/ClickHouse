@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsCollection.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -24,8 +24,8 @@ class DictionaryReader;
 
 struct Settings;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class TableJoin
 {
@@ -41,7 +41,7 @@ class TableJoin
       * It's possible to use name `expr(t2 columns)`.
       */
 
-    friend class SyntaxAnalyzer;
+    friend class TreeRewriter;
 
     const SizeLimits size_limits;
     const size_t default_max_bytes = 0;
@@ -50,6 +50,7 @@ class TableJoin
     JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
+    const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
@@ -108,10 +109,13 @@ public:
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
+    size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
+    bool needStreamWithNonJoinedRows() const;
 
+    void resetCollected();
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
@@ -145,6 +149,10 @@ public:
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
+
+    /// Split key and other columns by keys name list
+    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
+    Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     static bool sameJoin(const TableJoin * x, const TableJoin * y);
 };

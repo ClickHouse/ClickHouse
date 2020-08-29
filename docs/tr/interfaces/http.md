@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 19
 toc_title: "HTTP aray\xFCz\xFC"
 ---
 
 # HTTP arayüzü {#http-interface}
 
-HTTP arayüzü, herhangi bir programlama dilinden herhangi bir platformda Clickhouse’u kullanmanızı sağlar. Java ve Perl’den ve kabuk komut dosyalarından çalışmak için kullanıyoruz. Diğer bölümlerde, HTTP arayüzü Perl, Python ve Go’dan kullanılır. HTTP arabirimi yerel arabirimden daha sınırlıdır, ancak daha iyi uyumluluğa sahiptir.
+HTTP arayüzü, herhangi bir programlama dilinden herhangi bir platformda Clickhouse'u kullanmanızı sağlar. Java ve Perl'den ve kabuk komut dosyalarından çalışmak için kullanıyoruz. Diğer bölümlerde, HTTP arayüzü Perl, Python ve Go'dan kullanılır. HTTP arabirimi yerel arabirimden daha sınırlıdır, ancak daha iyi uyumluluğa sahiptir.
 
 Varsayılan olarak, clickhouse-server, 8123 numaralı bağlantı noktasında HTTP dinler (bu, yapılandırmada değiştirilebilir).
 
@@ -25,7 +25,7 @@ $ curl 'http://localhost:8123/ping'
 Ok.
 ```
 
-İsteği URL olarak gönder ‘query’ parametre veya bir POST olarak. Veya sorgunun başlangıcını gönder ‘query’ parametre ve postadaki geri kalanı (bunun neden gerekli olduğunu daha sonra açıklayacağız). URL’nin boyutu 16 KB ile sınırlıdır, bu nedenle büyük sorgular gönderirken bunu aklınızda bulundurun.
+İsteği URL olarak gönder ‘query’ parametre veya bir POST olarak. Veya sorgunun başlangıcını gönder ‘query’ parametre ve postadaki geri kalanı (bunun neden gerekli olduğunu daha sonra açıklayacağız). URL'nin boyutu 16 KB ile sınırlıdır, bu nedenle büyük sorgular gönderirken bunu aklınızda bulundurun.
 
 Başarılı olursa, 200 yanıt Kodu ve yanıt gövdesinde sonucu alırsınız.
 Bir hata oluşursa, 500 yanıt Kodu ve yanıt gövdesinde bir hata açıklaması metni alırsınız.
@@ -53,7 +53,7 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 1
 ```
 
-Gördüğünüz gibi, curl, boşlukların URL’den kaçması gerektiği konusunda biraz rahatsız edici.
+Gördüğünüz gibi, curl, boşlukların URL'den kaçması gerektiği konusunda biraz rahatsız edici.
 Her ne kadar wget her şeyden kaçsa da, onu kullanmanızı önermiyoruz çünkü keep-alive ve Transfer-Encoding: chunked kullanırken HTTP 1.1 üzerinde iyi çalışmıyor.
 
 ``` bash
@@ -89,7 +89,7 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-Ekleme sorguları için veri iletmenin POST yöntemi gereklidir. Bu durumda, URL parametresinde sorgunun başlangıcını yazabilir ve eklemek için verileri iletmek için POST’u kullanabilirsiniz. Eklenecek veriler, örneğin Mysql’den sekmeyle ayrılmış bir döküm olabilir. Bu şekilde, INSERT sorgusu MYSQL’DEN load DATA LOCAL INFİLE’IN yerini alır.
+Ekleme sorguları için veri iletmenin POST yöntemi gereklidir. Bu durumda, URL parametresinde sorgunun başlangıcını yazabilir ve eklemek için verileri iletmek için POST'u kullanabilirsiniz. Eklenecek veriler, örneğin Mysql'den sekmeyle ayrılmış bir döküm olabilir. Bu şekilde, INSERT sorgusu MYSQL'DEN load DATA LOCAL INFİLE'IN yerini alır.
 
 Örnekler: tablo oluşturma:
 
@@ -149,10 +149,10 @@ Veri tablosu döndürmeyen başarılı istekler için boş bir yanıt gövdesi d
 
 Veri iletirken dahili ClickHouse sıkıştırma formatını kullanabilirsiniz. Sıkıştırılmış veriler standart olmayan bir biçime sahiptir ve özel `clickhouse-compressor` onunla çalışmak için program (bu ile yüklü `clickhouse-client` paket). Veri ekleme verimliliğini artırmak için, sunucu tarafı sağlama toplamı doğrulamasını kullanarak devre dışı bırakabilirsiniz. [http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) ayar.
 
-Belirt ift ifiyseniz `compress=1` URL’de, sunucu size gönderdiği verileri sıkıştırır.
-Belirt ift ifiyseniz `decompress=1` URL’de, sunucu içinde geçirdiğiniz aynı verileri açar. `POST` yöntem.
+Belirt ift ifiyseniz `compress=1` URL'de, sunucu size gönderdiği verileri sıkıştırır.
+Belirt ift ifiyseniz `decompress=1` URL'de, sunucu içinde geçirdiğiniz aynı verileri açar. `POST` yöntem.
 
-Ayrıca kullanmayı seçebilirsiniz [HTTP sıkıştırma](https://en.wikipedia.org/wiki/HTTP_compression). Sıkıştırılmış bir göndermek için `POST` istek, istek başlığını Ekle `Content-Encoding: compression_method`. Clickhouse’un yanıtı sıkıştırması için şunları eklemelisiniz `Accept-Encoding: compression_method`. ClickHouse destekler `gzip`, `br`, ve `deflate` [sıkıştırma yöntemleri](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP sıkıştırmasını etkinleştirmek için Clickhouse’u kullanmanız gerekir [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) ayar. Veri sıkıştırma düzeyini [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) tüm sıkıştırma yöntemleri için ayarlama.
+Ayrıca kullanmayı seçebilirsiniz [HTTP sıkıştırma](https://en.wikipedia.org/wiki/HTTP_compression). Sıkıştırılmış bir göndermek için `POST` istek, istek başlığını Ekle `Content-Encoding: compression_method`. Clickhouse'un yanıtı sıkıştırması için şunları eklemelisiniz `Accept-Encoding: compression_method`. ClickHouse destekler `gzip`, `br`, ve `deflate` [sıkıştırma yöntemleri](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP sıkıştırmasını etkinleştirmek için Clickhouse'u kullanmanız gerekir [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) ayar. Veri sıkıştırma düzeyini [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) tüm sıkıştırma yöntemleri için ayarlama.
 
 Bunu, büyük miktarda veri iletirken ağ trafiğini azaltmak veya hemen sıkıştırılmış dökümler oluşturmak için kullanabilirsiniz.
 
@@ -275,7 +275,7 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 
 Yanıt Kodu ve HTTP üstbilgileri istemciye gönderildikten sonra bir sorgu işleme hatası oluştu durumları önlemek için arabelleğe alma kullanın. Bu durumda, yanıt gövdesinin sonunda bir hata iletisi yazılır ve istemci tarafında hata yalnızca ayrıştırma aşamasında algılanabilir.
 
-### Parametrelerle Sorgular {#cli-queries-with-parameters}
+### Parametrelerle sorgular {#cli-queries-with-parameters}
 
 Parametrelerle bir sorgu oluşturabilir ve karşılık gelen HTTP istek parametrelerinden onlar için değerler geçirebilirsiniz. Daha fazla bilgi için, bkz. [CLI için parametrelerle sorgular](cli.md#cli-queries-with-parameters).
 
@@ -285,7 +285,7 @@ Parametrelerle bir sorgu oluşturabilir ve karşılık gelen HTTP istek parametr
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-## Önceden tanımlanmış HTTP Arabirimi {#predefined_http_interface}
+## Önceden tanımlanmış HTTP arabirimi {#predefined_http_interface}
 
 ClickHouse HTTP arabirimi üzerinden belirli sorguları destekler. Örneğin, bir tabloya aşağıdaki gibi veri yazabilirsiniz:
 
@@ -303,13 +303,16 @@ ClickHouse ayrıca gibi üçüncü parti araçları ile daha kolay entegrasyon y
 
 ``` xml
 <http_handlers>
-  <predefine_query_handler>
-      <url>/metrics</url>
-        <method>GET</method>
-        <queries>
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
             <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
-        </queries>
-  </predefine_query_handler>
+        </handler>
+    </rule>
+    <rule>...</rule>
+    <rule>...</rule>
 </http_handlers>
 ```
 
@@ -318,21 +321,23 @@ ClickHouse ayrıca gibi üçüncü parti araçları ile daha kolay entegrasyon y
 <!-- -->
 
 ``` bash
-curl -vvv 'http://localhost:8123/metrics'
+$ curl -v 'http://localhost:8123/predefined_query'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
-> GET /metrics HTTP/1.1
+> GET /predefined_query HTTP/1.1
 > Host: localhost:8123
 > User-Agent: curl/7.47.0
 > Accept: */*
 >
 < HTTP/1.1 200 OK
-< Date: Wed, 27 Nov 2019 08:54:25 GMT
+< Date: Tue, 28 Apr 2020 08:52:56 GMT
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
-< X-ClickHouse-Server-Display-Name: i-tl62qd0o
+< X-ClickHouse-Server-Display-Name: i-mloy5trc
 < Transfer-Encoding: chunked
-< X-ClickHouse-Query-Id: f39235f6-6ed7-488c-ae07-c7ceafb960f6
+< X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
+< X-ClickHouse-Format: Template
+< X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 <
@@ -357,116 +362,61 @@ curl -vvv 'http://localhost:8123/metrics'
 "ReplicatedSend" 0
 
 * Connection #0 to host localhost left intact
+
+
+* Connection #0 to host localhost left intact
 ```
 
-Örnekten görebileceğiniz gibi, Eğer `<http_handlers>` yapılandırmada yapılandırılır.XML dosyası, ClickHouse önceden tanımlanmış türüne alınan HTTP istekleri eşleşecek `<http_handlers>` Maç başarılı olursa, ClickHouse ilgili önceden tanımlanmış sorgu yürütecektir.
+Örnekten görebileceğiniz gibi, Eğer `<http_handlers>` yapılandırmada yapılandırılır.xml dosyası ve `<http_handlers>` birçok içerebilir `<rule>s`. ClickHouse, önceden tanımlanmış türe alınan HTTP istekleriyle eşleşir `<rule>` ve ilk eşleşen işleyiciyi çalıştırır. Ardından, Maç başarılı olursa, ClickHouse ilgili önceden tanımlanmış sorguyu yürütecektir.
 
-Şimdi `<http_handlers>` Yapılandır configureılabilir `<root_handler>`, `<ping_handler>`, `<replicas_status_handler>`, `<dynamic_query_handler>` ve `<no_handler_description>` .
+> Şimdi `<rule>` Yapılandır configureılabilir `<method>`, `<headers>`, `<url>`,`<handler>`:
+> `<method>` HTTP isteğinin yöntem bölümünü eşleştirmekten sorumludur. `<method>` tam tanımına uygundur [yöntem](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) HTTP protokolünde. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin yöntem kısmıyla eşleşmez.
+>
+> `<url>` HTTP isteğinin url bölümünü eşleştirmekten sorumludur. İle uyumludur [RE2](https://github.com/google/re2)'In düzenli ifadeleri. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin url kısmıyla eşleşmez.
+>
+> `<headers>` HTTP isteğinin başlık kısmını eşleştirmekten sorumludur. Bu re2 düzenli ifadeler ile uyumludur. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin üstbilgi bölümü eşleşmiyor.
+>
+> `<handler>` ana işleme bölümünü içerir. Şimdi `<handler>` Yapılandır configureılabilir `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
+> \> `<type>` şu anda üç tip destekler: **predefined\_query\_handler**, **dynamic\_query\_handler**, **sabit**.
+> \>
+> \> `<query>` - işleyici çağrıldığında predefined\_query\_handler türü ile kullanın, sorgu yürütür.
+> \>
+> \> `<query_param_name>` - dynamic\_query\_handler tipi ile kullanın, özler ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteği params değeri.
+> \>
+> \> `<status>` - statik tip, yanıt durum kodu ile kullanın.
+> \>
+> \> `<content_type>` - statik tip, tepki ile kullanın [içerik türü](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+> \>
+> \> `<response_content>` - önek kullanırken, istemciye gönderilen statik tip, yanıt içeriği ile kullanın ‘file://’ veya ‘config://’, dosyadan içeriği bulun veya yapılandırma istemciye gönderin.
 
-## root\_handler {#root_handler}
-
-`<root_handler>` kök yolu isteği için belirtilen içeriği döndürür. Belirli dönüş içeriği tarafından yapılandırılır `http_server_default_response` config.xml. belirtilmemişse, iade **Tamam.**
-
-`http_server_default_response` tanımlanmadı ve Clickhouse’a bir HTTP isteği gönderildi. Sonuç aşağıdaki gibidir:
-
-``` xml
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    Ok.
-
-`http_server_default_response` tanımlanır ve Clickhouse’a bir HTTP isteği gönderilir. Sonuç aşağıdaki gibidir:
-
-``` xml
-<http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
-
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
-
-## ping\_handler {#ping_handler}
-
-`<ping_handler>` geçerli ClickHouse sunucusunun durumunu araştırmak için kullanılabilir. ClickHouse HTTP Sunucusu normal olduğunda, Clickhouse’a erişme `<ping_handler>` dön willecektir **Tamam.**.
-
-Örnek:
-
-``` xml
-<http_handlers>
-    <ping_handler>/ping</ping_handler>
-</http_handlers>
-```
-
-``` bash
-$ curl 'http://localhost:8123/ping'
-Ok.
-```
-
-## replicas\_status\_handler {#replicas_status_handler}
-
-`<replicas_status_handler>` çoğaltma düğümünün durumunu algılamak ve geri dönmek için kullanılır **Tamam.** çoğaltma düğümünde gecikme yoksa. Bir gecikme varsa, belirli bir gecikmeyi iade edin. Değeri `<replicas_status_handler>` özelleştirme destekler. Belirt specifymezseniz `<replicas_status_handler>`, ClickHouse varsayılan ayarı `<replicas_status_handler>` oluyor **/ replicas\_status**.
-
-Örnek:
-
-``` xml
-<http_handlers>
-    <replicas_status_handler>/replicas_status</replicas_status_handler>
-</http_handlers>
-```
-
-Hiçbir gecikme durumda:
-
-``` bash
-$ curl 'http://localhost:8123/replicas_status'
-Ok.
-```
-
-Gecikmeli dava:
-
-``` bash
-$ curl 'http://localhost:8123/replicas_status'
-db.stats:  Absolute delay: 22. Relative delay: 22.
-```
+Sonraki farklı yapılandırma yöntemleri `<type>`.
 
 ## predefined\_query\_handler {#predefined_query_handler}
 
-Yapılandırabilirsiniz `<method>`, `<headers>`, `<url>` ve `<queries>` içinde `<predefined_query_handler>`.
+`<predefined_query_handler>` ayar ayarları ve query\_params değerlerini destekler. Yapılandırabilirsiniz `<query>` tip ininde `<predefined_query_handler>`.
 
-`<method>` HTTP isteğinin yöntem bölümünü eşleştirmekten sorumludur. `<method>` tam tanımına uygundur [yöntem](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) HTTP protokolünde. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin yöntem kısmıyla eşleşmez
-
-`<url>` HTTP isteğinin url bölümünü eşleştirmekten sorumludur. İle uyumludur [RE2](https://github.com/google/re2)’In düzenli ifadeleri. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin url kısmıyla eşleşmez
-
-`<headers>` HTTP isteğinin başlık kısmını eşleştirmekten sorumludur. Bu re2 düzenli ifadeler ile uyumludur. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin başlık kısmıyla eşleşmez
-
-`<queries>` değer, önceden tanımlanmış bir sorgudur `<predefined_query_handler>`, bir HTTP isteği eşleştirildiğinde ve sorgunun sonucu döndürüldüğünde ClickHouse tarafından yürütülür. Bu bir zorunluluktur yapılandırma.
-
-`<predefined_query_handler>` ayar ayarları ve query\_params değerlerini destekler.
+`<query>` değer, önceden tanımlanmış bir sorgudur `<predefined_query_handler>`, bir HTTP isteği eşleştirildiğinde ve sorgunun sonucu döndürüldüğünde ClickHouse tarafından yürütülür. Bu bir zorunluluktur yapılandırma.
 
 Aşağıdaki örnek değerleri tanımlar `max_threads` ve `max_alter_threads` ayarlar, ardından bu ayarların başarıyla ayarlanıp ayarlanmadığını kontrol etmek için sistem tablosunu sorgular.
 
 Örnek:
 
 ``` xml
-<root_handlers>
-    <predefined_query_handler>
+<http_handlers>
+    <rule>
+        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
         <method>GET</method>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
             <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
         </headers>
-        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
-        <queries>
+        <handler>
+            <type>predefined_query_handler</type>
             <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
-        </queries>
-    </predefined_query_handler>
-</root_handlers>
+        </handler>
+    </rule>
+</http_handlers>
 ```
 
 ``` bash
@@ -475,37 +425,193 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_alter_threads   2
 ```
 
-!!! note "Not"
-    Birinde `<predefined_query_handler>`, biri `<queries>` sadece birini destekler `<query>` bir ekleme türü.
+!!! note "Dikkat"
+    Birinde `<predefined_query_handler>` sadece birini destekler `<query>` bir ekleme türü.
 
 ## dynamic\_query\_handler {#dynamic_query_handler}
 
-`<dynamic_query_handler>` göre `<predefined_query_handler>` artmak `<query_param_name>` .
+İçinde `<dynamic_query_handler>`, sorgu HTTP isteğinin param şeklinde yazılır. Fark şu ki `<predefined_query_handler>`, sorgu yapılandırma dosyasında yazılır. Yapılandırabilirsiniz `<query_param_name>` içinde `<dynamic_query_handler>`.
 
-ClickHouse ayıklar ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteğinin url’sindeki değer.
-ClickHouse varsayılan ayarı `<query_param_name>` oluyor `/query` . İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanım yoksa, param iletilmez.
+ClickHouse ayıklar ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteğinin url'sindeki değer. Varsayılan değer `<query_param_name>` oluyor `/query` . İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanım yoksa, param iletilmez.
 
 Bu işlevselliği denemek için örnek max\_threads ve max\_alter\_threads değerlerini tanımlar ve ayarların başarıyla ayarlanıp ayarlanmadığını sorgular.
-Fark şu ki `<predefined_query_handler>`, sorgu yapılandırma dosyasında yazılır. Ama içinde `<dynamic_query_handler>`, sorgu HTTP isteğinin param şeklinde yazılır.
 
 Örnek:
 
 ``` xml
-<root_handlers>
-    <dynamic_query_handler>
-        <headers>
-            <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>
-            <PARAMS_XXX><![CDATA[(?P<param_name_1>[^/]+)(/(?P<param_name_2>[^/]+))?]]></PARAMS_XXX>
-        </headers>
+<http_handlers>
+    <rule>
+    <headers>
+        <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>    </headers>
+    <handler>
+        <type>dynamic_query_handler</type>
         <query_param_name>query_param</query_param_name>
-    </dynamic_query_handler>
-</root_handlers>
+    </handler>
+    </rule>
+</http_handlers>
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/?query_param=SELECT%20value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D&max_threads=1&max_alter_threads=2&param_name_2=max_alter_threads'
-1
-2
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+max_threads 1
+max_alter_threads   2
+```
+
+## sabit {#static}
+
+`<static>` dön canebilir [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [durum](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) ve response\_content. response\_content belirtilen içeriği döndürebilir
+
+Örnek:
+
+Mesajı dönmektedir.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+<http_handlers>
+```
+
+``` bash
+$ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /hi HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 402 Payment Required
+< Date: Wed, 29 Apr 2020 03:51:26 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+Say Hi!%
+```
+
+Yapılandırmadan içeriği bulun istemciye gönder.
+
+``` xml
+<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_config_static_handler</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://get_config_static_handler</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_config_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:01:24 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+```
+
+İstemciye gönder dosyadan içeriği bulun.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_absolute_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file:///absolute_path_file.html</response_content>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_relative_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://./relative_path_file.html</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ user_files_path='/var/lib/clickhouse/user_files'
+$ sudo echo "<html><body>Relative Path File</body></html>" > $user_files_path/relative_path_file.html
+$ sudo echo "<html><body>Absolute Path File</body></html>" > $user_files_path/absolute_path_file.html
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_absolute_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:16 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Absolute Path File</body></html>
+* Connection #0 to host localhost left intact
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_relative_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:31 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Relative Path File</body></html>
+* Connection #0 to host localhost left intact
 ```
 
 [Orijinal makale](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

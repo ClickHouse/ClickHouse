@@ -1,3 +1,4 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 ADDINCL(
@@ -18,8 +19,11 @@ SRCS(
     ActionsVisitor.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
+    AggregateDescription.cpp
     Aggregator.cpp
+    ArithmeticOperationsInAgrFuncOptimize.cpp
     ArrayJoinAction.cpp
+    AsynchronousMetricLog.cpp
     AsynchronousMetrics.cpp
     BloomFilter.cpp
     castColumn.cpp
@@ -31,6 +35,7 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     Context.cpp
     convertFieldToType.cpp
+    CrashLog.cpp
     createBlockSelector.cpp
     CrossToInnerJoinVisitor.cpp
     DatabaseAndTableWithAlias.cpp
@@ -73,6 +78,7 @@ SRCS(
     InterpreterDropQuery.cpp
     InterpreterExistsQuery.cpp
     InterpreterExplainQuery.cpp
+    InterpreterExternalDDLQuery.cpp
     InterpreterFactory.cpp
     InterpreterGrantQuery.cpp
     InterpreterInsertQuery.cpp
@@ -83,12 +89,13 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
+    InterpreterShowAccessEntitiesQuery.cpp
+    InterpreterShowAccessQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
+    InterpreterShowPrivilegesQuery.cpp
     InterpreterShowProcesslistQuery.cpp
-    InterpreterShowQuotasQuery.cpp
-    InterpreterShowRowPoliciesQuery.cpp
     InterpreterShowTablesQuery.cpp
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
@@ -104,6 +111,7 @@ SRCS(
     MergeJoin.cpp
     MetricLog.cpp
     MutationsInterpreter.cpp
+    MySQL/InterpretersMySQLDDLQuery.cpp
     NullableUtils.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
@@ -116,10 +124,12 @@ SRCS(
     QueryLog.cpp
     QueryNormalizer.cpp
     QueryThreadLog.cpp
+    RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
+    RewriteAnyFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
@@ -127,7 +137,6 @@ SRCS(
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
-    SyntaxAnalyzer.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -135,6 +144,9 @@ SRCS(
     ThreadStatusExt.cpp
     TraceLog.cpp
     TranslateQualifiedNamesVisitor.cpp
+    TreeOptimizer.cpp
+    TreeRewriter.cpp
+
 )
 
 END()

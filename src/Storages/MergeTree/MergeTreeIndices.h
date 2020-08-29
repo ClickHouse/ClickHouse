@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <Core/Block.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -16,13 +17,6 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
-
-class MergeTreeData;
-class IMergeTreeIndex;
-
-using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
-using MutableMergeTreeIndexPtr = std::shared_ptr<IMergeTreeIndex>;
-
 
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
@@ -71,60 +65,34 @@ public:
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 
 
-/// Structure for storing basic index info like columns, expression, arguments, ...
-class IMergeTreeIndex
+struct IMergeTreeIndex
 {
-public:
-    IMergeTreeIndex(
-        String name_,
-        ExpressionActionsPtr expr_,
-        const Names & columns_,
-        const DataTypes & data_types_,
-        const Block & header_,
-        size_t granularity_)
-        : name(name_)
-        , expr(expr_)
-        , columns(columns_)
-        , data_types(data_types_)
-        , header(header_)
-        , granularity(granularity_) {}
+    IMergeTreeIndex(const IndexDescription & index_)
+        : index(index_)
+    {
+    }
 
     virtual ~IMergeTreeIndex() = default;
 
     /// gets filename without extension
-    String getFileName() const { return INDEX_FILE_PREFIX + name; }
+    String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
 
     /// Checks whether the column is in data skipping index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
-    Names getColumnsRequiredForIndexCalc() const { return expr->getRequiredColumns(); }
+    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
-    /// Index name
-    String name;
-
-    /// Index expression (x * y)
-    /// with columns arguments
-    ExpressionActionsPtr expr;
-
-    /// Names of columns for index
-    Names columns;
-
-    /// Data types of columns
-    DataTypes data_types;
-
-    /// Block with columns and data_types
-    Block header;
-
-    /// Skip index granularity
-    size_t granularity;
+    const IndexDescription & index;
 };
 
+using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
 
@@ -133,47 +101,39 @@ class MergeTreeIndexFactory : private boost::noncopyable
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Creator = std::function<
-            std::unique_ptr<IMergeTreeIndex>(
-                    const NamesAndTypesList & columns,
-                    std::shared_ptr<ASTIndexDeclaration> node,
-                    const Context & context)>;
+    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index)>;
 
-    std::unique_ptr<IMergeTreeIndex> get(
-        const NamesAndTypesList & columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context) const;
+    using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
-    void registerIndex(const std::string & name, Creator creator);
+    void validate(const IndexDescription & index, bool attach) const;
 
-    const auto & getAllIndexes() const { return indexes; }
+    MergeTreeIndexPtr get(const IndexDescription & index) const;
+
+    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
+
+    void registerCreator(const std::string & index_type, Creator creator);
+    void registerValidator(const std::string & index_type, Validator validator);
 
 protected:
     MergeTreeIndexFactory();
 
 private:
-    using Indexes = std::unordered_map<std::string, Creator>;
-    Indexes indexes;
+    using Creators = std::unordered_map<std::string, Creator>;
+    using Validators = std::unordered_map<std::string, Validator>;
+    Creators creators;
+    Validators validators;
 };
 
-std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
+void minmaxIndexValidator(const IndexDescription & index, bool attach);
 
-std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
+void setIndexValidator(const IndexDescription & index, bool attach);
 
-std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
-std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
+void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
 }

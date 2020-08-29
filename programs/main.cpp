@@ -8,14 +8,8 @@
 #include <string>
 #include <utility> /// pair
 
-#if __has_include("config_tools.h")
-#include "config_tools.h"
-#endif
-#if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
-#include <common/config_common.h>
-#endif
-#if __has_include("config_core.h")
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_tools.h"
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
@@ -25,32 +19,39 @@
 
 
 /// Universal executable for various clickhouse applications
-#if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
+#if ENABLE_CLICKHOUSE_SERVER
 int mainEntryClickHouseServer(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_CLIENT || !defined(ENABLE_CLICKHOUSE_CLIENT)
+#if ENABLE_CLICKHOUSE_CLIENT
 int mainEntryClickHouseClient(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_LOCAL || !defined(ENABLE_CLICKHOUSE_LOCAL)
+#if ENABLE_CLICKHOUSE_LOCAL
 int mainEntryClickHouseLocal(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
+#if ENABLE_CLICKHOUSE_BENCHMARK
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR || !defined(ENABLE_CLICKHOUSE_COMPRESSOR)
+#if ENABLE_CLICKHOUSE_COMPRESSOR
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_FORMAT || !defined(ENABLE_CLICKHOUSE_FORMAT)
+#if ENABLE_CLICKHOUSE_FORMAT
 int mainEntryClickHouseFormat(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
+#if ENABLE_CLICKHOUSE_COPIER
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
+#if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_INSTALL
+int mainEntryClickHouseInstall(int argc, char ** argv);
+int mainEntryClickHouseStart(int argc, char ** argv);
+int mainEntryClickHouseStop(int argc, char ** argv);
+int mainEntryClickHouseStatus(int argc, char ** argv);
+int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
 
 
@@ -63,32 +64,39 @@ using MainFunc = int (*)(int, char**);
 /// Add an item here to register new application
 std::pair<const char *, MainFunc> clickhouse_applications[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL || !defined(ENABLE_CLICKHOUSE_LOCAL)
+#if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
 #endif
-#if ENABLE_CLICKHOUSE_CLIENT || !defined(ENABLE_CLICKHOUSE_CLIENT)
+#if ENABLE_CLICKHOUSE_CLIENT
     {"client", mainEntryClickHouseClient},
 #endif
-#if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
+#if ENABLE_CLICKHOUSE_BENCHMARK
     {"benchmark", mainEntryClickHouseBenchmark},
 #endif
-#if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
+#if ENABLE_CLICKHOUSE_SERVER
     {"server", mainEntryClickHouseServer},
 #endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
 #endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR || !defined(ENABLE_CLICKHOUSE_COMPRESSOR)
+#if ENABLE_CLICKHOUSE_COMPRESSOR
     {"compressor", mainEntryClickHouseCompressor},
 #endif
-#if ENABLE_CLICKHOUSE_FORMAT || !defined(ENABLE_CLICKHOUSE_FORMAT)
+#if ENABLE_CLICKHOUSE_FORMAT
     {"format", mainEntryClickHouseFormat},
 #endif
-#if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
+#if ENABLE_CLICKHOUSE_COPIER
     {"copier", mainEntryClickHouseClusterCopier},
 #endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
+#if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
+#endif
+#if ENABLE_CLICKHOUSE_INSTALL
+    {"install", mainEntryClickHouseInstall},
+    {"start", mainEntryClickHouseStart},
+    {"stop", mainEntryClickHouseStop},
+    {"status", mainEntryClickHouseStatus},
+    {"restart", mainEntryClickHouseRestart},
 #endif
 };
 
@@ -130,9 +138,10 @@ enum class InstructionFail
     SSSE3 = 2,
     SSE4_1 = 3,
     SSE4_2 = 4,
-    AVX = 5,
-    AVX2 = 6,
-    AVX512 = 7
+    POPCNT = 5,
+    AVX = 6,
+    AVX2 = 7,
+    AVX512 = 8
 };
 
 const char * instructionFailToString(InstructionFail fail)
@@ -149,6 +158,8 @@ const char * instructionFailToString(InstructionFail fail)
             return "SSE4.1";
         case InstructionFail::SSE4_2:
             return "SSE4.2";
+        case InstructionFail::POPCNT:
+            return "POPCNT";
         case InstructionFail::AVX:
             return "AVX";
         case InstructionFail::AVX2:
@@ -190,6 +201,16 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 #if defined(__SSE4_2__)
     fail = InstructionFail::SSE4_2;
     __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+    /// Defined by -msse4.2
+#if defined(__POPCNT__)
+    fail = InstructionFail::POPCNT;
+    {
+        uint64_t a = 0;
+        uint64_t b = 0;
+        __asm__ volatile ("popcnt %1, %0" : "=r"(a) :"r"(b) :);
+    }
 #endif
 
 #if defined(__AVX__)

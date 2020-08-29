@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: "\u8F9E\u66F8"
 ---
 
 # 辞書 {#dictionary}
 
-その `Dictionary` エンジンは表示します [辞書](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) クリックハウス表としてのデータ。
+その `Dictionary` エンジンは表示します [辞書](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) ClickHouseテーブルとしてのデータ。
 
-例として、次の辞書を考えてみましょう `products` 次の構成では:
+例として、の辞書を考えてみましょう `products` 以下の構成で:
 
 ``` xml
 <dictionaries>
@@ -42,7 +42,7 @@ toc_title: "\u8F9E\u66F8"
 </dictionaries>
 ```
 
-辞書データのクエリ:
+辞書データの照会:
 
 ``` sql
 SELECT
@@ -64,9 +64,9 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-を使用することができ [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) この形式の辞書データを取得する関数です。
+を使用することができます [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) この形式の辞書データを取得する関数。
 
-このビューがない便だが、rawデータ、または行う場合には、 `JOIN` オペレーション これらのケースでは、以下を使用できます。 `Dictionary` テーブル内のディクショナリデータを表示するエンジン。
+このビューは、生データを取得する必要がある場合や、 `JOIN` 作戦だ これらのケースでは、 `Dictionary` ディクショナリデータをテーブルに表示するエンジン。
 
 構文:
 
@@ -82,7 +82,7 @@ create table products (product_id UInt64, title String) Engine = Dictionary(prod
 
       Ok
 
-テーブルに何があるかを見てみましょう。
+テーブルにあるものを見てみなさい。
 
 ``` sql
 select * from products limit 1;

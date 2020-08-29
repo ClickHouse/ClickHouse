@@ -9,7 +9,6 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -35,23 +34,23 @@ using BlocksWithPartition = std::vector<BlockWithPartition>;
 class MergeTreeDataWriter
 {
 public:
-    MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
+    MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Writer)")) {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts);
+    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot);
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot);
 
 private:
     MergeTreeData & data;
 
-    Logger * log;
+    Poco::Logger * log;
 };
 
 }

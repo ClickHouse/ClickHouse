@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS alter_compression_codec;
 
@@ -28,6 +28,7 @@ SELECT * FROM alter_compression_codec ORDER BY id;
 OPTIMIZE TABLE alter_compression_codec FINAL;
 SELECT * FROM alter_compression_codec ORDER BY id;
 
+SET allow_suspicious_codecs = 1;
 ALTER TABLE alter_compression_codec MODIFY COLUMN alter_column CODEC(ZSTD, LZ4HC, LZ4, LZ4, NONE);
 SELECT compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 'alter_compression_codec' AND name = 'alter_column';
 

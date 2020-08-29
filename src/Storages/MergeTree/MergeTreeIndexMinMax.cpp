@@ -2,7 +2,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Poco/Logger.h>
 
@@ -12,26 +12,31 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 
-MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_)
-    : index(index_) {}
+MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+{}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
-    const MergeTreeIndexMinMax & index_, std::vector<Range> && hyperrectangle_)
-    : index(index_), hyperrectangle(std::move(hyperrectangle_)) {}
+    const String & index_name_,
+    const Block & index_sample_block_,
+    std::vector<Range> && hyperrectangle_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+    , hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-            "Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+            "Attempt to write empty minmax index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const DataTypePtr & type = index.data_types[i];
+        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         if (!type->isNullable())
         {
             type->serializeBinary(hyperrectangle[i].left, ostr);
@@ -55,9 +60,9 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     hyperrectangle.clear();
     Field min_val;
     Field max_val;
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const DataTypePtr & type = index.data_types[i];
+        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         if (!type->isNullable())
         {
             type->deserializeBinary(min_val, istr);
@@ -82,13 +87,14 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     }
 }
 
-
-MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const MergeTreeIndexMinMax & index_)
-    : index(index_) {}
+MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+{}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
-    return std::make_shared<MergeTreeIndexGranuleMinMax>(index, std::move(hyperrectangle));
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(index_name, index_sample_block, std::move(hyperrectangle));
 }
 
 void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
@@ -102,9 +108,10 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 
     FieldRef field_min;
     FieldRef field_max;
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
-        const auto & column = block.getByName(index.columns[i]).column;
+        auto index_column_name = index_sample_block.getByPosition(i).name;
+        const auto & column = block.getByName(index_column_name).column;
         column->cut(*pos, rows_read)->getExtremes(field_min, field_max);
 
         if (hyperrectangle.size() <= i)
@@ -123,10 +130,13 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const SelectQueryInfo &query,
-    const Context &context,
-    const MergeTreeIndexMinMax &index_)
-    : index(index_), condition(query, context, index.columns, index.expr) {}
+    const IndexDescription & index,
+    const SelectQueryInfo & query,
+    const Context & context)
+    : index_data_types(index.data_types)
+    , condition(query, context, index.column_names, index.expression)
+{
+}
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
@@ -143,33 +153,32 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     for (const auto & range : granule->hyperrectangle)
         if (range.left.isNull() || range.right.isNull())
             return true;
-    return condition.checkInHyperrectangle(granule->hyperrectangle, index.data_types).can_be_true;
+    return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleMinMax>(*this);
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(index.name, index.sample_block);
 }
 
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorMinMax>(*this);
+    return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }
-
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
-    return std::make_shared<MergeTreeIndexConditionMinMax>(query, context, *this);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
 };
 
 bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
 
-    for (const auto & cname : columns)
+    for (const auto & cname : index.column_names)
         if (column_name == cname)
             return true;
 
@@ -180,37 +189,13 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
     return false;
 }
 
-std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const NamesAndTypesList & new_columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context)
+MergeTreeIndexPtr minmaxIndexCreator(
+    const IndexDescription & index)
 {
-    if (node->name.empty())
-        throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
-
-    if (node->type->arguments)
-        throw Exception("Minmax index have not any arguments", ErrorCodes::INCORRECT_QUERY);
-
-    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
-    auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
-
-    auto sample = ExpressionAnalyzer(expr_list, syntax, context)
-        .getActions(true)->getSampleBlock();
-
-    Names columns;
-    DataTypes data_types;
-
-    for (size_t i = 0; i < expr_list->children.size(); ++i)
-    {
-        const auto & column = sample.getByPosition(i);
-
-        columns.emplace_back(column.name);
-        data_types.emplace_back(column.type);
-    }
-
-    return std::make_unique<MergeTreeIndexMinMax>(
-        node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity);
+    return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
+void minmaxIndexValidator(const IndexDescription & /* index */, bool /* attach */)
+{
+}
 }

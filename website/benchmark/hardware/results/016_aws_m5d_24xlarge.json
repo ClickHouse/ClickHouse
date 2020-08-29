@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AWS m5d.24xlarge 96vCPU 384GiB 4x900 NVMe SSD",
+        "system":       "AWS m5d.24xlarge",
+        "system_full":      "AWS m5d.24xlarge 96vCPU 384GiB 4x900 NVMe SSD",
         "time":         "2020-01-15 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.012, 0.002, 0.002],

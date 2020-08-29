@@ -1,5 +1,5 @@
 ---
-toc_priority: 34
+toc_priority: 2
 toc_title: JDBC
 ---
 

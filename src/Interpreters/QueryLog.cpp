@@ -48,6 +48,7 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),                                  "result_bytes"},
         {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
 
+        {std::make_shared<DataTypeString>(),                                  "current_database"},
         {std::make_shared<DataTypeString>(),                                  "query"},
         {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
@@ -85,10 +86,8 @@ Block QueryLogElement::createBlock()
 }
 
 
-void QueryLogElement::appendToBlock(Block & block) const
+void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(type);
@@ -106,6 +105,7 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(memory_usage);
 
+    columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
@@ -146,8 +146,6 @@ void QueryLogElement::appendToBlock(Block & block) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
-
-    block.setColumns(std::move(columns));
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

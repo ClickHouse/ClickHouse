@@ -1,13 +1,13 @@
 ---
 toc_priority: 63
-toc_title: Working with Nullable arguments
+toc_title: Nullable
 ---
 
-# Functions for Working with Nullable Aggregates {#functions-for-working-with-nullable-aggregates}
+# Functions for Working with Nullable Values {#functions-for-working-with-nullable-aggregates}
 
 ## isNull {#isnull}
 
-Checks whether the argument is [NULL](../syntax.md#null).
+Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -47,7 +47,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-Checks whether the argument is [NULL](../syntax.md#null).
+Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)

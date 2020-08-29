@@ -1,6 +1,4 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -76,7 +74,7 @@ try
         }
         catch (const Coordination::Exception & e)
         {
-            if (e.code == Coordination::ZNONODE)
+            if (e.code == Coordination::Error::ZNONODE)
                 continue;
             throw;
         }

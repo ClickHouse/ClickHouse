@@ -13,7 +13,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        extern const int BAD_CAST;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -41,11 +41,11 @@ To assert_cast(From && from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception(e.what(), DB::ErrorCodes::BAD_CAST);
+        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
     throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-                        DB::ErrorCodes::BAD_CAST);
+                        DB::ErrorCodes::LOGICAL_ERROR);
 #else
     return static_cast<To>(from);
 #endif

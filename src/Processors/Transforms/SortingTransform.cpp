@@ -285,7 +285,9 @@ IProcessor::Status SortingTransform::prepareGenerate()
 
     if (output.isFinished())
     {
-        inputs.front().close();
+        for (auto & input : inputs)
+            input.close();
+
         return Status::Finished;
     }
 

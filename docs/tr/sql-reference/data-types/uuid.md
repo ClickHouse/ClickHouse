@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: UUID
 ---
@@ -21,9 +21,9 @@ Yeni bir kayıt eklerken UUID sütun değerini belirtmezseniz, UUID değeri sıf
 00000000-0000-0000-0000-000000000000
 ```
 
-## Nasıl Oluşturulur {#how-to-generate}
+## Nasıl oluşturulur {#how-to-generate}
 
-UUID değerini oluşturmak için ClickHouse, [generateuuıdv4](../../sql-reference/functions/uuid-functions.md) işlev.
+UUID değerini oluşturmak için ClickHouse, [generateuuıdv4](../../sql-reference/functions/uuid-functions.md) İşlev.
 
 ## Kullanım Örneği {#usage-example}
 

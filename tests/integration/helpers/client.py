@@ -17,11 +17,11 @@ class Client:
         self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, ignore_error=ignore_error).get_answer()
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database, ignore_error=ignore_error).get_answer()
 
 
-    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, ignore_error=False):
+    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None, ignore_error=False):
         command = self.command[:]
 
         if stdin is None:
@@ -40,15 +40,18 @@ class Client:
         if password is not None:
             command += ['--password', password]
 
+        if database is not None:
+            command += ['--database', database]
+
         return CommandRequest(command, stdin, timeout, ignore_error)
 
 
-    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password).get_error()
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database).get_error()
 
 
-    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password).get_answer_and_error()
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password, database=database).get_answer_and_error()
 
 class QueryTimeoutExceedException(Exception):
     pass

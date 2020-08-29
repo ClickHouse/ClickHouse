@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Yandex Managed ClickHouse, s3.3xlarge, Cascade Lake 32 vCPU, 128 GB RAM, 1 TB local SSD",
+        "system":       "Yandex Managed ClickHouse s3.3xlarge",
+        "system_full":       "Yandex Managed ClickHouse, s3.3xlarge, Cascade Lake 32 vCPU, 128 GB RAM, 1 TB local SSD",
         "time":         "2020-01-14 00:00:00",
+        "kind":         "cloud",
         "result":
         [
             [0.039, 0.041, 0.046],
@@ -51,8 +53,10 @@
     },
 
     {
-        "system":       "Yandex Managed ClickHouse, s3.3xlarge, Cascade Lake 32 vCPU, 128 GB RAM, 12.5 TB local HDD",
+        "system":       "Yandex Managed ClickHouse s3.3xlarge",
+        "system_full":       "Yandex Managed ClickHouse, s3.3xlarge, Cascade Lake 32 vCPU, 128 GB RAM, 12.5 TB local HDD",
         "time":         "2020-01-14 00:00:00",
+        "kind": "cloud",
         "result":
         [
             [0.049, 0.049, 0.045],

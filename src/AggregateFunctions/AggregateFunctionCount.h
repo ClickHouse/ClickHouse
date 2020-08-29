@@ -57,7 +57,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
@@ -67,11 +67,15 @@ public:
     {
         data(place).count = new_count;
     }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr &, const DataTypes & types, const Array & params, const AggregateFunctionProperties & /*properties*/) const override;
 };
 
 
 /// Simply count number of not-NULL values.
-class AggregateFunctionCountNotNullUnary final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
+class AggregateFunctionCountNotNullUnary final
+    : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
 {
 public:
     AggregateFunctionCountNotNullUnary(const DataTypePtr & argument, const Array & params)
@@ -108,7 +112,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }

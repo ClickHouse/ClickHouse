@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: odbc
 ---
@@ -21,9 +21,9 @@ Parametre:
 
 ODBC bağlantılarını güvenli bir şekilde uygulamak için ClickHouse ayrı bir program kullanır `clickhouse-odbc-bridge`. ODBC sürücüsü doğrudan yüklenmişse `clickhouse-server`, sürücü sorunları ClickHouse sunucu çökmesine neden olabilir. ClickHouse otomatik olarak başlar `clickhouse-odbc-bridge` gerekli olduğunda. ODBC Köprüsü programı aynı paketten yüklenir `clickhouse-server`.
 
-Alanları ile `NULL` dış tablodaki değerler, temel veri türü için varsayılan değerlere dönüştürülür. Örneğin, uzak bir MySQL tablo alanı `INT NULL` yazın 0’a dönüştürülür (ClickHouse için varsayılan değer `Int32` veri türü).
+Alanları ile `NULL` dış tablodaki değerler, temel veri türü için varsayılan değerlere dönüştürülür. Örneğin, uzak bir MySQL tablo alanı `INT NULL` yazın 0'a dönüştürülür (ClickHouse için varsayılan değer `Int32` veri türü).
 
-## Kullanım örneği {#usage-example}
+## Kullanım Örneği {#usage-example}
 
 **ODBC üzerinden yerel MySQL kurulumundan veri alma**
 
@@ -88,7 +88,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Clickhouse’daki MySQL tablosundan veri alma:
+Clickhouse'daki MySQL tablosundan veri alma:
 
 ``` sql
 SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')

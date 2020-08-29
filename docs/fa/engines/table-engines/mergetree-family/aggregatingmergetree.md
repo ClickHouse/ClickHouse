@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: "\u0631\u06CC\u0632\u062F\u0627\u0646\u0647"
 ---
@@ -11,7 +11,10 @@ toc_title: "\u0631\u06CC\u0632\u062F\u0627\u0646\u0647"
 
 شما می توانید استفاده کنید `AggregatingMergeTree` جداول برای تجمع داده افزایشی, از جمله برای نمایش محقق جمع.
 
-موتور پردازش تمام ستون ها با [کارکرد](../../../sql-reference/data-types/aggregatefunction.md) نوع.
+موتور تمام ستون ها را با انواع زیر پردازش می کند:
+
+-   [کارکرد](../../../sql-reference/data-types/aggregatefunction.md)
+-   [عملکرد پلاکتی](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 مناسب برای استفاده است `AggregatingMergeTree` اگر تعداد ردیف ها را با دستور کاهش دهد.
 

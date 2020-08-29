@@ -2,7 +2,7 @@
 
 Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#flat), [hashed](#hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
 Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
@@ -34,7 +34,7 @@
 </yandex>
 ```
 
-Соответствущий [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Соответствущий [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -46,12 +46,14 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
 -   [flat](#flat)
--   [hashed](#hashed)
+-   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [direct](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
+-   [complex\_key\_direct](#complex-key-direct)
 -   [ip\_trie](#ip-trie)
 
 ### flat {#flat}
@@ -78,7 +80,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 LAYOUT(FLAT())
 ```
 
-### hashed {#hashed}
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 
@@ -291,6 +293,32 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ### complex\_key\_cache {#complex-key-cache}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `cache`.
+
+### direct {#direct}
+
+Словарь не хранит данные локально и взаимодействует с источником непосредственно в момент запроса.
+
+Ключ словаря имеет тип `UInt64`.
+
+Поддерживаются все виды [источников](external-dicts-dict-sources.md), кроме локальных файлов.
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(DIRECT())
+```
+
+### complex\_key\_direct {#complex-key-direct}
+
+Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `direct`.
 
 ### ip\_trie {#ip-trie}
 

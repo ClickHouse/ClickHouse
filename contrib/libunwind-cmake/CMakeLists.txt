@@ -50,6 +50,13 @@ if (HAVE_WARNING_MAYBE_UNINITIALIZED)
     target_compile_options(unwind PRIVATE -Wno-maybe-uninitialized)
 endif ()
 
+# The library is using register variables that are bound to specific registers
+# Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
+check_cxx_compiler_flag(-Wregister HAVE_WARNING_REGISTER)
+if (HAVE_WARNING_REGISTER)
+    target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
+endif ()
+
 install(
     TARGETS unwind
     EXPORT global

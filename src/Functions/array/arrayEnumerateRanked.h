@@ -17,7 +17,7 @@
   * This is very unusual function made as a special order for Yandex.Metrica.
   *
   * arrayEnumerateUniqRanked(['hello', 'world', 'hello']) = [1, 1, 2]
-  * - it returns similar structured array containing number of occurence of the corresponding value.
+  * - it returns similar structured array containing number of occurrence of the corresponding value.
   *
   * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['hello']], 1) = [1, 1, 2]
   * - look at the depth 1 by default. Elements are ['hello', 'world'], ['hello'], ['hello'].
@@ -115,17 +115,17 @@ public:
         return type;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
-    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
-    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+    /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     void executeMethodImpl(
         const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
         const ArraysDepths & arrays_depths,
-        ColumnUInt32::Container & res_values);
+        ColumnUInt32::Container & res_values) const;
 };
 
 
@@ -149,7 +149,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
@@ -302,18 +302,15 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
     const ArraysDepths & arrays_depths,
-    ColumnUInt32::Container & res_values)
+    ColumnUInt32::Container & res_values) const
 {
     /// Offsets at the depth we want to look.
     const size_t depth_to_look = arrays_depths.max_array_depth;
     const auto & offsets = *offsets_by_depth[depth_to_look - 1];
 
-    using Map = ClearableHashMap<
-        UInt128,
-        UInt32,
-        UInt128TrivialHash,
-        HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+    using Map = ClearableHashMapWithStackMemory<UInt128, UInt32,
+        UInt128TrivialHash, INITIAL_SIZE_DEGREE>;
+
     Map indices;
 
     std::vector<size_t> indices_by_depth(depth_to_look);

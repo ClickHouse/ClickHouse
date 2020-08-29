@@ -40,11 +40,13 @@
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
+    -   [pillar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 

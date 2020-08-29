@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Xeon 2176G, 64GB RAM, 2xSSD 960GB (SAMSUNG MZQLB960HAJR-00007), ZFS RAID-1",
+        "system":       "Xeon 2176G",
+        "system_full":      "Xeon 2176G, 64GB RAM, 2xSSD 960GB (SAMSUNG MZQLB960HAJR-00007), ZFS RAID-1",
         "time":         "2020-01-14 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.001, 0.001, 0.001],

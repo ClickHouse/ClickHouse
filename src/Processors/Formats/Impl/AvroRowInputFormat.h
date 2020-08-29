@@ -1,6 +1,8 @@
 #pragma once
+
 #include "config_formats.h"
 #include "config_core.h"
+
 #if USE_AVRO
 
 #include <unordered_map>
@@ -8,6 +10,7 @@
 #include <vector>
 
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
 
@@ -22,7 +25,7 @@ namespace DB
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
@@ -103,7 +106,7 @@ private:
 class AvroRowInputFormat : public IRowInputFormat
 {
 public:
-    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "AvroRowInputFormat"; }
 
@@ -112,7 +115,6 @@ private:
     AvroDeserializer deserializer;
 };
 
-#if USE_POCO_JSON
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
 /// Uses 3 caches:
 /// 1. global: schema registry cache (base_url -> SchemaRegistry)
@@ -127,6 +129,9 @@ public:
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;
+protected:
+    bool allowSyncAfterError() const override { return true; }
+    void syncAfterError() override;
 private:
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
@@ -135,8 +140,9 @@ private:
 
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
+    FormatSettings format_settings;
 };
-#endif
 
 }
+
 #endif

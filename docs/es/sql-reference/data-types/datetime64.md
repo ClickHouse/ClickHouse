@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: DateTime64
 ---
@@ -99,6 +99,6 @@ FROM dt
 -   [Funciones para trabajar con matrices](../../sql-reference/functions/array-functions.md)
 -   [El `date_time_input_format` configuración](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [El `timezone` parámetro de configuración del servidor](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Operadores para trabajar con fechas y horas](../../sql-reference/operators.md#operators-datetime)
+-   [Operadores para trabajar con fechas y horas](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` tipo de datos](date.md)
 -   [`DateTime` tipo de datos](datetime.md)

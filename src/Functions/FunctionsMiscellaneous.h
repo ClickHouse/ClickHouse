@@ -8,11 +8,13 @@
 #include <Columns/ColumnFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 class ExecutableFunctionExpression : public IExecutableFunctionImpl
@@ -115,6 +117,7 @@ public:
     String getName() const override { return "FunctionCapture"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
@@ -202,6 +205,11 @@ public:
             const String & expression_return_name_)
         : expression_actions(std::move(expression_actions_))
     {
+        /// Check that expression does not contain unusual actions that will break blocks structure.
+        for (const auto & action : expression_actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
+
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
         const auto & all_arguments = expression_actions->getRequiredColumnsWithTypes();
@@ -243,6 +251,7 @@ public:
 
     String getName() const override { return name; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     DataTypePtr getReturnType(const ColumnsWithTypeAndName &) const override { return return_type; }
     size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
 

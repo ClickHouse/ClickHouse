@@ -42,7 +42,7 @@ public:
 
     ~ConfigReloader();
 
-    /// Call this method to run the backround thread.
+    /// Call this method to run the background thread.
     void start();
 
     /// Reload immediately. For SYSTEM RELOAD CONFIG query.
@@ -69,7 +69,7 @@ private:
 
     static constexpr auto reload_interval = std::chrono::seconds(2);
 
-    Poco::Logger * log = &Logger::get("ConfigReloader");
+    Poco::Logger * log = &Poco::Logger::get("ConfigReloader");
 
     std::string path;
     std::string include_from_path;

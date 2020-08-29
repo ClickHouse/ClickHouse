@@ -118,9 +118,9 @@ public:
     }
 
     void insertResultInto(
-        ConstAggregateDataPtr place,
-        IColumn & to
-    ) const override
+        AggregateDataPtr place,
+        IColumn & to,
+        Arena *) const override
     {
         auto & col = static_cast<ColumnArray &>(to);
         auto & data_col = static_cast<ColumnFloat64 &>(col.getData());

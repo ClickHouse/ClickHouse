@@ -9,4 +9,7 @@ namespace DB
   * name, `name` or 'name' */
 bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result);
 
+/** Parse a list of identifiers or string literals. */
+bool parseIdentifiersOrStringLiterals(IParser::Pos & pos, Expected & expected, Strings & result);
+
 }

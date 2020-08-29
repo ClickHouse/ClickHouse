@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 68
 toc_title: "C\xF3mo escribir c\xF3digo C ++"
 ---
 
-# Cómo Escribir código C ++ {#how-to-write-c-code}
+# Cómo escribir código C ++ {#how-to-write-c-code}
 
-## Recomendaciones Generales {#general-recommendations}
+## Recomendaciones generales {#general-recommendations}
 
 **1.** Las siguientes son recomendaciones, no requisitos.
 
@@ -422,7 +422,7 @@ También puede usar una abreviatura si el nombre completo se incluye junto a él
 
 **17.** Los nombres de archivo con código fuente de C++ deben tener `.cpp` ampliación. Los archivos de encabezado deben tener `.h` ampliación.
 
-## Cómo Escribir código {#how-to-write-code}
+## Cómo escribir código {#how-to-write-code}
 
 **1.** Gestión de la memoria.
 
@@ -689,7 +689,7 @@ auto s = std::string{"Hello"};
 
 **26.** Para funciones virtuales, escriba `virtual` en la clase base, pero escribe `override` en lugar de `virtual` en las clases descendientes.
 
-## Características No Utilizadas De C ++ {#unused-features-of-c}
+## Características no utilizadas de C ++ {#unused-features-of-c}
 
 **1.** La herencia virtual no se utiliza.
 
@@ -701,11 +701,11 @@ auto s = std::string{"Hello"};
 
 Pero en igualdad de condiciones, se prefiere el código multiplataforma o portátil.
 
-**2.** Idioma: C ++ 17.
+**2.** Idioma: C++20.
 
-**3.** Compilación: `gcc`. En este momento (diciembre de 2017), el código se compila utilizando la versión 7.2. (También se puede compilar usando `clang 4`.)
+**3.** Compilación: `gcc`. En este momento (agosto 2020), el código se compila utilizando la versión 9.3. (También se puede compilar usando `clang 8`.)
 
-Se utiliza la biblioteca estándar (`libstdc++` o `libc++`).
+Se utiliza la biblioteca estándar (`libc++`).
 
 **4.**OS: Linux Ubuntu, no más viejo que Precise.
 
@@ -749,7 +749,7 @@ Si su código en el `master` branch todavía no se puede construir, excluirlo de
 
 ## Biblioteca {#libraries}
 
-**1.** Se utiliza la biblioteca estándar de C ++ 14 (se permiten extensiones experimentales), así como `boost` y `Poco` marco.
+**1.** Se utiliza la biblioteca estándar de C++20 (se permiten extensiones experimentales), así como `boost` y `Poco` marco.
 
 **2.** Si es necesario, puede usar cualquier biblioteca conocida disponible en el paquete del sistema operativo.
 
@@ -763,7 +763,7 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 **5.** Siempre se da preferencia a las bibliotecas que ya están en uso.
 
-## Recomendaciones Generales {#general-recommendations-1}
+## Recomendaciones generales {#general-recommendations-1}
 
 **1.** Escribe el menor código posible.
 
@@ -777,7 +777,7 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 **6.** Se fomenta la simplificación del código. Reduzca el tamaño de su código siempre que sea posible.
 
-## Recomendaciones Adicionales {#additional-recommendations}
+## Recomendaciones adicionales {#additional-recommendations}
 
 **1.** Especificar explícitamente `std::` para tipos de `stddef.h`
 

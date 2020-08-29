@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: Karma
 ---
@@ -43,7 +43,7 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 ## MD5 {#hash_functions-md5}
 
 MD5 bir dizeden hesaplar ve elde edilen bayt kümesini FixedString(16) olarak döndürür.
-Özellikle MD5’E ihtiyacınız yoksa, ancak iyi bir şifreleme 128 bit karmasına ihtiyacınız varsa, ‘sipHash128’ bunun yerine işlev.
+Özellikle MD5'E ihtiyacınız yoksa, ancak iyi bir şifreleme 128 bit karmasına ihtiyacınız varsa, ‘sipHash128’ bunun yerine işlev.
 Md5sum yardımcı programı tarafından çıktı ile aynı sonucu elde etmek istiyorsanız, lower(hex(MD5(s))) kullanın.
 
 ## sifash64 {#hash_functions-siphash64}
@@ -54,7 +54,7 @@ Md5sum yardımcı programı tarafından çıktı ile aynı sonucu elde etmek ist
 sipHash64(par1,...)
 ```
 
-Bu bir şifreleme karma işlevidir. En az üç kat daha hızlı çalışır [MD5](#hash_functions-md5) işlev.
+Bu bir şifreleme karma işlevidir. En az üç kat daha hızlı çalışır [MD5](#hash_functions-md5) İşlev.
 
 İşlev [yorumluyor](../../sql-reference/functions/type-conversion-functions.md#type_conversion_functions-reinterpretAsString) tüm giriş parametreleri dizeleri olarak ve bunların her biri için karma değerini hesaplar. Sonra aşağıdaki algoritma ile karmaları birleştirir:
 
@@ -87,7 +87,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 Bir dizeden Sifash hesaplar.
 Bir dize türü bağımsız değişkeni kabul eder. Fixedstring(16) Döndürür.
-Sifash64’ten farklıdır, çünkü son xor katlama durumu sadece 128 bit’e kadar yapılır.
+Sifash64'ten farklıdır, çünkü son xor katlama durumu sadece 128 bit'e kadar yapılır.
 
 ## cityHash64 {#cityhash64}
 
@@ -135,7 +135,7 @@ Bu, sayılar için ortalama kalitenin nispeten hızlı bir kriptografik olmayan 
 ## intHash64 {#inthash64}
 
 Herhangi bir tamsayı türünden 64 bit karma kodu hesaplar.
-Inthash32’den daha hızlı çalışır. Ortalama kalite.
+Inthash32'den daha hızlı çalışır. Ortalama kalite.
 
 ## SHA1 {#sha1}
 
@@ -146,11 +146,11 @@ Inthash32’den daha hızlı çalışır. Ortalama kalite.
 Bir dizeden SHA-1, SHA-224 veya SHA-256 hesaplar ve elde edilen bayt kümesini FixedString(20), FixedString(28) veya FixedString(32) olarak döndürür.
 İşlev oldukça yavaş çalışır (SHA-1, işlemci çekirdeği başına saniyede yaklaşık 5 milyon kısa dizgiyi işler, SHA-224 ve SHA-256 ise yaklaşık 2.2 milyon işlem yapar).
 Bu işlevi yalnızca belirli bir karma işleve ihtiyacınız olduğunda ve bunu seçemediğinizde kullanmanızı öneririz.
-Bu gibi durumlarda bile, SELECTS’TE uygulamak yerine, tabloya eklerken işlev çevrimdışı ve ön hesaplama değerlerini uygulamanızı öneririz.
+Bu gibi durumlarda bile, SELECTS'TE uygulamak yerine, tabloya eklerken işlev çevrimdışı ve ön hesaplama değerlerini uygulamanızı öneririz.
 
 ## URLHash(url \[, N\]) {#urlhashurl-n}
 
-Bir tür normalleştirme kullanarak bir URL’den elde edilen bir dize için hızlı, iyi kalitede olmayan şifreleme karma işlevi.
+Bir tür normalleştirme kullanarak bir URL'den elde edilen bir dize için hızlı, iyi kalitede olmayan şifreleme karma işlevi.
 `URLHash(s)` – Calculates a hash from a string without one of the trailing symbols `/`,`?` veya `#` sonunda, varsa.
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` veya `#` sonunda, varsa.
 Düzeyleri URLHierarchy aynıdır. Bu fonksiyon (kayıt olmak için özeldir.Metrica.
@@ -345,6 +345,44 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 ┌──────────MurmurHash2─┬─type───┐
 │ 11832096901709403633 │ UInt64 │
 └──────────────────────┴────────┘
+```
+
+## gccMurmurHash {#gccmurmurhash}
+
+64-bit hesaplar [MurmurHash2](https://github.com/aappleby/smhasher) aynı karma tohum kullanarak karma değeri [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). CLang ve GCC yapıları arasında taşınabilir.
+
+**Sözdizimi**
+
+``` sql
+gccMurmurHash(par1, ...);
+```
+
+**Parametre**
+
+-   `par1, ...` — A variable number of parameters that can be any of the [desteklenen veri türleri](../../sql-reference/data-types/index.md#data_types).
+
+**Döndürülen değer**
+
+-   Hesaplanan karma değeri.
+
+Tür: [Uİnt64](../../sql-reference/data-types/int-uint.md).
+
+**Örnek**
+
+Sorgu:
+
+``` sql
+SELECT
+    gccMurmurHash(1, 2, 3) AS res1,
+    gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
+```
+
+Sonuç:
+
+``` text
+┌─────────────────res1─┬────────────────res2─┐
+│ 12384823029245979431 │ 1188926775431157506 │
+└──────────────────────┴─────────────────────┘
 ```
 
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}

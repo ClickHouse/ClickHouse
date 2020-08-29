@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 12
 toc_title: Tutorial
 ---
 
-# Tutorial De ClickHouse {#clickhouse-tutorial}
+# Tutorial de ClickHouse {#clickhouse-tutorial}
 
-## Qué Esperar De Este Tutorial? {#what-to-expect-from-this-tutorial}
+## Qué Esperar de Este Tutorial? {#what-to-expect-from-this-tutorial}
 
 Al pasar por este tutorial, aprenderá cómo configurar un clúster de ClickHouse simple. Será pequeño, pero tolerante a fallos y escalable. Luego usaremos uno de los conjuntos de datos de ejemplo para llenarlo con datos y ejecutar algunas consultas de demostración.
 
-## Configuración De Nodo único {#single-node-setup}
+## Configuración de nodo único {#single-node-setup}
 
 Para posponer las complejidades de un entorno distribuido, comenzaremos con la implementación de ClickHouse en un único servidor o máquina virtual. ClickHouse generalmente se instala desde [deb](install.md#install-from-deb-packages) o [RPM](install.md#from-rpm-packages) paquetes, pero hay [alternativa](install.md#from-docker-image) para los sistemas operativos que no los admiten.
 
@@ -21,7 +21,7 @@ Por ejemplo, ha elegido `deb` paquetes y ejecutado:
 {% include 'install/deb.sh' %}
 ```
 
-¿qué tenemos en los paquetes que tengo instalados:
+¿Qué tenemos en los paquetes que tengo instalados:
 
 -   `clickhouse-client` el paquete contiene [Casa de clics-cliente](../interfaces/cli.md) aplicación, cliente interactivo de la consola ClickHouse.
 -   `clickhouse-common` El paquete contiene un archivo ejecutable ClickHouse.
@@ -48,6 +48,7 @@ Una vez que el `clickhouse-server` está en funcionamiento, podemos usar `clickh
 <details markdown="1">
 
 <summary>Consejos rápidos para clickhouse-cliente</summary>
+
 Modo interactivo:
 
 ``` bash
@@ -79,11 +80,11 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 </details>
 
-## Importar Conjunto De Datos De Muestra {#import-sample-dataset}
+## Importar conjunto de datos de muestra {#import-sample-dataset}
 
 Ahora es el momento de llenar nuestro servidor ClickHouse con algunos datos de muestra. En este tutorial, usaremos los datos anónimos de Yandex.Metrica, el primer servicio que ejecuta ClickHouse en forma de producción antes de que se convirtiera en código abierto (más sobre eso en [sección de historia](../introduction/history.md)). Hay [múltiples formas de importar Yandex.Conjunto de datos de Metrica](example-datasets/metrica.md), y por el bien del tutorial, iremos con el más realista.
 
-### Descargar y Extraer Datos De Tabla {#download-and-extract-table-data}
+### Descargar y extraer datos de tabla {#download-and-extract-table-data}
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -92,7 +93,7 @@ curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unx
 
 Los archivos extraídos tienen un tamaño de aproximadamente 10 GB.
 
-### Crear Tablas {#create-tables}
+### Crear tablas {#create-tables}
 
 Como en la mayoría de los sistemas de gestión de bases de datos, ClickHouse agrupa lógicamente las tablas en “databases”. Hay un `default` base de datos, pero crearemos una nueva llamada `tutorial`:
 
@@ -458,7 +459,7 @@ Puede ejecutar esas consultas utilizando el modo interactivo de `clickhouse-clie
 
 Como podemos ver, `hits_v1` utiliza el [motor básico MergeTree](../engines/table-engines/mergetree-family/mergetree.md), mientras que el `visits_v1` utiliza el [Derrumbar](../engines/table-engines/mergetree-family/collapsingmergetree.md) variante.
 
-### Importar Datos {#import-data}
+### Importar datos {#import-data}
 
 La importación de datos a ClickHouse se realiza a través de [INSERT INTO](../sql-reference/statements/insert-into.md) consulta como en muchas otras bases de datos SQL. Sin embargo, los datos generalmente se proporcionan en uno de los [Formatos de serialización compatibles](../interfaces/formats.md) en lugar de `VALUES` cláusula (que también es compatible).
 
@@ -480,7 +481,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Opcionalmente se puede [OPTIMIZE](../query_language/misc/#misc_operations-optimize) las tablas después de la importación. Las tablas que están configuradas con un motor de la familia MergeTree siempre fusionan partes de datos en segundo plano para optimizar el almacenamiento de datos (o al menos verificar si tiene sentido). Estas consultas obligan al motor de tablas a realizar la optimización del almacenamiento en este momento en lugar de algún tiempo después:
+Opcionalmente se puede [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) las tablas después de la importación. Las tablas que están configuradas con un motor de la familia MergeTree siempre fusionan partes de datos en segundo plano para optimizar el almacenamiento de datos (o al menos verificar si tiene sentido). Estas consultas obligan al motor de tablas a realizar la optimización del almacenamiento en este momento en lugar de algún tiempo después:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
@@ -496,7 +497,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.visits_v1"
 ```
 
-## Consultas De Ejemplo {#example-queries}
+## Consultas de ejemplo {#example-queries}
 
 ``` sql
 SELECT
@@ -518,7 +519,7 @@ FROM tutorial.visits_v1
 WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
 ```
 
-## Implementación De clúster {#cluster-deployment}
+## Implementación de clúster {#cluster-deployment}
 
 El clúster ClickHouse es un clúster homogéneo. Pasos para configurar:
 

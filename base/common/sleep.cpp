@@ -22,7 +22,7 @@ void sleepForNanoseconds(uint64_t nanoseconds)
 #if defined(OS_DARWIN)
     //https://developer.apple.com/library/archive/technotes/tn2169/_index.html
     //https://dshil.github.io/blog/missed-os-x-clock-guide/
-    static mach_timebase_info_data_t timebase_info = {0};
+    static mach_timebase_info_data_t timebase_info{};
     if (timebase_info.denom == 0)
         mach_timebase_info(&timebase_info);
 

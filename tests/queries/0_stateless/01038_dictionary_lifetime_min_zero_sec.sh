@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS database_for_dict"
 
@@ -40,11 +40,11 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO database_for_dict.table_for_dict VALUES 
 function check()
 {
 
-    query_result=`$CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('database_for_dict.dict_with_zero_min_lifetime', 'value', toUInt64(2))"`
+    query_result=$($CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('database_for_dict.dict_with_zero_min_lifetime', 'value', toUInt64(2))")
 
-    while [ $query_result != "2.2" ]
+    while [ "$query_result" != "2.2" ]
     do
-        query_result=`$CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('database_for_dict.dict_with_zero_min_lifetime', 'value', toUInt64(2))"`
+        query_result=$($CLICKHOUSE_CLIENT --query "SELECT dictGetFloat64('database_for_dict.dict_with_zero_min_lifetime', 'value', toUInt64(2))")
     done
 }
 

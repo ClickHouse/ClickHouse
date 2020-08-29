@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 76
 toc_title: "G\xFCvenlik Changelog"
 ---
@@ -21,11 +21,11 @@ Kredi: Yandex Bilgi Güvenliği ekibinden Eldar Zaitov
 
 ### CVE-2019-16536 {#cve-2019-16536}
 
-DOS’A giden yığın taşması, kötü amaçlı kimliği doğrulanmış bir istemci tarafından tetiklenebilir.
+DOS'A giden yığın taşması, kötü amaçlı kimliği doğrulanmış bir istemci tarafından tetiklenebilir.
 
 Kredi: Yandex Bilgi Güvenliği ekibinden Eldar Zaitov
 
-## ClickHouse sürümü 19.13.6.1, 2019-09-20’de düzeltildi {#fixed-in-clickhouse-release-19-13-6-1-2019-09-20}
+## ClickHouse sürümü 19.13.6.1, 2019-09-20'de düzeltildi {#fixed-in-clickhouse-release-19-13-6-1-2019-09-20}
 
 ### CVE-2019-18657 {#cve-2019-18657}
 
@@ -33,7 +33,7 @@ Tablo fonksiyonu `url` güvenlik açığı saldırganın istekte rasgele HTTP ü
 
 Krediler: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
 
-## ClickHouse sürümünde Sabit 18.12.13, 2018-09-10 {#fixed-in-clickhouse-release-18-12-13-2018-09-10}
+## ClickHouse sürümünde sabit 18.12.13, 2018-09-10 {#fixed-in-clickhouse-release-18-12-13-2018-09-10}
 
 ### CVE-2018-14672 {#cve-2018-14672}
 
@@ -41,7 +41,7 @@ Catboost modellerini yüklemek için işlevler, yol geçişine izin verdi ve hat
 
 Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov
 
-## ClickHouse sürüm 18.10.3, 2018-08-13 Sabit {#fixed-in-clickhouse-release-18-10-3-2018-08-13}
+## ClickHouse sürüm 18.10.3, 2018-08-13 sabit {#fixed-in-clickhouse-release-18-10-3-2018-08-13}
 
 ### CVE-2018-14671 {#cve-2018-14671}
 
@@ -49,7 +49,7 @@ unixODBC, dosya sisteminden rasgele paylaşılan nesnelerin yüklenmesine izin v
 
 Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov ve Evgeny Sidorov
 
-## ClickHouse sürüm 1.1.54388, 2018-06-28 Sabit {#fixed-in-clickhouse-release-1-1-54388-2018-06-28}
+## ClickHouse sürüm 1.1.54388, 2018-06-28 sabit {#fixed-in-clickhouse-release-1-1-54388-2018-06-28}
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
@@ -57,7 +57,7 @@ Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov ve Evgeny Sidorov
 
 Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov
 
-## ClickHouse sürüm 1.1.54390, 2018-07-06 Sabit {#fixed-in-clickhouse-release-1-1-54390-2018-07-06}
+## ClickHouse sürüm 1.1.54390, 2018-07-06 sabit {#fixed-in-clickhouse-release-1-1-54390-2018-07-06}
 
 ### CVE-2018-14669 {#cve-2018-14669}
 
@@ -65,12 +65,12 @@ ClickHouse MySQL istemcisi vardı “LOAD DATA LOCAL INFILE” işlevsellik, kö
 
 Kredi: Yandex Bilgi Güvenliği ekibinden Andrey Krasichkov ve Evgeny Sidorov
 
-## ClickHouse sürüm 1.1.54131, 2017-01-10 Sabit {#fixed-in-clickhouse-release-1-1-54131-2017-01-10}
+## ClickHouse sürüm 1.1.54131, 2017-01-10 sabit {#fixed-in-clickhouse-release-1-1-54131-2017-01-10}
 
 ### CVE-2018-14670 {#cve-2018-14670}
 
 Deb paketindeki yanlış yapılandırma, veritabanının yetkisiz kullanımına neden olabilir.
 
-Kredi: İngiltere’nin Ulusal siber güvenlik merkezi (NCSC)
+Kredi: İngiltere'nin Ulusal siber güvenlik merkezi (NCSC)
 
 {## [Orijinal makale](https://clickhouse.tech/docs/en/security_changelog/) ##}

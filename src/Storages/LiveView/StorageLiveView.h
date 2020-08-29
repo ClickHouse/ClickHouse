@@ -54,7 +54,7 @@ public:
     {
         return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id, global_context); }
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
@@ -132,8 +132,9 @@ public:
 
     void refresh(const Context & context);
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -173,6 +174,7 @@ public:
         const Context & context);
 
 private:
+    /// TODO move to common struct SelectQueryDescription
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr target_table_function = nullptr;

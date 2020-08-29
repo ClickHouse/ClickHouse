@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: MySQL
 ---
 
-# Mysql {#mysql}
+# MySQL {#mysql}
 
 Permet de se connecter à des bases de données sur un serveur MySQL distant et `INSERT` et `SELECT` requêtes pour échanger des données entre Clickhouse et MySQL.
 
@@ -17,11 +17,11 @@ Vous ne pouvez pas effectuer les requêtes suivantes:
 -   `CREATE TABLE`
 -   `ALTER`
 
-## La création d’une Base De données {#creating-a-database}
+## La création d'une Base de données {#creating-a-database}
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
 
 **Les Paramètres Du Moteur**
@@ -53,7 +53,7 @@ Tous les autres types de données MySQL sont convertis en [Chaîne](../../sql-re
 
 [Nullable](../../sql-reference/data-types/nullable.md) est pris en charge.
 
-## Exemples D’Utilisation {#examples-of-use}
+## Exemples D'utilisation {#examples-of-use}
 
 Table dans MySQL:
 

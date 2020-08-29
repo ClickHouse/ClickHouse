@@ -19,10 +19,11 @@ namespace DB
 /// Min and max lifetimes for a loadable object or it's entry
 struct ExternalLoadableLifetime
 {
-    UInt64 min_sec;
-    UInt64 max_sec;
+    UInt64 min_sec = 0;
+    UInt64 max_sec = 0;
 
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+    ExternalLoadableLifetime() {}
 };
 
 /// Get delay before trying to load again after error.

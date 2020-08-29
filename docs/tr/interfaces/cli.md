@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: "Komut Sat\u0131r\u0131 \u0130stemcisi"
 ---
 
-# Komut satırı Istemcisi {#command-line-client}
+# Komut satırı istemcisi {#command-line-client}
 
 ClickHouse yerel bir komut satırı istemcisi sağlar: `clickhouse-client`. İstemci komut satırı seçeneklerini ve yapılandırma dosyalarını destekler. Daha fazla bilgi için, bkz. [Yapılandırma](#interfaces_cli_configuration).
 
@@ -43,7 +43,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 Toplu iş modunda, varsayılan veri biçimi TabSeparated. Sorgunun biçim yan tümcesinde biçimi ayarlayabilirsiniz.
 
-Varsayılan olarak, yalnızca tek bir sorguyu toplu iş modunda işleyebilirsiniz. Birden çok sorgu yapmak için bir “script,” kullan… `--multiquery` parametre. Bu, INSERT dışındaki tüm sorgular için çalışır. Sorgu sonuçları, ek ayırıcılar olmadan ardışık olarak çıktılanır. Benzer şekilde, çok sayıda sorgu işlemek için, çalıştırabilirsiniz ‘clickhouse-client’ her sorgu için. Başlatmak için onlarca milisaniye sürebilir unutmayın ‘clickhouse-client’ program.
+Varsayılan olarak, yalnızca tek bir sorguyu toplu iş modunda işleyebilirsiniz. Birden çok sorgu yapmak için bir “script,” kullan... `--multiquery` parametre. Bu, INSERT dışındaki tüm sorgular için çalışır. Sorgu sonuçları, ek ayırıcılar olmadan ardışık olarak çıktılanır. Benzer şekilde, çok sayıda sorgu işlemek için, çalıştırabilirsiniz ‘clickhouse-client’ her sorgu için. Başlatmak için onlarca milisaniye sürebilir unutmayın ‘clickhouse-client’ program.
 
 Etkileşimli modda, sorguları girebileceğiniz bir komut satırı alırsınız.
 
@@ -72,7 +72,7 @@ Ctrl + C tuşlarına basarak uzun bir sorguyu iptal edebilirsiniz. ancak, sunucu
 
 Komut satırı istemcisi, sorgulamak için dış verileri (dış geçici tablolar) geçirmenize izin verir. Daha fazla bilgi için bölüme bakın “External data for query processing”.
 
-### Parametrelerle Sorgular {#cli-queries-with-parameters}
+### Parametrelerle sorgular {#cli-queries-with-parameters}
 
 Parametrelerle bir sorgu oluşturabilir ve istemci uygulamasından onlara değerler aktarabilirsiniz. Bu, istemci tarafında belirli dinamik değerlerle biçimlendirme sorgusunu önlemeye izin verir. Mesela:
 

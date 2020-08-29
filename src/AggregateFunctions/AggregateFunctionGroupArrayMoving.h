@@ -28,61 +28,51 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-
 template <typename T>
-struct MovingSumData
+struct MovingData
 {
-    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
+    using Accumulator = T;
+
+    /// Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
 
-    Array value;
-    Array window;
+    Array value;    /// Prefix sums.
     T sum = 0;
 
     void add(T val, Arena * arena)
     {
         sum += val;
-
         value.push_back(sum, arena);
     }
-
-    T get(size_t idx, UInt64 win_size) const
-    {
-        if (idx < win_size)
-            return value[idx];
-        else
-            return value[idx] - value[idx - win_size];
-    }
-
 };
 
 template <typename T>
-struct MovingAvgData
+struct MovingSumData : public MovingData<T>
 {
-    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = PODArray<T, 32, Allocator>;
+    static constexpr auto name = "groupArrayMovingSum";
 
-    Array value;
-    Array window;
-    T sum = 0;
-
-    void add(T val, Arena * arena)
+    T get(size_t idx, UInt64 window_size) const
     {
-        sum += val;
-
-        value.push_back(sum, arena);
-    }
-
-    T get(size_t idx, UInt64 win_size) const
-    {
-        if (idx < win_size)
-            return value[idx] / win_size;
+        if (idx < window_size)
+            return this->value[idx];
         else
-            return (value[idx] - value[idx - win_size]) / win_size;
+            return this->value[idx] - this->value[idx - window_size];
     }
+};
 
+template <typename T>
+struct MovingAvgData : public MovingData<T>
+{
+    static constexpr auto name = "groupArrayMovingAvg";
+
+    T get(size_t idx, UInt64 window_size) const
+    {
+        if (idx < window_size)
+            return this->value[idx] / window_size;
+        else
+            return (this->value[idx] - this->value[idx - window_size]) / window_size;
+    }
 };
 
 
@@ -91,29 +81,43 @@ class MovingImpl final
     : public IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
-    DataTypePtr & data_type;
-    UInt64 win_size;
+    UInt64 window_size;
 
 public:
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>; // probably for overflow function in the future
+    using ResultT = typename Data::Accumulator;
 
-    explicit MovingImpl(const DataTypePtr & data_type_, UInt64 win_size_ = std::numeric_limits<UInt64>::max())
+    using ColumnSource = std::conditional_t<IsDecimalNumber<T>,
+        ColumnDecimal<T>,
+        ColumnVector<T>>;
+
+    /// Probably for overflow function in the future.
+    using ColumnResult = std::conditional_t<IsDecimalNumber<ResultT>,
+        ColumnDecimal<ResultT>,
+        ColumnVector<ResultT>>;
+
+    using DataTypeResult = std::conditional_t<IsDecimalNumber<ResultT>,
+        DataTypeDecimal<ResultT>,
+        DataTypeNumber<ResultT>>;
+
+    explicit MovingImpl(const DataTypePtr & data_type_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>({data_type_}, {})
-        , data_type(this->argument_types[0]), win_size(win_size_) {}
+        , window_size(window_size_) {}
 
-    String getName() const override { return "movingXXX"; }
+    String getName() const override { return Data::name; }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(data_type);
+        if constexpr (IsDecimalNumber<ResultT>)
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeResult>(
+                DataTypeResult::maxPrecision(), getDecimalScale(*this->argument_types.at(0))));
+        else
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeResult>());
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        auto val = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
-
-        this->data(place).add(val, arena);
+        auto value = static_cast<const ColumnSource &>(*columns[0]).getData()[row_num];
+        this->data(place).add(static_cast<ResultT>(value), arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -150,15 +154,16 @@ public:
         if (unlikely(size > AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        auto & value = this->data(place).value;
-
-        value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
-
-        this->data(place).sum = value.back();
+        if (size > 0)
+        {
+            auto & value = this->data(place).value;
+            value.resize(size, arena);
+            buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+            this->data(place).sum = value.back();
+        }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         const auto & data = this->data(place);
         size_t size = data.value.size();
@@ -170,7 +175,7 @@ public:
 
         if (size)
         {
-            typename ColVecResult::Container & data_to = static_cast<ColVecResult &>(arr_to.getData()).getData();
+            typename ColumnResult::Container & data_to = assert_cast<ColumnResult &>(arr_to.getData()).getData();
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -180,7 +185,7 @@ public:
                 }
                 else
                 {
-                    data_to.push_back(data.get(i, win_size));
+                    data_to.push_back(data.get(i, window_size));
                 }
             }
         }

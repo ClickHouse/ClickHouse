@@ -1,4 +1,5 @@
 Instruction check fail. The CPU does not support SSSE3 instruction set.
 Instruction check fail. The CPU does not support SSE4.1 instruction set.
 Instruction check fail. The CPU does not support SSE4.2 instruction set.
+Instruction check fail. The CPU does not support POPCNT instruction set.
 1

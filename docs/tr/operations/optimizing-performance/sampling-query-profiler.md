@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "Sorgu Profili Olu\u015Fturma"
 ---
 
 # Örnekleme Sorgusu Profiler {#sampling-query-profiler}
 
-ClickHouse, sorgu yürütülmesini analiz etmeyi sağlayan örnekleme profiler’i çalıştırır. Profiler kullanarak sorgu yürütme sırasında en sık kullanılan kaynak kodu yordamları bulabilirsiniz. Boşta kalma süresi de dahil olmak üzere harcanan CPU zamanını ve duvar saati zamanını izleyebilirsiniz.
+ClickHouse, sorgu yürütülmesini analiz etmeyi sağlayan örnekleme profiler'i çalıştırır. Profiler kullanarak sorgu yürütme sırasında en sık kullanılan kaynak kodu yordamları bulabilirsiniz. Boşta kalma süresi de dahil olmak üzere harcanan CPU zamanını ve duvar saati zamanını izleyebilirsiniz.
 
 Profiler kullanmak için:
 
@@ -29,7 +29,7 @@ Analiz etmek `trace_log` sistem tablosu:
 
     Güvenlik nedenleriyle, iç gözlem işlevleri varsayılan olarak devre dışı bırakılır.
 
--   Kullan… `addressToLine`, `addressToSymbol` ve `demangle` [iç gözlem fonksiyonları](../../sql-reference/functions/introspection.md) ClickHouse kodu işlev adları ve konumlarını almak için. Bazı sorgu için bir profil almak için, `trace_log` Tablo. Bireysel fonksiyonları bütün yığın izleri ya da veri toplama yapabilirsiniz.
+-   Kullan... `addressToLine`, `addressToSymbol` ve `demangle` [iç gözlem fonksiyonları](../../sql-reference/functions/introspection.md) ClickHouse kodu işlev adları ve konumlarını almak için. Bazı sorgu için bir profil almak için, `trace_log` Tablo. Bireysel fonksiyonları bütün yığın izleri ya da veri toplama yapabilirsiniz.
 
 Görselleştirmeniz gerekiyorsa `trace_log` bilgi, deneyin [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) ve [speedscope](https://github.com/laplab/clickhouse-speedscope).
 

@@ -6,6 +6,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <IO/WriteHelpers.h>
 #include <unistd.h>
 #include <csignal>
@@ -50,10 +51,10 @@ ShellCommand::~ShellCommand()
 {
     if (terminate_in_destructor)
     {
-        LOG_TRACE(getLogger(), "Will kill shell command pid " << pid << " with SIGTERM");
+        LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid " << pid << " errno '" << errnoToString(retcode) << "'");
+            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
     }
     else if (!wait_called)
         tryWait();
@@ -61,19 +62,16 @@ ShellCommand::~ShellCommand()
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
 {
-    std::stringstream log_message;
-    log_message << "Will start shell command '" << filename << "' with arguments ";
+    std::stringstream args;
     for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
     {
         if (i > 0)
-        {
-            log_message << ", ";
-        }
+            args << ", ";
 
         /// NOTE: No escaping is performed.
-        log_message << "'" << argv[i] << "'";
+        args << "'" << argv[i] << "'";
     }
-    LOG_TRACE(ShellCommand::getLogger(), log_message.str());
+    LOG_TRACE(ShellCommand::getLogger(), "Will start shell command '{}' with arguments {}", filename, args.str());
 }
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
@@ -134,7 +132,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
-    LOG_TRACE(getLogger(), "Started shell command '" << filename << "' with pid " << pid);
+    LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
 
     /// Now the ownership of the file descriptors is passed to the result.
     pipe_stdin.fds_rw[1] = -1;
@@ -188,13 +186,13 @@ int ShellCommand::tryWait()
 {
     wait_called = true;
 
-    LOG_TRACE(getLogger(), "Will wait for shell command pid " << pid);
+    LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;
     if (-1 == waitpid(pid, &status, 0))
         throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
 
-    LOG_TRACE(getLogger(), "Wait for shell command pid " << pid << " completed with status " << status);
+    LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 
     if (WIFEXITED(status))
         return WEXITSTATUS(status);

@@ -31,16 +31,18 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
+    const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
-    Logger * log_)
-        : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
-            [] (const NameAndTypePair & col) { return col.name; })},
-        queried_columns{queried_columns_},
-        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-        log{log_}
+    Poco::Logger * log_)
+    : table_columns{ext::map<std::unordered_set>(
+        metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
+    , queried_columns{queried_columns_}
+    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
+    , log{log_}
 {
-    if (!data.primary_key_columns.empty())
-        first_primary_key_column = data.primary_key_columns[0];
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    if (!primary_key.column_names.empty())
+        first_primary_key_column = primary_key.column_names[0];
 
     calculateColumnSizes(data, queried_columns);
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
@@ -238,7 +240,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"" << select.prewhere() << "\" moved to PREWHERE");
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
 }
 
 

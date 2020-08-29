@@ -1,0 +1,8 @@
+<yandex>
+    <s3>
+        <s3_mock>
+            <endpoint>http://resolver:8080</endpoint>
+            <header>Authorization: Bearer TOKEN</header>
+        </s3_mock>
+    </s3>
+</yandex>

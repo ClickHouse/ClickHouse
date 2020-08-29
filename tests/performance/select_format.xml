@@ -35,6 +35,7 @@
                 <value>ODBCDriver2</value>
                 <value>Avro</value>
                 <value>MsgPack</value>
+                <value>ORC</value>
             </values>
         </substitution>
     </substitutions>

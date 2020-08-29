@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <Common/ActionBlocker.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
 
 
 namespace DB
@@ -82,7 +83,6 @@ public:
         const AllowedMergingPredicate & can_merge,
         String * out_disable_reason = nullptr);
 
-
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
@@ -106,18 +106,23 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
-        const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl);
+        const StorageMetadataPtr & metadata_snapshot,
+        MergeListEntry & merge_entry,
+        TableLockHolder & table_lock_holder,
+        time_t time_of_merge,
+        const ReservationPtr & space_reservation,
+        bool deduplicate);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const MutationCommands & commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
         const Context & context,
         const ReservationPtr & space_reservation,
-        TableStructureReadLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
@@ -143,40 +148,42 @@ private:
         MutationCommands & for_interpreter,
         MutationCommands & for_file_renames);
 
-
-    /// Apply commands to source_part i.e. remove some columns in source_part
-    /// and return set of files, that have to be removed from filesystem and checksums
-    static NameToNameMap collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
+    /// Apply commands to source_part i.e. remove and rename some columns in
+    /// source_part and return set of files, that have to be removed or renamed
+    /// from filesystem and in-memory checksums. Ordered result is important,
+    /// because we can apply renames that affects each other: x -> z, y -> x.
+    static NameToNameVector collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
     static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
 
-    /// Get the columns list of the resulting part in the same order as all_columns.
+    /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
-        NamesAndTypesList all_columns,
+        NamesAndTypesList storage_columns,
         const MutationCommands & commands_for_removes);
 
-    /// Get skip indcies, that should exists in the resulting data part.
+    /// Get skip indices, that should exists in the resulting data part.
     static MergeTreeIndices getIndicesForNewDataPart(
-        const MergeTreeIndices & all_indices,
+        const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
-    bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
+    static bool shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const Names & columns, const MutationCommands & commands);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
-    std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
+    static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
-        StoragePtr storage_from_source_part,
         const NamesAndTypesList & updated_columns,
-        const Context & context) const;
+        const StorageMetadataPtr & metadata_snapshot,
+        const Context & context);
 
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeIndices & skip_indices,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
@@ -187,6 +194,7 @@ private:
     /// Mutate some columns of source part with mutation_stream
     void mutateSomePartColumns(
         const MergeTreeDataPartPtr & source_part,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
         const Block & mutation_header,
         MergeTreeData::MutableDataPartPtr new_data_part,
@@ -229,13 +237,15 @@ private:
     MergeTreeData & data;
     const size_t background_pool_size;
 
-    Logger * log;
+    Poco::Logger * log;
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
 
-    /// Last time when TTLMergeSelector has been used
-    time_t last_merge_with_ttl = 0;
+    /// Stores the next TTL merge due time for each partition (used only by TTLMergeSelector)
+    TTLMergeSelector::PartitionIdToTTLs next_ttl_merge_times_by_partition;
+    /// Performing TTL merges independently for each partition guarantees that
+    /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
 
 

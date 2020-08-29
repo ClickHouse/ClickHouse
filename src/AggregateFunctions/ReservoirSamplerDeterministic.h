@@ -14,6 +14,13 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 /// Implementation of Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the `sample_count` size.
 /// Can approximately get quantiles.
@@ -114,12 +121,12 @@ public:
         size_t left_index = static_cast<size_t>(index);
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
-            return samples[left_index].first;
+            return static_cast<double>(samples[left_index].first);
 
         const double left_coef = right_index - index;
         const double right_coef = index - left_index;
 
-        return samples[left_index].first * left_coef + samples[right_index].first * right_coef;
+        return static_cast<double>(samples[left_index].first) * left_coef + static_cast<double>(samples[right_index].first) * right_coef;
     }
 
     void merge(const ReservoirSamplerDeterministic & b)
@@ -223,7 +230,7 @@ private:
     ResultType onEmpty() const
     {
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
-            throw Poco::Exception("Quantile of empty ReservoirSamplerDeterministic");
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");
         else
             return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }

@@ -1,27 +1,27 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "URL'ler ile \xE7al\u0131\u015Fma"
 ---
 
-# URL’ler Ile çalışmak için işlevler {#functions-for-working-with-urls}
+# URL'ler ile çalışmak için işlevler {#functions-for-working-with-urls}
 
-Tüm bu işlevler RFC’Yİ takip etmez. Geliştirilmiş performans için maksimum derecede basitleştirilmişlerdir.
+Tüm bu işlevler RFC'Yİ takip etmez. Geliştirilmiş performans için maksimum derecede basitleştirilmişlerdir.
 
-## Bir URL’nin bölümlerini Ayıklayan işlevler {#functions-that-extract-parts-of-a-url}
+## Bir URL'nin bölümlerini Ayıklayan işlevler {#functions-that-extract-parts-of-a-url}
 
-İlgili bölüm bir URL’de yoksa, boş bir dize döndürülür.
+İlgili bölüm bir URL'de yoksa, boş bir dize döndürülür.
 
 ### protokol {#protocol}
 
-Protokolü bir URL’den ayıklar.
+Protokolü bir URL'den ayıklar.
 
 Examples of typical returned values: http, https, ftp, mailto, tel, magnet…
 
 ### etki {#domain}
 
-Ana bilgisayar adını bir URL’den ayıklar.
+Ana bilgisayar adını bir URL'den ayıklar.
 
 ``` sql
 domain(url)
@@ -72,7 +72,7 @@ Etki alanını döndürür ve birden fazla kaldırır ‘www.’ başlangıcına
 
 ### topLevelDomain {#topleveldomain}
 
-Üst düzey etki alanını bir URL’den ayıklar.
+Üst düzey etki alanını bir URL'den ayıklar.
 
 ``` sql
 topLevelDomain(url)
@@ -111,7 +111,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### firstSignificantSubdomain {#firstsignificantsubdomain}
 
-Ret theur thens the “first significant subdomain”. Bu, Yandex’e özgü standart olmayan bir kavramdır.Metrica. İlk önemli alt etki alanı ise ikinci düzey bir etki alanıdır ‘com’, ‘net’, ‘org’, veya ‘co’. Aksi takdirde, üçüncü düzey bir alandır. Mesela, `firstSignificantSubdomain (‘https://news.yandex.ru/’) = ‘yandex’, firstSignificantSubdomain (‘https://news.yandex.com.tr/’) = ‘yandex’`. Listesi “insignificant” ikinci düzey etki alanları ve diğer uygulama ayrıntıları gelecekte değişebilir.
+Ret theur thens the “first significant subdomain”. Bu, Yandex'e özgü standart olmayan bir kavramdır.Metrica. İlk önemli alt etki alanı ise ikinci düzey bir etki alanıdır ‘com’, ‘net’, ‘org’, veya ‘co’. Aksi takdirde, üçüncü düzey bir alandır. Mesela, `firstSignificantSubdomain (‘https://news.yandex.ru/’) = ‘yandex’, firstSignificantSubdomain (‘https://news.yandex.com.tr/’) = ‘yandex’`. Listesi “insignificant” ikinci düzey etki alanları ve diğer uygulama ayrıntıları gelecekte değişebilir.
 
 ### cutToFirstSignificantSubdomain {#cuttofirstsignificantsubdomain}
 
@@ -141,7 +141,7 @@ Sorgu dizesini ve parça tanımlayıcısını döndürür. Örnek: Sayfa = 1\#29
 
 ### extractURLParameter (URL, isim) {#extracturlparameterurl-name}
 
-Değerini döndürür ‘name’ varsa, URL’DEKİ parametre. Aksi takdirde, boş bir dize. Bu ada sahip birçok parametre varsa, ilk oluşumu döndürür. Bu işlev, parametre adının URL’de geçirilen bağımsız değişkenle aynı şekilde kodlandığı varsayımı altında çalışır.
+Değerini döndürür ‘name’ varsa, URL'DEKİ parametre. Aksi takdirde, boş bir dize. Bu ada sahip birçok parametre varsa, ilk oluşumu döndürür. Bu işlev, parametre adının URL'de geçirilen bağımsız değişkenle aynı şekilde kodlandığı varsayımı altında çalışır.
 
 ### extractURLParameters (URL) {#extracturlparametersurl}
 
@@ -153,11 +153,11 @@ URL parametrelerinin adlarına karşılık gelen bir dizi ad dizesi döndürür.
 
 ### URLHierarchy(URL) {#urlhierarchyurl}
 
-Sonunda/,? simgeleriyle kesilen URL’yi içeren bir dizi döndürür yol ve sorgu dizesinde. Ardışık ayırıcı karakterler bir olarak sayılır. Kesim, tüm ardışık ayırıcı karakterlerden sonra pozisyonda yapılır.
+Sonunda/,? simgeleriyle kesilen URL'yi içeren bir dizi döndürür yol ve sorgu dizesinde. Ardışık ayırıcı karakterler bir olarak sayılır. Kesim, tüm ardışık ayırıcı karakterlerden sonra pozisyonda yapılır.
 
 ### URLPathHierarchy(URL) {#urlpathhierarchyurl}
 
-Yukarıdaki ile aynı, ancak sonuçta protokol ve ana bilgisayar olmadan. / Eleman (kök) dahil değildir. Örnek: işlev, yandex’te URL’yi ağaç raporları uygulamak için kullanılır. Ölçü.
+Yukarıdaki ile aynı, ancak sonuçta protokol ve ana bilgisayar olmadan. / Eleman (kök) dahil değildir. Örnek: işlev, yandex'te URL'yi ağaç raporları uygulamak için kullanılır. Ölçü.
 
 ``` text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
@@ -169,7 +169,7 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 
 ### decodeURLComponent (URL) {#decodeurlcomponenturl}
 
-Çözülmüş URL’yi döndürür.
+Çözülmüş URL'yi döndürür.
 Örnek:
 
 ``` sql
@@ -182,13 +182,13 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## URL’nin Bir bölümünü kaldıran işlevler {#functions-that-remove-part-of-a-url}
+## URL'nin bir bölümünü kaldıran işlevler {#functions-that-remove-part-of-a-url}
 
-URL’de benzer bir şey yoksa, URL değişmeden kalır.
+URL'de benzer bir şey yoksa, URL değişmeden kalır.
 
 ### cutWWW {#cutwww}
 
-Birden fazla kaldırır ‘www.’ varsa, URL’nin etki alanının başından itibaren.
+Birden fazla kaldırır ‘www.’ varsa, URL'nin etki alanının başından itibaren.
 
 ### cutQueryString {#cutquerystring}
 
@@ -204,6 +204,6 @@ Sorgu dizesini ve parça tanımlayıcısını kaldırır. Soru işareti ve sayı
 
 ### cutURLParameter (URL, isim) {#cuturlparameterurl-name}
 
-Kaldırır ‘name’ Varsa URL parametresi. Bu işlev, parametre adının URL’de geçirilen bağımsız değişkenle aynı şekilde kodlandığı varsayımı altında çalışır.
+Kaldırır ‘name’ Varsa URL parametresi. Bu işlev, parametre adının URL'de geçirilen bağımsız değişkenle aynı şekilde kodlandığı varsayımı altında çalışır.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->

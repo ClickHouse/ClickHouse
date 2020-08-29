@@ -1,17 +1,16 @@
 ---
-machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Getting Started
+toc_folder_title: "はじめに"
 toc_hidden: true
 toc_priority: 8
-toc_title: "\u96A0\u3055\u308C\u305F"
+toc_title: hidden
 ---
 
 # はじめに {#getting-started}
 
-あなたがclickhouseに慣れていないし、そのパフォーマンスのハンズオン感を取得したい場合は、まず、あなたが通過する必要があります [インストール処理](install.md). その後、あなたは:
+あなたが ClickHouse は初めてで、そのパフォーマンスを体感するためのハンズオンを行いたい場合は、最初に [インストール](../getting-started/install.md) を行って下さい。
+そうすると、以下を実施できるようになります。
 
--   [詳細なチュートリアルを通過](tutorial.md)
--   [データセット例の実験](example-datasets/ontime.md)
+-   [詳細なチュートリアル](../getting-started/tutorial.md)
+-   [データセット例を用いて試す](../getting-started/example-datasets/ontime.md)
 
 [元の記事](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->

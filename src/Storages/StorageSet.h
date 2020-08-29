@@ -21,7 +21,7 @@ class StorageSetOrJoinBase : public IStorage
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     Strings getDataPaths() const override { return {path}; }
 
@@ -67,7 +67,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
 private:
     SetPtr set;

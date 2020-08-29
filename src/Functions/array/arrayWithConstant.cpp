@@ -47,7 +47,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t num_rows) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t num_rows) const override
     {
         const auto * col_num = block.getByPosition(arguments[0]).column.get();
         const auto * col_value = block.getByPosition(arguments[1]).column.get();

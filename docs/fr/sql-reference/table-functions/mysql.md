@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: mysql
 ---
@@ -35,13 +35,13 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 Simple `WHERE` des clauses telles que `=, !=, >, >=, <, <=` sont actuellement exécutés sur le serveur MySQL.
 
-Le reste des conditions et le `LIMIT` les contraintes d’échantillonnage sont exécutées dans ClickHouse uniquement après la fin de la requête à MySQL.
+Le reste des conditions et le `LIMIT` les contraintes d'échantillonnage sont exécutées dans ClickHouse uniquement après la fin de la requête à MySQL.
 
 **Valeur Renvoyée**
 
-Un objet table avec les mêmes colonnes que la table MySQL d’origine.
+Un objet table avec les mêmes colonnes que la table MySQL d'origine.
 
-## Exemple D’Utilisation {#usage-example}
+## Exemple D'Utilisation {#usage-example}
 
 Table dans MySQL:
 

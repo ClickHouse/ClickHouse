@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 ---

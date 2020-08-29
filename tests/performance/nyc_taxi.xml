@@ -3,7 +3,7 @@
 
 
     <preconditions>
-        <table_exists>default.trips_mergetree</table_exists>
+        <table_exists>trips_mergetree</table_exists>
     </preconditions>
 
     <query>SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type</query>

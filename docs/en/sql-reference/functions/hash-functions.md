@@ -423,7 +423,7 @@ murmurHash3_128( expr )
 
 **Parameters**
 
--   `expr` — [Expressions](../syntax.md#syntax-expressions) returning a [String](../../sql-reference/data-types/string.md)-type value.
+-   `expr` — [Expressions](../../sql-reference/syntax.md#syntax-expressions) returning a [String](../../sql-reference/data-types/string.md)-type value.
 
 **Returned Value**
 

@@ -1,6 +1,6 @@
 ---
 toc_priority: 59
-toc_title: Working with Yandex.Metrica Dictionaries
+toc_title: Yandex.Metrica Dictionaries
 ---
 
 # Functions for Working with Yandex.Metrica Dictionaries {#functions-for-working-with-yandex-metrica-dictionaries}

@@ -1,4 +1,4 @@
-# 更换麦树 {#replacingmergetree}
+# 替换合并树 {#replacingmergetree}
 
 该引擎和[MergeTree](mergetree.md)的不同之处在于它会删除具有相同主键的重复项。
 
@@ -23,9 +23,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 请求参数的描述，参考[请求参数](../../../engines/table-engines/mergetree-family/replacingmergetree.md)。
 
-**替换树参数**
+**参数**
 
--   `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
+-   `ver` — 版本列。类型为 `UInt*`, `Date`, `DateTime` 或 `DateTime64`。可选参数。
 
         合并的时候，`ReplacingMergeTree` 从所有具有相同主键的行中选择一行留下：
         - 如果 `ver` 列未指定，选择最后一条。

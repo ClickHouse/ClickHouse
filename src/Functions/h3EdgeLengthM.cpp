@@ -1,20 +1,13 @@
-#include "config_functions.h"
-#if USE_H3
-#    include <Columns/ColumnsNumber.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/typeid_cast.h>
-#    include <ext/range.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
-#    if __has_include(<h3/h3api.h>)
-#        include <h3/h3api.h>
-#        include <h3/constants.h>
-#    else
-#        include <h3api.h>
-#        include <constants.h>
-#    endif
+#include <constants.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -54,7 +47,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
@@ -85,4 +78,3 @@ void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
 }
 
 }
-#endif

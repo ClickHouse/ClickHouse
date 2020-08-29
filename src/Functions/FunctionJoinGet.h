@@ -1,6 +1,6 @@
 #include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 
 namespace DB
 {
@@ -37,7 +37,7 @@ class FunctionJoinGet final : public IFunctionBaseImpl
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
-    FunctionJoinGet(TableStructureReadLockHolder table_lock_, StoragePtr storage_join_,
+    FunctionJoinGet(TableLockHolder table_lock_, StoragePtr storage_join_,
                     HashJoinPtr join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
         : table_lock(std::move(table_lock_))
@@ -57,7 +57,7 @@ public:
     ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const override;
 
 private:
-    TableStructureReadLockHolder table_lock;
+    TableLockHolder table_lock;
     StoragePtr storage_join;
     HashJoinPtr join;
     const String attr_name;

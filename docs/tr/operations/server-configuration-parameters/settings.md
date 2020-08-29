@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: "Sunucu Ayarlar\u0131"
 ---
@@ -209,7 +209,7 @@ Eğer `http_port` belirtilmişse, OpenSSL yapılandırması ayarlanmış olsa bi
 **Örnek**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
@@ -453,7 +453,7 @@ Sunucu/istemci ayarları için tuşlar:
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 -   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` sertifika içerir.
 -   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Bağlama](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) sınıf. Olası değerler: `none`, `relaxed`, `strict`, `once`.
+-   verificationMode – The method for checking the node's certificates. Details are in the description of the [Bağlam](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) sınıf. Olası değerler: `none`, `relaxed`, `strict`, `once`.
 -   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 -   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
 -   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
@@ -465,7 +465,7 @@ Sunucu/istemci ayarları için tuşlar:
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
 -   disableProtocols – Protocols that are not allowed to use.
@@ -689,7 +689,7 @@ Sunucunun saat dilimi.
 
 UTC saat dilimi veya coğrafi konum (örneğin, Afrika / Abidjan) için bir IANA tanımlayıcısı olarak belirtilir.
 
-Saat dilimi, datetime alanları metin biçimine (ekranda veya dosyada yazdırıldığında) çıktığında ve datetime’ı bir dizeden alırken dize ve DateTime biçimleri arasındaki dönüşümler için gereklidir. Ayrıca, saat dilimi, giriş parametrelerinde saat dilimini almadıkları takdirde saat ve tarih ile çalışan işlevlerde kullanılır.
+Saat dilimi, datetime alanları metin biçimine (ekranda veya dosyada yazdırıldığında) çıktığında ve datetime'ı bir dizeden alırken dize ve DateTime biçimleri arasındaki dönüşümler için gereklidir. Ayrıca, saat dilimi, giriş parametrelerinde saat dilimini almadıkları takdirde saat ve tarih ile çalışan işlevlerde kullanılır.
 
 **Örnek**
 
@@ -707,7 +707,7 @@ TCP protokolü üzerinden istemcilerle iletişim kurmak için bağlantı noktas�
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 İstemcilerle güvenli iletişim için TCP bağlantı noktası. İle kullanın [OpenSSL](#server_configuration_parameters-openssl) ayarlar.
 
@@ -870,10 +870,10 @@ Bu ayar yalnızca `MergeTree` aile. Belirt specifiedilebilir:
 -   0 — Functionality is turned off.
 -   1 — Functionality is turned on.
 
-Eğer `use_minimalistic_part_header_in_zookeeper = 1`, sonraları [çoğaltıyordu](../../engines/table-engines/mergetree-family/replication.md) tablolar, veri parçalarının başlıklarını tek bir `znode`. Tablo çok sayıda sütun içeriyorsa, bu depolama yöntemi Zookeeper’da depolanan verilerin hacmini önemli ölçüde azaltır.
+Eğer `use_minimalistic_part_header_in_zookeeper = 1`, sonraları [çoğaltıyordu](../../engines/table-engines/mergetree-family/replication.md) tablolar, veri parçalarının başlıklarını tek bir `znode`. Tablo çok sayıda sütun içeriyorsa, bu depolama yöntemi Zookeeper'da depolanan verilerin hacmini önemli ölçüde azaltır.
 
 !!! attention "Dikkat"
-    Uyguladıktan sonra `use_minimalistic_part_header_in_zookeeper = 1`, ClickHouse sunucusunu bu ayarı desteklemeyen bir sürüme düşüremezsiniz. Bir kümedeki sunucularda ClickHouse yükseltirken dikkatli olun. Tüm sunucuları bir kerede yükseltmeyin. Clickhouse’un yeni sürümlerini bir test ortamında veya bir kümenin yalnızca birkaç sunucusunda test etmek daha güvenlidir.
+    Uyguladıktan sonra `use_minimalistic_part_header_in_zookeeper = 1`, ClickHouse sunucusunu bu ayarı desteklemeyen bir sürüme düşüremezsiniz. Bir kümedeki sunucularda ClickHouse yükseltirken dikkatli olun. Tüm sunucuları bir kerede yükseltmeyin. Clickhouse'un yeni sürümlerini bir test ortamında veya bir kümenin yalnızca birkaç sunucusunda test etmek daha güvenlidir.
 
       Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
@@ -892,5 +892,15 @@ ClickHouse iç DNS önbelleğinde saklanan IP adreslerini güncelleme süresi (s
 Güncelleştirme, ayrı bir sistem iş parçacığında zaman uyumsuz olarak gerçekleştirilir.
 
 **Varsayılan değer**: 15.
+
+## access\_control\_path {#access_control_path}
+
+ClickHouse sunucusunun SQL komutları tarafından oluşturulan kullanıcı ve rol yapılandırmalarını depoladığı bir klasörün yolu.
+
+Varsayılan değer: `/var/lib/clickhouse/access/`.
+
+**Ayrıca bakınız**
+
+-   [Erişim Kontrolü ve hesap yönetimi](../access-rights.md#access-control)
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

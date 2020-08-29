@@ -1,32 +1,32 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 65
-toc_title: "\u30A4\u30F3\u30C8\u30ED\u30B9\u30DA\u30AF\u30B7\u30E7\u30F3"
+toc_title: "\u5185\u7701"
 ---
 
-# イントロスペクション関数 {#introspection-functions}
+# 内観関数 {#introspection-functions}
 
-利用できる表示可能なプラグインで説明してこの章にintrospect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) と [DWARF](https://en.wikipedia.org/wiki/DWARF) のためのクエリープロファイリング.
+この章で説明する関数を使用して、イントロスペクトできます [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) と [DWARF](https://en.wikipedia.org/wiki/DWARF) クエリプロファイル用。
 
 !!! warning "警告"
     これらの機能は、が必要となる場合があり安全に配慮し
 
-イントロスペクション機能を適切に動作させるため:
+内観機能の適切な操作のため:
 
 -   インストール `clickhouse-common-static-dbg` パッケージ。
 
--   セットを [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 1に設定します。
+-   セット [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 1に設定します。
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouseはプロファイラーレポートを保存します [trace\_log](../../operations/system-tables.md#system_tables-trace_log) システムテーブル。 のテーブルプロファイラで設定されます。
+ClickHouseはプロファイラレポートを [trace\_log](../../operations/system-tables.md#system_tables-trace_log) システムテーブル。 のテーブルプロファイラで設定されます。
 
-## アドレスストリンcolor {#addresstoline}
+## アドレストリン {#addresstoline}
 
-ClickHouseサーバープロセス内の仮想メモリアドレスを、ClickHouseソースコード内のファイル名と行番号に変換します。
+ClickHouse serverプロセス内の仮想メモリアドレスを、ClickHouseソースコード内のファイル名と行番号に変換します。
 
-公式のclickhouseのパッケージを使用すれば、取付ける必要があります `clickhouse-common-static-dbg` パッケージ。
+公式のClickHouseパッケージを使用する場合は、 `clickhouse-common-static-dbg` パッケージ。
 
 **構文**
 
@@ -40,17 +40,17 @@ addressToLine(address_of_binary_instruction)
 
 **戻り値**
 
--   コロンで区切られたこのファイル内のソースコードのファイル名と行番号。
+-   ソースコードのファイル名とこのファイル内の行番号をコロンで区切ります。
 
-        For example, `/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
--   関数がデバッグ情報を見つけることができなかった場合、バイナリの名前。
+-   関数がデバッグ情報を見つけられなかった場合のバイナリの名前。
 
--   アドレスが有効でない場合は、空の文字列。
+-   アドレスが無効な場合は、空の文字列。
 
 タイプ: [文字列](../../sql-reference/data-types/string.md).
 
-**例えば**
+**例**
 
 イントロスペクション機能の有効化:
 
@@ -78,7 +78,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 その `trace` 分野のスタックトレースを瞬時にサンプリングします。
 
-単一のアドレスのソースコードファイル名と行番号を取得する:
+単一のアドレスのソースコードのファイル名と行番号の取得:
 
 ``` sql
 SELECT addressToLine(94784076370703) \G
@@ -87,10 +87,10 @@ SELECT addressToLine(94784076370703) \G
 ``` text
 Row 1:
 ──────
-addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
+addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
 
-スタックトレース全体に関数を適用する:
+スタックトレース全体への関数の適用:
 
 ``` sql
 SELECT
@@ -100,15 +100,15 @@ LIMIT 1
 \G
 ```
 
-その [arrayMap](higher-order-functions.md#higher_order_functions-array-map) 機能はの各々の個々の要素を処理することを割り当てます `trace` による配列 `addressToLine` 機能。 この処理の結果は、次のように表示されます。 `trace_source_code_lines` 出力の列。
+その [arrayMap](higher-order-functions.md#higher_order_functions-array-map) 機能はの各々の個々の要素を処理することを割り当てます `trace` による配列 `addressToLine` 機能。 この処理の結果は `trace_source_code_lines` 出力の列。
 
 ``` text
 Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
-/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
-/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.h:155
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.h:155
 /usr/include/c++/9/bits/atomic_base.h:551
 /usr/lib/debug/usr/bin/clickhouse
 /lib/x86_64-linux-gnu/libpthread-2.27.so
@@ -117,7 +117,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 ## addressToSymbol {#addresstosymbol}
 
-に変換する仮想メモリアドレス内clickhouseサーバプロセスのシンボルからclickhouseオブジェクトファイルです。
+に変換する仮想メモリアドレス内ClickHouseサーバプロセスのシンボルからClickHouseオブジェクトファイルです。
 
 **構文**
 
@@ -132,11 +132,11 @@ addressToSymbol(address_of_binary_instruction)
 **戻り値**
 
 -   ClickHouseオブジェクトファイルからの記号。
--   アドレスが有効でない場合は、空の文字列。
+-   アドレスが無効な場合は、空の文字列。
 
 タイプ: [文字列](../../sql-reference/data-types/string.md).
 
-**例えば**
+**例**
 
 イントロスペクション機能の有効化:
 
@@ -164,7 +164,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 その `trace` 分野のスタックトレースを瞬時にサンプリングします。
 
-単一のアドレスのシンボルを取得する:
+単一のアドレスのシンボルの取得:
 
 ``` sql
 SELECT addressToSymbol(94138803686098) \G
@@ -176,7 +176,7 @@ Row 1:
 addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
 ```
 
-スタックトレース全体に関数を適用する:
+スタックトレース全体への関数の適用:
 
 ``` sql
 SELECT
@@ -186,7 +186,7 @@ LIMIT 1
 \G
 ```
 
-その [arrayMap](higher-order-functions.md#higher_order_functions-array-map) 機能はの各々の個々の要素を処理することを割り当てます `trace` による配列 `addressToSymbols` 機能。 この処理の結果は、次のように表示されます。 `trace_symbols` 出力の列。
+その [arrayMap](higher-order-functions.md#higher_order_functions-array-map) 機能はの各々の個々の要素を処理することを割り当てます `trace` による配列 `addressToSymbols` 機能。 この処理の結果は `trace_symbols` 出力の列。
 
 ``` text
 Row 1:
@@ -214,7 +214,7 @@ clone
 
 ## デマングル {#demangle}
 
-を使用して取得できるシンボルを変換します。 [addressToSymbol](#addresstosymbol) C++の関数名に関数。
+を使用して取得できるシンボルを変換します [addressToSymbol](#addresstosymbol) C++関数名への関数。
 
 **構文**
 
@@ -229,11 +229,11 @@ demangle(symbol)
 **戻り値**
 
 -   C++関数の名前。
--   シンボルが有効でない場合は、空の文字列。
+-   シンボルが無効な場合は空の文字列。
 
 タイプ: [文字列](../../sql-reference/data-types/string.md).
 
-**例えば**
+**例**
 
 イントロスペクション機能の有効化:
 
@@ -261,7 +261,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 その `trace` 分野のスタックトレースを瞬時にサンプリングします。
 
-単一アドレスの関数名の取得:
+単一のアドレスの関数名の取得:
 
 ``` sql
 SELECT demangle(addressToSymbol(94138803686098)) \G
@@ -273,7 +273,7 @@ Row 1:
 demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 ```
 
-スタックトレース全体に関数を適用する:
+スタックトレース全体への関数の適用:
 
 ``` sql
 SELECT
@@ -283,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-その [arrayMap](higher-order-functions.md#higher_order_functions-array-map) 機能はの各々の個々の要素を処理することを割り当てます `trace` による配列 `demangle` 機能。 この処理の結果は、次のように表示されます。 `trace_functions` 出力の列。
+その [arrayMap](higher-order-functions.md#higher_order_functions-array-map) 機能はの各々の個々の要素を処理することを割り当てます `trace` による配列 `demangle` 機能。 この処理の結果は `trace_functions` 出力の列。
 
 ``` text
 Row 1:

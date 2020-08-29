@@ -11,29 +11,23 @@
 namespace mysqlxx
 {
 
-Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(nullptr), conn(conn_)
+Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
 {
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
-
-    init(&query_buf);
 
     if (!query_string.empty())
-    {
-        query_buf.str(query_string);
-        seekp(0, std::ios::end);
-    }
+        query_buf << query_string;
 
-    imbue(std::locale::classic());
+    query_buf.imbue(std::locale::classic());
 }
 
-Query::Query(const Query & other) : std::ostream(nullptr), conn(other.conn)
+Query::Query(const Query & other) : conn(other.conn)
 {
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
 
-    init(&query_buf);
-    imbue(std::locale::classic());
+    query_buf.imbue(std::locale::classic());
 
     *this << other.str();
 }
@@ -45,9 +39,7 @@ Query & Query::operator= (const Query & other)
 
     conn = other.conn;
 
-    seekp(0);
-    clear();
-    *this << other.str();
+    query_buf.str(other.str());
 
     return *this;
 }
@@ -59,9 +51,7 @@ Query::~Query()
 
 void Query::reset()
 {
-    seekp(0);
-    clear();
-    query_buf.str("");
+    query_buf.str({});
 }
 
 void Query::executeImpl()

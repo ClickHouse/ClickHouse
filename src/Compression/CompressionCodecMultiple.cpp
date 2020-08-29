@@ -3,12 +3,11 @@
 #include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
-#include <IO/ReadHelpers.h>
+#include <Parsers/ASTExpressionList.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/hex.h>
-#include <sstream>
 
 
 namespace DB
@@ -17,7 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CORRUPTED_DATA;
+    extern const int CORRUPTED_DATA;
 }
 
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
@@ -30,17 +29,12 @@ uint8_t CompressionCodecMultiple::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
-String CompressionCodecMultiple::getCodecDesc() const
+ASTPtr CompressionCodecMultiple::getCodecDesc() const
 {
-    WriteBufferFromOwnString out;
-    for (size_t idx = 0; idx < codecs.size(); ++idx)
-    {
-        if (idx != 0)
-            out << ", ";
-
-        out << codecs[idx]->getCodecDesc();
-    }
-    return out.str();
+    auto result = std::make_shared<ASTExpressionList>();
+    for (const auto & codec : codecs)
+        result->children.push_back(codec->getCodecDesc());
+    return result;
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -78,14 +72,6 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return 1 + codecs.size() + source_size;
 }
 
-void CompressionCodecMultiple::useInfoAboutType(DataTypePtr data_type)
-{
-    for (auto & codec : codecs)
-    {
-        codec->useInfoAboutType(data_type);
-    }
-}
-
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
     if (source_size < 1 || !source[0])
@@ -119,6 +105,15 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
 }
+
+bool CompressionCodecMultiple::isCompression() const
+{
+    for (const auto & codec : codecs)
+        if (codec->isCompression())
+            return true;
+    return false;
+}
+
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {

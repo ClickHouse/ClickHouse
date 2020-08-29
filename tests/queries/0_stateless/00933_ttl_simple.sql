@@ -83,7 +83,7 @@ select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1;
 
-set send_logs_level = 'none';
+set send_logs_level = 'fatal';
 
 drop table if exists ttl_00933_1;
 

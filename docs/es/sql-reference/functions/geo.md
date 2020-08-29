@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "Trabajar con coordenadas geogr\xE1ficas"
 ---
 
-# Funciones Para Trabajar Con Coordenadas geográficas {#functions-for-working-with-geographical-coordinates}
+# Funciones para trabajar con coordenadas geográficas {#functions-for-working-with-geographical-coordinates}
 
 ## GreatCircleDistance {#greatcircledistance}
 
@@ -203,7 +203,7 @@ Resultado:
 └────────────────────┘
 ```
 
-## Información Adicional {#geohashesinbox}
+## Información adicional {#geohashesinbox}
 
 Devuelve una matriz de cadenas codificadas por geohash de precisión dada que caen dentro e intersecan los límites de un cuadro dado, básicamente una cuadrícula 2D aplanada en una matriz.
 
@@ -222,7 +222,7 @@ Tenga en cuenta que todos los parámetros de coordenadas deben ser del mismo tip
 -   matriz de cadenas de precisión largas de geohash-cajas que cubren el área proporcionada, no debe confiar en el orden de los artículos.
 -   \[\] - matriz vacía si *minuto* valores de *latitud* y *longitud* no son menos que los correspondientes *máximo* valor.
 
-Tenga en cuenta que la función arrojará una excepción si la matriz resultante tiene más de 10’000’000 de elementos.
+Tenga en cuenta que la función arrojará una excepción si la matriz resultante tiene más de 10'000'000 de elementos.
 
 **Ejemplo**
 

@@ -1,6 +1,5 @@
 set send_logs_level = 'error';
 set extremes = 1;
--- set experimental_use_processors=0;
 
 select * from remote('127.0.0.1', numbers(2));
 select '-';

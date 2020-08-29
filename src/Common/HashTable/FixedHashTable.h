@@ -29,7 +29,7 @@ struct FixedHashTableCell
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
 
-    /// This Cell is only stored inside an iterator. It's used to accomodate the fact
+    /// This Cell is only stored inside an iterator. It's used to accommodate the fact
     ///  that the iterator based API always provide a reference to a continuous memory
     ///  containing the Key. As a result, we have to instantiate a real Key field.
     /// All methods that return a mutable reference to the Key field are named with
@@ -47,11 +47,52 @@ struct FixedHashTableCell
 };
 
 
+/// How to obtain the size of the table.
+
+template <typename Cell>
+struct FixedHashTableStoredSize
+{
+    size_t m_size = 0;
+
+    size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
+    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size == 0; }
+
+    void increaseSize() { ++m_size; }
+    void clearSize() { m_size = 0; }
+    void setSize(size_t to) { m_size = to; }
+};
+
+template <typename Cell>
+struct FixedHashTableCalculatedSize
+{
+    size_t getSize(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
+    {
+        size_t res = 0;
+        for (const Cell * end = buf + num_cells; buf != end; ++buf)
+            if (!buf->isZero(state))
+                ++res;
+        return res;
+    }
+
+    bool isEmpty(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
+    {
+        for (const Cell * end = buf + num_cells; buf != end; ++buf)
+            if (!buf->isZero(state))
+                return false;
+        return true;
+    }
+
+    void increaseSize() {}
+    void clearSize() {}
+    void setSize(size_t) {}
+};
+
+
 /** Used as a lookup table for small keys such as UInt8, UInt16. It's different
   *  than a HashTable in that keys are not stored in the Cell buf, but inferred
   *  inside each iterator. There are a bunch of to make it faster than using
   *  HashTable: a) It doesn't have a conflict chain; b) There is no key
-  *  comparision; c) The number of cycles for checking cell empty is halved; d)
+  *  comparison; c) The number of cycles for checking cell empty is halved; d)
   *  Memory layout is tighter, especially the Clearable variants.
   *
   * NOTE: For Set variants this should always be better. For Map variants
@@ -63,8 +104,8 @@ struct FixedHashTableCell
   *  transfer, key updates (f.g. StringRef) and serde. This will allow
   *  TwoLevelHashSet(Map) to contain different type of sets(maps).
   */
-template <typename Key, typename Cell, typename Allocator>
-class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State
+template <typename Key, typename Cell, typename Size, typename Allocator>
+class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
     static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
 
@@ -75,7 +116,6 @@ protected:
 
     using Self = FixedHashTable;
 
-    size_t m_size = 0; /// Amount of elements
     Cell * buf; /// A piece of memory for all elements.
 
     void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
@@ -178,7 +218,7 @@ public:
         free();
 
         std::swap(buf, rhs.buf);
-        std::swap(m_size, rhs.m_size);
+        this->setSize(rhs.size());
 
         Allocator::operator=(std::move(rhs));
         Cell::State::operator=(std::move(rhs));
@@ -274,9 +314,21 @@ public:
         return iterator(this, ptr);
     }
 
-    const_iterator end() const { return const_iterator(this, buf + NUM_CELLS); }
-    const_iterator cend() const { return end(); }
-    iterator end() { return iterator(this, buf + NUM_CELLS); }
+    const_iterator end() const
+    {
+        /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
+        return const_iterator(this, buf ? buf + NUM_CELLS : buf);
+    }
+
+    const_iterator cend() const
+    {
+        return end();
+    }
+
+    iterator end()
+    {
+        return iterator(this, buf ? buf + NUM_CELLS : buf);
+    }
 
 
 public:
@@ -293,7 +345,7 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
-        ++m_size;
+        this->increaseSize();
     }
 
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
@@ -323,20 +375,28 @@ public:
     void write(DB::WriteBuffer & wb) const
     {
         Cell::State::write(wb);
-        DB::writeVarUInt(m_size, wb);
+        DB::writeVarUInt(size(), wb);
+
+        if (!buf)
+            return;
 
         for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
+        {
             if (!ptr->isZero(*this))
             {
                 DB::writeVarUInt(ptr - buf);
                 ptr->write(wb);
             }
+        }
     }
 
     void writeText(DB::WriteBuffer & wb) const
     {
         Cell::State::writeText(wb);
-        DB::writeText(m_size, wb);
+        DB::writeText(size(), wb);
+
+        if (!buf)
+            return;
 
         for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
         {
@@ -354,7 +414,9 @@ public:
     {
         Cell::State::read(rb);
         destroyElements();
+        size_t m_size;
         DB::readVarUInt(m_size, rb);
+        this->setSize(m_size);
         free();
         alloc();
 
@@ -372,7 +434,9 @@ public:
     {
         Cell::State::readText(rb);
         destroyElements();
+        size_t m_size;
         DB::readText(m_size, rb);
+        this->setSize(m_size);
         free();
         alloc();
 
@@ -388,14 +452,13 @@ public:
         }
     }
 
-    size_t size() const { return m_size; }
-
-    bool empty() const { return 0 == m_size; }
+    size_t size() const { return this->getSize(buf, *this, NUM_CELLS); }
+    bool empty() const { return this->isEmpty(buf, *this, NUM_CELLS); }
 
     void clear()
     {
         destroyElements();
-        m_size = 0;
+        this->clearSize();
 
         memset(static_cast<void *>(buf), 0, NUM_CELLS * sizeof(*buf));
     }
@@ -405,13 +468,16 @@ public:
     void clearAndShrink()
     {
         destroyElements();
-        m_size = 0;
+        this->clearSize();
         free();
     }
 
     size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
 
     size_t getBufferSizeInCells() const { return NUM_CELLS; }
+
+    const Cell * data() const { return buf; }
+    Cell * data() { return buf; }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const { return 0; }

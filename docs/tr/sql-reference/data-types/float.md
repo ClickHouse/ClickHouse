@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: Float32, Float64
 ---
@@ -16,7 +16,7 @@ Türleri C türlerine eşdeğerdir:
 
 Verileri mümkün olduğunda tamsayı biçiminde saklamanızı öneririz. Örneğin, sabit hassas sayıları parasal tutarlar veya sayfa yükleme süreleri gibi milisaniye cinsinden tamsayı değerlerine dönüştürün.
 
-## Kayan noktalı sayıları Kullanma {#using-floating-point-numbers}
+## Kayan noktalı sayıları kullanma {#using-floating-point-numbers}
 
 -   Kayan noktalı sayılarla yapılan hesaplamalar yuvarlama hatası oluşturabilir.
 
@@ -36,7 +36,7 @@ SELECT 1 - 0.9
 -   Kayan nokta hesaplamaları, sonsuzluk gibi sayılarla sonuçlanabilir (`Inf`) ve “not-a-number” (`NaN`). Hesaplamaların sonuçlarını işlerken bu dikkate alınmalıdır.
 -   Kayan noktalı sayıları metinden ayrıştırırken, sonuç en yakın makine tarafından temsil edilebilir sayı olmayabilir.
 
-## N Andan Ve in Andf {#data_type-float-nan-inf}
+## N andan ve In andf {#data_type-float-nan-inf}
 
 Standart SQL aksine, ClickHouse kayan noktalı sayılar aşağıdaki kategorileri destekler:
 
@@ -82,6 +82,6 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select.md).
+    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select/order-by.md).
 
 [Orijinal makale](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->

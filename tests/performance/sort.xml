@@ -1,7 +1,4 @@
 <test>
-
-
-
     <create_query>CREATE TABLE rand_unlimited_10m_8 (key UInt8) Engine = Memory</create_query>
 
     <create_query>CREATE TABLE rand_1k_10m_16 (key UInt16) Engine = Memory</create_query>

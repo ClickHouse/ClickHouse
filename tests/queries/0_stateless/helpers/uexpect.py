@@ -39,8 +39,8 @@ class ExpectTimeoutError(Exception):
         if self.pattern:
             s += 'for %s ' % repr(self.pattern.pattern)
         if self.buffer:
-            s += 'buffer %s ' % repr(self.buffer[:])
-            s += 'or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]])
+            s += 'buffer %s' % repr(self.buffer[:])
+            #s += ' or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]])
         return s
 
 class IO(object):

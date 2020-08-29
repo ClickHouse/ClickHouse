@@ -1,8 +1,10 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
-    contrib/libs/protobuf_std
+    contrib/libs/protobuf
+    contrib/libs/protoc
 )
 
 SRCS(
@@ -10,6 +12,7 @@ SRCS(
     FormatSchemaInfo.cpp
     IRowInputStream.cpp
     IRowOutputStream.cpp
+    JSONEachRowUtils.cpp
     MySQLBlockInputStream.cpp
     NativeFormat.cpp
     NullFormat.cpp
@@ -19,6 +22,7 @@ SRCS(
     ProtobufSchemas.cpp
     ProtobufWriter.cpp
     verbosePrintString.cpp
+
 )
 
 END()

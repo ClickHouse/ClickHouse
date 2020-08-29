@@ -2,7 +2,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 # Windows使用指引 {#windowsshi-yong-zhi-yin}
 
-如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/\#download 。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用«terminal»程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
+如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/#download 。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用«terminal»程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
 
 # 在GitHub上创建源码库 {#zai-githubshang-chuang-jian-yuan-ma-ku}
 
@@ -21,7 +21,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
     sudo apt update
     sudo apt install git
 
-在https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2 。
+在https://education.github.com/git-cheat-sheet-education.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2 。
 
 # 拷贝源码库到开发机 {#kao-bei-yuan-ma-ku-dao-kai-fa-ji}
 
@@ -129,7 +129,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
 
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/en/development/build/\#install-gcc-9 。
+请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.tech/docs/zh/development/build/#an-zhuang-gcc-9 。
 
 在Mac OS X上安装GCC，请执行：`brew install gcc`
 
@@ -197,7 +197,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在这种情况下，ClickHouse将使用位于当前目录中的配置文件。您可以从任何目录运行`Clickhouse server`，并将配置文件`--config-file`的路径指定为命令行参数。
 
-在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/programs/` 并运行`clickhouse client`。
+在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/programs/` 并运行`./clickhouse client`。
 
 如果您在Mac OS X 或者 FreeBSD上收到`Connection refused`的消息，请尝试指定主机地址为127.0.0.1：
 
@@ -234,7 +234,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
 编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
-任务列表：https://github.com/ClickHouse/ClickHouse/blob/master/tests/instructions/easy\_tasks\_sorted\_en.md
+任务列表：https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 # 测试数据 {#ce-shi-shu-ju}
 

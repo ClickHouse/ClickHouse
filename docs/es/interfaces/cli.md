@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: "Cliente de l\xEDnea de comandos"
 ---
 
-# Cliente De línea De Comandos {#command-line-client}
+# Cliente de línea de comandos {#command-line-client}
 
 ClickHouse proporciona un cliente de línea de comandos nativo: `clickhouse-client`. El cliente admite opciones de línea de comandos y archivos de configuración. Para obtener más información, consulte [Configuración](#interfaces_cli_configuration).
 
@@ -72,7 +72,7 @@ Puede cancelar una consulta larga presionando Ctrl + C. Sin embargo, aún tendr�
 
 El cliente de línea de comandos permite pasar datos externos (tablas temporales externas) para consultar. Para obtener más información, consulte la sección “External data for query processing”.
 
-### Consultas Con parámetros {#cli-queries-with-parameters}
+### Consultas con parámetros {#cli-queries-with-parameters}
 
 Puede crear una consulta con parámetros y pasarles valores desde la aplicación cliente. Esto permite evitar formatear consultas con valores dinámicos específicos en el lado del cliente. Por ejemplo:
 
@@ -80,7 +80,7 @@ Puede crear una consulta con parámetros y pasarles valores desde la aplicación
 $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-#### Sintaxis De Consulta {#cli-queries-with-parameters-syntax}
+#### Sintaxis de consulta {#cli-queries-with-parameters-syntax}
 
 Formatee una consulta como de costumbre, luego coloque los valores que desea pasar de los parámetros de la aplicación a la consulta entre llaves en el siguiente formato:
 
@@ -109,7 +109,7 @@ Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un v
 
     Los valores de los archivos de configuración anulan los valores predeterminados.
 
-### Opciones De línea De Comandos {#command-line-options}
+### Opciones de línea de comandos {#command-line-options}
 
 -   `--host, -h` -– The server name, ‘localhost’ predeterminada. Puede utilizar el nombre o la dirección IPv4 o IPv6.
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
@@ -127,7 +127,7 @@ Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un v
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--param_<name>` — Value for a [consulta con parámetros](#cli-queries-with-parameters).
 
-### Archivos De configuración {#configuration_files}
+### Archivos de configuración {#configuration_files}
 
 `clickhouse-client` utiliza el primer archivo existente de los siguientes:
 

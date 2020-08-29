@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: ReplacingMergeTree
 ---
@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **ReplacingMergeTree Parametreleri**
 
--   `ver` — column with version. Type `UInt*`, `Date` veya `DateTime`. İsteğe bağlı parametre.
+-   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` veya `DateTime64`. İsteğe bağlı parametre.
 
     Birleş whenirken, `ReplacingMergeTree` aynı birincil anahtara sahip tüm satırlardan sadece bir tane bırakır:
 

@@ -10,16 +10,6 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 
-# Creates S3 bucket for tests and allows anonymous read-write access to it.
-def prepare_s3_bucket(cluster):
-    minio_client = cluster.minio_client
-
-    if minio_client.bucket_exists(cluster.minio_bucket):
-        minio_client.remove_bucket(cluster.minio_bucket)
-
-    minio_client.make_bucket(cluster.minio_bucket)
-
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -28,9 +18,6 @@ def cluster():
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
-
-        prepare_s3_bucket(cluster)
-        logging.info("S3 bucket created")
 
         yield cluster
     finally:
@@ -237,6 +224,10 @@ def test_move_partition_to_another_disk(cluster):
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+
+    node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 's3'")
+    assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
 
 
 def test_table_manipulations(cluster):

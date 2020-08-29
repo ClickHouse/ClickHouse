@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u0648\u0627\u0698\u0647\u0646\u0627\u0645\u0647\u0647\u0627 \u062F\u0627\
   \u062E\u0644\u06CC"
@@ -40,7 +40,7 @@ ClickHouse شامل ساخته شده است در ویژگی برای کار ب�
 `regions_names_*.txt`: ستون (بدون هدر):
 
 -   شناسه منطقه (`UInt32`)
--   نام منطقه (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   نام منطقه (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
 مجموعه تخت برای ذخیره سازی در رم استفاده می شود. به همین دلیل شناسه نباید بیش از یک میلیون.
 

@@ -1,21 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 67
-toc_title: "AARCH64\u7528Linux\u3067ClickHouse\u3092\u30D3\u30EB\u30C9\u3059\u308B\
-  \u65B9\u6CD5\uFF08ARM64)"
+toc_title: "Aarch64\u7528\u306ELinux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u3059\
+  \u308B\u65B9\u6CD5(ARM64)"
 ---
 
-# Aarch64(ARM64)アーキテクチャ用のLinuxでClickHouseをビルドする方法 {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
+# Aarch64(ARM64)アーキテクチャ用のLinux上でClickHouseを構築する方法 {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
 
-これは、linuxマシンがあり、それを使ってビルドしたい場合のためのものです `clickhouse` AARCH64CPUアーキテクチャを持つ別のLinuxマシンで実行されるバイナリ。 この目的のために継続的インテグレーションをチェックを実行Linuxサーバー
+これは、Linuxマシンを使用してビルドする場合のためのものです `clickhouse` AARCH64CPUアーキテクチャを持つ別のLinuxマシン上で実行されるバイナリ。 この目的のために継続的インテグレーションをチェックを実行Linuxサーバー
 
-AARCH64のクロスビルドは、次の条件に基づいています [ビルド手順](build.md)、最初にそれらに続きなさい。
+AARCH64のクロスビルドは [ビルド命令](build.md) 先について来い
 
-# インストールclang-8 {#install-clang-8}
+# Clang-8をインストール {#install-clang-8}
 
-以下の指示に従ってくださいhttps://apt.llvm.org/あなたのubuntuやdebianの設定のために.
-たとえば、ubuntu bionicでは、次のコマンドを使用できます:
+の指示に従ってくださいhttps://apt.llvm.org/あなたのUbuntuまたはDebianのセットアップ用。
+たとえば、Ubuntu Bionicでは、次のコマンドを使用できます:
 
 ``` bash
 echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee /etc/apt/sources.list.d/llvm.list
@@ -32,7 +32,7 @@ wget 'https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build-aarch64/cmake/toolchain/linux-aarch64 --strip-components=1
 ```
 
-# クリックハウスを構築 {#build-clickhouse}
+# ビルドClickHouse {#build-clickhouse}
 
 ``` bash
 cd ClickHouse
@@ -41,4 +41,4 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/linu
 ninja -C build-arm64
 ```
 
-結果のバイナリは、aarch64cpuアーキテクチャを持つlinux上でのみ実行されます。
+結果のバイナリは、Aarch64CPUアーキテクチャを持つLinux上でのみ実行されます。

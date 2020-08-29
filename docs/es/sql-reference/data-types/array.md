@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: Matriz (T)
 ---
@@ -9,7 +9,7 @@ toc_title: Matriz (T)
 
 Una matriz de `T`-tipo de artículos. `T` puede ser cualquier tipo de datos, incluida una matriz.
 
-## Creación De Una Matriz {#creating-an-array}
+## Creación de una matriz {#creating-an-array}
 
 Puede usar una función para crear una matriz:
 
@@ -45,7 +45,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Trabajar Con Tipos De Datos {#working-with-data-types}
+## Trabajar con tipos de datos {#working-with-data-types}
 
 Al crear una matriz sobre la marcha, ClickHouse define automáticamente el tipo de argumento como el tipo de datos más estrecho que puede almacenar todos los argumentos enumerados. Si hay alguna [NULL](nullable.md#data_type-nullable) o literal [NULL](../../sql-reference/syntax.md#null-literal) valores, el tipo de un elemento de matriz también se convierte en [NULL](nullable.md).
 

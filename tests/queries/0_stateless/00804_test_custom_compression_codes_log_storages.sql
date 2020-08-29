@@ -1,4 +1,5 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
+SET allow_suspicious_codecs = 1;
 
 -- copy-paste for storage log
 

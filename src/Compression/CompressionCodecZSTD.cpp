@@ -1,11 +1,10 @@
 #include <Compression/CompressionCodecZSTD.h>
 #include <Compression/CompressionInfo.h>
-#include <IO/ReadHelpers.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
-#include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
@@ -26,9 +25,11 @@ uint8_t CompressionCodecZSTD::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::ZSTD);
 }
 
-String CompressionCodecZSTD::getCodecDesc() const
+
+ASTPtr CompressionCodecZSTD::getCodecDesc() const
 {
-    return "ZSTD(" + toString(level) + ")";
+    auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(level));
+    return makeASTFunction("ZSTD", literal);
 }
 
 UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -74,6 +75,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
+            if (!literal)
+                throw Exception("ZSTD codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+
             level = literal->value.safeGet<UInt64>();
             if (level > ZSTD_maxCLevel())
                 throw Exception("ZSTD codec can't have level more that " + toString(ZSTD_maxCLevel()) + ", given " + toString(level), ErrorCodes::ILLEGAL_CODEC_PARAMETER);

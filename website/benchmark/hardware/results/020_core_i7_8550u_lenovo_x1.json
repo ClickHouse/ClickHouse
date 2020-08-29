@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Lenovo Thinkpad X1 Carbon 6th Gen i7-8550U CPU @ 1.80GHz 4 threads, 16 GiB",
+        "system":       "Lenovo Thinkpad X1 Carbon",
+        "system_full":      "Lenovo Thinkpad X1 Carbon 6th Gen i7-8550U CPU @ 1.80GHz 4 threads, 16 GiB",
         "time":         "2020-01-18 00:00:00",
+        "kind":         "laptop",
         "result":
         [
             [0.006, 0.002, 0.002],

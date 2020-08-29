@@ -29,6 +29,9 @@ class ThreadPoolImpl
 public:
     using Job = std::function<void()>;
 
+    /// Maximum number of threads is based on the number of physical cores.
+    ThreadPoolImpl();
+
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(size_t max_threads_);
 
@@ -128,8 +131,16 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   */
 class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
+    static std::unique_ptr<GlobalThreadPool> the_instance;
+
+    GlobalThreadPool(size_t max_threads_, size_t max_free_threads_,
+            size_t queue_size_, const bool shutdown_on_exception_)
+        : FreeThreadPool(max_threads_, max_free_threads_, queue_size_,
+            shutdown_on_exception_)
+    {}
+
 public:
-    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, false) {}
+    static void initialize(size_t max_threads = 10000);
     static GlobalThreadPool & instance();
 };
 

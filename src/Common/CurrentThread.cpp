@@ -72,6 +72,13 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
+void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->setFatalErrorCallback(callback);
+}
+
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage

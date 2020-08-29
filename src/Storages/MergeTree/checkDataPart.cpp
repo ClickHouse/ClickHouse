@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <Common/CurrentMetrics.h>
@@ -161,13 +162,24 @@ IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
+IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
+{
+    IMergeTreeDataPart::Checksums data_checksums;
+    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
+    data_part->checksums.checkEqual(data_checksums, true);
+    return data_checksums;
+}
+
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
+    if (auto part_in_memory = asInMemoryPart(data_part))
+        return checkDataPartInMemory(part_in_memory);
+
     return checkDataPart(
-        data_part->disk,
+        data_part->volume->getDisk(),
         data_part->getFullRelativePath(),
         data_part->getColumns(),
         data_part->getType(),

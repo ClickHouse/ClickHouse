@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: Prueba de hardware
 ---
 
-# Cómo Probar Su Hardware Con ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# Cómo probar su hardware con ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 Con esta instrucción, puede ejecutar una prueba de rendimiento básica de ClickHouse en cualquier servidor sin instalar paquetes de ClickHouse.
 
 1.  Ir a “commits” página: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Haga clic en la primera marca de verificación verde o cruz roja con verde “ClickHouse Build Check” y haga clic en el “Details” enlace cerca “ClickHouse Build Check”.
+2.  Haga clic en la primera marca de verificación verde o cruz roja con verde “ClickHouse Build Check” y haga clic en el “Details” enlace cerca “ClickHouse Build Check”. No existe tal enlace en algunas confirmaciones, por ejemplo, confirmaciones con documentación. En este caso, elija la confirmación más cercana que tenga este enlace.
 
 3.  Copie el enlace a “clickhouse” binario para amd64 o aarch64.
 
@@ -65,7 +65,7 @@ Con esta instrucción, puede ejecutar una prueba de rendimiento básica de Click
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Edite el benchmark-new.sh, cambie “clickhouse-client” a “./clickhouse client” y añadir “–max\_memory\_usage 100000000000” parámetro.
+1.  Edite el benchmark-new.sh, cambie `clickhouse-client` a `./clickhouse client` y añadir `–-max_memory_usage 100000000000` parámetro.
 
 <!-- -->
 
@@ -79,4 +79,4 @@ Con esta instrucción, puede ejecutar una prueba de rendimiento básica de Click
 
 1.  Envíe los números y la información sobre la configuración de su hardware a clickhouse-feedback@yandex-team.com
 
-Todos los resultados se publican aquí: https://clickhouse.tecnología/benchmark\_hardware.HTML
+Todos los resultados se publican aquí: https://clickhouse.tecnología/punto de referencia/hardware/

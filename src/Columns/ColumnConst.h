@@ -50,6 +50,11 @@ public:
         return "Const";
     }
 
+    TypeIndex getDataType() const override
+    {
+        return data->getDataType();
+    }
+
     MutableColumnPtr cloneResized(size_t new_size) const override
     {
         return ColumnConst::create(data, new_size);
@@ -165,11 +170,17 @@ public:
 
     void updateWeakHash32(WeakHash32 & hash) const override;
 
+    void updateHashFast(SipHash & hash) const override
+    {
+        data->updateHashFast(hash);
+    }
+
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     size_t byteSize() const override
     {
@@ -184,6 +195,14 @@ public:
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
+    }
+
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
+    {
+        return data->compareColumn(rhs, rhs_row_num, row_indexes,
+                                   compare_results, direction, nan_direction_hint);
     }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;

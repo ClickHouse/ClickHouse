@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 47
 toc_title: generateRandom
 ---
@@ -19,7 +19,6 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 -   `name` — Name of corresponding column.
 -   `TypeName` — Type of corresponding column.
--   `limit` — Number of rows to generate.
 -   `max_array_length` — Maximum array length for all generated arrays. Defaults to `10`.
 -   `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
 -   `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
@@ -28,10 +27,10 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 Un objet de table avec le schéma demandé.
 
-## Exemple D’Utilisation {#usage-example}
+## Exemple D'Utilisation {#usage-example}
 
 ``` sql
-SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2);
+SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
 ```
 
 ``` text

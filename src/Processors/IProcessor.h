@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class IQueryPlanStep;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -68,11 +70,11 @@ using Processors = std::vector<ProcessorPtr>;
   * Limiting transformation. Pulls data from input and passes to output.
   * When there was enough data, says that it doesn't need data on its input and that data on its output port is finished.
   *
-  * Resize. Has arbitary number of inputs and arbitary number of outputs.
-  * Pulls data from whatever ready input and pushes it to randomly choosed free output.
+  * Resize. Has arbitrary number of inputs and arbitrary number of outputs.
+  * Pulls data from whatever ready input and pushes it to randomly chosen free output.
   * Examples:
-  * Union - merge data from number of inputs to one output in arbitary order.
-  * Split - read data from one input and pass it to arbitary output.
+  * Union - merge data from number of inputs to one output in arbitrary order.
+  * Split - read data from one input and pass it to arbitrary output.
   *
   * Concat. Has many inputs and only one output. Pulls all data from first input until it is exhausted,
   *  then all data from second input, etc. and pushes all data to output.
@@ -102,7 +104,7 @@ using Processors = std::vector<ProcessorPtr>;
   * TODO Processor with all its parameters should represent "pure" function on streams of data from its input ports.
   * It's in question, what kind of "pure" function do we mean.
   * For example, data streams are considered equal up to order unless ordering properties are stated explicitly.
-  * Another example: we should support the notion of "arbitary N-th of M substream" of full stream of data.
+  * Another example: we should support the notion of "arbitrary N-th of M substream" of full stream of data.
   */
 
 class IProcessor
@@ -158,11 +160,11 @@ public:
 
     static std::string statusToName(Status status);
 
-    /** Method 'prepare' is responsible for all cheap ("instantenous": O(1) of data volume, no wait) calculations.
+    /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate the absense of work by returning Finished or Unneeded,
+      *  or indicate the absence of work by returning Finished or Unneeded,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
@@ -285,8 +287,15 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    void enableQuota() { has_quota = true; }
-    bool hasQuota() const { return has_quota; }
+    /// Step of QueryPlan from which processor was created.
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
+    {
+        query_plan_step = step;
+        query_plan_step_group = group;
+    }
+
+    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
 
 protected:
     virtual void onCancel() {}
@@ -298,7 +307,8 @@ private:
 
     size_t stream_number = NO_STREAM;
 
-    bool has_quota = false;
+    IQueryPlanStep * query_plan_step = nullptr;
+    size_t query_plan_step_group = 0;
 };
 
 

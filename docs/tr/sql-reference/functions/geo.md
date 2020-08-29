@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "Co\u011Frafi koordinatlar ile \xE7al\u0131\u015Fma"
 ---
 
-# Coğrafi Koordinatlarla çalışmak için Fonksiyonlar {#functions-for-working-with-geographical-coordinates}
+# Coğrafi Koordinatlarla çalışmak için fonksiyonlar {#functions-for-working-with-geographical-coordinates}
 
 ## greatCircleDistance {#greatcircledistance}
 
@@ -86,7 +86,7 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 **Giriş değerleri**
 
 -   `(x, y)` — Coordinates of a point on the plane. Data type — [Demet](../../sql-reference/data-types/tuple.md) — A tuple of two numbers.
--   `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Dizi](../../sql-reference/data-types/array.md). Her köşe bir çift koordinat ile temsil edilir `(a, b)`. Köşeler saat yönünde veya saat yönünün tersine sırayla belirtilmelidir. Minimum köşe sayısı 3’tür. Çokgen sabit olmalıdır.
+-   `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Dizi](../../sql-reference/data-types/array.md). Her köşe bir çift koordinat ile temsil edilir `(a, b)`. Köşeler saat yönünde veya saat yönünün tersine sırayla belirtilmelidir. Minimum köşe sayısı 3'tür. Çokgen sabit olmalıdır.
 -   Fonksiyon ayrıca delikli çokgenleri de destekler (bölümleri keser). Bu durumda, işlevin ek argümanlarını kullanarak kesilen bölümleri tanımlayan çokgenler ekleyin. İşlev, basit olmayan bağlı çokgenleri desteklemez.
 
 **Döndürülen değerler**
@@ -222,7 +222,7 @@ Lütfen tüm koordinat parametrelerinin aynı tipte olması gerektiğini unutmay
 -   verilen alanı kapsayan geohash kutularının hassas uzun dizeleri dizisi, öğelerin sırasına güvenmemelisiniz.
 -   \[\]- eğer boş dizi *dakika* değerleri *enlem* ve *Boylam* karşılık gelenden daha az değil *maksimum* değerler.
 
-Ortaya çıkan dizi 10’000’ 000 ürün uzunluğundaysa, işlevin bir istisna atacağını lütfen unutmayın.
+Ortaya çıkan dizi 10'000' 000 ürün uzunluğundaysa, işlevin bir istisna atacağını lütfen unutmayın.
 
 **Örnek**
 

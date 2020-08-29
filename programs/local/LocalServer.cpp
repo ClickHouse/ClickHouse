@@ -8,7 +8,6 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -21,7 +20,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -40,12 +38,16 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int CANNOT_LOAD_CONFIG;
 }
@@ -75,10 +77,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
+    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
     {
+        // force enable logging
+        config().setString("logger", "logger");
         // sensitive data rules are not used here
-        buildLoggers(config(), logger(), self.commandName());
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
     {
@@ -99,33 +103,66 @@ void LocalServer::applyCmdSettings()
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    std::string path = config().getString("path", "");
-    Poco::trimInPlace(path);
+    std::string path;
 
-    if (!path.empty())
+    if (config().has("path"))
     {
-        if (path.back() != '/')
-            path += '/';
+        // User-supplied path.
+        path = config().getString("path");
+        Poco::trimInPlace(path);
 
-        context->setPath(path);
-        return;
+        if (path.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot work with empty storage path that is explicitly specified"
+                " by the --path option. Please check the program options and"
+                " correct the --path.");
+        }
+    }
+    else
+    {
+        // Default unique path in the system temporary directory.
+        const auto tmp = std::filesystem::temp_directory_path();
+        const auto default_path = tmp
+            / fmt::format("clickhouse-local-{}", getpid());
+
+        if (exists(default_path))
+        {
+            // This is a directory that is left by a previous run of
+            // clickhouse-local that had the same pid and did not complete
+            // correctly. Remove it, with an additional sanity check.
+            if (!std::filesystem::equivalent(default_path.parent_path(), tmp))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The temporary directory of clickhouse-local '{}' is not"
+                    " inside the system temporary directory '{}'. Will not delete"
+                    " it", default_path.string(), tmp.string());
+            }
+
+            remove_all(default_path);
+        }
+
+        create_directory(default_path);
+        temporary_directory_to_delete = default_path;
+
+        path = default_path.string();
     }
 
-    /// In case of empty path set paths to helpful directories
-    std::string cd = Poco::Path::current();
-    context->setTemporaryStorage(cd + "tmp");
-    context->setFlagsPath(cd + "flags");
+    if (path.back() != '/')
+        path += '/';
+
+    context->setPath(path);
     context->setUserFilesPath(""); // user's files are everywhere
 }
 
 
-static void attachSystemTables()
+static void attachSystemTables(const Context & context)
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
         DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
@@ -136,7 +173,7 @@ static void attachSystemTables()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
@@ -177,6 +214,9 @@ try
 
     /// Skip networking
 
+    /// Sets external authenticators config (LDAP).
+    context->setExternalAuthenticatorsConfig(config());
+
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
@@ -203,25 +243,28 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
-    if (!context->getPath().empty())
+    String path = context->getPath();
+    if (!path.empty())
     {
         /// Lock path directory before read
-        status.emplace(context->getPath() + "status");
+        status.emplace(context->getPath() + "status", StatusFile::write_full_info);
 
-        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
+        LOG_DEBUG(log, "Loading metadata from {}", path);
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
         loadMetadataSystem(*context);
-        attachSystemTables();
+        attachSystemTables(*context);
         loadMetadata(*context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
     {
-        attachSystemTables();
+        attachSystemTables(*context);
     }
 
     processQueries();
@@ -229,10 +272,22 @@ try
     context->shutdown();
     context.reset();
 
+    status.reset();
+    cleanup();
+
     return Application::EXIT_OK;
 }
 catch (const Exception & e)
 {
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -279,7 +334,7 @@ void LocalServer::processQueries()
     context->makeSessionContext();
     context->makeQueryContext();
 
-    context->setUser("default", "", Poco::Net::SocketAddress{}, "");
+    context->setUser("default", "", Poco::Net::SocketAddress{});
     context->setCurrentQueryId("");
     applyCmdSettings();
 
@@ -373,6 +428,29 @@ void LocalServer::setupUsers()
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }
 
+void LocalServer::cleanup()
+{
+    // Delete the temporary directory if needed. Just in case, check that it is
+    // in the system temporary directory, not to delete user data if there is a
+    // bug.
+    if (temporary_directory_to_delete)
+    {
+        const auto tmp = std::filesystem::temp_directory_path();
+        const auto dir = *temporary_directory_to_delete;
+        temporary_directory_to_delete.reset();
+
+        if (!std::filesystem::equivalent(dir.parent_path(), tmp))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The temporary directory of clickhouse-local '{}' is not inside"
+                " the system temporary directory '{}'. Will not delete it",
+                dir.string(), tmp.string());
+        }
+
+        remove_all(dir);
+    }
+}
+
 static void showClientVersion()
 {
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
@@ -428,6 +506,7 @@ void LocalServer::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
+        ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
@@ -483,6 +562,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("logger.console"))
+        config().setBool("logger.console", options["logger.console"].as<bool>());
     if (options.count("logger.log"))
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))

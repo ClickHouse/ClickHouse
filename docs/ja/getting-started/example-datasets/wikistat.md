@@ -1,13 +1,11 @@
 ---
-machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 18
 toc_title: WikiStat
 ---
 
 # WikiStat {#wikistat}
 
-参照:http://dumps.wikimedia.org/other/pagecounts-raw/
+参照: http://dumps.wikimedia.org/other/pagecounts-raw/
 
 テーブルの作成:
 

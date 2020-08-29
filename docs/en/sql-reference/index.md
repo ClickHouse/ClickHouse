@@ -7,10 +7,12 @@ toc_title: hidden
 
 # SQL Reference {#sql-reference}
 
--   [SELECT](statements/select.md)
--   [INSERT INTO](statements/insert-into.md)
--   [CREATE](statements/create.md)
--   [ALTER](statements/alter.md#query_language_queries_alter)
--   [Other types of queries](statements/misc.md)
+ClickHouse supports the following types of queries:
 
-[Original article](https://clickhouse.tech/docs/en/query_language/) <!--hide-->
+-   [SELECT](../sql-reference/statements/select/index.md)
+-   [INSERT INTO](../sql-reference/statements/insert-into.md)
+-   [CREATE](../sql-reference/statements/create/index.md)
+-   [ALTER](../sql-reference/statements/alter/index.md)
+-   [Other types of queries](../sql-reference/statements/index.md)
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/) <!--hide-->

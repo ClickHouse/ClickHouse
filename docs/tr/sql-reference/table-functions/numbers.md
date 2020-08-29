@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u015Fiir"
 ---
 
 # şiir {#numbers}
 
-`numbers(N)` – Returns a table with the single ‘number’ 0’dan n-1’e kadar tamsayılar içeren sütun (Uİnt64).
-`numbers(N, M)` - Tek bir tablo döndürür ‘number’ n’den (n + M - 1) tamsayıları içeren sütun (Uİnt64).
+`numbers(N)` – Returns a table with the single ‘number’ 0'dan n-1'e kadar tamsayılar içeren sütun (Uİnt64).
+`numbers(N, M)` - Tek bir tablo döndürür ‘number’ n'den (n + M - 1) tamsayıları içeren sütun (Uİnt64).
 
 Benzer `system.numbers` tablo, ardışık değerleri test etmek ve üretmek için kullanılabilir, `numbers(N, M)` daha verimli `system.numbers`.
 

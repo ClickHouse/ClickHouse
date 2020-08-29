@@ -49,11 +49,11 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
     auto table_id = what.getStorageID();
     stream << "IStorage(name = " << what.getName() << ", tableName = " << table_id.table_name << ") {"
-           << what.getColumns().getAllPhysical().toString() << "}";
+           << what.getInMemoryMetadataPtr()->getColumns().getAllPhysical().toString() << "}";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
+std::ostream & operator<<(std::ostream & stream, const TableLockHolder &)
 {
     stream << "TableStructureReadLock()";
     return stream;
@@ -118,7 +118,7 @@ std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what)
+std::ostream & operator<<(std::ostream & stream, const TreeRewriterResult & what)
 {
     stream << "SyntaxAnalyzerResult{";
     stream << "storage=" << what.storage << "; ";

@@ -22,7 +22,7 @@ Strings are compared by bytes. A shorter string is smaller than all strings that
 
 ## equals, a = b and a == b operator {#function-equals}
 
-## notEquals, a ! operator= b and a \<\> b {#function-notequals}
+## notEquals, a != b and a \<\> b operator {#function-notequals}
 
 ## less, \< operator {#function-less}
 

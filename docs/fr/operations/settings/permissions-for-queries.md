@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "Autorisations pour les requ\xEAtes"
 ---
 
-# Autorisations Pour Les requêtes {#permissions_for_queries}
+# Autorisations pour les requêtes {#permissions_for_queries}
 
 Les requêtes dans ClickHouse peuvent être divisées en plusieurs types:
 
@@ -34,11 +34,11 @@ Valeurs possibles:
 -   1 — Only read data queries are allowed.
 -   2 — Read data and change settings queries are allowed.
 
-Après le réglage de `readonly = 1` l’utilisateur ne peut pas changer `readonly` et `allow_ddl` les paramètres de la session en cours.
+Après le réglage de `readonly = 1` l'utilisateur ne peut pas changer `readonly` et `allow_ddl` les paramètres de la session en cours.
 
-Lors de l’utilisation de la `GET` méthode dans le [Interface HTTP](../../interfaces/http.md), `readonly = 1` est définie automatiquement. Pour modifier les données, utilisez `POST` méthode.
+Lors de l'utilisation de la `GET` méthode dans le [Interface HTTP](../../interfaces/http.md), `readonly = 1` est définie automatiquement. Pour modifier les données, utilisez `POST` méthode.
 
-Paramètre `readonly = 1` interdire à l’utilisateur de modifier tous les paramètres. Il y a un moyen d’interdire à l’utilisateur
+Paramètre `readonly = 1` interdire à l'utilisateur de modifier tous les paramètres. Il y a un moyen d'interdire à l'utilisateur
 de modifier uniquement des paramètres spécifiques, pour plus de détails, voir [contraintes sur les paramètres](constraints-on-settings.md).
 
 Valeur par défaut: 0

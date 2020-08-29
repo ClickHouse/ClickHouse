@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: MySQL
 ---
 
-# Mysql {#mysql}
+# MySQL {#mysql}
 
-リモートmysqlサーバー上のデータベースに接続し、 `INSERT` と `SELECT` ClickHouseとMySQLの間でデータを交換するためのクエリ。
+で接続するデータベースのリモートMySQLサーバを実行 `INSERT` と `SELECT` ClickHouseとMySQLの間でデータを交換するためのクエリ。
 
-その `MySQL` データベースエンジンの翻訳のクエリのMySQLサーバーでの操作を行うことができなど `SHOW TABLES` または `SHOW CREATE TABLE`.
+その `MySQL` データベースエンジ `SHOW TABLES` または `SHOW CREATE TABLE`.
 
 次のクエリは実行できません:
 
@@ -21,7 +21,7 @@ toc_title: MySQL
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
 
 **エンジン変数**
@@ -49,9 +49,9 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 | DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
-他のすべてのmysqlデータ型に変換され [文字列](../../sql-reference/data-types/string.md).
+他のすべてのMySQLデータ型に変換され [文字列](../../sql-reference/data-types/string.md).
 
-[Nullable](../../sql-reference/data-types/nullable.md) サポートされます。
+[Null可能](../../sql-reference/data-types/nullable.md) サポートされます。
 
 ## 使用例 {#examples-of-use}
 

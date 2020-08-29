@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
@@ -56,16 +57,19 @@ void buildLifetimeConfiguration(
     const ASTDictionaryLifetime * lifetime)
 {
 
-    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
-    AutoPtr<Element> min_element(doc->createElement("min"));
-    AutoPtr<Element> max_element(doc->createElement("max"));
-    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
-    min_element->appendChild(min_sec);
-    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
-    max_element->appendChild(max_sec);
-    lifetime_element->appendChild(min_element);
-    lifetime_element->appendChild(max_element);
-    root->appendChild(lifetime_element);
+    if (lifetime)
+    {
+        AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+        AutoPtr<Element> min_element(doc->createElement("min"));
+        AutoPtr<Element> max_element(doc->createElement("max"));
+        AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+        min_element->appendChild(min_sec);
+        AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+        max_element->appendChild(max_sec);
+        lifetime_element->appendChild(min_element);
+        lifetime_element->appendChild(max_element);
+        root->appendChild(lifetime_element);
+    }
 }
 
 /*
@@ -94,13 +98,36 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-    if (layout->parameter.has_value())
+    for (const auto & param : layout->parameters->children)
     {
-        const auto & param = layout->parameter;
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param->first));
-        const ASTLiteral & literal = param->second->as<const ASTLiteral &>();
-        AutoPtr<Text> value(doc->createTextNode(toString(literal.value.get<UInt64>())));
-        layout_type_parameter_element->appendChild(value);
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
+        }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second->formatForErrorMessage());
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64
+            && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
 }
@@ -375,7 +402,11 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
   *       </mysql>
   *   </source>
   */
-void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source, const ASTDictionarySettings * settings)
+void buildSourceConfiguration(
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
+    const ASTFunctionWithKeyValueArguments * source,
+    const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
@@ -411,7 +442,9 @@ void checkAST(const ASTCreateQuery & query)
     if (query.dictionary->layout == nullptr)
         throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
-    if (query.dictionary->lifetime == nullptr)
+    const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct") ||
+                                !strcasecmp(query.dictionary->layout->layout_type.data(), "complex_key_direct");
+    if (query.dictionary->lifetime == nullptr && !is_direct_layout)
         throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->primary_key == nullptr)
@@ -454,6 +487,14 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
+    if (query.uuid != UUIDHelpers::Nil)
+    {
+        AutoPtr<Poco::XML::Element> uuid_element(xml_document->createElement("uuid"));
+        current_dictionary->appendChild(uuid_element);
+        AutoPtr<Text> uuid(xml_document->createTextNode(toString(query.uuid)));
+        uuid_element->appendChild(uuid);
+    }
+
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));
     current_dictionary->appendChild(structure_element);
     Names pk_attrs = getPrimaryKeyColumns(query.dictionary->primary_key);
@@ -461,7 +502,9 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
-    auto all_attr_names_and_types = buildDictionaryAttributesConfiguration(xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
+    auto all_attr_names_and_types = buildDictionaryAttributesConfiguration(
+        xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
+
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);

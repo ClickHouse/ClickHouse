@@ -1,7 +1,9 @@
 [
     {
-        "system":       "AMD EPYC 7502P 32-Core Processor with HT (64 thread) / 512 Gb RAM / mdadm RAID1 SAMSUNG MZQLB3T8HALS-00007 + LVM",
+        "system":       "AMD EPYC 7502P",
+        "system_full":       "AMD EPYC 7502P 32-Core Processor with HT (64 thread) / 512 Gb RAM / mdadm RAID1 SAMSUNG MZQLB3T8HALS-00007 + LVM",
         "time":         "2020-04-16 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.007, 0.002, 0.002],

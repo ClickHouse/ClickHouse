@@ -13,6 +13,7 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/Context.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
@@ -39,14 +40,14 @@ BlockIO InterpreterWatchQuery::execute()
     auto table_id = context.resolveStorageID(query, Context::ResolveOrdinary);
 
     /// Get storage
-    storage = DatabaseCatalog::instance().tryGetTable(table_id);
+    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (!storage)
         throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
         ErrorCodes::UNKNOWN_TABLE);
 
     /// List of columns to read to execute the query.
-    Names required_columns = storage->getColumns().getNamesOfPhysical();
+    Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
     context.checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query

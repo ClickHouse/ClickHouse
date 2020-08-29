@@ -10,7 +10,7 @@ void ClickHouseLibrary::log(ClickHouseLibrary::LogLevel level, ClickHouseLibrary
 {
     using ClickHouseLibrary::LogLevel;
 
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
+    auto & logger = Poco::Logger::get(DICT_LOGGER_NAME);
     switch (level)
     {
         case LogLevel::TRACE:

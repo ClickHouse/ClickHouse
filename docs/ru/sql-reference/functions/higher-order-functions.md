@@ -94,7 +94,7 @@ SELECT
 
 Вернуть 1, если для всех элементов массива `arr`, функция `func` возвращает не 0. Иначе вернуть 0.
 
-### arraySum(\[func,\] arr1, …) {#higher-order-functions-array-sum}
+### arraySum(\[func,\] arr1, …) {#higher_order_functions-array-sum}
 
 Вернуть сумму значений функции `func`. Если функция не указана - просто вернуть сумму элементов массива.
 

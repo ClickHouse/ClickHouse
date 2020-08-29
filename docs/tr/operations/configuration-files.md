@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: "Yap\u0131land\u0131rma Dosyalar\u0131"
 ---
@@ -20,7 +20,7 @@ Eğer `replace` belirtilen, tüm öğeyi belirtilen ile değiştirir.
 
 Eğer `remove` belirt .ilirse, öğeyi siler.
 
-Yapılandırma ayrıca tanımlayabilir “substitutions”. Bir öğe varsa `incl` öznitelik, dosyadan karşılık gelen ikame değeri olarak kullanılacaktır. Varsayılan olarak, değiştirmeler ile dosyanın yolu `/etc/metrika.xml`. Bu değiştirilebilir [include\_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) sunucu yapılandırmasında öğe. İkame değerleri belirtilen `/yandex/substitution_name` bu dosyadaki öğeler. Belirtilen bir ika Ame halinde `incl` yok, günlüğe kaydedilir. Clickhouse’un eksik değiştirmelerin günlüğe kaydedilmesini önlemek için `optional="true"` öznitelik (örneğin, ayarlar [makrolar](server-configuration-parameters/settings.md)).
+Yapılandırma ayrıca tanımlayabilir “substitutions”. Bir öğe varsa `incl` öznitelik, dosyadan karşılık gelen ikame değeri olarak kullanılacaktır. Varsayılan olarak, değiştirmeler ile dosyanın yolu `/etc/metrika.xml`. Bu değiştirilebilir [include\_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) sunucu yapılandırmasında öğe. İkame değerleri belirtilen `/yandex/substitution_name` bu dosyadaki öğeler. Belirtilen bir ika Ame halinde `incl` yok, günlüğe kaydedilir. Clickhouse'un eksik değiştirmelerin günlüğe kaydedilmesini önlemek için `optional="true"` öznitelik (örneğin, ayarlar [makrolar](server-configuration-parameters/settings.md)).
 
 İkame da ZooKeeper yapılabilir. Bunu yapmak için özniteliği belirtin `from_zk = "/path/to/node"`. Eleman değeri, düğümün içeriği ile değiştirilir `/path/to/node` ZooKeeper. Ayrıca ZooKeeper düğümünde bir XML alt ağacının tamamını koyabilirsiniz ve kaynak öğeye tamamen eklenecektir.
 

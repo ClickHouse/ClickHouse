@@ -2,6 +2,7 @@
 
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
@@ -11,7 +12,6 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
 
 
 namespace Poco
@@ -22,6 +22,7 @@ namespace Poco
 namespace DB
 {
 
+class Context;
 class StorageDistributed;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
@@ -29,15 +30,21 @@ class StorageDistributed;
  *  If the Distributed table uses more than one shard, then in order to support the write,
  *  when creating the table, an additional parameter must be specified for ENGINE - the sharding key.
  *  Sharding key is an arbitrary expression from the columns. For example, rand() or UserID.
- *  When writing, the data block is splitted by the remainder of the division of the sharding key by the total weight of the shards,
+ *  When writing, the data block is split by the remainder of the division of the sharding key by the total weight of the shards,
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_,
-                                 const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
+    DistributedBlockOutputStream(
+        const Context & context_,
+        StorageDistributed & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const ASTPtr & query_ast_,
+        const ClusterPtr & cluster_,
+        bool insert_sync_,
+        UInt64 insert_timeout_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -46,9 +53,7 @@ public:
     void writeSuffix() override;
 
 private:
-
-    IColumn::Selector createSelector(const Block & source_block);
-
+    IColumn::Selector createSelector(const Block & source_block) const;
 
     void writeAsync(const Block & block);
 
@@ -81,6 +86,7 @@ private:
 private:
     const Context & context;
     StorageDistributed & storage;
+    StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
     String query_string;
     ClusterPtr cluster;

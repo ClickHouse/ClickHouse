@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: DateTime
 ---
@@ -19,7 +19,7 @@ DateTime([timezone])
 
 حل: 1 ثانیه.
 
-## استفاده از سخنان {#usage-remarks}
+## اظهارات طریقه استفاده {#usage-remarks}
 
 نقطه در زمان به عنوان یک ذخیره می شود [برچسب زمان یونیکس](https://en.wikipedia.org/wiki/Unix_time), صرف نظر از منطقه زمانی و یا صرفه جویی در زمان نور روز. علاوه بر این `DateTime` نوع می توانید منطقه زمانی است که همین کار را برای کل ستون ذخیره, که تحت تاثیر قرار چگونه ارزش های `DateTime` مقادیر نوع در قالب متن نمایش داده می شود و چگونه مقادیر مشخص شده به عنوان رشته تجزیه می شوند (‘2020-01-01 05:00:01’). منطقه زمانی در ردیف جدول ذخیره نمی شود (و یا در نتیجه), اما در ابرداده ستون ذخیره می شود.
 لیستی از مناطق زمانی پشتیبانی شده را می توان در [اانا پایگاه منطقه زمانی](https://www.iana.org/time-zones).
@@ -120,10 +120,10 @@ FROM dt
 
 -   [توابع تبدیل نوع](../../sql-reference/functions/type-conversion-functions.md)
 -   [توابع برای کار با تاریخ و زمان](../../sql-reference/functions/date-time-functions.md)
--   [توابع کار با آرایه ها](../../sql-reference/functions/array-functions.md)
+-   [توابع برای کار با ارریس](../../sql-reference/functions/array-functions.md)
 -   [این `date_time_input_format` تنظیم](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [این `timezone` پارامتر پیکربندی سرور](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [اپراتورها برای کار با تاریخ و زمان](../../sql-reference/operators.md#operators-datetime)
+-   [اپراتورها برای کار با تاریخ و زمان](../../sql-reference/operators/index.md#operators-datetime)
 -   [این `Date` نوع داده](date.md)
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

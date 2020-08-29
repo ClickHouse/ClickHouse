@@ -17,6 +17,7 @@
     <https_port>58443</https_port>
     <tcp_port_secure>59440</tcp_port_secure>
     <interserver_http_port>59009</interserver_http_port>
+    <max_thread_pool_size>10000</max_thread_pool_size>
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
@@ -48,6 +49,7 @@
     <tmp_path>/tmp/clickhouse/tmp/</tmp_path>
     <users_config>users.xml</users_config>
     <access_control_path>/tmp/clickhouse/data/access/</access_control_path>
+    <custom_settings_prefixes>custom_</custom_settings_prefixes>
     <mark_cache_size>5368709120</mark_cache_size>
     <default_profile>default</default_profile>
     <default_database>default</default_database>

@@ -1,113 +1,144 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
-toc_title: "\u062D\u0642\u0648\u0642 \u062F\u0633\u062A\u0631\u0633\u06CC"
+toc_title: "\u06A9\u0646\u062A\u0631\u0644 \u062F\u0633\u062A\u0631\u0633\u06CC \u0648\
+  \ \u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628"
 ---
 
-# حقوق دسترسی {#access-rights}
+# کنترل دسترسی و مدیریت حساب {#access-control}
 
-کاربران و حقوق دسترسی هستند تا در پیکربندی کاربر تنظیم شده است. این است که معمولا `users.xml`.
+تاتر از مدیریت کنترل دسترسی بر اساس [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) نزدیک شو
 
-کاربران در ثبت `users` بخش. در اینجا یک قطعه از است `users.xml` پرونده:
+نهادهای دسترسی کلیک کنید:
+- [حساب کاربری](#user-account-management)
+- [نقش](#role-management)
+- [سیاست سطر](#row-policy-management)
+- [تنظیمات](#settings-profiles-management)
+- [سهمیه](#quotas-management)
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+شما می توانید اشخاص دسترسی با استفاده از پیکربندی کنید:
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+-   گردش کار گذاشتن رانده.
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+    شما نیاز به [فعالسازی](#enabling-access-control) این قابلیت.
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+-   کارگزار [پروندههای پیکربندی](configuration-files.md) `users.xml` و `config.xml`.
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.host\.ru$.
+ما توصیه می کنیم با استفاده از گردش کار گذاشتن محور. هر دو روش پیکربندی به طور همزمان کار, بنابراین اگر شما با استفاده از فایل های پیکربندی سرور برای مدیریت حساب و حقوق دسترسی, شما به نرمی می توانید به گردش کار گذاشتن محور حرکت.
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+!!! note "اخطار"
+    شما می توانید نهاد دسترسی مشابه توسط هر دو روش پیکربندی به طور همزمان مدیریت نیست.
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
+## استفاده {#access-control-usage}
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+به طور پیش فرض سرور کلیک حساب کاربر را فراهم می کند `default` که مجاز نیست با استفاده از کنترل دسترسی گذاشتن محور و مدیریت حساب اما تمام حقوق و مجوز. این `default` حساب کاربری است که در هر مورد استفاده می شود زمانی که نام کاربری تعریف نشده است, مثلا, در ورود از مشتری و یا در نمایش داده شد توزیع. در پرس و جو توزیع پردازش یک حساب کاربری پیش فرض استفاده شده است, اگر پیکربندی سرور یا خوشه مشخص نیست [کاربر و رمز عبور](../engines/table-engines/special/distributed.md) خواص.
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-        <allow_dictionaries>
-           <dictionary>test</dictionary>
-        </allow_dictionaries>
-    </web>
-</users>
-```
+اگر شما فقط شروع به استفاده از تاتر, شما می توانید سناریوی زیر استفاده کنید:
 
-شما می توانید اعلامیه ای از دو کاربر را ببینید: `default`و`web`. ما اضافه کردیم `web` کاربر به طور جداگانه.
+1.  [فعالسازی](#enabling-access-control) کنترل دسترسی مبتنی بر مربع و مدیریت حساب برای `default` کاربر.
+2.  ورود زیر `default` حساب کاربری و ایجاد تمام کاربران مورد نیاز است. فراموش نکنید که برای ایجاد یک حساب کاربری مدیر (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+3.  [محدود کردن مجوزها](settings/permissions-for-queries.md#permissions_for_queries) برای `default` کاربر و غیر فعال کردن کنترل دسترسی مبتنی بر مربع و مدیریت حساب.
 
-این `default` کاربر در مواردی که نام کاربری تصویب نشده است انتخاب شده است. این `default` کاربر همچنین برای پردازش پرس و جو توزیع شده استفاده می شود, اگر پیکربندی سرور یا خوشه می کند مشخص نیست `user` و `password` (نگاه کنید به بخش در [توزیع شده](../engines/table-engines/special/distributed.md) موتور).
+### خواص راه حل فعلی {#access-control-properties}
 
-The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+-   شما می توانید مجوز برای پایگاه داده ها و جداول اعطای حتی در صورتی که وجود ندارد.
+-   اگر یک جدول حذف شد, تمام امتیازات که به این جدول مطابقت لغو نمی. بنابراین, اگر یک جدول جدید بعد با همین نام ایجاد شده است تمام امتیازات تبدیل دوباره واقعی. برای لغو امتیازات مربوط به جدول حذف شده, شما نیاز به انجام, مثلا, `REVOKE ALL PRIVILEGES ON db.table FROM ALL` پرس و جو.
+-   هیچ تنظیمات طول عمر برای امتیازات وجود دارد.
 
-رمز عبور در متن روشن مشخص (توصیه نمی شود) و یا در شا 256. هش شور نیست. در این راستا نباید این رمزهای عبور را به عنوان امنیت در برابر حملات مخرب بالقوه در نظر بگیرید. بلکه لازم است برای حفاظت از کارکنان.
+## حساب کاربری {#user-account-management}
 
-یک لیست از شبکه مشخص شده است که دسترسی از اجازه. در این مثال لیستی از شبکه ها برای هر دو کاربران لود شده از یک فایل جداگانه (`/etc/metrika.xml`) حاوی `networks` جایگزینی. در اینجا یک قطعه است:
+یک حساب کاربری یک نهاد دسترسی است که اجازه می دهد تا به اجازه کسی در خانه کلیک است. یک حساب کاربری شامل:
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+-   اطلاعات شناسایی.
+-   [امتیازات](../sql-reference/statements/grant.md#grant-privileges) که تعریف دامنه نمایش داده شد کاربر می تواند انجام دهد.
+-   میزبان که از اتصال به سرور کلیک مجاز است.
+-   نقش اعطا شده و به طور پیش فرض.
+-   تنظیمات با محدودیت های خود را که به طور پیش فرض در ورود کاربر اعمال می شود.
+-   اختصاص داده پروفایل تنظیمات.
 
-شما می توانید این لیست از شبکه به طور مستقیم در تعریف `users.xml` یا در یک فایل در `users.d` فهرست راهنما (برای اطلاعات بیشتر, بخش را ببینید “[پروندههای پیکربندی](configuration-files.md#configuration_files)”).
+امتیازات به یک حساب کاربری را می توان با اعطا [GRANT](../sql-reference/statements/grant.md) پرس و جو و یا با اختصاص [نقش ها](#role-management). برای لغو امتیازات از یک کاربر, تاتر فراهم می کند [REVOKE](../sql-reference/statements/revoke.md) پرس و جو. به لیست امتیازات برای یک کاربر, استفاده از - [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) بیانیه.
 
-پیکربندی شامل نظرات توضیح میدهد که چگونه برای باز کردن دسترسی از همه جا.
+نمایش داده شد مدیریت:
 
-برای استفاده در تولید فقط مشخص کنید `ip` عناصر (نشانی اینترنتی و ماسک خود را), از زمان استفاده از `host` و `hoost_regexp` ممکن است تاخیر اضافی شود.
+-   [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+-   [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+-   [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+-   [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-بعد مشخصات تنظیمات کاربر مشخص شده است (بخش را ببینید “[پروفایل تنظیمات](settings/settings-profiles.md)”. شما می توانید مشخصات پیش فرض را مشخص کنید, `default'`. مشخصات می توانید هر نام دارند. شما می توانید مشخصات مشابه برای کاربران مختلف را مشخص کنید. مهم ترین چیز شما می توانید در مشخصات تنظیمات ارسال شده است `readonly=1`, که تضمین می کند فقط خواندنی دسترسی. سپس سهمیه مشخص مورد استفاده قرار گیرد (بخش را ببینید “[سهمیه](quotas.md#quotas)”). شما می توانید سهمیه پیش فرض را مشخص کنید: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+### تنظیمات استفاده {#access-control-settings-applying}
 
-در اختیاری `<allow_databases>` بخش, شما همچنین می توانید یک لیست از پایگاه داده که کاربر می تواند دسترسی مشخص. به طور پیش فرض تمام پایگاه های داده در دسترس کاربر هستند. شما می توانید مشخص کنید `default` پایگاه داده است. در این مورد, کاربر دسترسی به پایگاه داده به طور پیش فرض دریافت.
+تنظیمات را می توان با روش های مختلف تنظیم: برای یک حساب کاربری, در نقش اعطا و تنظیمات پروفایل خود را. در ورود کاربر, اگر یک محیط در اشخاص دسترسی های مختلف مجموعه, ارزش و محدودیتهای این تنظیم توسط اولویت های زیر اعمال می شود (از بالاتر به پایین تر):
 
-در اختیاری `<allow_dictionaries>` بخش, شما همچنین می توانید یک لیست از لغت نامه که کاربر می تواند دسترسی مشخص. به طور پیش فرض تمام لغت نامه ها برای کاربر در دسترس هستند.
+1.  تنظیمات حساب کاربری.
+2.  تنظیمات نقش های پیش فرض حساب کاربری. اگر یک محیط در برخی از نقش ها تنظیم شده است, سپس سفارش از تنظیم استفاده تعریف نشده است.
+3.  تنظیمات در پروفایل تنظیمات اختصاص داده شده به یک کاربر و یا به نقش پیش فرض خود را. اگر یک محیط در برخی از پروفیل های مجموعه, سپس منظور از تنظیم استفاده از تعریف نشده است.
+4.  تنظیمات به طور پیش فرض به تمام سرور و یا از اعمال [نمایه پیشفرض](server-configuration-parameters/settings.md#default-profile).
 
-دسترسی به `system` پایگاه داده همیشه مجاز (از این پایگاه داده برای پردازش نمایش داده شد استفاده می شود).
+## نقش {#role-management}
 
-کاربر می تواند لیستی از تمام پایگاه های داده و جداول را با استفاده از `SHOW` نمایش داده شد و یا جداول سیستم, حتی اگر دسترسی به پایگاه داده های فردی مجاز نیست.
+نقش یک ظرف برای اشخاص دسترسی است که می تواند به یک حساب کاربری اعطا شده است.
 
-دسترسی به پایگاه داده به [فقط خواندنی](settings/permissions-for-queries.md#settings_readonly) تنظیمات. شما نمی توانید دسترسی کامل به یک پایگاه داده و `readonly` دسترسی به یکی دیگر.
+نقش شامل:
+
+-   [امتیازات](../sql-reference/statements/grant.md#grant-privileges)
+-   تنظیمات و محدودیت ها
+-   فهرست نقش های اعطا شده
+
+نمایش داده شد مدیریت:
+
+-   [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+-   [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+-   [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+-   [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+-   [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+-   [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+امتیازات به نقش را می توان با اعطا [GRANT](../sql-reference/statements/grant.md) پرس و جو. برای لغو امتیازات از یک فاحشه خانه نقش فراهم می کند [REVOKE](../sql-reference/statements/revoke.md) پرس و جو.
+
+## سیاست سطر {#row-policy-management}
+
+سیاست ردیف یک فیلتر است که تعریف می کند که یا ردیف برای یک کاربر و یا برای نقش در دسترس است. سیاست ردیف شامل فیلتر برای یک جدول خاص و لیستی از نقش ها و/یا کاربران که باید این سیاست ردیف استفاده کنید.
+
+نمایش داده شد مدیریت:
+
+-   [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+-   [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+-   [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+-   [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+## تنظیمات {#settings-profiles-management}
+
+مشخصات تنظیمات مجموعه ای از [تنظیمات](settings/index.md). مشخصات تنظیمات شامل تنظیمات و محدودیت, و لیستی از نقش ها و/یا کاربران که این سهمیه اعمال می شود.
+
+نمایش داده شد مدیریت:
+
+-   [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+-   [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+-   [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+-   [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+## سهمیه {#quotas-management}
+
+سهمیه محدودیت استفاده از منابع. ببینید [سهمیه](quotas.md).
+
+سهمیه شامل مجموعه ای از محدودیت برای برخی از مدت زمان, و لیستی از نقش ها و/و یا کاربران که باید این سهمیه استفاده.
+
+نمایش داده شد مدیریت:
+
+-   [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+-   [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+-   [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+-   [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+## فعال کردن کنترل دسترسی مبتنی بر مربع و مدیریت حساب {#enabling-access-control}
+
+-   راه اندازی یک دایرکتوری برای ذخیره سازی تنظیمات.
+
+    فروشگاه های کلیک دسترسی به تنظیمات نهاد در مجموعه پوشه در [\_پوشه دستیابی](server-configuration-parameters/settings.md#access_control_path) پارامتر پیکربندی سرور.
+
+-   فعال کردن گذاشتن محور کنترل دسترسی و مدیریت حساب برای حداقل یک حساب کاربری.
+
+    به طور پیش فرض کنترل دسترسی مبتنی بر مربع و مدیریت حساب برای همه کاربران تبدیل شده است. شما نیاز به پیکربندی حداقل یک کاربر در `users.xml` فایل پیکربندی و اختصاص 1 به [مدیریت دسترسی](settings/settings-users.md#access_management-user-setting) تنظیمات.
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

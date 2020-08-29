@@ -6,7 +6,7 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
 #include <IO/Progress.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 #include <Common/TypePromotion.h>
 
 #include <atomic>
@@ -66,12 +66,6 @@ public:
         return none;
     }
 
-    /// If this stream generates data in order by some keys, return true.
-    virtual bool isSortedOutput() const { return false; }
-
-    /// In case of isSortedOutput, return corresponding SortDescription
-    virtual const SortDescription & getSortDescription() const;
-
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
       * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.
@@ -109,7 +103,7 @@ public:
     size_t checkDepth(size_t max_depth) const { return checkDepthImpl(max_depth, max_depth); }
 
     /// Do not allow to change the table while the blocks stream and its children are alive.
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
     /// Get information about execution speed.
     const BlockStreamProfileInfo & getProfileInfo() const { return info; }
@@ -229,7 +223,7 @@ public:
 protected:
     /// Order is important: `table_locks` must be destroyed after `children` so that tables from
     /// which child streams read are protected by the locks during the lifetime of the child streams.
-    std::vector<TableStructureReadLockHolder> table_locks;
+    std::vector<TableLockHolder> table_locks;
 
     BlockInputStreams children;
     std::shared_mutex children_mutex;

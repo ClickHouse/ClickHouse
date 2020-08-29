@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: ODBC
 ---
@@ -44,7 +44,7 @@ ENGINE = ODBC(connection_settings, external_database, external_table)
 
 این مثال برای لینوکس اوبونتو 18.04 و سرور خروجی زیر 5.7 بررسی می شود.
 
-اطمینان حاصل شود که unixodbc و mysql اتصال نصب شده است.
+اطمینان حاصل شود که unixODBC و MySQL اتصال نصب شده است.
 
 به طور پیش فرض (در صورت نصب از بسته), کلیک خانه شروع می شود به عنوان کاربر `clickhouse`. بدین ترتیب, شما نیاز به ایجاد و پیکربندی این کاربر در سرور خروجی زیر.
 

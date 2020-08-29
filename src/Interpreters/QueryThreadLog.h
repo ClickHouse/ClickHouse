@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/ClientInfo.h>
 
 
 namespace ProfileEvents
@@ -43,7 +44,7 @@ struct QueryThreadLogElement
     static std::string name() { return "QueryThreadLog"; }
 
     static Block createBlock();
-    void appendToBlock(Block & block) const;
+    void appendToBlock(MutableColumns & columns) const;
 };
 
 

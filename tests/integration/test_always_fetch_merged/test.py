@@ -50,14 +50,14 @@ def test_replica_always_download(started_cluster):
 
     # Nothing is merged
     assert node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1") == "10\n"
-
     assert node2.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1") == "10\n"
 
     node1.query("SYSTEM START MERGES")
-
-    time.sleep(3)
+    node1.query("OPTIMIZE TABLE test_table")
+    node2.query("SYSTEM SYNC REPLICA test_table")
 
     node1_parts = node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
     node2_parts = node2.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
-    assert int(node1_parts) < 10  # something merged
+
+    assert int(node1_parts) < 10
     assert int(node2_parts) < 10

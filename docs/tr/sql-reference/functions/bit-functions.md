@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: Bitlik
 ---
 
-# Bit fonksiyonları {#bit-functions}
+# Bit Fonksiyonları {#bit-functions}
 
 Bit işlevleri, uint8, Uİnt16, Uİnt32, Uint64, Int8, Int16, Int32, Int64, Float32 veya Float64 türlerinden herhangi bir çift için çalışır.
 
@@ -50,7 +50,7 @@ Tür: `UInt8`.
 
 **Örnek**
 
-Örneğin, taban-2 (ikili) sayı sistemindeki 43 sayısı 101011’dir.
+Örneğin, taban-2 (ikili) sayı sistemindeki 43 sayısı 101011'dir.
 
 Sorgu:
 
@@ -115,7 +115,7 @@ Tür: `UInt8`.
 
 **Örnek**
 
-Örneğin, taban-2 (ikili) sayı sistemindeki 43 sayısı 101011’dir.
+Örneğin, taban-2 (ikili) sayı sistemindeki 43 sayısı 101011'dir.
 
 Sorgu:
 
@@ -180,7 +180,7 @@ Tür: `UInt8`.
 
 **Örnek**
 
-Örneğin, taban-2 (ikili) sayı sistemindeki 43 sayısı 101011’dir.
+Örneğin, taban-2 (ikili) sayı sistemindeki 43 sayısı 101011'dir.
 
 Sorgu:
 

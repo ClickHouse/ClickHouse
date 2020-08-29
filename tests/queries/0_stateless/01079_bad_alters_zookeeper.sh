@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_for_bad_alters";
 
-$CLICKHOUSE_CLIENT -n --query "CREATE TABLE  table_for_bad_alters (
-  key UInt64,
-  value1 UInt8,
-  value2 String
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_bad_alters', '1')
+$CLICKHOUSE_CLIENT -n --query "CREATE TABLE table_for_bad_alters (
+    key UInt64,
+    value1 UInt8,
+    value2 String
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01079/table_for_bad_alters', '1')
 ORDER BY key;"
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_bad_alters VALUES(1, 1, 'Hello');"

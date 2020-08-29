@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: "UInt8\u3001UInt16\u3001UInt32\u3001UInt64\u3001Int8\u3001Int16\u3001Int32\u3001\
   Int64"
@@ -17,10 +17,10 @@ toc_title: "UInt8\u3001UInt16\u3001UInt32\u3001UInt64\u3001Int8\u3001Int16\u3001
 -   Int32-\[-2147483648:2147483647\]
 -   Int64-\[-9223372036854775808:9223372036854775807\]
 
-## Uint範囲 {#uint-ranges}
+## Uintの範囲 {#uint-ranges}
 
 -   UInt8-\[0:255\]
--   UInt16-\[0:65535\]\]
+-   UInt16-\[0:65535\]
 -   UInt32-\[0:4294967295\]
 -   UInt64-\[0:18446744073709551615\]
 

@@ -7,7 +7,7 @@ namespace DB
 {
 
 /** Implements LIVE VIEW table WATCH input stream.
- *  Keeps stream alive by outputing blocks with no rows
+ *  Keeps stream alive by outputting blocks with no rows
  *  based on period specified by the heartbeat interval.
  */
 class LiveViewBlockInputStream : public IBlockInputStream
@@ -46,7 +46,7 @@ public:
 
     void cancel(bool kill) override
     {
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage->shutdown_called)
             return;
         IBlockInputStream::cancel(kill);
         std::lock_guard lock(storage->mutex);
@@ -115,7 +115,7 @@ protected:
             end = blocks->end();
         }
 
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage->shutdown_called)
         {
             return { Block(), true };
         }
@@ -127,7 +127,7 @@ protected:
                 if (!active)
                     return { Block(), false };
                 /// If we are done iterating over our blocks
-                /// and there are new blocks availble then get them
+                /// and there are new blocks available then get them
                 if (blocks.get() != (*blocks_ptr).get())
                 {
                     blocks = (*blocks_ptr);
@@ -155,7 +155,7 @@ protected:
                         bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
 
-                        if (isCancelled() || storage->is_dropped)
+                        if (isCancelled() || storage->shutdown_called)
                         {
                             return { Block(), true };
                         }

@@ -59,9 +59,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     for (size_t i = 0; i < count; ++i)
     {
-        long rand_result1 = rng();
-        long rand_result2 = rng();
-        long rand_result3 = rng();
+        uint64_t rand_result1 = rng();
+        uint64_t rand_result2 = rng();
+        uint64_t rand_result3 = rng();
 
         size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
         size_t offset;
@@ -88,7 +88,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     int mode = MODE_NONE;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;
@@ -152,7 +152,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads; ++i)
-        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
+        pool.scheduleOrThrowOnError([=]{ thread(fd, mode, min_offset, max_offset, block_size, count); });
     pool.wait();
 
     fsync(fd);

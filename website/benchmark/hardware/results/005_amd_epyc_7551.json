@@ -1,7 +1,10 @@
 [
     {
-        "system":       "Dell PowerEdge R6415 DX180 AMD EPYC™ 7551P 32-Core Naples (Zen), 128 GB RAM, 2x SSD 960 GB RAID-1",
+        "system":       "Dell PowerEdge R6415",
+        "system_full":  "Dell PowerEdge R6415 DX180 AMD EPYC™ 7551P 32-Core Naples (Zen), 128 GB RAM, 2x SSD 960 GB RAID-1",
+        "cpu_vendor":   "AMD",
         "time":         "2020-01-13 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.007, 0.002, 0.001],

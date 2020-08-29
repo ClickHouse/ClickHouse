@@ -1,7 +1,9 @@
 [
     {
-        "system":       "Dell R530, 128GB DDR4, 2x480 GB SATA SSD, Perc H730 RAID-1",
+        "system":       "Dell R530",
+        "system_full":  "Dell R530, 128GB DDR4, 2x480 GB SATA SSD, Perc H730 RAID-1",
         "time":         "2020-01-14 00:00:00",
+        "kind":         "server",
         "result":
         [
             [0.027, 0.002, 0.002],

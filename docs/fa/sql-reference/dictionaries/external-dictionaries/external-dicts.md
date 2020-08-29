@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u062A\u0648\u0636\u06CC\u062D\u0627\u062A \u06A9\u0644\u06CC"
 ---
@@ -18,6 +18,12 @@ toc_title: "\u062A\u0648\u0636\u06CC\u062D\u0627\u062A \u06A9\u0644\u06CC"
 پیکربندی لغت نامه های خارجی را می توان در یک یا چند میلی لیتر فایل واقع شده است. مسیر پیکربندی در مشخص [دیکشنامهای](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) پارامتر.
 
 واژهنامهها را می توان در هنگام راه اندازی سرور و یا در اولین استفاده لود, بسته به [\_بارگیری کامل](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) تنظیمات.
+
+این [واژهنامهها](../../../operations/system-tables.md#system_tables-dictionaries) جدول سیستم شامل اطلاعات در مورد لغت نامه پیکربندی در سرور. برای هر فرهنگ لغت شما می توانید وجود دارد:
+
+-   وضعیت فرهنگ لغت.
+-   پارامترهای پیکربندی.
+-   معیارهای مانند مقدار رم اختصاص داده شده برای فرهنگ لغت و یا تعدادی از نمایش داده شد از فرهنگ لغت با موفقیت لود شد.
 
 فایل پیکربندی فرهنگ لغت دارای فرمت زیر است:
 

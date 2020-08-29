@@ -5,8 +5,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
-#include <iostream>
+#include <sstream>
 #include <functional>
+#include <filesystem>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -14,6 +15,8 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/Exception.h>
+#include <common/getResource.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -22,6 +25,11 @@ using namespace Poco::XML;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FILE_DOESNT_EXIST;
+}
 
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
@@ -65,21 +73,21 @@ ConfigProcessor::ConfigProcessor(
     , name_pool(new Poco::XML::NamePool(65521))
     , dom_parser(name_pool)
 {
-    if (log_to_console && !Logger::has("ConfigProcessor"))
+    if (log_to_console && !Poco::Logger::has("ConfigProcessor"))
     {
         channel_ptr = new Poco::ConsoleChannel;
-        log = &Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
+        log = &Poco::Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
     }
     else
     {
-        log = &Logger::get("ConfigProcessor");
+        log = &Poco::Logger::get("ConfigProcessor");
     }
 }
 
 ConfigProcessor::~ConfigProcessor()
 {
     if (channel_ptr) /// This means we have created a new console logger in the constructor.
-        Logger::destroy("ConfigProcessor");
+        Poco::Logger::destroy("ConfigProcessor");
 }
 
 
@@ -303,7 +311,7 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
-                LOG_WARNING(log, error_msg << name);
+                LOG_WARNING(log, "{}{}", error_msg, name);
         }
         else
         {
@@ -440,9 +448,27 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    LOG_DEBUG(log, "Processing configuration file '" + path + "'.");
+    XMLDocumentPtr config;
+    LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
-    XMLDocumentPtr config = dom_parser.parse(path);
+    if (std::filesystem::exists(path))
+    {
+        config = dom_parser.parse(path);
+    }
+    else
+    {
+        /// When we can use config embedded in binary.
+        if (path == "config.xml")
+        {
+            auto resource = getResource("embedded.xml");
+            if (resource.empty())
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
+            LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
+            config = dom_parser.parseMemory(resource.data(), resource.size());
+        }
+        else
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
+    }
 
     std::vector<std::string> contributing_files;
     contributing_files.push_back(path);
@@ -451,7 +477,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
-            LOG_DEBUG(log, "Merging configuration file '" + merge_file + "'.");
+            LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with = dom_parser.parse(merge_file);
             merge(config, with);
@@ -488,7 +514,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
         if (!include_from_path.empty())
         {
-            LOG_DEBUG(log, "Including configuration file '" + include_from_path + "'.");
+            LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
             contributing_files.push_back(include_from_path);
             include_from = dom_parser.parse(include_from_path);
@@ -568,10 +594,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         if (!zk_exception)
             throw;
 
-        LOG_WARNING(
-                log,
-                "Error while processing from_zk config includes: " + zk_exception->message() +
-                ". Config will be loaded from preprocessed file: " + preprocessed_path);
+        LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
         config_xml = dom_parser.parse(preprocessed_path);
     }
@@ -619,11 +642,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 Poco::File(preprocessed_path_parent).createDirectories();
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
-        LOG_DEBUG(log, "Saved preprocessed configuration to '" << preprocessed_path << "'.");
+        LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
     }
     catch (Poco::Exception & e)
     {
-        LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
+        LOG_WARNING(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
 }
 

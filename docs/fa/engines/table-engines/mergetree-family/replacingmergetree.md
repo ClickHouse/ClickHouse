@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: "\u062C\u0627\u06CC\u06AF\u0632\u06CC\u0646\u06CC"
 ---
@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **پارامترهای جایگزین**
 
--   `ver` — column with version. Type `UInt*`, `Date` یا `DateTime`. پارامتر اختیاری.
+-   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` یا `DateTime64`. پارامتر اختیاری.
 
     هنگام ادغام, `ReplacingMergeTree` از تمام ردیف ها با همان کلید اصلی تنها یک برگ دارد:
 
