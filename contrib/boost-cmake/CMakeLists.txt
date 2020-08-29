@@ -2,8 +2,8 @@ option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ${NOT_UNBUNDLED}
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     # 1.70 like in contrib/boost
-    # 1.67 on CI
-    set(BOOST_VERSION 1.67)
+    # 1.71 on CI
+    set(BOOST_VERSION 1.71)
 
     find_package(Boost ${BOOST_VERSION} COMPONENTS
         system
