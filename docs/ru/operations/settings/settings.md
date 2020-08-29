@@ -570,7 +570,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log\_queries\_min\_type {#settings-log-queries-min-type}
 
-`query_log` минимальный уровень логирования.
+Задаёт минимальный уровень логирования в `query_log`.
 
 Возможные значения:
 - `QUERY_START` (`=1`)
@@ -819,7 +819,7 @@ log_query_threads=1
 - Положительное целое число.
 - 0 — Создание исключения, которое не позволяет выполнить новый запрос, если сервер уже выполняет запрос с тем же `query_id`.
 
-Значение по умолчанию: 5000.	
+Значение по умолчанию: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -1140,10 +1140,10 @@ ClickHouse генерирует исключение
 Возможные значения:
 
 -   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
--   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
--   [uniqExact](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqexact)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
 Значение по умолчанию: `uniqExact`.
 
@@ -1272,7 +1272,7 @@ ClickHouse генерирует исключение
 
 Сбрасывает [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) для вложенных `Distributed` таблиц.
 
-Possible values:
+Возможные значения:
 
 -   1 — Включена.
 -   0 — Выключена.
@@ -1386,7 +1386,7 @@ See also:
 
 -   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow_introspection_functions}
+## allow_introspection_functions {#settings-allow_introspection_functions}
 
 Enables of disables [introspections functions](../../sql-reference/functions/introspection.md) for query profiling.
 

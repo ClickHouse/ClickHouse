@@ -46,7 +46,7 @@ SELECT splitByChar(',', '1,2,3,abcde')
 **Синтаксис**
 
 ``` sql
-splitByString(<separator>, <s>)
+splitByString(separator, s)
 ```
 
 **Параметры**
