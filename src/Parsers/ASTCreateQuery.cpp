@@ -194,6 +194,12 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (to_table_function)
+    {
+        res->to_table_function = to_table_function->clone();
+        res->children.push_back(res->to_table_function);
+    }
+
     cloneOutputOptions(*res);
 
     return res;
@@ -265,12 +271,22 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         formatOnCluster(settings);
     }
 
-    if (to_table_id)
+    if (to_table_id || to_table_function)
     {
         settings.ostr
-            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
-            << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
-            << backQuoteIfNeed(to_table_id.table_name);
+            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+
+        if (to_table_function)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
+            to_table_function->formatImpl(settings, state, frame);
+        }
+        else
+        {
+            settings.ostr
+                << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
+                << backQuoteIfNeed(to_table_id.table_name);
+        }
     }
 
     if (!as_table.empty())

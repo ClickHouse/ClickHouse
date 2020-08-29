@@ -25,6 +25,7 @@ limitations under the License. */
 #include <DataStreams/copyData.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewBlockInputStream.h>
@@ -167,7 +168,7 @@ void StorageLiveView::writeIntoLiveView(
     const Block & block,
     const Context & context)
 {
-    BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(live_view);
+    BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(live_view, context);
 
     /// Check if live view has any readers if not
     /// just reset blocks to empty and do nothing else
@@ -271,6 +272,10 @@ StorageLiveView::StorageLiveView(
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, global_context, table_id_.table_name, inner_subquery);
 
+    target_table_id = query.to_table_id;
+    if (query.to_table_function)
+        target_table_function = query.to_table_function->clone();
+
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     if (query.live_view_timeout)
@@ -282,6 +287,27 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
+}
+
+StoragePtr StorageLiveView::tryGetTargetTable(const Context & context) const
+{
+    std::lock_guard lock(target_table_storage_lock);
+
+    if (!target_table_storage)
+    {
+        if (target_table_function)
+        {
+            const auto * table_function = target_table_function->as<ASTFunction>();
+            const auto & factory = TableFunctionFactory::instance();
+            TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+            target_table_storage = table_function_ptr->execute(target_table_function, context, table_function_ptr->getName());
+        }
+        else if (!target_table_id.empty())
+        {
+            target_table_storage = DatabaseCatalog::instance().tryGetTable(target_table_id);
+        }
+    }
+    return target_table_storage;
 }
 
 Block StorageLiveView::getHeader() const
@@ -321,7 +347,40 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
     return inner_blocks_query->clone();
 }
 
-bool StorageLiveView::getNewBlocks()
+void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
+{
+    auto target_storage = tryGetTargetTable(context);
+
+    if (target_storage)
+    {
+        auto lock = target_storage->lockStructureForShare(
+            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+        if (!isTargetTableATableFunction())
+            context.checkAccess(AccessType::INSERT, target_table_id, getHeader().getNames());
+
+        auto query_context = const_cast<Context &>(context);
+        query_context.setSetting("output_format_enable_streaming", 1);
+
+        auto target_stream = target_storage->write(getInnerQuery(), query_context);
+
+        target_stream->writePrefix();
+
+        BlocksPtr blocks;
+        if (*blocks_ptr)
+            blocks = (*blocks_ptr);
+
+        if (blocks)
+        {
+            for (auto & block : *blocks)
+                target_stream->write(block);
+        }
+
+        target_stream->writeSuffix();
+    }
+}
+
+bool StorageLiveView::getNewBlocks(const Context & context)
 {
     SipHash hash;
     UInt128 key;
@@ -368,6 +427,7 @@ bool StorageLiveView::getNewBlocks()
             (*blocks_ptr) = new_blocks;
             (*blocks_metadata_ptr) = new_blocks_metadata;
             updated = true;
+            writeNewBlocksToTargetTable(context);
         }
     }
     return updated;
@@ -523,7 +583,7 @@ void StorageLiveView::refresh(const Context & context)
     auto table_lock = lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     {
         std::lock_guard lock(mutex);
-        if (getNewBlocks())
+        if (getNewBlocks(context))
             condition.notify_all();
     }
 }
@@ -532,7 +592,7 @@ Pipe StorageLiveView::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -541,7 +601,7 @@ Pipe StorageLiveView::read(
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
         {
-            if (getNewBlocks())
+            if (getNewBlocks(context))
                 condition.notify_all();
         }
         return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
@@ -589,7 +649,7 @@ BlockInputStreams StorageLiveView::watch(
             std::lock_guard lock(mutex);
             if (!(*blocks_ptr))
             {
-                if (getNewBlocks())
+                if (getNewBlocks(context))
                     condition.notify_all();
             }
         }
@@ -620,7 +680,7 @@ BlockInputStreams StorageLiveView::watch(
             std::lock_guard lock(mutex);
             if (!(*blocks_ptr))
             {
-                if (getNewBlocks())
+                if (getNewBlocks(context))
                     condition.notify_all();
             }
         }
