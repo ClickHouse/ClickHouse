@@ -369,11 +369,11 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitColumnExprSubquery(ClickHouseParser::ColumnExprSubqueryContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *ctx) override {
+  virtual antlrcpp::Any visitColumnExprSubquery(ClickHouseParser::ColumnExprSubqueryContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -394,6 +394,10 @@ public:
   }
 
   virtual antlrcpp::Any visitColumnExprBetween(ClickHouseParser::ColumnExprBetweenContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx) override {
     return visitChildren(ctx);
   }
 

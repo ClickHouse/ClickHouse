@@ -231,16 +231,16 @@ columnsExpr
     | columnExpr                       # ColumnsExprColumn
     ;
 columnExpr
-    : (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
+    : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
+    | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                # ColumnExprCast
+    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
+    | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
+    | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
     | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery  // single-column only
     | LPAREN columnExpr RPAREN                                                       # ColumnExprParens    // single-column only
     | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
     | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
-    | CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
-    // TODO: | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                       # ColumnExprCast
-    | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
-    | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
     | columnIdentifier                                                               # ColumnExprIdentifier
     | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
@@ -250,7 +250,7 @@ columnExpr
     | columnExpr binaryOp columnExpr                                                 # ColumnExprBinaryOp
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
-    | columnExpr AS identifier                                                       # ColumnExprAlias
+    | columnExpr AS? identifier                                                      # ColumnExprAlias
     | literal                                                                        # ColumnExprLiteral
     ;
 columnParamList: literal (COMMA literal)*;

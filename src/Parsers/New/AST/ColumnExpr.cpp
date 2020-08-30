@@ -32,7 +32,7 @@ PtrTo<ColumnExpr> ColumnExpr::createAsterisk(PtrTo<TableIdentifier> identifier, 
 // static
 PtrTo<ColumnExpr> ColumnExpr::createFunction(PtrTo<Identifier> name, PtrTo<ColumnParamList> params, PtrTo<ColumnExprList> args)
 {
-    // FIXME: make sure that all function names are lower-case.
+    // FIXME: make sure that all function names are camel-case.
     return PtrTo<ColumnExpr>(new ColumnExpr(ExprType::FUNCTION, {name, params, args}));
 }
 
@@ -261,7 +261,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprBinaryOp(ClickHouseParser::Column
     auto name = std::make_shared<Identifier>(visit(ctx->binaryOp()).as<String>());
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -272,22 +272,22 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprCase(ClickHouseParser::ColumnExpr
     auto name = std::make_shared<Identifier>(has_case_expr ? "caseWithExpression" : "multiIf");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
     // TODO: if (!ctx->ELSE()) args->append(Literal::createNull(???));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
 
-// antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
-// {
-//     auto args = std::make_shared<ColumnArgList>();
-//     auto params = std::make_shared<ColumnParamList>();
+antlrcpp::Any ParseTreeVisitor::visitColumnExprCast(ClickHouseParser::ColumnExprCastContext *ctx)
+{
+    auto args = std::make_shared<ColumnExprList>();
+    auto params = std::make_shared<ColumnParamList>();
 
-//     args->append(visit(ctx->columnExpr()));
-//     // TODO: params->append(Literal::createString(???));
+    args->append(visit(ctx->columnExpr()));
+    // TODO: params->append(Literal::createString(???));
 
-//     return ColumnExpr::createFunction(std::make_shared<Identifier>("CAST"), params, args);
-// }
+    return ColumnExpr::createFunction(std::make_shared<Identifier>("cast"), params, args);
+}
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnExprExtractContext *ctx)
 {
