@@ -870,13 +870,12 @@ String decimalFractional(const T & x, UInt32 scale)
 template <typename T>
 void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
 {
-    if (x.value < 0)
+    T part = DecimalUtils::getWholePart(x, scale);
+
+    if (x.value < 0 && part == 0)
     {
-        x.value *= -1;
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
-
-    T part = DecimalUtils::getWholePart(x, scale);
 
     if constexpr (std::is_same_v<T, bInt256>)
         writeText(part, ostr);

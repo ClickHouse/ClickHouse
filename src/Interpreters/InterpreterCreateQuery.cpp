@@ -241,11 +241,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column.name;
 
-        ParserIdentifierWithOptionalParameters storage_p;
+        ParserDataType type_parser;
         String type_name = column.type->getName();
         const char * pos = type_name.data();
         const char * end = pos + type_name.size();
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        column_declaration->type = parseQuery(type_parser, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -263,11 +263,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         column_declaration->name = column.name;
 
-        ParserIdentifierWithOptionalParameters storage_p;
+        ParserDataType type_parser;
         String type_name = column.type->getName();
         const char * type_name_pos = type_name.data();
         const char * type_name_end = type_name_pos + type_name.size();
-        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        column_declaration->type = parseQuery(type_parser, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
         if (column.default_desc.expression)
         {
@@ -281,14 +281,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         }
 
         if (column.codec)
-        {
-            String codec_desc = column.codec->getCodecDesc();
-            codec_desc = "CODEC(" + codec_desc + ")";
-            const char * codec_desc_pos = codec_desc.data();
-            const char * codec_desc_end = codec_desc_pos + codec_desc.size();
-            ParserIdentifierWithParameters codec_p;
-            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        }
+            column_declaration->codec = column.codec;
 
         if (column.ttl)
             column_declaration->ttl = column.ttl;
@@ -422,7 +415,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
-            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type, sanity_check_compression_codecs);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_decl.codec, column.type, sanity_check_compression_codecs);
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
