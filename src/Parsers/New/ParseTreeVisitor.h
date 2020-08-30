@@ -180,6 +180,7 @@ public:
     antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *ctx) override;
     antlrcpp::Any visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx) override;
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
+    antlrcpp::Any visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *ctx) override;
     antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *ctx) override;
     antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;
     antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx) override;

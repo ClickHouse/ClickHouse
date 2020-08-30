@@ -517,6 +517,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *ctx) override {
     return visitChildren(ctx);
   }

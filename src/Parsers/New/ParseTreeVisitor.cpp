@@ -45,11 +45,7 @@ antlrcpp::Any ParseTreeVisitor::visitQueryStmt(ClickHouseParser::QueryStmtContex
     auto query = visit(ctx->query()).as<PtrTo<Query>>();
 
     if (ctx->OUTFILE()) query->setOutFile(Literal::createString(ctx->STRING_LITERAL()));
-    if (ctx->FORMAT())
-    {
-        auto format = ctx->identifier() ? visit(ctx->identifier()).as<PtrTo<Identifier>>() : std::make_shared<Identifier>("Null");
-        query->setFormat(format);
-    }
+    if (ctx->FORMAT()) query->setFormat(visit(ctx->identifierOrNull()));
 
     return query;
 }

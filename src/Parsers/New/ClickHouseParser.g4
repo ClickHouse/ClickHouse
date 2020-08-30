@@ -8,7 +8,7 @@ options {
 
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
 
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT (identifier | NULL_SQL))?;
+queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)?;
 
 query
     : alterStmt     // DDL
@@ -76,7 +76,7 @@ primaryKeyClause: PRIMARY KEY columnExpr;
 sampleByClause: SAMPLE BY columnExpr;
 ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 
-engineExpr: ENGINE EQ_SINGLE? (identifier | NULL_SQL) (LPAREN columnExprList? RPAREN)?;
+engineExpr: ENGINE EQ_SINGLE? identifierOrNull (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
     : tableColumnDfnt  # TableElementExprColumn
     // TODO: INDEX
@@ -308,6 +308,7 @@ keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE
     | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
+identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
 unaryOp: DASH | NOT;
 binaryOp
     : CONCAT

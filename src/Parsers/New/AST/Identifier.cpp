@@ -85,6 +85,19 @@ antlrcpp::Any ParseTreeVisitor::visitIdentifier(ClickHouseParser::IdentifierCont
     __builtin_unreachable();
 }
 
+antlrcpp::Any ParseTreeVisitor::visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *ctx)
+{
+    if (ctx->identifier()) return visit(ctx->identifier());
+    if (ctx->NULL_SQL())
+    {
+        if (ctx->NULL_SQL()->getSymbol()->getText() == "Null") return std::make_shared<Identifier>("Null");
+        else {
+            // TODO: raise error
+        }
+    }
+    __builtin_unreachable();
+}
+
 antlrcpp::Any ParseTreeVisitor::visitKeyword(ClickHouseParser::KeywordContext *)
 {
     __builtin_unreachable();

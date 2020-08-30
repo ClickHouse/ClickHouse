@@ -104,10 +104,8 @@ antlrcpp::Any ParseTreeVisitor::visitEngineClause(ClickHouseParser::EngineClause
 
 antlrcpp::Any ParseTreeVisitor::visitEngineExpr(ClickHouseParser::EngineExprContext *ctx)
 {
-    PtrTo<Identifier> identifier
-        = ctx->identifier() ? visit(ctx->identifier()).as<PtrTo<Identifier>>() : std::make_shared<Identifier>("Null");
-    return std::make_shared<EngineExpr>(
-        identifier, ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr);
+    auto list = ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr;
+    return std::make_shared<EngineExpr>(visit(ctx->identifierOrNull()), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitPartitionByClause(ClickHouseParser::PartitionByClauseContext *ctx)

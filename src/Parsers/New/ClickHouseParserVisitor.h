@@ -270,6 +270,8 @@ public:
 
     virtual antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *context) = 0;
 
+    virtual antlrcpp::Any visitIdentifierOrNull(ClickHouseParser::IdentifierOrNullContext *context) = 0;
+
     virtual antlrcpp::Any visitUnaryOp(ClickHouseParser::UnaryOpContext *context) = 0;
 
     virtual antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *context) = 0;

@@ -67,7 +67,7 @@ public:
     RuleTableExpr = 68, RuleTableIdentifier = 69, RuleTableArgList = 70, 
     RuleTableArgExpr = 71, RuleDatabaseIdentifier = 72, RuleFloatingLiteral = 73, 
     RuleNumberLiteral = 74, RuleLiteral = 75, RuleKeyword = 76, RuleIdentifier = 77, 
-    RuleUnaryOp = 78, RuleBinaryOp = 79, RuleEnumValue = 80
+    RuleIdentifierOrNull = 78, RuleUnaryOp = 79, RuleBinaryOp = 80, RuleEnumValue = 81
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -158,6 +158,7 @@ public:
   class LiteralContext;
   class KeywordContext;
   class IdentifierContext;
+  class IdentifierOrNullContext;
   class UnaryOpContext;
   class BinaryOpContext;
   class EnumValueContext; 
@@ -188,8 +189,7 @@ public:
     antlr4::tree::TerminalNode *OUTFILE();
     antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *FORMAT();
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *NULL_SQL();
+    IdentifierOrNullContext *identifierOrNull();
 
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -614,8 +614,7 @@ public:
     EngineExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ENGINE();
-    IdentifierContext *identifier();
-    antlr4::tree::TerminalNode *NULL_SQL();
+    IdentifierOrNullContext *identifierOrNull();
     antlr4::tree::TerminalNode *EQ_SINGLE();
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
@@ -2308,6 +2307,20 @@ public:
   };
 
   IdentifierContext* identifier();
+
+  class  IdentifierOrNullContext : public antlr4::ParserRuleContext {
+  public:
+    IdentifierOrNullContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    IdentifierContext *identifier();
+    antlr4::tree::TerminalNode *NULL_SQL();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  IdentifierOrNullContext* identifierOrNull();
 
   class  UnaryOpContext : public antlr4::ParserRuleContext {
   public:
