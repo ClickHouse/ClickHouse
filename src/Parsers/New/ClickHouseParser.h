@@ -1878,17 +1878,6 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
-  class  ColumnExprAsteriskContext : public ColumnExprContext {
-  public:
-    ColumnExprAsteriskContext(ColumnExprContext *ctx);
-
-    antlr4::tree::TerminalNode *ASTERISK();
-    TableIdentifierContext *tableIdentifier();
-    antlr4::tree::TerminalNode *DOT();
-
-    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
   class  ColumnExprFunctionContext : public ColumnExprContext {
   public:
     ColumnExprFunctionContext(ColumnExprContext *ctx);
@@ -1900,6 +1889,17 @@ public:
     antlr4::tree::TerminalNode* RPAREN(size_t i);
     ColumnArgListContext *columnArgList();
     ColumnParamListContext *columnParamList();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnExprAsteriskContext : public ColumnExprContext {
+  public:
+    ColumnExprAsteriskContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *ASTERISK();
+    TableIdentifierContext *tableIdentifier();
+    antlr4::tree::TerminalNode *DOT();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2127,6 +2127,7 @@ public:
     antlr4::tree::TerminalNode *INTEGER_LITERAL();
     antlr4::tree::TerminalNode *INF();
     antlr4::tree::TerminalNode *NAN_SQL();
+    antlr4::tree::TerminalNode *DOT();
     antlr4::tree::TerminalNode *PLUS();
     antlr4::tree::TerminalNode *DASH();
 

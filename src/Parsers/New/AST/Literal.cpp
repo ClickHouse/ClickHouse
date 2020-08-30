@@ -95,6 +95,9 @@ antlrcpp::Any ParseTreeVisitor::visitNumberLiteral(ClickHouseParser::NumberLiter
 {
     if (ctx->FLOATING_LITERAL())
         return Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH());
+    if (ctx->DOT())
+        // TODO: create floating literal instead
+        return Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH());
     if (ctx->HEXADECIMAL_LITERAL())
         return Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH());
     if (ctx->INTEGER_LITERAL())

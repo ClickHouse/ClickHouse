@@ -234,14 +234,8 @@ columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END     # ColumnExprCase
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                # ColumnExprCast
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
-    | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
-    | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery  // single-column only
-    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens    // single-column only
-    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
-    | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
-    | columnIdentifier                                                               # ColumnExprIdentifier
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
     | columnExpr DOT INTEGER_LITERAL                                                 # ColumnExprTupleAccess
@@ -251,6 +245,12 @@ columnExpr
     | columnExpr QUERY columnExpr COLON columnExpr                                   # ColumnExprTernaryOp
     | columnExpr NOT? BETWEEN columnExpr AND columnExpr                              # ColumnExprBetween
     | columnExpr AS? identifier                                                      # ColumnExprAlias
+    | (tableIdentifier DOT)? ASTERISK                                                # ColumnExprAsterisk  // single-column only
+    | LPAREN selectUnionStmt RPAREN                                                  # ColumnExprSubquery  // single-column only
+    | LPAREN columnExpr RPAREN                                                       # ColumnExprParens    // single-column only
+    | LPAREN columnExprList RPAREN                                                   # ColumnExprTuple
+    | LBRACKET columnExprList? RBRACKET                                              # ColumnExprArray
+    | columnIdentifier                                                               # ColumnExprIdentifier
     | literal                                                                        # ColumnExprLiteral
     ;
 columnParamList: literal (COMMA literal)*;
@@ -286,7 +286,7 @@ databaseIdentifier: identifier;
 
 // Basics
 
-numberLiteral: (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL);
+numberLiteral: (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL | DOT INTEGER_LITERAL);
 literal
     : numberLiteral
     | STRING_LITERAL
