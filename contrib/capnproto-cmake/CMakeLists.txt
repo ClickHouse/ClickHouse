@@ -29,6 +29,10 @@ set (KJ_SRCS
     ${CAPNPROTO_SOURCE_DIR}/kj/parse/char.c++
 )
 
+if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-char8_t")
+endif ()
+
 add_library(kj ${KJ_SRCS})
 target_include_directories(kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
 
