@@ -497,6 +497,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx) override {
     return visitChildren(ctx);
   }

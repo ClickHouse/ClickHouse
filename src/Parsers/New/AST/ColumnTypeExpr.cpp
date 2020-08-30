@@ -80,14 +80,14 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprParam(ClickHouseParser::Colum
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *ctx)
 {
     auto list = std::make_shared<EnumValueList>();
-    for (auto * value : ctx->enumValue()) list->append(value->accept(this));
+    for (auto * value : ctx->enumValue()) list->append(visit(value));
     return ColumnTypeExpr::createEnum(visit(ctx->identifier()), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprComplex(ClickHouseParser::ColumnTypeExprComplexContext *ctx)
 {
     auto list = std::make_shared<ColumnTypeExprList>();
-    for (auto * expr : ctx->columnTypeExpr()) list->append(expr->accept(this));
+    for (auto * expr : ctx->columnTypeExpr()) list->append(visit(expr));
     return ColumnTypeExpr::createComplex(visit(ctx->identifier()), list);
 }
 
@@ -96,9 +96,9 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprNested(ClickHouseParser::Colu
     ColumnTypeExpr::NestedParamList list;
 
     for (size_t i = 0; i < ctx->columnTypeExpr().size(); ++i)
-        list.emplace_back(ctx->identifier(i+1)->accept(this), ctx->columnTypeExpr(i)->accept(this));
+        list.emplace_back(visit(ctx->identifier(i + 1)), visit(ctx->columnTypeExpr(i)));
 
-    return ColumnTypeExpr::createNested(ctx->identifier(0)->accept(this), list);
+    return ColumnTypeExpr::createNested(visit(ctx->identifier(0)), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitEnumValue(ClickHouseParser::EnumValueContext *ctx)

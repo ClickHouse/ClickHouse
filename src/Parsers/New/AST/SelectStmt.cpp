@@ -213,8 +213,8 @@ antlrcpp::Any ParseTreeVisitor::visitFromClause(ClickHouseParser::FromClauseCont
 
 antlrcpp::Any ParseTreeVisitor::visitSampleClause(ClickHouseParser::SampleClauseContext *ctx)
 {
-    if (ctx->OFFSET()) return std::make_shared<SampleClause>(ctx->ratioExpr(0)->accept(this), ctx->ratioExpr(1)->accept(this));
-    else return std::make_shared<SampleClause>(ctx->ratioExpr(0)->accept(this).as<PtrTo<RatioExpr>>());
+    if (ctx->OFFSET()) return std::make_shared<SampleClause>(visit(ctx->ratioExpr(0)), visit(ctx->ratioExpr(1)));
+    else return std::make_shared<SampleClause>(visit(ctx->ratioExpr(0)).as<PtrTo<RatioExpr>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitArrayJoinClause(ClickHouseParser::ArrayJoinClauseContext *ctx)

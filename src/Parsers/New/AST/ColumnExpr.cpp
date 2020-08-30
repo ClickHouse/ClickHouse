@@ -195,7 +195,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnArgExpr(ClickHouseParser::ColumnArgEx
 antlrcpp::Any ParseTreeVisitor::visitColumnArgList(ClickHouseParser::ColumnArgListContext *ctx)
 {
     auto list = std::make_shared<ColumnExprList>();
-    for (auto * arg : ctx->columnArgExpr()) list->append(arg->accept(this));
+    for (auto * arg : ctx->columnArgExpr()) list->append(visit(arg));
     return list;
 }
 
@@ -216,7 +216,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprArrayAccess(ClickHouseParser::Col
     auto name = std::make_shared<Identifier>("arrayElement");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -234,16 +234,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprBetween(ClickHouseParser::ColumnE
     {
         auto name = std::make_shared<Identifier>(ctx->NOT() ? "lessOrEquals" : "greaterOrEquals");
         auto args = std::make_shared<ColumnExprList>();
-        args->append(ctx->columnExpr(0)->accept(this));
-        args->append(ctx->columnExpr(1)->accept(this));
+        args->append(visit(ctx->columnExpr(0)));
+        args->append(visit(ctx->columnExpr(1)));
         expr1 = ColumnExpr::createFunction(name, nullptr, args);
     }
 
     {
         auto name = std::make_shared<Identifier>(ctx->NOT() ? "greaterOrEquals" : "lessOrEquals");
         auto args = std::make_shared<ColumnExprList>();
-        args->append(ctx->columnExpr(0)->accept(this));
-        args->append(ctx->columnExpr(2)->accept(this));
+        args->append(visit(ctx->columnExpr(0)));
+        args->append(visit(ctx->columnExpr(2)));
         expr2 = ColumnExpr::createFunction(name, nullptr, args);
     }
 
@@ -339,7 +339,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprIsNull(ClickHouseParser::ColumnEx
 antlrcpp::Any ParseTreeVisitor::visitColumnExprList(ClickHouseParser::ColumnExprListContext *ctx)
 {
     auto list = std::make_shared<ColumnExprList>();
-    for (auto * expr : ctx->columnsExpr()) list->append(expr->accept(this));
+    for (auto * expr : ctx->columnsExpr()) list->append(visit(expr));
     return list;
 }
 
@@ -365,7 +365,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::Colum
     auto name = std::make_shared<Identifier>("if");
     auto args = std::make_shared<ColumnExprList>();
 
-    for (auto * expr : ctx->columnExpr()) args->append(expr->accept(this));
+    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
 
     return ColumnExpr::createFunction(name, nullptr, args);
 }
@@ -415,14 +415,14 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprUnaryOp(ClickHouseParser::ColumnE
 antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLambdaExprContext *ctx)
 {
     auto params = std::make_shared<List<Identifier, ','>>();
-    for (auto * id : ctx->identifier()) params->append(id->accept(this));
+    for (auto * id : ctx->identifier()) params->append(visit(id));
     return ColumnExpr::createLambda(params, visit(ctx->columnExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnParamList(ClickHouseParser::ColumnParamListContext *ctx)
 {
     auto param_list = std::make_shared<ColumnParamList>();
-    for (auto* param : ctx->literal()) param_list->append(param->accept(this));
+    for (auto* param : ctx->literal()) param_list->append(visit(param));
     return param_list;
 }
 

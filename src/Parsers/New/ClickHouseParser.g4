@@ -106,7 +106,7 @@ existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
 
 // INSERT statement
 
-insertStmt: INSERT INTO tableIdentifier (LPAREN identifier (COMMA identifier)* RPAREN)? valuesClause;
+insertStmt: INSERT INTO tableIdentifier (LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN)? valuesClause;
 
 valuesClause
     : VALUES valueTupleExpr (COMMA? valueTupleExpr)*
@@ -286,12 +286,17 @@ databaseIdentifier: identifier;
 
 // Basics
 
-numberLiteral: (PLUS | DASH)? (FLOATING_LITERAL | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL | DOT INTEGER_LITERAL);
+floatingLiteral
+    : FLOATING_LITERAL
+    | INTEGER_LITERAL DOT INTEGER_LITERAL?
+    | DOT INTEGER_LITERAL
+    ;
+numberLiteral: (PLUS | DASH)? (floatingLiteral | HEXADECIMAL_LITERAL | INTEGER_LITERAL | INF | NAN_SQL);
 literal
     : numberLiteral
     | STRING_LITERAL
     | NULL_SQL
-    | identifier LPAREN RPAREN
+    | identifier LPAREN RPAREN  // TODO: expand to LiteralExpr
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST | CHECK

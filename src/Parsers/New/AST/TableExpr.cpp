@@ -125,7 +125,7 @@ antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExpr
 antlrcpp::Any ParseTreeVisitor::visitTableArgList(ClickHouseParser::TableArgListContext * ctx)
 {
     auto list = std::make_shared<TableArgList>();
-    for (auto * arg : ctx->tableArgExpr()) list->append(arg->accept(this));
+    for (auto * arg : ctx->tableArgExpr()) list->append(visit(arg));
     return list;
 }
 

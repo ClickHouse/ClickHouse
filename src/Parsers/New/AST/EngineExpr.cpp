@@ -128,7 +128,7 @@ antlrcpp::Any ParseTreeVisitor::visitSampleByClause(ClickHouseParser::SampleByCl
 antlrcpp::Any ParseTreeVisitor::visitTtlClause(ClickHouseParser::TtlClauseContext *ctx)
 {
     auto list = std::make_shared<TTLExprList>();
-    for (auto * expr : ctx->ttlExpr()) list->append(expr->accept(this));
+    for (auto * expr : ctx->ttlExpr()) list->append(visit(expr));
     return std::make_shared<TTLClause>(list);
 }
 

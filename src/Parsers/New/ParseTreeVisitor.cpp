@@ -149,7 +149,7 @@ antlrcpp::Any ParseTreeVisitor::visitExistsStmt(ClickHouseParser::ExistsStmtCont
 antlrcpp::Any ParseTreeVisitor::visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx)
 {
     auto list = std::make_shared<ColumnNameList>();
-    for (auto * name : ctx->identifier()) list->append(visit(name));
+    for (auto * name : ctx->nestedIdentifier()) list->append(visit(name));
     return std::make_shared<InsertQuery>(visit(ctx->tableIdentifier()), list, visit(ctx->valuesClause()));
 }
 
@@ -207,7 +207,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
         and_args->append(ColumnExpr::createFunction(std::make_shared<Identifier>("like"), nullptr, args));
     }
     else if (ctx->whereClause())
-        and_args->append(ctx->whereClause()->columnExpr()->accept(this));
+        and_args->append(visit(ctx->whereClause()->columnExpr()));
 
     auto system = std::make_shared<DatabaseIdentifier>(std::make_shared<Identifier>("system"));
     auto tables = std::make_shared<TableIdentifier>(system, std::make_shared<Identifier>("tables"));

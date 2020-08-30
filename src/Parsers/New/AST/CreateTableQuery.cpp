@@ -64,7 +64,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx)
 {
     auto elems = std::make_shared<TableElementList>();
-    for (auto * elem : ctx->tableElementExpr()) elems->append(elem->accept(this).as<PtrTo<TableElementExpr>>());
+    for (auto * elem : ctx->tableElementExpr()) elems->append(visit(elem).as<PtrTo<TableElementExpr>>());
     return SchemaClause::createDescription(elems);
 }
 

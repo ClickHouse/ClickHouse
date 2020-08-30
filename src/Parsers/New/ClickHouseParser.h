@@ -65,9 +65,9 @@ public:
     RuleColumnParamList = 62, RuleColumnArgList = 63, RuleColumnArgExpr = 64, 
     RuleColumnLambdaExpr = 65, RuleColumnIdentifier = 66, RuleNestedIdentifier = 67, 
     RuleTableExpr = 68, RuleTableIdentifier = 69, RuleTableArgList = 70, 
-    RuleTableArgExpr = 71, RuleDatabaseIdentifier = 72, RuleNumberLiteral = 73, 
-    RuleLiteral = 74, RuleKeyword = 75, RuleIdentifier = 76, RuleUnaryOp = 77, 
-    RuleBinaryOp = 78, RuleEnumValue = 79
+    RuleTableArgExpr = 71, RuleDatabaseIdentifier = 72, RuleFloatingLiteral = 73, 
+    RuleNumberLiteral = 74, RuleLiteral = 75, RuleKeyword = 76, RuleIdentifier = 77, 
+    RuleUnaryOp = 78, RuleBinaryOp = 79, RuleEnumValue = 80
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -153,6 +153,7 @@ public:
   class TableArgListContext;
   class TableArgExprContext;
   class DatabaseIdentifierContext;
+  class FloatingLiteralContext;
   class NumberLiteralContext;
   class LiteralContext;
   class KeywordContext;
@@ -789,8 +790,8 @@ public:
     TableIdentifierContext *tableIdentifier();
     ValuesClauseContext *valuesClause();
     antlr4::tree::TerminalNode *LPAREN();
-    std::vector<IdentifierContext *> identifier();
-    IdentifierContext* identifier(size_t i);
+    std::vector<NestedIdentifierContext *> nestedIdentifier();
+    NestedIdentifierContext* nestedIdentifier(size_t i);
     antlr4::tree::TerminalNode *RPAREN();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
@@ -2118,16 +2119,31 @@ public:
 
   DatabaseIdentifierContext* databaseIdentifier();
 
+  class  FloatingLiteralContext : public antlr4::ParserRuleContext {
+  public:
+    FloatingLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *FLOATING_LITERAL();
+    std::vector<antlr4::tree::TerminalNode *> INTEGER_LITERAL();
+    antlr4::tree::TerminalNode* INTEGER_LITERAL(size_t i);
+    antlr4::tree::TerminalNode *DOT();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  FloatingLiteralContext* floatingLiteral();
+
   class  NumberLiteralContext : public antlr4::ParserRuleContext {
   public:
     NumberLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *FLOATING_LITERAL();
+    FloatingLiteralContext *floatingLiteral();
     antlr4::tree::TerminalNode *HEXADECIMAL_LITERAL();
     antlr4::tree::TerminalNode *INTEGER_LITERAL();
     antlr4::tree::TerminalNode *INF();
     antlr4::tree::TerminalNode *NAN_SQL();
-    antlr4::tree::TerminalNode *DOT();
     antlr4::tree::TerminalNode *PLUS();
     antlr4::tree::TerminalNode *DASH();
 

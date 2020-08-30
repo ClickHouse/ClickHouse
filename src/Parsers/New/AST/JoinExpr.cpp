@@ -191,7 +191,7 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprCrossOp(ClickHouseParser::JoinExprC
 {
     auto [op, mode] = std::pair<AST::JoinExpr::JoinOpType, AST::JoinExpr::JoinOpMode>(visit(ctx->joinOpCross()));
 
-    return AST::JoinExpr::createJoinOp(ctx->joinExpr(0)->accept(this), ctx->joinExpr(1)->accept(this), op, mode, nullptr);
+    return AST::JoinExpr::createJoinOp(visit(ctx->joinExpr(0)), visit(ctx->joinExpr(1)), op, mode, nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprOp(ClickHouseParser::JoinExprOpContext *ctx)
@@ -202,8 +202,8 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprOp(ClickHouseParser::JoinExprOpCont
     else if (ctx->LOCAL()) mode = AST::JoinExpr::JoinOpMode::LOCAL;
 
     return AST::JoinExpr::createJoinOp(
-        ctx->joinExpr(0)->accept(this),
-        ctx->joinExpr(1)->accept(this),
+        visit(ctx->joinExpr(0)),
+        visit(ctx->joinExpr(1)),
         visit(ctx->joinOp()),
         mode,
         visit(ctx->joinConstraintClause()));

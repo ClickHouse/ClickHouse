@@ -47,7 +47,7 @@ antlrcpp::Any ParseTreeVisitor::visitValuesClause(ClickHouseParser::ValuesClause
     if (ctx->VALUES())
     {
         auto list = std::make_shared<ValueExprList>();
-        for (auto * expr : ctx->valueTupleExpr()) list->append(expr->accept(this));
+        for (auto * expr : ctx->valueTupleExpr()) list->append(visit(expr));
         return ValuesClause::createValues(list);
     }
     if (ctx->selectUnionStmt()) return ValuesClause::createSelect(visit(ctx->selectUnionStmt()));

@@ -23,7 +23,7 @@ namespace DB
 antlrcpp::Any ParseTreeVisitor::visitOrderExprList(ClickHouseParser::OrderExprListContext *ctx)
 {
     auto expr_list = std::make_shared<AST::OrderExprList>();
-    for (auto* expr : ctx->orderExpr()) expr_list->append(expr->accept(this));
+    for (auto* expr : ctx->orderExpr()) expr_list->append(visit(expr));
     return expr_list;
 }
 

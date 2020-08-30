@@ -52,7 +52,7 @@ antlrcpp::Any ParseTreeVisitor::visitValueExprArray(ClickHouseParser::ValueExprA
 antlrcpp::Any ParseTreeVisitor::visitValueExprList(ClickHouseParser::ValueExprListContext *ctx)
 {
     auto list = std::make_shared<ValueExprList>();
-    for (auto * expr : ctx->valueExpr()) list->append(expr->accept(this));
+    for (auto * expr : ctx->valueExpr()) list->append(visit(expr));
     return list;
 }
 

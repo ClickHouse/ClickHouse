@@ -178,6 +178,7 @@ public:
 
     antlrcpp::Any visitBinaryOp(ClickHouseParser::BinaryOpContext *ctx) override;  // returns |AST::ColumnExpr::BinaryOpType|
     antlrcpp::Any visitEnumValue(ClickHouseParser::EnumValueContext *ctx) override;
+    antlrcpp::Any visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx) override;
     antlrcpp::Any visitIdentifier(ClickHouseParser::IdentifierContext *ctx) override;
     antlrcpp::Any visitKeyword(ClickHouseParser::KeywordContext *ctx) override;
     antlrcpp::Any visitLiteral(ClickHouseParser::LiteralContext *ctx) override;

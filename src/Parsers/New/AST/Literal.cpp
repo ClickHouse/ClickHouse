@@ -16,16 +16,20 @@ PtrTo<Literal> Literal::createNull(antlr4::tree::TerminalNode *)
 }
 
 // static
-PtrTo<NumberLiteral> Literal::createNumber(antlr4::tree::TerminalNode * literal, bool minus)
+PtrTo<NumberLiteral> Literal::createNumber(antlr4::tree::TerminalNode * literal, bool negative)
 {
-    return std::make_shared<NumberLiteral>(literal, minus);
+    auto number = std::make_shared<NumberLiteral>(literal);
+    if (negative) number->makeNegative();
+    return number;
 }
 
 // static
 PtrTo<NumberLiteral> Literal::createNumber(String&& literal)
 {
     bool has_minus = literal[0] == '-';
-    return std::make_shared<NumberLiteral>(has_minus ? literal.substr(1) : literal, has_minus);
+    auto number = std::make_shared<NumberLiteral>(has_minus ? literal.substr(1) : literal);
+    if (has_minus) number->makeNegative();
+    return number;
 }
 
 // static
@@ -70,12 +74,26 @@ ASTPtr Literal::convertToOld() const
     return std::make_shared<ASTLiteral>(as_field());
 }
 
+NumberLiteral::NumberLiteral(antlr4::tree::TerminalNode * literal) : Literal(LiteralType::NUMBER, literal->getSymbol()->getText())
+{
+}
+
+NumberLiteral::NumberLiteral(String && literal) : Literal(LiteralType::NUMBER, std::move(literal))
+{
+}
+
 }
 
 namespace DB
 {
 
 using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitFloatingLiteral(ClickHouseParser::FloatingLiteralContext *ctx)
+{
+    // TODO: implement this.
+    return Literal::createNumber("0");
+}
 
 antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *ctx)
 {
@@ -84,8 +102,7 @@ antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *c
     if (ctx->STRING_LITERAL())
         return static_pointer_cast<Literal>(Literal::createString(ctx->STRING_LITERAL()));
     if (ctx->identifier())
-        // TODO: store as function.
-        return static_pointer_cast<Literal>(Literal::createString(ctx->identifier()->IDENTIFIER()));
+        return static_pointer_cast<Literal>(Literal::createString(ctx->identifier()->IDENTIFIER()));  // TODO: store as function.
     if (ctx->numberLiteral())
         return static_pointer_cast<Literal>(visit(ctx->numberLiteral()).as<PtrTo<NumberLiteral>>());
     __builtin_unreachable();
@@ -93,19 +110,16 @@ antlrcpp::Any ParseTreeVisitor::visitLiteral(ClickHouseParser::LiteralContext *c
 
 antlrcpp::Any ParseTreeVisitor::visitNumberLiteral(ClickHouseParser::NumberLiteralContext *ctx)
 {
-    if (ctx->FLOATING_LITERAL())
-        return Literal::createNumber(ctx->FLOATING_LITERAL(), !!ctx->DASH());
-    if (ctx->DOT())
-        // TODO: create floating literal instead
-        return Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH());
-    if (ctx->HEXADECIMAL_LITERAL())
-        return Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH());
-    if (ctx->INTEGER_LITERAL())
-        return Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH());
-    if (ctx->INF())
-        return Literal::createNumber(ctx->INF(), !!ctx->DASH());
-    if (ctx->NAN_SQL())
-        return Literal::createNumber(ctx->NAN_SQL());
+    if (ctx->floatingLiteral())
+    {
+        auto number = visit(ctx->floatingLiteral()).as<PtrTo<NumberLiteral>>();
+        if (ctx->DASH()) number->makeNegative();
+        return number;
+    }
+    if (ctx->HEXADECIMAL_LITERAL()) return Literal::createNumber(ctx->HEXADECIMAL_LITERAL(), !!ctx->DASH());
+    if (ctx->INTEGER_LITERAL()) return Literal::createNumber(ctx->INTEGER_LITERAL(), !!ctx->DASH());
+    if (ctx->INF()) return Literal::createNumber(ctx->INF(), !!ctx->DASH());
+    if (ctx->NAN_SQL()) return Literal::createNumber(ctx->NAN_SQL());
     __builtin_unreachable();
 }
 

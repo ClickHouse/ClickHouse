@@ -24,7 +24,7 @@ class Literal : public INode
         };
 
         static PtrTo<Literal> createNull(antlr4::tree::TerminalNode * literal);
-        static PtrTo<NumberLiteral> createNumber(antlr4::tree::TerminalNode * literal, bool minus = false);
+        static PtrTo<NumberLiteral> createNumber(antlr4::tree::TerminalNode * literal, bool negative = false);
         static PtrTo<NumberLiteral> createNumber(String&& literal); // checks first symbol for '-' character
         static PtrTo<StringLiteral> createString(antlr4::tree::TerminalNode * literal);
         static PtrTo<StringLiteral> createString(String&& literal); // without quotes
@@ -61,21 +61,15 @@ class Literal : public INode
 class NumberLiteral : public Literal
 {
     public:
-        NumberLiteral(antlr4::tree::TerminalNode * literal, bool minus_)
-            : Literal(LiteralType::NUMBER, literal->getSymbol()->getText()), minus(minus_)
-        {
-        }
-        NumberLiteral(String&& literal, bool minus_) : Literal(LiteralType::NUMBER, std::move(literal)), minus(minus_) {}
+        explicit NumberLiteral(antlr4::tree::TerminalNode * literal);
+        explicit NumberLiteral(String&& literal);
 
+        void makeNegative() { minus = true; }
 
-        template <typename T>
-        std::optional<T> as() const
-        {
-            return asNumber<T>(minus);
-        }
+        template <typename T> std::optional<T> as() const { return asNumber<T>(minus); }
 
     private:
-        const bool minus;
+        bool minus = false;
 };
 
 class StringLiteral : public Literal
