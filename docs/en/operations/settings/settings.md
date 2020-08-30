@@ -1905,7 +1905,7 @@ Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pret
 
 Possible values:
 
--   Positive integer. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   Positive integer. 
 -   0 — The value is cut completely.
 
 Default value: `10000` symbols.
