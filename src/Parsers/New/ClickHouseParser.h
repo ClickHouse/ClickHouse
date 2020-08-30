@@ -1318,8 +1318,8 @@ public:
   public:
     RatioExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<antlr4::tree::TerminalNode *> INTEGER_LITERAL();
-    antlr4::tree::TerminalNode* INTEGER_LITERAL(size_t i);
+    std::vector<NumberLiteralContext *> numberLiteral();
+    NumberLiteralContext* numberLiteral(size_t i);
     antlr4::tree::TerminalNode *SLASH();
 
 
