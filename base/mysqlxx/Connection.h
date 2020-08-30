@@ -158,6 +158,9 @@ private:
     std::unique_ptr<MYSQL> driver;
     bool is_initialized = false;
     bool is_connected = false;
+    /// Enables auto-reconnect.
+    bool reconnect = true;
+
 };
 
 

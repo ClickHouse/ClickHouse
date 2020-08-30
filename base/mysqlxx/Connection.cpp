@@ -115,8 +115,6 @@ void Connection::connect(const char* db,
     if (mysql_set_character_set(driver.get(), "UTF8"))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Enables auto-reconnect.
-    my_bool reconnect = true;
     if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
