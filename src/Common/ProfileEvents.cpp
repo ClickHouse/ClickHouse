@@ -157,7 +157,6 @@
     M(DictCacheLockWriteNs, "") \
     M(DictCacheLockReadNs, "") \
     \
-    M(DistributedSyncInsertionTimeoutExceeded, "") \
     M(DataAfterMergeDiffersFromReplica, "") \
     M(DataAfterMutationDiffersFromReplica, "") \
     M(PolygonsAddedToPool, "") \

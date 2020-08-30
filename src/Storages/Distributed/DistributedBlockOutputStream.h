@@ -25,7 +25,7 @@ namespace DB
 class Context;
 class StorageDistributed;
 
-/** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
+/** If insert_sync_ is true, the write is synchronous.
  *  Otherwise, the write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
  *  If the Distributed table uses more than one shard, then in order to support the write,
  *  when creating the table, an additional parameter must be specified for ENGINE - the sharding key.
@@ -43,8 +43,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const ASTPtr & query_ast_,
         const ClusterPtr & cluster_,
-        bool insert_sync_,
-        UInt64 insert_timeout_);
+        bool insert_sync_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -70,7 +69,7 @@ private:
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
 
-    /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
+    /// Performs synchronous insertion to remote nodes.
     void writeSync(const Block & block);
 
     void initWritingJobs(const Block & first_block);
@@ -96,7 +95,6 @@ private:
     bool insert_sync;
 
     /// Sync-related stuff
-    UInt64 insert_timeout; // in seconds
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;

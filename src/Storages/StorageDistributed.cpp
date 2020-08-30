@@ -537,12 +537,15 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
     /// Force sync insertion if it is remote() table function
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
-    auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, metadata_snapshot, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
-        insert_sync, timeout);
+        context,
+        *this,
+        metadata_snapshot,
+        createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        cluster,
+        insert_sync);
 }
 
 

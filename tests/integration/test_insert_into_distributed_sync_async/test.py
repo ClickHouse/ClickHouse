@@ -38,30 +38,30 @@ CREATE TABLE distributed_table(date Date, val UInt64) ENGINE = Distributed(test_
 
 def test_insertion_sync(started_cluster):
 
-    node1.query('''SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
+    node1.query('''SET insert_distributed_sync = 1;
     INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers LIMIT 10000''')
 
     assert node2.query("SELECT count() FROM local_table").rstrip() == '10000'
 
     node1.query('''
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET insert_distributed_sync = 1;
     INSERT INTO distributed_table SELECT today() - 1 as date, number as val FROM system.numbers LIMIT 10000''')
 
     assert node2.query("SELECT count() FROM local_table").rstrip() == '20000'
 
     # Insert with explicitly specified columns.
     node1.query('''
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET insert_distributed_sync = 1;
     INSERT INTO distributed_table(date, val) VALUES ('2000-01-01', 100500)''')
 
     # Insert with columns specified in different order.
     node1.query('''
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET insert_distributed_sync = 1;
     INSERT INTO distributed_table(val, date) VALUES (100500, '2000-01-01')''')
 
     # Insert with an incomplete list of columns.
     node1.query('''
-    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    SET insert_distributed_sync = 1;
     INSERT INTO distributed_table(val) VALUES (100500)''')
 
     expected = TSV('''
@@ -77,7 +77,7 @@ def test_insertion_sync_fails_on_error(started_cluster):
         pm.partition_instances(node2, node1, action='REJECT --reject-with tcp-reset')
         with pytest.raises(QueryRuntimeException):
             node1.query('''
-            SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
+            SET insert_distributed_sync = 1;
             INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''', timeout=2)
 """
 
@@ -85,21 +85,21 @@ def test_insertion_sync_fails_on_error(started_cluster):
 def test_insertion_sync_fails_with_timeout(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node1.query('''
-        SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+        SET insert_distributed_sync = 1;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''')
 
 
 def test_insertion_without_sync_ignores_timeout(started_cluster):
     with pytest.raises(QueryTimeoutExceedException):
         node1.query('''
-        SET insert_distributed_sync = 0, insert_distributed_timeout = 1;
+        SET insert_distributed_sync = 0;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''', timeout=1.5)
 
 
 def test_insertion_sync_with_disabled_timeout(started_cluster):
     with pytest.raises(QueryTimeoutExceedException):
         node1.query('''
-        SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
+        SET insert_distributed_sync = 1;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''', timeout=1)
 
 

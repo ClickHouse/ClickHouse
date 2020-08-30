@@ -25,7 +25,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
@@ -45,11 +44,6 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
 }
 
-namespace ProfileEvents
-{
-    extern const Event DistributedSyncInsertionTimeoutExceeded;
-}
-
 namespace DB
 {
 
@@ -57,7 +51,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
@@ -87,8 +80,7 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
-    bool insert_sync_,
-    UInt64 insert_timeout_)
+    bool insert_sync_)
     : context(context_)
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -96,7 +88,6 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     , query_string(queryToString(query_ast_))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
-    , insert_timeout(insert_timeout_)
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
 }
@@ -224,15 +215,6 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 void DistributedBlockOutputStream::waitForJobs()
 {
     pool->wait();
-
-    if (insert_timeout)
-    {
-        if (static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout)
-        {
-            ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
-            throw Exception("Synchronous distributed insert timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
-        }
-    }
 
     size_t jobs_count = remote_jobs_count + local_jobs_count;
     size_t num_finished_jobs = finished_jobs_count;
