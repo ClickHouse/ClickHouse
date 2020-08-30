@@ -1,39 +1,18 @@
+#include <Databases/MySQL/MySQLReplicaBuffer.h>
 #include <Common/Exception.h>
 
 namespace DB {
 
 namespace ErrorCodes {
     extern const int NOT_IMPLEMENTED;
-}
-
-void MySQLReplicaBuffer::flushData() {
-    const std::lock_guard<std::mutex> lock(mutex);
-
-    for (auto & [mysql_table_name, buffer] : data) {
-        if (!(force || checkThresholds(mysql_table_name))) {
-            continue;
-        }
-
-        const auto & ch_tables = consumerTables[mysql_table_name];
-        for (const auto & ch_table_id : ch_tables) {
-            flushedData[ch_table_id.getFullTableName()].push(&data[mysql_table_name].first);
-        }
-
-        StoragePtr storage = DatabaseCatalog::instance().getTable(StorageID(chDatabase, mysql_table_name), context);
-        if (storage) {
-            flushedData[storage.getStorageID().getFullTableName()].push(&data[mysql_table_name].first);
-        }
-
-        auto oldBuffer = data[mysql_table_name];
-        data[mysql_database_name] = std::make_shared<BufferAndSortingColumns>(oldBuffer->first.cloneEmpty(), oldBuffer->second);
-    }
+    extern const int LOGICAL_ERROR;
 }
 
 // These are called on table/database startup
 void MySQLReplicaBuffer::registerTable(const StorageID & table_id, const String & mysql_table_name) {
     const std::lock_guard<std::mutex> lock(mutex);
 
-    consumerTables[mysql_table_name].push_back(table_id);
+    consumer_tables[mysql_table_name].push_back(table_id);
 }
 
 void MySQLReplicaBuffer::registerDatabase(const String & database_name) {
@@ -48,52 +27,100 @@ void MySQLReplicaBuffer::registerDatabase(const String & database_name) {
     chDatabase = database_name;
 }
 
-BufferAndSortingColumnsPtr MySQLReplicaBuffer::getTableDataBuffer(const String & mysql_table_name, const Context & context) {
-    if (data.find(mysql_table_name) == data.end()) {
-        StoragePtr storage;
-        if (!consumerTables[mysql_table_name].empty()) {
-            storage = DatabaseCatalog::instance().getTable(consumerTables[mysql_table_name].front(), context);
+std::vector<BufferAndSortingColumnsPtr> MySQLReplicaBuffer::getTableDataBuffers(const String & mysql_table_name, const Context & context) {
+    // TODO: Is there a way to check that mutex is taken?
+    std::vector<BufferAndSortingColumnsPtr> result;
+    for (const auto& table_id : consumer_tables[mysql_table_name]) {
+        auto ch_table_name = table_id.getFullTableName();
+        if (data.find(ch_table_name) == data.end()) {
+            StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, context);
+
+            if (!storage) {
+                continue;
+            }
+
+            const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
+            BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
+                ch_table_name,
+                std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
+
+            Names required_names_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
+
+            for (const auto & required_name_for_sorting_key : required_names_for_sorting_key) {
+                buffer_and_soring_columns->second.emplace_back(
+                    buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
+            }
         }
-        if (chDatabase) {
-            storage = DatabaseCatalog::instance().getTable(StorageID(*chDatabase, mysql_table_name), context);
-        }
 
-        if (!storage) {
-            return nullptr;
-        }
-
-        const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
-        BufferAndSortingColumnsPtr & buffer_and_soring_columns = data.try_emplace(
-            mysql_table_name,
-            std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
-
-        Names required_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
-
-        for (const auto & required_name_for_sorting_key : required_for_sorting_key) {
-            buffer_and_soring_columns->second.emplace_back(
-                buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
+        const auto it = data.find(ch_table_name);
+        if (it != data.end()) {
+            result.push_back(it->second);
         }
     }
+    if (ch_database) {
+        if (database_data.find(mysql_table_name) == database_data.end()) {
+            StoragePtr storage = DatabaseCatalog::instance().getTable(StorageID(*ch_database, mysql_table_name), context);
 
-    if (data.find(mysql_table_name) != data.end()) {
-        return data[mysql_table_name];
+            if (storage) {
+                const StorageInMemoryMetadata & metadata = storage->getInMemoryMetadata();
+                BufferAndSortingColumnsPtr & buffer_and_soring_columns = database_data.try_emplace(
+                    mysql_table_name,
+                    std::make_shared<BufferAndSortingColumns>(metadata.getSampleBlock(), std::vector<size_t>{})).first->second;
+
+                Names required_names_for_sorting_key = metadata.getColumnsRequiredForSortingKey();
+
+                for (const auto & required_name_for_sorting_key : required_names_for_sorting_key) {
+                    buffer_and_soring_columns->second.emplace_back(
+                        buffer_and_soring_columns->first.getPositionByName(required_name_for_sorting_key));
+                }
+            }
+        }
+
+        const auto it = database_data.find(ch_table_name);
+        if (it != database_data.end()) {
+            result.push_back(it->second);
+        }
     }
 }
 
-bool MySQLReplicaBuffer::checkThresholds(const String & /*mysql_table_name*/) {
+BlockPtr MySQLReplicaBuffer::readBlock(const StorageID & table_id) {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    const auto it = data.find(table_id.getFullTableName());
+    if (checkThresholds(table_id) && it) {
+
+        auto old_buffer = it->second;
+        data[table_id.getFullTableName()] = std::make_shared<BufferAndSortingColumns>(old_buffer->first.cloneEmpty(), old_buffer->second);
+
+        return old_buffer->first;
+    }
+
+    return nullptr;
+}
+
+MySQLDatabaseBufferPtr readDatabaseBuffer() {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (!ch_database) {
+        throw Exception(
+            "Call registerTable first",
+            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (!checkDatabaseThresholds()) {
+        return nullptr;
+    }
+
+    MySQLDatabaseBufferPtr oldBuffer = database_data;
+    database_data = std::make_shared<MySQLDatabaseBuffer>();
+
+    return oldBuffer;
+}
+
+bool MySQLReplicaBuffer::checkThresholds(const StorageID & /*table_id*/) {
     return true;
 }
 
-void MySQLReplicaBuffer::finishProcessing() {
-    flushData();
-}
-
-BlockPtr MySQLReplicaBuffer::readNextBlock(const StorageID & table_id) {
-    const std::lock_guard<std::mutex> lock(mutex);
-
-    auto result = flushedData[table_id.getFullTableName()].front();
-    flushedData[table_id.getFullTableName()].pop();
-    return result;
-}
-
+bool MySQLReplicaBuffer::checkDatabaseThresholds() {
+    return true;
 }
