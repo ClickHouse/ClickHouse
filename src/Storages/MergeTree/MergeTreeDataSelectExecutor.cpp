@@ -398,16 +398,22 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
         DataTypePtr sampling_column_type = sampling_key.data_types[0];
 
-        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
-        else
-            throw Exception("Invalid sampling column type in storage parameters: " + sampling_column_type->getName() + ". Must be unsigned integer type.",
+        if (sampling_key.data_types.size() == 1)
+        {
+            if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
+            else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+            else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
+            else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
+                size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
+        }
+
+        if (size_of_universum == RelativeSize(0))
+            throw Exception(
+                "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
+                    + ". Must be one unsigned integer type",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
         if (settings.parallel_replicas_count > 1)
@@ -1546,7 +1552,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         continue;
                     }
 
-                    stack.emplace_back(check_order[1].begin, check_order[1].end);
+                    if (may_be_true_in_range(check_order[1]))
+                        stack.emplace_back(check_order[1].begin, check_order[1].end);
+                    else
+                        break; // No mark range would suffice
                 }
             }
 

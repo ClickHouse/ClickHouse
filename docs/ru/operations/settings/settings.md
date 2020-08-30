@@ -1606,7 +1606,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## mutations_sync {#mutations_sync}
 
-Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter.md#mutations)) синхронно.
+Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter/index.md#mutations)) синхронно.
 
 Возможные значения:
 
@@ -1618,8 +1618,29 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также**
 
--   [Синхронность запросов ALTER](../../sql-reference/statements/alter.md#synchronicity-of-alter-queries)
--   [Мутации](../../sql-reference/statements/alter.md#mutations)
+-   [Синхронность запросов ALTER](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+-   [Мутации](../../sql-reference/statements/alter/index.md#mutations)
 
+## ttl_only_drop_parts {#ttl_only_drop_parts}
+
+Для таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) включает или отключает  возможность полного удаления кусков данных, в которых все записи устарели. 
+
+Когда настройка `ttl_only_drop_parts` отключена (т.е. по умолчанию), сервер лишь удаляет устаревшие записи в соответствии с их временем жизни (TTL). 
+
+Когда настройка `ttl_only_drop_parts` включена, сервер целиком удаляет куски данных, в которых все записи устарели. 
+
+Удаление целых кусков данных вместо удаления отдельных записей позволяет устанавливать меньший таймаут `merge_with_ttl_timeout` и уменьшает нагрузку на сервер, что способствует росту производительности.
+
+Возможные значения:
+
+-   0 — Возможность удаления целых кусков данных отключена.
+-   1 — Возможность удаления целых кусков данных включена.
+
+Значение по умолчанию: `0`.
+
+**См. также** 
+
+-   [Секции и настройки запроса CREATE TABLE](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (настройка `merge_with_ttl_timeout`)
+-   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
