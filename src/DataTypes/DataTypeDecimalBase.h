@@ -158,7 +158,7 @@ protected:
 
 template <typename T, typename U, template <typename> typename DecimalType>
 typename std::enable_if_t<(sizeof(T) >= sizeof(U)), DecimalType<T>>
-decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
+inline decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
 {
     UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
     if (is_multiply)
@@ -170,7 +170,7 @@ decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_
 
 template <typename T, typename U, template <typename> typename DecimalType>
 typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DecimalType<U>>
-decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
+inline decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
 {
     UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
     if (is_multiply)
@@ -181,19 +181,19 @@ decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_
 }
 
 template <typename T, typename U, template <typename> typename DecimalType>
-const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &, bool, bool)
+inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &, bool, bool)
 {
     return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
 template <typename T, typename U, template <typename> typename DecimalType>
-const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty, bool, bool)
+inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty, bool, bool)
 {
     return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 template <template <typename> typename DecimalType>
-DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
+inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
     if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
