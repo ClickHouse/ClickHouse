@@ -3,11 +3,11 @@
 [ClickHouse Playground] (https://play.clickhouse.tech) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
 В Playground доступны несколько примеров c пакетами данных, а также образцы запросов, которые отображают возможности ClickHouse. Кроме того, там есть несколько релизов ClickHouse LTS, которые можно протестировать.
 
-ClickHouse Playground дает возможность поработать с m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) (4 vCPU, 32 ГБ ОЗУ), который находится в [Яндекс.Облаке](https://cloud.yandex.com/). Дополнительная информация об [облачных провайдерах](../commercial/cloud.md).
+ClickHouse Playground дает возможность поработать с m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) (4 vCPU, 32 ГБ ОЗУ), который находится в [Яндекс.Облаке](https://cloud.yandex.com/). Дополнительную информацию об облачных провайдерах читайте в разделе [Поставщики облачных услуг ClickHouse](../commercial/cloud.md).
 
 Вы можете создавать запросы к Playground с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), также можно установить соединение с помощью драйверов [JDBC](../ interfaces / jdbc.md) или [ODBC](../ interfaces / odbc.md). Более подробная информация о программных продуктах, поддерживающих ClickHouse, доступна [здесь](../ interfaces / index.md).
 
-## Credentials {#credentials}
+## Параметры доступа {#credentials}
 
 | Параметр            | Значение                                |
 |:--------------------|:----------------------------------------|
@@ -24,9 +24,9 @@ ClickHouse Playground дает возможность поработать с m2
 !!! note "Примечание"
     Для всех этих конечных точек требуется безопасное соединение TLS.
 
-## Limitations {#limitations}
+## Ограничения {#limitations}
 
-Запросы выполняются под пользователем с правами `readonly` для которого есть следующие ограничения:
+Запросы выполняются под пользователем с правами `readonly`, для которого есть следующие ограничения:
 - запрещены DDL запросы
 - запрещены INSERT запросы
 
@@ -36,7 +36,7 @@ ClickHouse Playground дает возможность поработать с m2
 - [result\_overflow\_mode=break](../operations/settings/query_complexity/#result-overflow-mode)
 - [max\_execution\_time=60000](../operations/settings/query_complexity/#max-execution-time)
 
-## Examples {#examples}
+## Примеры {#examples}
 
 Пример конечной точки HTTPS с `curl`:
 
@@ -50,10 +50,10 @@ curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&u
 clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
 
-## Implementation Details {#implementation-details}
+## Детали реализации {#implementation-details}
 
 Веб-интерфейс ClickHouse Playground выполняет запросы через ClickHouse [HTTP API](../interfaces/http.md).
 Бэкэнд Playground - это просто кластер ClickHouse без каких-либо дополнительных серверных приложений. Как упоминалось выше, конечные точки ClickHouse HTTPS и TCP / TLS также являются общедоступными как часть Playground. Они проксируются через [Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) для добавления дополнительного уровня защиты и улучшенного глобального подключения.
 
 !!! warning "Предупреждение"
-Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации ** настоятельно не рекомендуется **. Убедитесь, что он прослушивается только в частной сети и защищен правильно настроенным брандмауэром.
+Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации **настоятельно не рекомендуется**. Убедитесь, что он прослушивается только в частной сети и защищен правильно настроенным брандмауэром.
