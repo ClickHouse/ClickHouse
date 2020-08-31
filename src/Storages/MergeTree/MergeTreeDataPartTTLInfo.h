@@ -38,12 +38,15 @@ struct MergeTreeDataPartTTLInfos
     MergeTreeDataPartTTLInfo table_ttl;
 
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
-    /// to merge in order to remove expired rows.    
+    /// to merge in order to remove expired rows.
     time_t part_min_ttl = 0;
     time_t part_max_ttl = 0;
 
     /// Order is important as it would be serialized and hashed for checksums
     std::map<String, MergeTreeDataPartTTLInfo> moves_ttl;
+
+    /// Order is important as it would be serialized and hashed for checksums
+    std::map<String, MergeTreeDataPartTTLInfo> recompression_ttl;
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
