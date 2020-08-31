@@ -146,7 +146,7 @@ Token Lexer::nextTokenImpl()
                 }
             }
 
-            /// Try to parse it to a identifier(1identifier_name), return ErrorWrongNumber if not
+            /// Try to parse it to a identifier(1identifier_name), otherwise it return ErrorWrongNumber
             if (pos < end && isWordCharASCII(*pos))
             {
                 ++pos;
