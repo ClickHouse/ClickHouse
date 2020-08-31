@@ -63,19 +63,9 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const C
 StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     parseArguments(ast_function, context);
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
-
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
-
-    /// Create table
-    StoragePtr storage = getStorage(filename, format, cached_columns, const_cast<Context &>(context), table_name, compression_method, std::move(get_structure));
-
+    auto columns = getActualTableStructure(ast_function, context);
+    StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
     storage->startup();
-
     return storage;
 }
 

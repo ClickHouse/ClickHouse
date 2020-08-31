@@ -78,20 +78,14 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(const ASTPtr & as
 StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     parseArguments(ast_function, context);
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
 
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
-
-    auto res = std::make_shared<StorageTableFunction<StorageMerge>>(std::move(get_structure),
+    auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),
-        cached_columns,
+        getActualTableStructure(ast_function, context),
         source_database,
         table_name_regexp,
         context);
+
     res->startup();
     return res;
 }

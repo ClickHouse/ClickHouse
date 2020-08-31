@@ -70,26 +70,18 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
 {
     parseArguments(ast_function, context);
 
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
-
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
-
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
     UInt64 min_upload_part_size = context.getSettingsRef().s3_min_upload_part_size;
 
-    StoragePtr storage = std::make_shared<StorageTableFunction<StorageS3>>(std::move(get_structure),
+    StoragePtr storage = StorageS3::create(
             s3_uri,
             access_key_id,
             secret_access_key,
             StorageID(getDatabaseName(), table_name),
             format,
             min_upload_part_size,
-            cached_columns,
+            getActualTableStructure(ast_function, context),
             ConstraintsDescription{},
             const_cast<Context &>(context),
             compression_method);
