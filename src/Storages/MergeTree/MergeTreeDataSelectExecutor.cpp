@@ -1552,7 +1552,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         continue;
                     }
 
-                    stack.emplace_back(check_order[1].begin, check_order[1].end);
+                    if (may_be_true_in_range(check_order[1]))
+                        stack.emplace_back(check_order[1].begin, check_order[1].end);
+                    else
+                        break; // No mark range would suffice
                 }
             }
 
