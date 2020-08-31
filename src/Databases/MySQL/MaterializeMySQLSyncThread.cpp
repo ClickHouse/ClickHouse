@@ -151,9 +151,9 @@ static String checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection
 
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     const Context & context, const String & database_name_, const String & mysql_database_name_,
-    mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_)
+    mysqlxx::Pool & pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_)
     : log(&Poco::Logger::get("MaterializeMySQLSyncThread")), global_context(context.getGlobalContext()), database_name(database_name_)
-    , mysql_database_name(mysql_database_name_), pool(std::move(pool_)), client(std::move(client_)), settings(settings_)
+    , mysql_database_name(mysql_database_name_), pool(pool_), client(std::move(client_)), settings(settings_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }

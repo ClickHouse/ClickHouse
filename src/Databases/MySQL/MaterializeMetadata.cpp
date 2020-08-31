@@ -21,49 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static std::unordered_map<String, String> fetchTablesCreateQuery(
-    const mysqlxx::PoolWithFailover::Entry & connection, const String & database_name, const std::vector<String> & fetch_tables)
-{
-    std::unordered_map<String, String> tables_create_query;
-    for (const auto & fetch_table_name : fetch_tables)
-    {
-        Block show_create_table_header{
-            {std::make_shared<DataTypeString>(), "Table"},
-            {std::make_shared<DataTypeString>(), "Create Table"},
-        };
-
-        MySQLBlockInputStream show_create_table(
-            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
-            show_create_table_header, DEFAULT_BLOCK_SIZE);
-
-        Block create_query_block = show_create_table.read();
-        if (!create_query_block || create_query_block.rows() != 1)
-            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
-
-        tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
-    }
-
-    return tables_create_query;
-}
-
-
-static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection, const std::string & database)
-{
-    Block header{{std::make_shared<DataTypeString>(), "table_name"}};
-    String query = "SELECT TABLE_NAME AS table_name FROM INFORMATION_SCHEMA.TABLES  WHERE TABLE_SCHEMA = " + quoteString(database);
-
-    std::vector<String> tables_in_db;
-    MySQLBlockInputStream input(connection, query, header, DEFAULT_BLOCK_SIZE);
-
-    while (Block block = input.read())
-    {
-        tables_in_db.reserve(tables_in_db.size() + block.rows());
-        for (size_t index = 0; index < block.rows(); ++index)
-            tables_in_db.emplace_back((*block.getByPosition(0).column)[index].safeGet<String>());
-    }
-
-    return tables_in_db;
-}
 void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection)
 {
     Block header{
@@ -162,13 +119,34 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
 }
 
-MaterializeMetadata::MaterializeMetadata(
-    mysqlxx::PoolWithFailover::Entry & connection, const String & path_,
-    const String & database, bool & opened_transaction, const String & mysql_version)
-    : persistent_path(path_)
+void MaterializeMetadata::fetchMetadata(mysqlxx::PoolWithFailover::Entry & connection)
 {
-    if (Poco::File(persistent_path).exists())
-    {
+    bool locked_tables = false;
+    try {
+        connection->query("FLUSH TABLES;").execute();
+        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
+
+        locked_tables = true;
+        fetchMasterStatus(connection);
+        connection->query("UNLOCK TABLES;").execute();
+    }
+    catch (...) {
+        if (locked_tables)
+            connection->query("UNLOCK TABLES;").execute();
+
+        throw;
+    }
+}
+
+MaterializeMetadata::MaterializeMetadata(
+    mysqlxx::PoolWithFailover::Entry & connection,
+    const String & path_,
+    const String & mysql_database_name_,
+    const String & mysql_version)
+    : persistent_path(path_)
+    , mysql_database_name(mysql_database_name_)
+{
+    if (!Poco::File(persistent_path).exists()) {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
         assertString("Version:\t" + toString(meta_version), in);
         assertString("\nBinlog File:\t", in);
@@ -184,29 +162,7 @@ MaterializeMetadata::MaterializeMetadata(
             return;
     }
 
-    bool locked_tables = false;
-
-    try
-    {
-        connection->query("FLUSH TABLES;").execute();
-        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
-
-        locked_tables = true;
-        fetchMasterStatus(connection);
-        connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
-        connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
-
-        opened_transaction = true;
-        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database));
-        connection->query("UNLOCK TABLES;").execute();
-    }
-    catch (...)
-    {
-        if (locked_tables)
-            connection->query("UNLOCK TABLES;").execute();
-
-        throw;
-    }
+    fetchMetadata(connection); // this will be overriden in case of database
 }
 
 }

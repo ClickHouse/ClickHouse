@@ -47,6 +47,8 @@ struct MaterializeMetadata
         , const String & database, bool & opened_transaction, const String & mysql_version);
 };
 
+using MaterializeMetadataPtr = std::shared_ptr<MaterializeMetadata>;
+
 }
 
 #endif

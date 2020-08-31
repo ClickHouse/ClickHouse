@@ -16,6 +16,8 @@
 #    include <Databases/IDatabase.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
+#    include <Databases/MySQL/MySQLReplicaBuffer.h>
+#    include <Interpreters/StorageID.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
@@ -43,7 +45,7 @@ public:
 
     MaterializeMySQLSyncThread(
         const Context & context, const String & database_name_, const String & mysql_database_name_
-        , mysqlxx::Pool && pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_);
+        , mysqlxx::Pool & pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_);
 
     void stopSynchronization();
 
@@ -62,6 +64,8 @@ private:
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
     String query_prefix;
+
+    MySQLReplicaBuffer buffer;
 
     struct Buffers
     {
@@ -95,6 +99,10 @@ private:
     std::optional<MaterializeMetadata> prepareSynchronized(const String & mysql_version);
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
+
+    void registerTable(const StorageID & table_id);
+
+    void registerDatabase(const String & database_name);
 
     void onEvent(Buffers & buffers, const MySQLReplication::BinlogEventPtr & event, MaterializeMetadata & metadata);
 

@@ -6,10 +6,13 @@
 
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
+#    include <Core/Defines.h>
 #    include <Interpreters/Context.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <DataStreams/copyData.h>
+#    include <DataStreams/CountingBlockOutputStream.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializeMySQL.h>
 #    include <Poco/File.h>
@@ -25,13 +28,25 @@ namespace ErrorCodes
 }
 
 DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_, const IAST * database_engine_define_
-    , const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : IDatabase(database_name_), global_context(context.getGlobalContext()), engine_define(database_engine_define_->clone())
+    const Context & context,
+    const String & database_name_,
+    const String & metadata_path_,
+    const IAST * database_engine_define_,
+    const String & mysql_database_name_,
+    mysqlxx::Pool & pool_,
+    MySQLClient && client_,
+    std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : IDatabase(database_name_), global_context(context.getGlobalContext())
+    , engine_define(database_engine_define_->clone())
     , nested_database(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context))
-    , settings(std::move(settings_)), log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
-    , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
+    , settings(std::move(settings_))
+    , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
+    , materialize_thread(context, database_name_, mysql_database_name_, pool_, std::move(client_), settings.get())
+    , database_name(database_name_)
+    , mysql_database_name(mysql_database_name_)
+    , pool(pool_)
 {
+    query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
@@ -65,12 +80,180 @@ ASTPtr DatabaseMaterializeMySQL::getCreateDatabaseQuery() const
     return create_query;
 }
 
+std::vector<String> DatabaseMaterializeMySQL::fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection)
+{
+    Block header{{std::make_shared<DataTypeString>(), "table_name"}};
+    String query = "SELECT TABLE_NAME AS table_name FROM INFORMATION_SCHEMA.TABLES  WHERE TABLE_SCHEMA = " + quoteString(mysql_database_name);
+
+    std::vector<String> tables_in_db;
+    MySQLBlockInputStream input(connection, query, header, DEFAULT_BLOCK_SIZE);
+
+    while (Block block = input.read())
+    {
+        tables_in_db.reserve(tables_in_db.size() + block.rows());
+        for (size_t index = 0; index < block.rows(); ++index)
+            tables_in_db.emplace_back((*block.getByPosition(0).column)[index].safeGet<String>());
+    }
+
+    return tables_in_db;
+}
+
+std::unordered_map<String, String> DatabaseMaterializeMySQL::fetchTablesCreateQuery(const mysqlxx::PoolWithFailover::Entry & connection)
+{
+    auto fetch_tables = fetchTablesInDB(connection);
+    std::unordered_map<String, String> tables_create_query;
+    for (const auto & fetch_table_name : fetch_tables)
+    {
+        Block show_create_table_header{
+            {std::make_shared<DataTypeString>(), "Table"},
+            {std::make_shared<DataTypeString>(), "Create Table"},
+        };
+
+        MySQLBlockInputStream show_create_table(
+            connection, "SHOW CREATE TABLE " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(fetch_table_name),
+            show_create_table_header, DEFAULT_BLOCK_SIZE);
+
+        Block create_query_block = show_create_table.read();
+        if (!create_query_block || create_query_block.rows() != 1)
+            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
+
+        tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
+    }
+
+    return tables_create_query;
+}
+
+void DatabaseMaterializeMySQL::executeDumpQueries(
+    const Context & context,
+    mysqlxx::Pool::Entry & connection,
+    std::unordered_map<String, String> tables_dump_queries)
+{
+    for (const auto & [table_name, dump_query] : tables_dump_queries)
+    {
+        Context query_context = createQueryContext(context);
+        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
+        tryToExecuteQuery(query_prefix + " " + dump_query, query_context, database_name, comment); /// create table.
+
+        auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
+        MySQLBlockInputStream input(
+            connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
+            out->getHeader(), DEFAULT_BLOCK_SIZE);
+
+        Stopwatch watch;
+        copyData(input, *out);
+        const Progress & progress = out->getProgress();
+        LOG_INFO(
+            &Poco::Logger::get("DatabaseMaterializeMySQL(" + database_name + ")"),
+            "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+            table_name,
+            formatReadableQuantity(progress.written_rows),
+            formatReadableSizeWithBinarySuffix(progress.written_bytes),
+            watch.elapsedSeconds(),
+            formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds())),
+            formatReadableSizeWithBinarySuffix(static_cast<size_t>(progress.written_bytes / watch.elapsedSeconds())));
+    }
+}
+
+void DatabaseMaterializeMySQL::cleanOutdatedTables(const Context & context)
+{
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+    const DatabasePtr & clean_database = DatabaseCatalog::instance().getDatabase(database_name);
+
+    for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
+    {
+        Context query_context = createQueryContext(context);
+        String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
+        String table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
+        tryToExecuteQuery(" DROP TABLE " + table_name, query_context, database_name, comment);
+    }
+}
+
+void DatabaseMaterializeMySQL::tryDumpTablesData(Context & context, bool & opened_transaction)
+{
+    bool locked_tables = false;
+    opened_transaction = false;
+    auto connection = pool.get();
+
+    std::unordered_map<String, String> tables_dump_queries;
+    try {
+        connection->query("FLUSH TABLES;").execute();
+        connection->query("FLUSH TABLES WITH READ LOCK;").execute();
+
+        locked_tables = true;
+        metadata->fetchMasterStatus(connection);
+        connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
+        connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
+
+        opened_transaction = true;
+        tables_dump_queries = fetchTablesCreateQuery(connection);
+
+        connection->query("UNLOCK TABLES;").execute();
+    } catch (...) {
+        if (locked_tables)
+            connection->query("UNLOCK TABLES;").execute();
+
+        throw;
+    }
+
+    if (!tables_dump_queries.empty()) {
+        Position position;
+        position.update(metadata->binlog_position, metadata->binlog_file, metadata->executed_gtid_set);
+
+        metadata->transaction(position, [&]()
+        {
+            cleanOutdatedTables(context);
+            executeDumpQueries(context, connection, tables_dump_queries);
+        });
+
+        const auto & position_message = [&]()
+        {
+            std::stringstream ss;
+            position.dump(ss);
+            return ss.str();
+        };
+        LOG_INFO(log, "MySQL dump database position: \n {}", position_message());
+    }
+
+    if (opened_transaction) {
+        connection->query("COMMIT").execute();
+    }
+}
+
+void DatabaseMaterializeMySQL::dumpTablesData(Context & context) {
+    bool opened_transaction = false;
+
+    int retry_count = 5; // TODO: take from settings
+    int max_wait_time_when_mysql_unavailable = 60;
+
+    // TODO: realize retries
+    while (retry_count--) {
+        try {
+            tryDumpTablesData(context, opened_transaction);
+        } catch (...) {
+            tryLogCurrentException(log);
+            if (opened_transaction) {
+                connection->query("ROLLBACK").execute();
+            }
+
+            try {
+                throw;
+            } catch (const mysqlxx::ConnectionFailed &) {
+                /// Avoid busy loop when MySQL is not available.
+                sleepForMilliseconds(max_wait_time_when_mysql_unavailable);
+            }
+        }
+    }
+}
+
 void DatabaseMaterializeMySQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     try
     {
         std::unique_lock<std::mutex> lock(mutex);
         nested_database->loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+        dumpTablesData(context);
+
+        // TODO: is there a guarantee that dump queries will finish here?
         materialize_thread.startSynchronization();
     }
     catch (...)
