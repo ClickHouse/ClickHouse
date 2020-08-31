@@ -4,6 +4,10 @@ elseif(ENABLE_PARQUET OR USE_INTERNAL_PARQUET_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use parquet without protoc executable")
 endif()
 
+if (UNBUNDLED)
+    set (ENABLE_PARQUET OFF CACHE INTERNAL "") # unbundled linkage fails with parquet
+endif()
+
 if (NOT ENABLE_PARQUET)
     if(USE_INTERNAL_PARQUET_LIBRARY)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal parquet with ENABLE_PARQUET=OFF")
