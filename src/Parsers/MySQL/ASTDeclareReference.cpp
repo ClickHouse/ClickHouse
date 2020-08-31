@@ -4,7 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 
 namespace DB
 {
@@ -49,7 +48,7 @@ bool ParserDeclareReference::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     ASTPtr table_name;
     ASTPtr expression;
     ParserExpression p_expression;
-    ParserMySQLIdentifier p_identifier;
+    ParserIdentifier p_identifier;
     ASTDeclareReference::MatchKind match_kind = ASTDeclareReference::MATCH_FULL;
     ASTDeclareReference::ReferenceOption delete_option = ASTDeclareReference::RESTRICT;
     ASTDeclareReference::ReferenceOption update_option = ASTDeclareReference::RESTRICT;

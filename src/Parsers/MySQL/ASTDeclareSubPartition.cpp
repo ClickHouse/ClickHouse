@@ -3,7 +3,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
-#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 
 namespace DB
@@ -19,21 +18,21 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     ASTPtr options;
     ASTPtr logical_name;
-    ParserMySQLIdentifier p_identifier;
+    ParserIdentifier p_identifier;
 
     if (!p_identifier.parse(pos, logical_name, expected))
         return false;
 
     ParserDeclareOptions options_p{
         {
-            OptionDescribe("ENGINE", "engine", std::make_shared<ParserMySQLIdentifier>()),
-            OptionDescribe("STORAGE ENGINE", "engine", std::make_shared<ParserMySQLIdentifier>()),
+            OptionDescribe("ENGINE", "engine", std::make_shared<ParserIdentifier>()),
+            OptionDescribe("STORAGE ENGINE", "engine", std::make_shared<ParserIdentifier>()),
             OptionDescribe("COMMENT", "comment", std::make_shared<ParserStringLiteral>()),
             OptionDescribe("DATA DIRECTORY", "data_directory", std::make_shared<ParserStringLiteral>()),
             OptionDescribe("INDEX DIRECTORY", "index_directory", std::make_shared<ParserStringLiteral>()),
             OptionDescribe("MAX_ROWS", "max_rows", std::make_shared<ParserLiteral>()),
             OptionDescribe("MIN_ROWS", "min_rows", std::make_shared<ParserLiteral>()),
-            OptionDescribe("TABLESPACE", "tablespace", std::make_shared<ParserMySQLIdentifier>()),
+            OptionDescribe("TABLESPACE", "tablespace", std::make_shared<ParserIdentifier>()),
         }
     };
 
