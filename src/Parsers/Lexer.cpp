@@ -313,10 +313,10 @@ Token Lexer::nextTokenImpl()
         }
 
         default:
-            if (isWordCharASCII(*pos))
+            if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;
-                while (pos < end && isWordCharASCII(*pos))
+                while (pos < end && (isWordCharASCII(*pos) || *pos == '$'))
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
