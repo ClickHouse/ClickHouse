@@ -97,14 +97,14 @@ create_keytabs() {
   kadmin.local -q "addprinc -randkey kafka/kerberized_kafka1@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/kerberized_kafka.keytab kafka/kerberized_kafka1@${REALM}"
 
-	kadmin.local -q "addprinc -randkey zkclient@${REALM}"
+  kadmin.local -q "addprinc -randkey zkclient@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/zkclient.keytab zkclient@${REALM}"
 
 
-	kadmin.local -q "addprinc -randkey kafkauser/instance@${REALM}"
+  kadmin.local -q "addprinc -randkey kafkauser/instance@${REALM}"
   kadmin.local -q "ktadd -norandkey -k /tmp/keytab/clickhouse.keytab kafkauser/instance@${REALM}"
 
-	chmod g+r /tmp/keytab/clickhouse.keytab
+  chmod g+r /tmp/keytab/clickhouse.keytab
 
 }
 
