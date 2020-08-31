@@ -36,7 +36,8 @@ namespace OpenSSLDetails
 [[noreturn]] void onError(std::string error_message);
 StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, const StringRef & key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
 
-using CipherPtr = std::unique_ptr<EVP_CIPHER, decltype(&::EVP_CIPHER_free)>;
+using CipherDeleterType = void (*) (const EVP_CIPHER *cipher);
+using CipherPtr = std::unique_ptr<const EVP_CIPHER, CipherDeleterType>;
 CipherPtr getCipherByName(const StringRef & name);
 
 enum class CompatibilityMode
