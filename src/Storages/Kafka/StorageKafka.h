@@ -103,6 +103,7 @@ private:
         } 
     };
     std::vector<std::shared_ptr<TaskContext>> tasks;
+    bool thread_per_consumer = false;
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
