@@ -477,7 +477,13 @@ private:
       * If quorum != 0, then the node for tracking the quorum is updated.
       * Returns false if part is already fetching right now.
       */
-    bool fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot, const String & replica_path, bool to_detached, size_t quorum);
+    bool fetchPart(
+        const String & part_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & replica_path,
+        bool to_detached,
+        size_t quorum,
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
