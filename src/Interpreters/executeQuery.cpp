@@ -19,7 +19,8 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/New/parseQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
@@ -240,11 +241,12 @@ static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
 }
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
-    const String & query,  /// FIXME(ilezhankin): make sure that query is already truncated by |max_query_size|.
+    const char * begin,
+    const char * end,
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool /*has_query_tail*/,
+    bool has_query_tail,
     ReadBuffer * istr)
 {
     time_t current_time = time(nullptr);
@@ -259,8 +261,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
+    ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
-    // const char * query_end;
+    const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
@@ -269,27 +272,29 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        /// TODO: Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(query);
+        /// TODO Parser should fail early when max_query_size limit is reached.
+        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
-        // auto * insert_query = ast->as<ASTInsertQuery>();
+        auto * insert_query = ast->as<ASTInsertQuery>();
 
-        // if (insert_query && insert_query->settings_ast)
-        //     InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+        if (insert_query && insert_query->settings_ast)
+            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
 
-        // if (insert_query && insert_query->data)
-        // {
-        //     query_end = insert_query->data;
-        //     insert_query->has_tail = has_query_tail;
-        // }
-        // else
-        // {
-        //     query_end = end;
-        // }
+        if (insert_query && insert_query->data)
+        {
+            query_end = insert_query->data;
+            insert_query->has_tail = has_query_tail;
+        }
+        else
+        {
+            query_end = end;
+        }
     }
     catch (...)
     {
         /// Anyway log the query.
+        String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+
         auto query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal);
 
@@ -302,6 +307,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     setQuerySpecificSettings(ast, context);
 
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+    String query(begin, query_end);
     BlockIO res;
 
     String query_for_logging;
@@ -309,14 +315,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        // if (context.hasQueryParameters())
-        // {
-        //     ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
-        //     visitor.visit(ast);
+        if (context.hasQueryParameters())
+        {
+            ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
+            visitor.visit(ast);
 
-        //     /// Get new query after substitutions.
-        //     query = serializeAST(*ast);
-        // }
+            /// Get new query after substitutions.
+            query = serializeAST(*ast);
+        }
 
         query_for_logging = prepareQueryForLogging(query, context);
 
@@ -468,28 +474,25 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             bool log_queries = settings.log_queries && !internal;
 
             /// Log into system table start of query execution, if need.
-            if (log_queries)
+            if (log_queries && elem.type >= settings.log_queries_min_type)
             {
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
-                if (elem.type >= settings.log_queries_min_type)
-                {
-                    if (auto query_log = context.getQueryLog())
-                        query_log->add(elem);
-                }
+                if (auto query_log = context.getQueryLog())
+                    query_log->add(elem);
             }
 
             /// Common code for finish and exception callbacks
-            auto status_info_to_query_log = [](QueryLogElement &element, const QueryStatusInfo &info, const ASTPtr query_ast) mutable
+            auto status_info_to_query_log = [ast](QueryLogElement &element, const QueryStatusInfo &info) mutable
             {
                 DB::UInt64 query_time = info.elapsed_seconds * 1000000;
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
-                if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
                 {
                     ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, query_time);
                 }
-                else if (query_ast->as<ASTInsertQuery>())
+                else if (ast->as<ASTInsertQuery>())
                 {
                     ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, query_time);
                 }
@@ -529,7 +532,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.event_time = time(nullptr);
 
-                status_info_to_query_log(elem, info, ast);
+                status_info_to_query_log(elem, info);
 
                 auto progress_callback = context.getProgressCallback();
 
@@ -602,7 +605,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (process_list_elem)
                 {
                     QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
-                    status_info_to_query_log(elem, info, ast);
+                    status_info_to_query_log(elem, info);
                 }
 
                 if (current_settings.calculate_text_stack_trace)
@@ -666,7 +669,8 @@ BlockIO executeQuery(
 {
     ASTPtr ast;
     BlockIO streams;
-    std::tie(ast, streams) = executeQueryImpl(query, context, internal, stage, !may_have_embedded_data, nullptr);
+    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
+        internal, stage, !may_have_embedded_data, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -743,7 +747,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(String(begin, end), context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
 
     auto & pipeline = streams.pipeline;
 
