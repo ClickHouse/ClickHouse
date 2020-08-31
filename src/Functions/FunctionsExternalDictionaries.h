@@ -971,6 +971,14 @@ private:
             const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
+            assert(key_columns.size() == key_types.size());
+            const auto & structure = dict->getStructure();
+            assert(structure.key);
+            size_t key_size = structure.key->size();
+            if (key_columns.size() != key_size)
+                throw Exception{ErrorCodes::TYPE_MISMATCH,
+                    "Wrong size of tuple at the third argument of function {} must be {}", getName(), key_size};
+
             typename ColVec::MutablePtr out;
             if constexpr (IsDataTypeDecimal<DataType>)
                 out = ColVec::create(key_columns.front()->size(), decimal_scale);
@@ -1293,6 +1301,14 @@ private:
 
         const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
+
+        assert(key_columns.size() == key_types.size());
+        const auto & structure = dict->getStructure();
+        assert(structure.key);
+        size_t key_size = structure.key->size();
+        if (key_columns.size() != key_size)
+            throw Exception{ErrorCodes::TYPE_MISMATCH,
+                "Wrong size of tuple at the third argument of function {} must be {}", getName(), key_size};
 
         /// @todo detect when all key columns are constant
         const auto rows = key_col->size();
