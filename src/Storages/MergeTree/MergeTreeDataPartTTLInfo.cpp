@@ -67,6 +67,18 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             moves_ttl.emplace(expression, ttl_info);
         }
     }
+    if (json.has("recompression"))
+    {
+        const JSON & moves = json["recompression"];
+        for (auto move : moves) // NOLINT
+        {
+            MergeTreeDataPartTTLInfo ttl_info;
+            ttl_info.min = move["min"].getUInt();
+            ttl_info.max = move["max"].getUInt();
+            String expression = move["expression"].getString();
+            recompression_ttl.emplace(expression, ttl_info);
+        }
+    }
 }
 
 
@@ -121,6 +133,28 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             writeString("}", out);
         }
         writeString("]", out);
+    }
+    if (!recompression_ttl.empty())
+    {
+        if (!moves_ttl.empty() || !columns_ttl.empty() || table_ttl.min)
+            writeString(",", out);
+
+        writeString(R"("recompression":[)", out);
+        for (auto it = recompression_ttl.begin(); it != recompression_ttl.end(); ++it)
+        {
+            if (it != recompression_ttl.begin())
+                writeString(",", out);
+
+            writeString(R"({"expression":)", out);
+            writeString(doubleQuoteString(it->first), out);
+            writeString(R"(,"min":)", out);
+            writeIntText(it->second.min, out);
+            writeString(R"(,"max":)", out);
+            writeIntText(it->second.max, out);
+            writeString("}", out);
+        }
+        writeString("]", out);
+
     }
     writeString("}", out);
 }
