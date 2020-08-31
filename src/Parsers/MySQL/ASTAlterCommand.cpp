@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareTableOptions.h>
+#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -81,7 +82,7 @@ static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected &
             else if (ParserKeyword("AFTER").ignore(pos, expected))
             {
                 ASTPtr after_column;
-                ParserIdentifier identifier_p;
+                ParserMySQLIdentifier identifier_p;
                 if (!identifier_p.parse(pos, after_column, expected))
                     return false;
 
@@ -99,7 +100,7 @@ static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected &
 static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr name;
-    ParserIdentifier identifier_p;
+    ParserMySQLIdentifier identifier_p;
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
@@ -153,7 +154,7 @@ static inline bool parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Expected
 {
     ASTPtr name;
 
-    ParserIdentifier identifier_p;
+    ParserMySQLIdentifier identifier_p;
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
     if (ParserKeyword("INDEX").ignore(pos, expected))
@@ -222,7 +223,7 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     ASTPtr old_name;
     ASTPtr new_name;
 
-    ParserIdentifier identifier_p;
+    ParserMySQLIdentifier identifier_p;
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
     if (ParserKeyword("COLUMN").ignore(pos, expected))
@@ -282,7 +283,7 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
     {
         /// ORDER BY col_name [, col_name] ...
         ASTPtr columns;
-        ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma));
+        ParserList columns_p(std::make_unique<ParserMySQLIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma));
 
         if (!columns_p.parse(pos, columns, expected))
             return false;
@@ -295,7 +296,7 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
         ParserDeclareOption options_p{
             {
                 OptionDescribe("FORCE", "force", std::make_shared<ParserAlwaysTrue>()),
-                OptionDescribe("ALGORITHM", "algorithm", std::make_shared<ParserIdentifier>()),
+                OptionDescribe("ALGORITHM", "algorithm", std::make_shared<ParserMySQLIdentifier>()),
                 OptionDescribe("WITH VALIDATION", "validation", std::make_shared<ParserAlwaysTrue>()),
                 OptionDescribe("WITHOUT VALIDATION", "validation", std::make_shared<ParserAlwaysFalse>()),
                 OptionDescribe("IMPORT TABLESPACE", "import_tablespace", std::make_shared<ParserAlwaysTrue>()),
@@ -306,7 +307,7 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
                 OptionDescribe("CONVERT TO CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
                 OptionDescribe("CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
                 OptionDescribe("DEFAULT CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
-                OptionDescribe("LOCK", "lock", std::make_shared<ParserIdentifier>())
+                OptionDescribe("LOCK", "lock", std::make_shared<ParserMySQLIdentifier>())
             }
         };
 
@@ -330,7 +331,7 @@ static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     auto alter_command = std::make_shared<ASTAlterCommand>();
 
     ParserKeyword("COLUMN").ignore(pos, expected);
-    if (exists_old_column_name && !ParserIdentifier().parse(pos, old_column_name, expected))
+    if (exists_old_column_name && !ParserMySQLIdentifier().parse(pos, old_column_name, expected))
         return false;
 
     ASTPtr additional_column;
@@ -342,7 +343,7 @@ static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     else if (ParserKeyword("AFTER").ignore(pos, expected))
     {
         ASTPtr after_column;
-        ParserIdentifier identifier_p;
+        ParserMySQLIdentifier identifier_p;
         if (!identifier_p.parse(pos, after_column, expected))
             return false;
 
