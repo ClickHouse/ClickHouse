@@ -101,7 +101,7 @@ private:
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
-    std::mutex mutex;
+    std::mutex mutex, task_mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String unique_strbase;
@@ -128,6 +128,7 @@ private:
     AMQP::ExchangeType defineExchangeType(String exchange_type_);
     size_t getMaxBlockSize();
     String getTableBasedName(String name, const StorageID & table_id);
+    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
     void initExchange();
     void bindExchange();
