@@ -5,6 +5,7 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareReference.h>
+#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 
 namespace DB
 {
@@ -64,7 +65,7 @@ static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_
     ParserKeyword k_key("KEY");
     ParserKeyword k_index("INDEX");
 
-    ParserIdentifier p_identifier;
+    ParserMySQLIdentifier p_identifier;
 
     if (ParserKeyword("SPATIAL").ignore(pos, expected))
     {
@@ -111,7 +112,7 @@ static inline bool parseDeclareOrdinaryIndex(IParser::Pos & pos, String & index_
 static inline bool parseDeclareConstraintIndex(IParser::Pos & pos, String & index_name, String & index_type, Expected & expected)
 {
     ASTPtr temp_node;
-    ParserIdentifier p_identifier;
+    ParserMySQLIdentifier p_identifier;
 
     if (ParserKeyword("CONSTRAINT").ignore(pos, expected))
     {
@@ -175,8 +176,8 @@ bool ParserDeclareIndex::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &
     ParserDeclareOptions p_index_options{
         {
             OptionDescribe("KEY_BLOCK_SIZE", "key_block_size", std::make_unique<ParserLiteral>()),
-            OptionDescribe("USING", "index_type", std::make_unique<ParserIdentifier>()),
-            OptionDescribe("WITH PARSER", "index_parser", std::make_unique<ParserIdentifier>()),
+            OptionDescribe("USING", "index_type", std::make_unique<ParserMySQLIdentifier>()),
+            OptionDescribe("WITH PARSER", "index_parser", std::make_unique<ParserMySQLIdentifier>()),
             OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
             OptionDescribe("VISIBLE", "visible", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("INVISIBLE", "visible", std::make_unique<ParserAlwaysFalse>()),

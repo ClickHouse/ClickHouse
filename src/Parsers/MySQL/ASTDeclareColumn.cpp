@@ -7,6 +7,7 @@
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareReference.h>
 #include <Parsers/MySQL/ASTDeclareConstraint.h>
+#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 
 namespace DB
 {
@@ -53,8 +54,8 @@ static inline bool parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, 
             OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
             OptionDescribe("CHARACTER SET", "charset_name", std::make_unique<ParserCharsetName>()),
             OptionDescribe("COLLATE", "collate", std::make_unique<ParserCharsetName>()),
-            OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserIdentifier>()),
-            OptionDescribe("STORAGE", "storage", std::make_unique<ParserIdentifier>()),
+            OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserMySQLIdentifier>()),
+            OptionDescribe("STORAGE", "storage", std::make_unique<ParserMySQLIdentifier>()),
             OptionDescribe("AS", "generated", std::make_unique<ParserExpression>()),
             OptionDescribe("GENERATED ALWAYS AS", "generated", std::make_unique<ParserExpression>()),
             OptionDescribe("STORED", "is_stored", std::make_unique<ParserAlwaysTrue>()),
@@ -74,7 +75,7 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr column_options;
 
     ParserExpression p_expression;
-    ParserIdentifier p_identifier;
+    ParserMySQLIdentifier p_identifier;
 
     if (!p_identifier.parse(pos, column_name, expected))
         return false;

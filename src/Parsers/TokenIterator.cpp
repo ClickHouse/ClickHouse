@@ -9,7 +9,7 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, Token * last
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
-    for (TokenIterator it = begin; it.isValid() && &it.get() <= last; ++it)
+    for (TokenIterator it = begin; !it->isEnd() && &it.get() <= last; ++it)
     {
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
         {

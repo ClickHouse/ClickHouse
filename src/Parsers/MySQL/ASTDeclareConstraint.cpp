@@ -4,6 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ bool ParserDeclareConstraint::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     if (ParserKeyword("CONSTRAINT").ignore(pos, expected))
     {
         if (!ParserKeyword("CHECK").checkWithoutMoving(pos, expected))
-            ParserIdentifier().parse(pos, constraint_symbol, expected);
+            ParserMySQLIdentifier().parse(pos, constraint_symbol, expected);
     }
 
 

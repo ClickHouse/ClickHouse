@@ -6,6 +6,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
+#include <Parsers/MySQL/ParserMySQLIdentifier.h>
 
 namespace DB
 {
@@ -44,7 +45,7 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        ParserIdentifier p_identifier;
+        ParserMySQLIdentifier p_identifier;
 
         if (!p_identifier.parse(pos, node, expected))
             return false;
@@ -71,10 +72,10 @@ bool ParserDeclareTableOptions::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
             OptionDescribe("CHARSET", "character_set", std::make_shared<ParserCharsetName>()),
             OptionDescribe("DEFAULT CHARSET", "character_set", std::make_shared<ParserCharsetName>()),
             OptionDescribe("CHARACTER SET", "character_set", std::make_shared<ParserCharsetName>()),
-            OptionDescribe("DEFAULT CHARACTER SET", "character_set", std::make_shared<ParserIdentifier>()),
+            OptionDescribe("DEFAULT CHARACTER SET", "character_set", std::make_shared<ParserMySQLIdentifier>()),
             OptionDescribe("CHECKSUM", "checksum", std::make_shared<ParserBoolOption<false>>()),
             OptionDescribe("COLLATE", "collate", std::make_shared<ParserCharsetName>()),
-            OptionDescribe("DEFAULT COLLATE", "collate", std::make_shared<ParserIdentifier>()),
+            OptionDescribe("DEFAULT COLLATE", "collate", std::make_shared<ParserMySQLIdentifier>()),
             OptionDescribe("COMMENT", "comment", std::make_shared<ParserStringLiteral>()),
             OptionDescribe("COMPRESSION", "compression", std::make_shared<ParserStringLiteral>()),
             OptionDescribe("CONNECTION", "connection", std::make_shared<ParserStringLiteral>()),
@@ -82,14 +83,14 @@ bool ParserDeclareTableOptions::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
             OptionDescribe("INDEX DIRECTORY", "index_directory", std::make_shared<ParserStringLiteral>()),
             OptionDescribe("DELAY_KEY_WRITE", "delay_key_write", std::make_shared<ParserBoolOption<false>>()),
             OptionDescribe("ENCRYPTION", "encryption", std::make_shared<ParserStringLiteral>()),
-            OptionDescribe("ENGINE", "engine", std::make_shared<ParserIdentifier>()),
-            OptionDescribe("INSERT_METHOD", "insert_method", std::make_shared<ParserIdentifier>()),
+            OptionDescribe("ENGINE", "engine", std::make_shared<ParserMySQLIdentifier>()),
+            OptionDescribe("INSERT_METHOD", "insert_method", std::make_shared<ParserMySQLIdentifier>()),
             OptionDescribe("KEY_BLOCK_SIZE", "key_block_size", std::make_shared<ParserLiteral>()),
             OptionDescribe("MAX_ROWS", "max_rows", std::make_shared<ParserLiteral>()),
             OptionDescribe("MIN_ROWS", "min_rows", std::make_shared<ParserLiteral>()),
             OptionDescribe("PACK_KEYS", "pack_keys", std::make_shared<ParserBoolOption<true>>()),
             OptionDescribe("PASSWORD", "password", std::make_shared<ParserStringLiteral>()),
-            OptionDescribe("ROW_FORMAT", "row_format", std::make_shared<ParserIdentifier>()),
+            OptionDescribe("ROW_FORMAT", "row_format", std::make_shared<ParserMySQLIdentifier>()),
             OptionDescribe("STATS_AUTO_RECALC", "stats_auto_recalc", std::make_shared<ParserBoolOption<true>>()),
             OptionDescribe("STATS_PERSISTENT", "stats_persistent", std::make_shared<ParserBoolOption<true>>()),
             OptionDescribe("STATS_SAMPLE_PAGES", "stats_sample_pages", std::make_shared<ParserLiteral>()),
