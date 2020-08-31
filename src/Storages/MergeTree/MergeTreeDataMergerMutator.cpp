@@ -284,6 +284,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
+
         parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge);
     }
 
