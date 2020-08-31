@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
 }
 
 
@@ -74,8 +75,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
+        {
+            if (ast_col_decl.default_specifier == "ALIAS")
+                throw Exception{ "Cannot specify codec for column type ALIAS", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
             command.codec = ast_col_decl.codec;
-
+        }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
