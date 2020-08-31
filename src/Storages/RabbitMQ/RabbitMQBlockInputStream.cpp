@@ -16,11 +16,13 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     Context & context_,
     const Names & columns,
+    size_t max_block_size_,
     bool ack_in_suffix_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , context(context_)
         , column_names(columns)
+        , max_block_size(max_block_size_)
         , ack_in_suffix(ack_in_suffix_)
         , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
         , virtual_header(metadata_snapshot->getSampleBlockForColumns(
@@ -51,12 +53,14 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 }
 
 
-bool RabbitMQBlockInputStream::needManualChannelUpdate()
+bool RabbitMQBlockInputStream::needChannelUpdate()
 {
     if (!buffer)
         return false;
 
-    return !buffer->channelUsable() && buffer->channelAllowed() && storage.connectionRunning();
+    ChannelPtr channel = buffer->getChannel();
+
+    return !channel || !channel->usable();
 }
 
 
@@ -83,7 +87,7 @@ Block RabbitMQBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, context, 1);
+            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
@@ -164,7 +168,7 @@ Block RabbitMQBlockInputStream::readImpl()
 
         buffer->allowNext();
 
-        if (buffer->queueEmpty() || !checkTimeLimit())
+        if (total_rows >= max_block_size || buffer->queueEmpty() || buffer->consumerStopped() || !checkTimeLimit())
             break;
     }
 
@@ -189,7 +193,7 @@ void RabbitMQBlockInputStream::readSuffixImpl()
 
 bool RabbitMQBlockInputStream::sendAck()
 {
-    if (!buffer || !buffer->channelUsable())
+    if (!buffer)
         return false;
 
     if (!buffer->ackMessages())

@@ -18,6 +18,11 @@ static const auto RETRIES_MAX = 20;
 static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONNECT_RABBITMQ;
+}
+
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address_,
         Context & global_context,
@@ -26,7 +31,6 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         const String & exchange_name_,
         const AMQP::ExchangeType exchange_type_,
         const size_t channel_id_base_,
-        const String channel_base_,
         const bool persistent_,
         std::atomic<bool> & wait_confirm_,
         Poco::Logger * log_,
@@ -40,7 +44,6 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , exchange_name(exchange_name_)
         , exchange_type(exchange_type_)
         , channel_id_base(std::to_string(channel_id_base_))
-        , channel_base(channel_base_)
         , persistent(persistent_)
         , wait_confirm(wait_confirm_)
         , payloads(BATCH)
@@ -56,7 +59,16 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
     event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
 
     if (setupConnection(false))
+    {
         setupChannel();
+    }
+    else
+    {
+        if (!connection->closed())
+             connection->close(true);
+
+        throw Exception("Cannot connect to RabbitMQ", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    }
 
     writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
     writing_task->deactivate();
@@ -175,7 +187,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
 
     producer_channel->onReady([&]()
     {
-        channel_id = channel_id_base + std::to_string(channel_id_counter++) + "_" + channel_base;
+        channel_id = channel_id_base + std::to_string(channel_id_counter++);
         LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
 
         /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
@@ -187,17 +199,17 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         producer_channel->confirmSelect()
         .onAck([&](uint64_t acked_delivery_tag, bool multiple)
         {
-            removeConfirmed(acked_delivery_tag, multiple, false);
+            removeRecord(acked_delivery_tag, multiple, false);
         })
         .onNack([&](uint64_t nacked_delivery_tag, bool multiple, bool /* requeue */)
         {
-            removeConfirmed(nacked_delivery_tag, multiple, true);
+            removeRecord(nacked_delivery_tag, multiple, true);
         });
     });
 }
 
 
-void WriteBufferToRabbitMQProducer::removeConfirmed(UInt64 received_delivery_tag, bool multiple, bool republish)
+void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
 
@@ -292,7 +304,6 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
 
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
-    /// wait_confirm == false when shutdown is called, needed because table might be dropped before all acks are received
     while ((!payloads.empty() || wait_all) && wait_confirm.load())
     {
         /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
@@ -305,10 +316,6 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         iterateEventLoop();
 
-        /* wait_num != 0 if there will be no new payloads pushed to payloads.queue in countRow(), delivery_record is empty if there are
-         * no more pending acknowldgements from the server (if receieved ack(), records are deleted, if received nack(), records are pushed
-         * to returned.queue and deleted, because server will attach new delivery tags to them)
-         */
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
         else if ((!producer_channel->usable() && event_handler->connectionRunning()) || (!event_handler->connectionRunning() && setupConnection(true)))
