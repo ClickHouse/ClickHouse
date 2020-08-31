@@ -79,6 +79,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
+    bool recompress = false; /// Recompress parts on merge
     String column_name;
     String index_name;
 

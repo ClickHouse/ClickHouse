@@ -36,6 +36,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
+            /// For backward compatibility write only if enabled
+            if (recompress)
+                out << "\nrecompress: " << recompress;
             break;
 
         case DROP_RANGE:
@@ -149,7 +152,14 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         }
         in >> new_part_name;
         if (format_version >= 4)
+        {
             in >> "\ndeduplicate: " >> deduplicate;
+            in >> "\n";
+            if (in.eof())
+                trailing_newline_found = true;
+            else if (checkString("recompress\n", in))
+                in >> recompress;
+        }
     }
     else if (type_str == "drop" || type_str == "detach")
     {
