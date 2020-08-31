@@ -13,7 +13,7 @@ Columns:
 
 -    `auth_params` ([String](../../sql-reference/data-types/string.md)) — Authentication parameters in the JSON format depending on the `auth_type`.
 
--    `host_ip` ([Array](../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — IP addresses of hosts that are allowed to connect to the ClickHouse server.
+-    `host_ip` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — IP addresses of hosts that are allowed to connect to the ClickHouse server.
 
 -    `host_names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Names of hosts that are allowed to connect to the ClickHouse server.
 

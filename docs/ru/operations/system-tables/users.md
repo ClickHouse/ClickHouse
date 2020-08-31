@@ -13,7 +13,7 @@
 
 -    `auth_params` ([String](../../sql-reference/data-types/string.md)) — Параметры аутентификации в формате JSON, зависят от `auth_type`.
 
--    `host_ip` ([Array](../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — IP-адреса хостов, которым разрешено подключаться к серверу ClickHouse.
+-    `host_ip` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — IP-адреса хостов, которым разрешено подключаться к серверу ClickHouse.
 
 -    `host_names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Имена хостов, которым разрешено подключаться к серверу ClickHouse.
 
