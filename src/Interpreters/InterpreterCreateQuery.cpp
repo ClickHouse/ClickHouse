@@ -411,10 +411,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (col_decl.comment)
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
-        if (col_decl.codec) {
-            if (col_decl.default_specifier == "ALIAS" )
-                throw Exception{ "Cannot specify codec for column type ALIAS", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_decl.codec, column.type, sanity_check_compression_codecs);
+        if (col_decl.codec)
+        {
+            if (col_decl.default_specifier == "ALIAS")
+                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                col_decl.codec, column.type, sanity_check_compression_codecs);
         }
 
         if (col_decl.ttl)
