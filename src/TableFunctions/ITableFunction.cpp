@@ -1,6 +1,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageTableFunction.h>
 #include <Access/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 
@@ -18,7 +19,17 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, const Context & 
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
     context.checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
     cached_columns = std::move(cached_columns_);
-    return executeImpl(ast_function, context, table_name);
+
+    bool no_conversion_required = hasStaticStructure() && cached_columns == getActualTableStructure(ast_function, context);
+    if (cached_columns.empty() || no_conversion_required)
+        return executeImpl(ast_function, context, table_name);
+
+    auto get_storage = [=, tf = shared_from_this()]() -> StoragePtr
+    {
+        return tf->executeImpl(ast_function, context, table_name);
+    };
+
+    return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage), cached_columns);
 }
 
 }

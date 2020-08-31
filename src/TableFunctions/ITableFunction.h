@@ -32,7 +32,9 @@ public:
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
-    virtual ColumnsDescription getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) const { return {}; }
+    virtual bool hasStaticStructure() const { return false; }
+
+    virtual ColumnsDescription getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) const = 0;
 
     /// Create storage according to the query.
     StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;

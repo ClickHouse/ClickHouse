@@ -100,16 +100,10 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
 {
     parseArguments(ast_function, context);
 
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
-
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
+    auto columns = getActualTableStructure(ast_function, context);
 
     Block sample_block;
-    for (const auto & name_type : cached_columns.getOrdinary())
+    for (const auto & name_type : columns.getOrdinary())
         sample_block.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
@@ -121,7 +115,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = std::make_shared<StorageTableFunction<StorageValues>>(get_structure, StorageID(getDatabaseName(), table_name), cached_columns, res_block);
+    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

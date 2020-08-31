@@ -52,18 +52,8 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(const ASTPtr & as
 StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     parseArguments(ast_function, context);
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
-
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
-
-    StoragePtr storage = std::make_shared<StorageTableFunction<StorageInput>>(get_structure, StorageID(getDatabaseName(), table_name), cached_columns);
-
+    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(ast_function, context));
     storage->startup();
-
     return storage;
 }
 

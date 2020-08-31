@@ -201,14 +201,11 @@ void TableFunctionRemote::prepareClusterInfo(const ASTPtr & ast_function, const 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     prepareClusterInfo(ast_function, context);
-    if (cached_columns.empty())
-        cached_columns = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
-    //auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            cached_columns,
+            getActualTableStructure(ast_function, context),
             ConstraintsDescription{},
             remote_table_function_ptr,
             String{},
@@ -220,7 +217,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             cluster)
         : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            cached_columns,
+            getActualTableStructure(ast_function, context),
             ConstraintsDescription{},
             remote_table_id.database_name,
             remote_table_id.table_name,

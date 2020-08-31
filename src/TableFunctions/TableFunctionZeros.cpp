@@ -19,23 +19,6 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <bool multithreaded>
-void TableFunctionZeros<multithreaded>::parseArguments(const ASTPtr & ast_function, const Context & context) const
-{
-
-
-    if (const auto * function = ast_function->as<ASTFunction>())
-    {
-        auto arguments = function->arguments->children;
-
-        if (arguments.size() != 1)
-            throw Exception("Table function '" + getName() + "' requires 'length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        length = evaluateArgument(context, arguments[0]);
-    }
-    else
-        throw Exception("Table function '" + getName() + "' requires 'limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-}
 
 template <bool multithreaded>
 ColumnsDescription TableFunctionZeros<multithreaded>::getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) const
@@ -46,19 +29,21 @@ ColumnsDescription TableFunctionZeros<multithreaded>::getActualTableStructure(co
 template <bool multithreaded>
 StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
-
-    auto get_structure = [=, tf = shared_from_this()]()
+    if (const auto * function = ast_function->as<ASTFunction>())
     {
-        return tf->getActualTableStructure(ast_function, context);
-    };
+        auto arguments = function->arguments->children;
 
-    auto res = std::make_shared<StorageTableFunction<StorageSystemZeros>>(std::move(get_structure), StorageID(getDatabaseName(), table_name), multithreaded, length);
-    res->startup();
-    return res;
+        if (arguments.size() != 1)
+            throw Exception("Table function '" + getName() + "' requires 'length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+
+        UInt64 length = evaluateArgument(context, arguments[0]);
+
+        auto res = StorageSystemZeros::create(StorageID(getDatabaseName(), table_name), multithreaded, length);
+        res->startup();
+        return res;
+    }
+    throw Exception("Table function '" + getName() + "' requires 'limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)

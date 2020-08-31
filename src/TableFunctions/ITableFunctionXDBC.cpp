@@ -92,19 +92,8 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const ASTPtr & as
 StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     parseArguments(ast_function, context);
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
-
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
-
-    auto result = std::make_shared<StorageTableFunction<StorageXDBC>>(get_structure, StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, cached_columns, context, helper);
-
-    if (!result)
-        throw Exception("Failed to instantiate storage from table function " + getName(), ErrorCodes::UNKNOWN_EXCEPTION);
-
+    auto columns = getActualTableStructure(ast_function, context);
+    auto result = std::make_shared<StorageXDBC>(StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, context, helper);
     result->startup();
     return result;
 }

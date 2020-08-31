@@ -124,24 +124,19 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(const ASTPtr & as
 StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     parseArguments(ast_function, context);
-    if (cached_columns.empty())
-        cached_columns = getActualTableStructure(ast_function, context);
     if (!pool)
         pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
-    auto get_structure = [=, tf = shared_from_this()]()
-    {
-        return tf->getActualTableStructure(ast_function, context);
-    };
+    auto columns = getActualTableStructure(ast_function, context);
 
-    auto res = std::make_shared<StorageTableFunction<StorageMySQL>>(std::move(get_structure),
+    auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         remote_database_name,
         remote_table_name,
         replace_query,
         on_duplicate_clause,
-        cached_columns,
+        columns,
         ConstraintsDescription{},
         context);
 
