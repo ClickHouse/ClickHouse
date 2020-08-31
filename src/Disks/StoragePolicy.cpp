@@ -32,6 +32,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+namespace {
+
+void throwNonUniqueDiskName(const String & storage_policy_name, const String & disk_name)
+{
+    throw Exception("Disk names must be unique in storage policy "
+            + backQuote(storage_policy_name) + " (" + backQuote(disk_name) + " is duplicated)"
+        , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+}
+
+
+void throwNonUniqueVolumeName(const String & storage_policy_name, const String & disk_name)
+{
+    throw Exception("Volume names must be unique in storage policy "
+            + backQuote(storage_policy_name) + " (" + backQuote(disk_name) + " is duplicated)"
+        , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+}
+
+}
+
+
 StoragePolicy::StoragePolicy(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
@@ -56,26 +77,16 @@ StoragePolicy::StoragePolicy(
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
             throw Exception(
-                "Volume name can contain only alphanumeric and '_' in storage policy" + backQuote(name) + " (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        volumes.push_back(std::make_shared<VolumeJBOD>(attr_name, config, volumes_prefix + "." + attr_name, disks));
-        if (volume_index_by_volume_name.find(attr_name) != volume_index_by_volume_name.end())
-            throw Exception("Volume names must be unique in storage policy " + backQuote(name) + " (" + attr_name + " is duplicated)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        volume_index_by_volume_name[attr_name] = volumes.size() - 1;
-        for (const auto & disk : volumes.back()->getDisks())
-        {
-            const String & disk_name = disk->getName();
-            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
-                throw Exception("Disk names must be unique in storage policy " + backQuote(name) + " (" + disk_name + " is duplicated)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-            volume_index_by_disk_name[disk_name] = volumes.size() - 1;
-        }
+                "Volume name can contain only alphanumeric and '_' in storage policy " + backQuote(name) + " (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
+        updateIndicesForNewVolume(volumes.size() - 1);
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
         auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME, std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)}, 0, true);
         volumes.emplace_back(std::move(default_volume));
-        volume_index_by_volume_name.emplace(DEFAULT_VOLUME_NAME, 0);
-        volume_index_by_disk_name.emplace(DEFAULT_DISK_NAME, 0);
+        updateIndicesForNewVolume(0);
     }
 
     if (volumes.empty())
@@ -98,18 +109,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < volumes.size(); ++i)
-    {
-        if (volume_index_by_volume_name.find(volumes[i]->getName()) != volume_index_by_volume_name.end())
-            throw Exception("Volume names must be unique in storage policy " + backQuote(name) + " (" + volumes[i]->getName() + " is duplicated).", ErrorCodes::UNKNOWN_POLICY);
-        volume_index_by_volume_name[volumes[i]->getName()] = i;
-        for (const auto & disk : volumes[i]->getDisks())
-        {
-            const String & disk_name = disk->getName();
-            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
-                throw Exception("Disk names must be unique in storage policy " + backQuote(name) + " (" + disk_name + " is duplicated)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-            volume_index_by_disk_name[disk_name] = i;
-        }
-    }
+        updateIndicesForNewVolume(i);
 }
 
 
@@ -298,6 +298,27 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
         return it->second;
     else
         throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
+}
+
+
+void StoragePolicy::updateIndicesForNewVolume(size_t volume_index)
+{
+    const VolumePtr & volume = volumes[volume_index];
+
+    if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
+        throwNonUniqueVolumeName(name, volume->getName());
+
+    volume_index_by_volume_name[volume->getName()] = volumes.size() - 1;
+
+    for (const auto & disk : volume->getDisks())
+    {
+        const String & disk_name = disk->getName();
+
+        if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+            throwNonUniqueDiskName(name, disk_name);
+
+        volume_index_by_disk_name[disk_name] = volumes.size() - 1;
+    }
 }
 
 
