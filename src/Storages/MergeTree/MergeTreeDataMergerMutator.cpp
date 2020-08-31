@@ -586,8 +586,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     TableLockHolder &,
     time_t time_of_merge,
     const ReservationPtr & space_reservation,
-    bool deduplicate,
-    bool force_ttl)
+    bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -635,7 +634,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
-    bool need_remove_expired_values = force_ttl;
+    bool need_remove_expired_values = false;
     for (const auto & part : parts)
         new_data_part->ttl_infos.update(part->ttl_infos);
 
@@ -810,7 +809,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
 
     if (need_remove_expired_values)
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, false);
 
 
     if (metadata_snapshot->hasSecondaryIndices())
