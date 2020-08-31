@@ -14,7 +14,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
 #include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
@@ -47,6 +46,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONNECT_RABBITMQ;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace ExchangeType
@@ -60,40 +60,35 @@ namespace ExchangeType
     static const String HEADERS = "headers";
 }
 
+
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
         Context & context_,
         const ColumnsDescription & columns_,
-        const String & host_port_,
-        const Names & routing_keys_,
-        const String & exchange_name_,
-        const String & format_name_,
-        char row_delimiter_,
-        const String & schema_name_,
-        const String & exchange_type_,
-        size_t num_consumers_,
-        size_t num_queues_,
-        const String & queue_base_,
-        const String & deadletter_exchange_,
-        const bool persistent_)
+        std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
-        , routing_keys(global_context.getMacros()->expand(routing_keys_))
-        , exchange_name(exchange_name_)
-        , format_name(global_context.getMacros()->expand(format_name_))
-        , row_delimiter(row_delimiter_)
-        , schema_name(global_context.getMacros()->expand(schema_name_))
-        , num_consumers(num_consumers_)
-        , num_queues(num_queues_)
-        , queue_base(queue_base_)
-        , deadletter_exchange(deadletter_exchange_)
-        , persistent(persistent_)
+        , rabbitmq_context(Context(global_context))
+        , rabbitmq_settings(std::move(rabbitmq_settings_))
+        , exchange_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name.value))
+        , format_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_format.value))
+        , exchange_type(defineExchangeType(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_type.value)))
+        , routing_keys(parseRoutingKeys(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_routing_key_list.value)))
+        , row_delimiter(rabbitmq_settings->rabbitmq_row_delimiter.value)
+        , schema_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_schema.value))
+        , num_consumers(rabbitmq_settings->rabbitmq_num_consumers.value)
+        , num_queues(rabbitmq_settings->rabbitmq_num_queues.value)
+        , queue_base(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base.value))
+        , deadletter_exchange(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_deadletter_exchange.value))
+        , persistent(rabbitmq_settings->rabbitmq_persistent.value)
+        , hash_exchange(num_consumers > 1 || num_queues > 1)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
+        , parsed_address(parseAddress(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_host_port.value), 5672))
         , login_password(std::make_pair(
                     global_context.getConfigRef().getString("rabbitmq.username"),
                     global_context.getConfigRef().getString("rabbitmq.password")))
-        , semaphore(0, num_consumers_)
+        , semaphore(0, num_consumers)
+        , unique_strbase(getRandomName())
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
@@ -111,6 +106,10 @@ StorageRabbitMQ::StorageRabbitMQ(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
+    rabbitmq_context.makeQueryContext();
+    if (!schema_name.empty())
+        rabbitmq_context.setSetting("format_schema", schema_name);
+
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
     looping_task = global_context.getSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
@@ -122,38 +121,19 @@ StorageRabbitMQ::StorageRabbitMQ(
     heartbeat_task = global_context.getSchedulePool().createTask("RabbitMQHeartbeatTask", [this]{ heartbeatFunc(); });
     heartbeat_task->deactivate();
 
-    hash_exchange = num_consumers > 1 || num_queues > 1;
-
-    if (exchange_type_ != ExchangeType::DEFAULT)
-    {
-        if (exchange_type_ == ExchangeType::FANOUT)              exchange_type = AMQP::ExchangeType::fanout;
-        else if (exchange_type_ == ExchangeType::DIRECT)         exchange_type = AMQP::ExchangeType::direct;
-        else if (exchange_type_ == ExchangeType::TOPIC)          exchange_type = AMQP::ExchangeType::topic;
-        else if (exchange_type_ == ExchangeType::HASH)           exchange_type = AMQP::ExchangeType::consistent_hash;
-        else if (exchange_type_ == ExchangeType::HEADERS)        exchange_type = AMQP::ExchangeType::headers;
-        else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
-    }
-    else
-    {
-        exchange_type = AMQP::ExchangeType::fanout;
-    }
-
-    auto table_id = getStorageID();
-    String table_name = table_id.table_name;
-
     if (queue_base.empty())
     {
         /* Make sure that local exchange name is unique for each table and is not the same as client's exchange name. It also needs to
-         * be table_name and not just a random string, because local exchanges should be declared the same for same tables
+         * be table-based and not just a random string, because local exchanges should be declared the same for same tables
          */
-        sharding_exchange = exchange_name + "_" + table_name;
+        sharding_exchange = getTableBasedName(exchange_name, table_id_);
 
         /* By default without a specified queue name in queue's declaration - its name will be generated by the library, but its better
          * to specify it unique for each table to reuse them once the table is recreated. So it means that queues remain the same for every
          * table unless queue_base table setting is specified (which allows to register consumers to specific queues). Now this is a base
          * for the names of later declared queues
          */
-        queue_base = table_name;
+        queue_base = getTableBasedName("", table_id_);
     }
     else
     {
@@ -165,11 +145,51 @@ StorageRabbitMQ::StorageRabbitMQ(
     }
 
     bridge_exchange = sharding_exchange + "_bridge";
+}
 
-    /* Generate a random string, which will be used for channelID's, which must be unique to tables and to channels within each table.
-     * (Cannot use table_name here because it must be a different string if table was restored)
-     */
-    unique_strbase = getRandomName();
+
+Names StorageRabbitMQ::parseRoutingKeys(String routing_key_list)
+{
+    Names result;
+    boost::split(result, routing_key_list, [](char c){ return c == ','; });
+    for (String & key : result)
+        boost::trim(key);
+
+    return result;
+}
+
+
+AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
+{
+    AMQP::ExchangeType type;
+    if (exchange_type_ != ExchangeType::DEFAULT)
+    {
+        if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::fanout;
+        else if (exchange_type_ == ExchangeType::DIRECT)         type = AMQP::ExchangeType::direct;
+        else if (exchange_type_ == ExchangeType::TOPIC)          type = AMQP::ExchangeType::topic;
+        else if (exchange_type_ == ExchangeType::HASH)           type = AMQP::ExchangeType::consistent_hash;
+        else if (exchange_type_ == ExchangeType::HEADERS)        type = AMQP::ExchangeType::headers;
+        else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
+    }
+    else
+    {
+        type = AMQP::ExchangeType::fanout;
+    }
+
+    return type;
+}
+
+
+String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_id)
+{
+    std::stringstream ss;
+
+    if (name.empty())
+        ss << table_id.database_name << "_" << table_id.table_name;
+    else
+        ss << name << "_" << table_id.database_name << "_" << table_id.table_name;
+
+    return ss.str();
 }
 
 
@@ -393,9 +413,9 @@ Pipe StorageRabbitMQ::read(
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
-    auto new_context = std::make_shared<Context>(context);
+    auto modified_context = context;
     if (!schema_name.empty())
-        new_context->setSetting("format_schema", schema_name);
+        modified_context.setSetting("format_schema", schema_name);
 
     bool update_channels = false;
     if (!event_handler->connectionRunning())
@@ -415,7 +435,7 @@ Pipe StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, new_context, column_names);
+        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, modified_context, column_names);
 
         /* It is a possible but rare case when channel gets into error state and does not also close connection, so need manual update.
          * But I believe that in current context and with local rabbitmq settings this will never happen and any channel error will also
@@ -632,13 +652,8 @@ bool StorageRabbitMQ::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto rabbitmq_context = std::make_shared<Context>(global_context);
-    rabbitmq_context->makeQueryContext();
-    if (!schema_name.empty())
-        rabbitmq_context->setSetting("format_schema", schema_name);
-
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, *rabbitmq_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -740,199 +755,52 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         size_t args_count = engine_args.size();
         bool has_settings = args.storage_def->settings;
 
-        RabbitMQSettings rabbitmq_settings;
+        auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
         if (has_settings)
         {
-            rabbitmq_settings.loadFromQuery(*args.storage_def);
+            rabbitmq_settings->loadFromQuery(*args.storage_def);
         }
 
-        String host_port = rabbitmq_settings.rabbitmq_host_port;
-        if (args_count >= 1)
-        {
-            const auto * ast = engine_args[0]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                host_port = safeGet<String>(ast->value);
+        // Check arguments and settings
+        #define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, ARG_NAME)                                           \
+            /* One of the three required arguments is not specified */                                       \
+            if (args_count < (ARG_NUM) && (ARG_NUM) <= 3 && !rabbitmq_settings->ARG_NAME.changed)            \
+            {                                                                                                \
+                throw Exception("Required parameter '" #ARG_NAME "' for storage RabbitMQ not specified",     \
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);                                           \
+            }                                                                                                \
+            if (args_count >= (ARG_NUM))                                                                     \
+            {                                                                                                \
+                if (rabbitmq_settings->ARG_NAME.changed) /* The same argument is given in two places */      \
+                {                                                                                            \
+                    throw Exception("The argument №" #ARG_NUM " of storage RabbitMQ "                        \
+                        "and the parameter '" #ARG_NAME "' is duplicated", ErrorCodes::BAD_ARGUMENTS);       \
+                }                                                                                            \
             }
-            else
-            {
-                throw Exception(String("RabbitMQ host:port must be a string"), ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
 
-        String routing_key_list = rabbitmq_settings.rabbitmq_routing_key_list.value;
-        if (args_count >= 2)
-        {
-            engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
-            routing_key_list = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        }
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_host_port)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_exchange_name)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_format)
 
-        Names routing_keys;
-        boost::split(routing_keys, routing_key_list, [](char c){ return c == ','; });
-        for (String & key : routing_keys)
-        {
-            boost::trim(key);
-        }
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_exchange_type)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_routing_key_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_row_delimiter)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(7, rabbitmq_schema)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(8, rabbitmq_num_consumers)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(9, rabbitmq_num_queues)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(10, rabbitmq_queue_base)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_deadletter_exchange)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_persistent)
 
-        String exchange = rabbitmq_settings.rabbitmq_exchange_name.value;
-        if (args_count >= 3)
-        {
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_max_block_size)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_flush_interval_ms)
 
-            const auto * ast = engine_args[2]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                exchange = safeGet<String>(ast->value);
-            }
-        }
+        #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
-        String format = rabbitmq_settings.rabbitmq_format.value;
-        if (args_count >= 4)
-        {
-            engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
-
-            const auto * ast = engine_args[3]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                format = safeGet<String>(ast->value);
-            }
-            else
-            {
-                throw Exception("Format must be a string", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-        char row_delimiter = rabbitmq_settings.rabbitmq_row_delimiter;
-        if (args_count >= 5)
-        {
-            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
-
-            const auto * ast = engine_args[4]->as<ASTLiteral>();
-            String arg;
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                arg = safeGet<String>(ast->value);
-            }
-            else
-            {
-                throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
-            }
-            if (arg.size() > 1)
-            {
-                throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
-            }
-            else if (arg.empty())
-            {
-                row_delimiter = '\0';
-            }
-            else
-            {
-                row_delimiter = arg[0];
-            }
-        }
-
-        String schema = rabbitmq_settings.rabbitmq_schema.value;
-        if (args_count >= 6)
-        {
-            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
-
-            const auto * ast = engine_args[5]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                schema = safeGet<String>(ast->value);
-            }
-            else
-            {
-                throw Exception("Format schema must be a string", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-        String exchange_type = rabbitmq_settings.rabbitmq_exchange_type.value;
-        if (args_count >= 7)
-        {
-            engine_args[6] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[6], args.local_context);
-
-            const auto * ast = engine_args[6]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                exchange_type = safeGet<String>(ast->value);
-            }
-        }
-
-        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
-        if (args_count >= 8)
-        {
-            const auto * ast = engine_args[7]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
-            {
-                num_consumers = safeGet<UInt64>(ast->value);
-            }
-            else
-            {
-                throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-        UInt64 num_queues = rabbitmq_settings.rabbitmq_num_queues;
-        if (args_count >= 9)
-        {
-            const auto * ast = engine_args[8]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
-            {
-                num_consumers = safeGet<UInt64>(ast->value);
-            }
-            else
-            {
-                throw Exception("Number of queues must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-        String queue_base = rabbitmq_settings.rabbitmq_queue_base.value;
-        if (args_count >= 10)
-        {
-            engine_args[9] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[9], args.local_context);
-
-            const auto * ast = engine_args[9]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                queue_base = safeGet<String>(ast->value);
-            }
-        }
-
-        String deadletter_exchange = rabbitmq_settings.rabbitmq_deadletter_exchange.value;
-        if (args_count >= 11)
-        {
-            engine_args[10] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[10], args.local_context);
-
-            const auto * ast = engine_args[10]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-            {
-                deadletter_exchange = safeGet<String>(ast->value);
-            }
-        }
-
-        bool persistent = static_cast<bool>(rabbitmq_settings.rabbitmq_persistent_mode);
-        if (args_count >= 12)
-        {
-            const auto * ast = engine_args[11]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
-            {
-                persistent = static_cast<bool>(safeGet<UInt64>(ast->value));
-            }
-            else
-            {
-                throw Exception("Transactional channel parameter is a bool", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-        return StorageRabbitMQ::create(
-                args.table_id, args.context, args.columns,
-                host_port, routing_keys, exchange, format, row_delimiter, schema, exchange_type, num_consumers,
-                num_queues, queue_base, deadletter_exchange, persistent);
+        return StorageRabbitMQ::create(args.table_id, args.context, args.columns, std::move(rabbitmq_settings));
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
-
 }
 
 
