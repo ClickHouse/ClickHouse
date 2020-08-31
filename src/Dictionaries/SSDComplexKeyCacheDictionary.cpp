@@ -1453,6 +1453,8 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     assert(key_columns.size() == key_types.size());
     assert(key_columns.size() == dict_struct.key->size());
 
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
@@ -1533,6 +1535,8 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     ColumnString * out,
     DefaultGetter && get_default) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
