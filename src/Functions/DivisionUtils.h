@@ -50,7 +50,11 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && is_big_int_v<B>)
+    if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
+        return bigint_cast<B>(a) / b;
+    else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
+        return a / bigint_cast<A>(b);
+    else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(B(a) / b);
@@ -70,28 +74,18 @@ struct DivideIntegralImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
-            return Result(static_cast<B>(a) / b);
-        else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
-            return a / static_cast<Result>(b);
-        else if constexpr (is_big_int_v<A> && std::is_same_v<B, UInt8>)
-            return static_cast<Result>(checkedDivision(make_signed_t<A>(a), Int16(b)));
-        else if constexpr (is_big_int_v<B> && std::is_same_v<A, UInt8>)
-            return checkedDivision(Int16(a), make_signed_t<B>(b));
+        using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+        using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        else if constexpr (is_signed_v<A> || is_signed_v<B>)
+        if constexpr (is_integer_v<A> && is_integer_v<B> && (is_signed_v<A> || is_signed_v<B>))
         {
-            if constexpr (is_integer_v<A> && is_integer_v<B>)
-            {
-                return checkedDivision(make_signed_t<A>(a),
-                    sizeof(A) > sizeof(B) ? make_signed_t<A>(b) : make_signed_t<B>(b));
-            }
-            else
-                return checkedDivision(a, b);
+            return checkedDivision(make_signed_t<CastA>(a),
+                sizeof(A) > sizeof(B) ? make_signed_t<A>(CastB(b)) : make_signed_t<CastB>(b));
         }
         else
-            return checkedDivision(a, b);
+            return bigint_cast<Result>(checkedDivision(CastA(a), CastB(b)));
     }
 
 #if USE_EMBEDDED_COMPILER
