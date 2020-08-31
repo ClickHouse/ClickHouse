@@ -99,19 +99,6 @@ struct DivideIntegralImpl
 #endif
 };
 
-template <typename Result, typename A, typename B>
-inline Result applyBigIntModulo(A a, B b)
-{
-    if constexpr (std::is_same_v<A, UInt8>)
-        return UInt16(a) % b;
-    else if constexpr (std::is_same_v<B, UInt8>)
-        return static_cast<UInt16>(a % UInt16(b));
-    else if constexpr (sizeof(A) > sizeof(B))
-        return static_cast<Result>(a % A(b));
-    else
-        return static_cast<Result>(B(a) % b);
-}
-
 template <typename A, typename B>
 struct ModuloImpl
 {
@@ -120,7 +107,6 @@ struct ModuloImpl
     using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool is_special = is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -134,8 +120,19 @@ struct ModuloImpl
         {
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (is_special)
-                return applyBigIntModulo<Result>(IntegerAType(a), IntegerBType(b));
+            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            {
+                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
+                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
+
+                CastA int_a(a);
+                CastB int_b(b);
+
+                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                    return bigint_cast<Result>(bigint_cast<CastB>(int_a) % int_b);
+                else
+                    return bigint_cast<Result>(int_a % int_b);
+            }
             else
                 return IntegerAType(a) % IntegerBType(b);
         }
