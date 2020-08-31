@@ -33,26 +33,6 @@ namespace ErrorCodes
 }
 
 
-namespace {
-
-void throwNonUniqueDiskName(const String & storage_policy_name, const String & disk_name)
-{
-    throw Exception("Disk names must be unique in storage policy "
-            + backQuote(storage_policy_name) + " (" + backQuote(disk_name) + " is duplicated)"
-        , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-}
-
-
-void throwNonUniqueVolumeName(const String & storage_policy_name, const String & disk_name)
-{
-    throw Exception("Volume names must be unique in storage policy "
-            + backQuote(storage_policy_name) + " (" + backQuote(disk_name) + " is duplicated)"
-        , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-}
-
-}
-
-
 StoragePolicy::StoragePolicy(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
@@ -306,7 +286,9 @@ void StoragePolicy::updateIndicesForNewVolume(size_t volume_index)
     const VolumePtr & volume = volumes[volume_index];
 
     if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
-        throwNonUniqueVolumeName(name, volume->getName());
+        throw Exception("Volume names must be unique in storage policy "
+                + backQuote(name) + " (" + backQuote(volume->getName()) + " is duplicated)"
+            , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     volume_index_by_volume_name[volume->getName()] = volumes.size() - 1;
 
@@ -315,7 +297,9 @@ void StoragePolicy::updateIndicesForNewVolume(size_t volume_index)
         const String & disk_name = disk->getName();
 
         if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
-            throwNonUniqueDiskName(name, disk_name);
+            throw Exception("Disk names must be unique in storage policy "
+                    + backQuote(name) + " (" + backQuote(disk_name) + " is duplicated)"
+                , ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         volume_index_by_disk_name[disk_name] = volumes.size() - 1;
     }
