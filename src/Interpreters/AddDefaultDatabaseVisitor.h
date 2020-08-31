@@ -24,8 +24,9 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
-    AddDefaultDatabaseVisitor(const String & database_name_, std::ostream * ostr_ = nullptr)
+    AddDefaultDatabaseVisitor(const String & database_name_, bool only_replace_current_database_function_ = false, std::ostream * ostr_ = nullptr)
     :   database_name(database_name_),
+        only_replace_current_database_function(only_replace_current_database_function_),
         visit_depth(0),
         ostr(ostr_)
     {}
@@ -62,6 +63,7 @@ public:
 
 private:
     const String database_name;
+    bool only_replace_current_database_function = false;
     mutable size_t visit_depth;
     std::ostream * ostr;
 
@@ -166,12 +168,18 @@ private:
 
     void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
     {
+        if (only_replace_current_database_function)
+            return;
+
         if (node.database.empty())
             node.database = database_name;
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const
     {
+        if (only_replace_current_database_function)
+            return;
+
         for (ASTRenameQuery::Element & elem : node.elements)
         {
             if (elem.from.database.empty())
