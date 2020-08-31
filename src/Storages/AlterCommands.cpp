@@ -263,7 +263,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
-    }
     else
         return {};
 }
