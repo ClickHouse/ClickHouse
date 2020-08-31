@@ -16,6 +16,12 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
         updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
+    for (const auto & [name, ttl_info] : other_infos.recompression_ttl)
+    {
+        recompression_ttl[name].update(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+    }
+
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
     {
         moves_ttl[expression].update(ttl_info);
@@ -77,6 +83,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             ttl_info.max = move["max"].getUInt();
             String expression = move["expression"].getString();
             recompression_ttl.emplace(expression, ttl_info);
+            updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
         }
     }
 }

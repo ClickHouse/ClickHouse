@@ -3055,6 +3055,36 @@ MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & tt
     return max_max_ttl ? *best_entry_it : std::optional<TTLDescription>();
 }
 
+
+CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+{
+
+    time_t max_max_ttl = 0;
+    TTLDescriptions::const_iterator best_entry_it;
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
+    for (auto ttl_entry_it = recompression_ttl_entries.begin(); ttl_entry_it != recompression_ttl_entries.end(); ++ttl_entry_it)
+    {
+        auto ttl_info_it = ttl_infos.recompression_ttl.find(ttl_entry_it->result_column);
+        /// Prefer TTL rule which went into action last.
+        if (ttl_info_it != ttl_infos.recompression_ttl.end()
+                && ttl_info_it->second.max <= current_time
+                && max_max_ttl <= ttl_info_it->second.max)
+        {
+            best_entry_it = ttl_entry_it;
+            max_max_ttl = ttl_info_it->second.max;
+        }
+    }
+
+    if (max_max_ttl)
+        return CompressionCodecFactory::instance().get(best_entry_it->recompression_codec, {});
+
+    return global_context.chooseCompressionCodec(
+        part_size_compressed,
+        static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
