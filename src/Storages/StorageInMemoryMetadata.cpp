@@ -157,6 +157,16 @@ bool StorageInMemoryMetadata::hasAnyMoveTTL() const
     return !table_ttl.move_ttl.empty();
 }
 
+TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
+{
+    return table_ttl.recompression_ttl;
+}
+
+bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
+{
+    return !table_ttl.recompression_ttl.empty();
+}
+
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
 {
     if (updated_columns.empty())
