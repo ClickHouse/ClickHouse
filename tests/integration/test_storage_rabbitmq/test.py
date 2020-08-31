@@ -131,50 +131,14 @@ def rabbitmq_setup_teardown():
 # Tests
 
 @pytest.mark.timeout(180)
-def test_rabbitmq_select_from_new_syntax_table(rabbitmq_cluster):
+def test_rabbitmq_select(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'new',
+                     rabbitmq_exchange_name = 'select',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
-        ''')
-
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    messages = []
-    for i in range(25):
-        messages.append(json.dumps({'key': i, 'value': i}))
-
-    for message in messages:
-        channel.basic_publish(exchange='new', routing_key='', body=message)
-
-    messages = []
-    for i in range(25, 50):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    for message in messages:
-        channel.basic_publish(exchange='new', routing_key='', body=message)
-
-    connection.close()
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
-        if rabbitmq_check_result(result):
-            break
-
-    rabbitmq_check_result(result, True)
-
-
-@pytest.mark.timeout(180)
-def test_rabbitmq_select_from_old_syntax_table(rabbitmq_cluster):
-    instance.query('''
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
-            ENGINE = RabbitMQ('rabbitmq1:5672', 'old', 'old', 'JSONEachRow', '\\n');
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -187,7 +151,7 @@ def test_rabbitmq_select_from_old_syntax_table(rabbitmq_cluster):
         messages.append(json.dumps({'key': i, 'value': i}))
 
     for message in messages:
-        channel.basic_publish(exchange='old', routing_key='old', body=message)
+        channel.basic_publish(exchange='select', routing_key='', body=message)
 
     connection.close()
 
@@ -206,6 +170,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'empty',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         ''')
@@ -1774,7 +1739,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'producer_reconnect',
-                     rabbitmq_persistent_mode = '1',
+                     rabbitmq_persistent = '1',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     ''')

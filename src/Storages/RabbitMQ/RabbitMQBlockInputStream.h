@@ -16,7 +16,7 @@ public:
     RabbitMQBlockInputStream(
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
-            const std::shared_ptr<Context> & context_,
+            Context & context_,
             const Names & columns,
             bool ack_in_suffix = true);
 
@@ -36,7 +36,7 @@ public:
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    const std::shared_ptr<Context> context;
+    Context context;
     Names column_names;
     bool ack_in_suffix;
 

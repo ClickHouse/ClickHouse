@@ -9,6 +9,7 @@
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -64,42 +65,32 @@ public:
     bool restoreConnection(bool reconnecting);
     void updateChannel(ChannelPtr & channel);
 
+
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
             Context & context_,
             const ColumnsDescription & columns_,
-            const String & host_port_,
-            const Names & routing_keys_,
-            const String & exchange_name_,
-            const String & format_name_,
-            char row_delimiter_,
-            const String & schema_name_,
-            const String & exchange_type_,
-            size_t num_consumers_,
-            size_t num_queues_,
-            const String & queue_base_,
-            const String & deadletter_exchange,
-            const bool persistent_);
+            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
     Context global_context;
+    Context rabbitmq_context;
+    std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
-    Names routing_keys;
     const String exchange_name;
-    AMQP::ExchangeType exchange_type;
-
     const String format_name;
+    AMQP::ExchangeType exchange_type;
+    Names routing_keys;
     char row_delimiter;
     const String schema_name;
     size_t num_consumers;
-    size_t num_created_consumers = 0;
-    bool hash_exchange;
     size_t num_queues;
     String queue_base;
     const String deadletter_exchange;
     const bool persistent;
 
+    bool hash_exchange;
     Poco::Logger * log;
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
@@ -108,6 +99,7 @@ private:
     std::shared_ptr<RabbitMQHandler> event_handler;
     std::shared_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
+    size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
@@ -131,6 +123,11 @@ private:
     void threadFunc();
     void heartbeatFunc();
     void loopingFunc();
+
+    Names parseRoutingKeys(String routing_key_list);
+    AMQP::ExchangeType defineExchangeType(String exchange_type_);
+    size_t getMaxBlockSize();
+    String getTableBasedName(String name, const StorageID & table_id);
 
     void initExchange();
     void bindExchange();
