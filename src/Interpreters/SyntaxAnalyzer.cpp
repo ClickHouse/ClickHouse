@@ -23,7 +23,6 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
-#include <Interpreters/DuplicateDistinctVisitor.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
@@ -35,6 +34,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
@@ -520,12 +521,128 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 }
 
 /// Optimize duplicate ORDER BY and DISTINCT
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & query, const Context & context)
+void optimizeDuplicateOrderBy(ASTPtr & query, const Context & context)
 {
     DuplicateOrderByVisitor::Data order_by_data{context};
     DuplicateOrderByVisitor(order_by_data).visit(query);
-    DuplicateDistinctVisitor::Data distinct_data{};
-    DuplicateDistinctVisitor(distinct_data).visit(query);
+}
+
+/// Return simple subselect (without UNIONs or JOINs or SETTINGS) if any
+const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
+{
+    if (!select.tables())
+        return nullptr;
+
+    const auto & tables = select.tables()->children;
+    if (tables.empty() || tables.size() != 1)
+        return nullptr;
+
+    const auto & ast_table_expression = tables[0]->as<ASTTablesInSelectQueryElement>()->table_expression;
+    if (!ast_table_expression)
+        return nullptr;
+
+    const auto & table_expression = ast_table_expression->as<ASTTableExpression>();
+    if (!table_expression->subquery)
+        return nullptr;
+
+    const auto & subquery = table_expression->subquery->as<ASTSubquery>();
+    if (!subquery || subquery->children.size() != 1)
+        return nullptr;
+
+    const auto & subselect_union = subquery->children[0]->as<ASTSelectWithUnionQuery>();
+    if (!subselect_union || !subselect_union->list_of_selects ||
+        subselect_union->list_of_selects->children.size() != 1)
+        return nullptr;
+
+    const auto & subselect = subselect_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (subselect && subselect->settings())
+        return nullptr;
+
+    return subselect;
+}
+
+std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
+{
+    if (!select.select() || select.select()->children.empty())
+        return {};
+
+    std::unordered_set<String> names;
+    std::unordered_set<String> implicit_distinct;
+
+    if (!select.distinct)
+    {
+        /// SELECT a, b FROM (SELECT DISTINCT a FROM ...)
+        if (const ASTSelectQuery * subselect = getSimpleSubselect(select))
+            implicit_distinct = getDistinctNames(*subselect);
+
+        if (implicit_distinct.empty())
+            return {};
+    }
+
+    /// Extract result column names (prefer aliases, ignore table name)
+    for (const auto & id : select.select()->children)
+    {
+        String alias = id->tryGetAlias();
+
+        if (const auto * identifier = id->as<ASTIdentifier>())
+        {
+            const String & name = identifier->shortName();
+
+            if (select.distinct || implicit_distinct.count(name))
+            {
+                if (alias.empty())
+                    names.insert(name);
+                else
+                    names.insert(alias);
+            }
+        }
+        else if (select.distinct && !alias.empty())
+        {
+            /// It's not possible to use getAliasOrColumnName() cause name is context specific (function arguments)
+            names.insert(alias);
+        }
+    }
+
+    /// SELECT a FROM (SELECT DISTINCT a, b FROM ...)
+    if (!select.distinct && names.size() != implicit_distinct.size())
+        return {};
+
+    return names;
+}
+
+/// Remove DISTINCT from query if columns are known as DISTINCT from subquery
+void optimizeDuplicateDistinct(ASTSelectQuery & select)
+{
+    if (!select.select() || select.select()->children.empty())
+        return;
+
+    const ASTSelectQuery * subselect = getSimpleSubselect(select);
+    if (!subselect)
+        return;
+
+    std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
+    std::unordered_set<String> selected_names;
+
+    /// Check source column names from select list (ignore aliases and table names)
+    for (const auto & id : select.select()->children)
+    {
+        const auto * identifier = id->as<ASTIdentifier>();
+        if (!identifier)
+            return;
+
+        String name = identifier->shortName();
+        if (!distinct_names.count(name))
+            return; /// Not a distinct column, keep DISTINCT for it.
+
+        selected_names.insert(name);
+    }
+
+    /// select columns list != distinct columns list
+    /// SELECT DISTINCT a FROM (SELECT DISTINCT a, b FROM ...)) -- cannot remove DISTINCT
+    if (selected_names.size() != distinct_names.size())
+        return;
+
+    select.distinct = false;
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -1017,7 +1134,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
         /// Remove duplicate ORDER BY and DISTINCT from subqueries.
         if (settings.optimize_duplicate_order_by_and_distinct)
-            optimizeDuplicateOrderByAndDistinct(query, context);
+        {
+            optimizeDuplicateOrderBy(query, context);
+
+            /// DISTINCT has special meaning in Distributed query with enabled distributed_group_by_no_merge
+            /// TODO: disable Distributed/remote() tables only
+            if (!settings.distributed_group_by_no_merge)
+                optimizeDuplicateDistinct(*select_query);
+        }
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
