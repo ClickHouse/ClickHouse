@@ -1435,6 +1435,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
            != query_requires_access.end());
 
     bool use_local_default_database = false;
+    const String & current_database = context.getCurrentDatabase();
 
     if (need_replace_current_database)
     {
@@ -1478,7 +1479,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    const String & current_database = context.getCurrentDatabase();
     AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
     visitor.visitDDL(query_ptr);
 
