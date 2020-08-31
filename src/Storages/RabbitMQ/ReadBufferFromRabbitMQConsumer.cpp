@@ -50,7 +50,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , row_delimiter(row_delimiter_)
         , stopped(stopped_)
         , received(QUEUE_SIZE * num_queues)
-        , last_inserted_record(AckTracker())
 {
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
         bindQueue(queue_id);
@@ -165,10 +164,14 @@ bool ReadBufferFromRabbitMQConsumer::ackMessages()
     {
         /// Commit all received messages with delivery tags from last commited to last inserted
         if (!consumer_channel->ack(record.delivery_tag, AMQP::multiple))
+        {
+            LOG_ERROR(log, "Failed to commit messages with delivery tags from last commited to {} on channel {}",
+                     record.delivery_tag, channel_id);
             return false;
+        }
 
         prev_tag = record.delivery_tag;
-        LOG_TRACE(log, "Consumer acknowledged messages with deliveryTags up to {} on channel {}", record.delivery_tag, channel_id);
+        LOG_TRACE(log, "Consumer commited messages with deliveryTags up to {} on channel {}", record.delivery_tag, channel_id);
     }
 
     return true;
@@ -207,6 +210,8 @@ void ReadBufferFromRabbitMQConsumer::setupChannel()
 
     consumer_channel->onError([&](const char * message)
     {
+        /// If here, then fatal error occured on the channel and it is not usable anymore, need to close it
+        consumer_channel->close();
         LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
 
         channel_error.store(true);

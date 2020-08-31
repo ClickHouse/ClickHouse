@@ -104,12 +104,13 @@ private:
     std::mutex mutex, task_mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    String unique_strbase;
+    String unique_strbase; /// to make unique consumer channel id
     String sharding_exchange, bridge_exchange, consumer_exchange;
-    std::once_flag flag;
-    size_t consumer_id = 0;
-    std::atomic<size_t> producer_id = 1;
-    std::atomic<bool> wait_confirm = true, exchange_removed = false;
+    std::once_flag flag; /// remove exchange only once
+    size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
+    std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
+    std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
+    std::atomic<bool> exchange_removed = false;
     ChannelPtr setup_channel;
 
     BackgroundSchedulePool::TaskHolder streaming_task;
@@ -126,6 +127,7 @@ private:
 
     Names parseRoutingKeys(String routing_key_list);
     AMQP::ExchangeType defineExchangeType(String exchange_type_);
+    Context addSettings(Context context);
     size_t getMaxBlockSize();
     String getTableBasedName(String name, const StorageID & table_id);
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);

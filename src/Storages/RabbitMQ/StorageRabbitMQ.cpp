@@ -107,8 +107,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     setInMemoryMetadata(storage_metadata);
 
     rabbitmq_context.makeQueryContext();
-    if (!schema_name.empty())
-        rabbitmq_context.setSetting("format_schema", schema_name);
+    rabbitmq_context = addSettings(rabbitmq_context);
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
@@ -193,6 +192,19 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 }
 
 
+Context StorageRabbitMQ::addSettings(Context context)
+{
+    context.setSetting("input_format_skip_unknown_fields", true);
+    context.setSetting("input_format_allow_errors_ratio", 0.);
+    context.setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+
+    if (!schema_name.empty())
+        context.setSetting("format_schema", schema_name);
+
+    return context;
+}
+
+
 void StorageRabbitMQ::heartbeatFunc()
 {
     if (!stream_cancelled && event_handler->connectionRunning())
@@ -215,10 +227,11 @@ void StorageRabbitMQ::loopingFunc()
  */
 void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop)
 {
+    if (stop_loop)
+        event_handler->updateLoopState(Loop::STOP);
+
     if (task_mutex.try_lock())
     {
-        if (stop_loop)
-            event_handler->updateLoopState(Loop::STOP);
 
         task->deactivate();
         task_mutex.unlock();
@@ -232,6 +245,14 @@ void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, 
 }
 
 
+size_t StorageRabbitMQ::getMaxBlockSize()
+ {
+     return rabbitmq_settings->rabbitmq_max_block_size.changed
+         ? rabbitmq_settings->rabbitmq_max_block_size.value
+         : (global_context.getSettingsRef().max_insert_block_size.value / num_consumers);
+ }
+
+
 void StorageRabbitMQ::initExchange()
 {
     /* Binding scheme is the following: client's exchange -> key bindings by routing key list -> bridge exchange (fanout) ->
@@ -240,7 +261,15 @@ void StorageRabbitMQ::initExchange()
     setup_channel->declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
-        throw Exception("Unable to declare exchange. Make sure specified exchange is not already declared. Error: "
+        /* This error can be a result of attempt to declare exchange if it was already declared but
+         * 1) with different exchange type. In this case can
+         * - manually delete previously declared exchange and create a new one.
+         * - throw an error that the exchange with this name but another type is already declared and ask client to delete it himself
+         *   if it is not needed anymore or use another exchange name.
+         * 2) with different exchange settings. This can only happen if client himself declared exchange with the same name and
+         * specified its own settings, which differ from this implementation.
+         */
+        throw Exception("Unable to declare exchange (1). Make sure specified exchange is not already declared. Error: "
                 + std::string(message), ErrorCodes::LOGICAL_ERROR);
     });
 
@@ -248,7 +277,8 @@ void StorageRabbitMQ::initExchange()
     setup_channel->declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable + AMQP::autodelete)
     .onError([&](const char * message)
     {
-        throw Exception("Unable to declare exchange. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+        /// This error is not supposed to happen as this exchange name is always unique to type and its settings
+        throw Exception("Unable to declare exchange (2). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
     });
 
     if (!hash_exchange)
@@ -267,13 +297,17 @@ void StorageRabbitMQ::initExchange()
     setup_channel->declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable + AMQP::autodelete, binding_arguments)
     .onError([&](const char * message)
     {
-        throw Exception("Unable to declare exchange. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+        /* This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
+         * to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
+         * is bad.
+         */
+        throw Exception("Unable to declare exchange (3). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
     });
 
     setup_channel->bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
     .onError([&](const char * message)
     {
-        throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unable to bind exchange (2). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
     });
 
     consumer_exchange = sharding_exchange;
@@ -302,7 +336,7 @@ void StorageRabbitMQ::bindExchange()
         })
         .onError([&](const char * message)
         {
-            throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unable to bind exchange (1). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
@@ -314,7 +348,7 @@ void StorageRabbitMQ::bindExchange()
         })
         .onError([&](const char * message)
         {
-            throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unable to bind exchange (1). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
         });
     }
     else
@@ -330,7 +364,7 @@ void StorageRabbitMQ::bindExchange()
             })
             .onError([&](const char * message)
             {
-                throw Exception("Unable to bind exchange. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unable to bind exchange (1). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
             });
         }
     }
@@ -348,7 +382,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 
     if (reconnecting)
     {
-        deactivateTask(heartbeat_task, 0, 0);
+        deactivateTask(heartbeat_task, false, false);
         connection->close(); /// Connection might be unusable, but not closed
 
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
@@ -393,8 +427,8 @@ void StorageRabbitMQ::unbindExchange()
      * input streams are always created at startup, then they will also declare its own exchange bound queues, but they will not be visible
      * externally - client declares its own exchange-bound queues, from which to consume, so this means that if not disconnecting this local
      * queues, then messages will go both ways and in one of them they will remain not consumed. So need to disconnect local exchange
-     * bindings to remove redunadant message copies, but after that mv cannot work unless thoso bindings recreated. Recreating them is not
-     * difficult but very ugly and as probably nobody will do such thing - bindings will not be recreated.
+     * bindings to remove redunadant message copies, but after that mv cannot work unless those bindings are recreated. Recreating them is
+     * not difficult but very ugly and as probably nobody will do such thing - bindings will not be recreated.
      */
     std::call_once(flag, [&]()
     {
@@ -435,20 +469,17 @@ Pipe StorageRabbitMQ::read(
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
-    auto modified_context = context;
-    if (!schema_name.empty())
-        modified_context.setSetting("format_schema", schema_name);
+    auto modified_context = addSettings(context);
+    auto block_size = getMaxBlockSize();
 
     bool update_channels = false;
     if (!event_handler->connectionRunning())
     {
         if (event_handler->loopRunning())
-        {
-            event_handler->updateLoopState(Loop::STOP);
-            looping_task->deactivate();
-        }
+            deactivateTask(looping_task, false, true);
 
-        if ((update_channels = restoreConnection(true)))
+        update_channels = restoreConnection(true);
+        if (update_channels)
             heartbeat_task->scheduleAfter(HEARTBEAT_RESCHEDULE_MS);
     }
 
@@ -457,20 +488,20 @@ Pipe StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, modified_context, column_names);
+        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
+                *this, metadata_snapshot, modified_context, column_names, block_size);
 
         /* It is a possible but rare case when channel gets into error state and does not also close connection, so need manual update.
          * But I believe that in current context and with local rabbitmq settings this will never happen and any channel error will also
          * close connection, but checking anyway (in second condition of if statement). This must be done here (and also in streamToViews())
          * and not in readPrefix as it requires to stop heartbeats and looping tasks to avoid race conditions inside the library
          */
-        if (update_channels || rabbit_stream->needManualChannelUpdate())
+        if ((update_channels || rabbit_stream->needChannelUpdate()) && connection->usable())
         {
             if (event_handler->loopRunning())
             {
-                event_handler->updateLoopState(Loop::STOP);
-                looping_task->deactivate();
-                heartbeat_task->deactivate();
+                deactivateTask(looping_task, false, true);
+                deactivateTask(heartbeat_task, false, false);
             }
 
             rabbit_stream->updateChannel();
@@ -526,9 +557,9 @@ void StorageRabbitMQ::shutdown()
     stream_cancelled = true;
     wait_confirm.store(false);
 
-    deactivateTask(streaming_task, 1, 1);
-    deactivateTask(heartbeat_task, 1, 0);
-    deactivateTask(looping_task, 1, 1);
+    deactivateTask(streaming_task, true, false);
+    deactivateTask(heartbeat_task, true, false);
+    deactivateTask(looping_task, true, true);
 
     connection->close();
 
@@ -594,7 +625,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
         parsed_address, global_context, login_password, routing_keys, exchange_name, exchange_type,
-        producer_id.fetch_add(1), unique_strbase, persistent, wait_confirm, log,
+        producer_id.fetch_add(1), persistent, wait_confirm, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
@@ -683,19 +714,25 @@ bool StorageRabbitMQ::streamToViews()
     if (!event_handler->loopRunning() && event_handler->connectionRunning())
         looping_task->activateAndSchedule();
 
+    auto block_size = getMaxBlockSize();
+
     // Create a stream for each consumer and join them in a union stream
     BlockInputStreams streams;
     streams.reserve(num_created_consumers);
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<RabbitMQBlockInputStream>(*this, metadata_snapshot, rabbitmq_context, column_names, false);
+        auto stream = std::make_shared<RabbitMQBlockInputStream>(
+                *this, metadata_snapshot, rabbitmq_context, column_names, block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
         IBlockInputStream::LocalLimits limits;
 
-        limits.speed_limits.max_execution_time = global_context.getSettingsRef().stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                                  ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                                  : global_context.getSettingsRef().stream_flush_interval_ms;
+
         limits.timeout_overflow_mode = OverflowMode::BREAK;
 
         stream->setLimits(limits);
@@ -715,7 +752,7 @@ bool StorageRabbitMQ::streamToViews()
      * races inside the library, but only in case any error occurs or connection is lost while ack is being sent
      */
     if (event_handler->loopRunning())
-        deactivateTask(looping_task, 0, 1);
+        deactivateTask(looping_task, false, true);
 
     if (!event_handler->connectionRunning())
     {
@@ -733,20 +770,37 @@ bool StorageRabbitMQ::streamToViews()
     }
     else
     {
-        deactivateTask(heartbeat_task, 0, 0);
+        deactivateTask(heartbeat_task, false, false);
 
         /// Commit
         for (auto & stream : streams)
         {
+            /* false is returned by the sendAck function in only two cases:
+             * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
+             *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
+             *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
+             *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
+             *    consumers. So in this case duplicates are inevitable.
+             * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
+             *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
+             *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
+             *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
+             *    will ever happen.
+             */
             if (!stream->as<RabbitMQBlockInputStream>()->sendAck())
             {
-                /* Almost any error with channel will lead to connection closure, but if so happens that channel errored and connection
-                 * is not closed - also need to restore channels
-                 */
-                if (!stream->as<RabbitMQBlockInputStream>()->needManualChannelUpdate())
-                    stream->as<RabbitMQBlockInputStream>()->updateChannel();
+                if (connection->usable())
+                {
+                    /* Almost any error with channel will lead to connection closure, but if so happens that channel errored and
+                     * connection is not closed - also need to restore channels
+                     */
+                    if (!stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
+                        stream->as<RabbitMQBlockInputStream>()->updateChannel();
+                }
                 else
+                {
                     break;
+                }
             }
         }
     }
@@ -809,8 +863,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_deadletter_exchange)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_persistent)
 
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_max_block_size)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_flush_interval_ms)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_skip_broken_messages)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_max_block_size)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_flush_interval_ms)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 

@@ -18,6 +18,7 @@ public:
             const StorageMetadataPtr & metadata_snapshot_,
             Context & context_,
             const Names & columns,
+            size_t max_block_size_,
             bool ack_in_suffix = true);
 
     ~RabbitMQBlockInputStream() override;
@@ -29,8 +30,8 @@ public:
     Block readImpl() override;
     void readSuffixImpl() override;
 
+    bool needChannelUpdate();
     void updateChannel();
-    bool needManualChannelUpdate();
     bool sendAck();
 
 private:
@@ -38,6 +39,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     Context context;
     Names column_names;
+    const size_t max_block_size;
     bool ack_in_suffix;
 
     bool finished = false;
