@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/File.h>
+#include <sys/time.h>
 
 namespace DB
 {
@@ -16,17 +17,23 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-
 MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
-    const MergeTreeData & storage_,
+    MergeTreeData & storage_,
     const DiskPtr & disk_,
     const String & name_)
     : storage(storage_)
     , disk(disk_)
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
+    , pool(storage.global_context.getSchedulePool())
 {
     init();
+    sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
+    {
+        std::lock_guard lock(write_mutex);
+        out->sync();
+        sync_scheduled = false;
+    });
 }
 
 void MergeTreeWriteAheadLog::init()
@@ -38,6 +45,7 @@ void MergeTreeWriteAheadLog::init()
     block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
+    bytes_at_last_sync = 0;
 }
 
 void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_name)
@@ -53,6 +61,7 @@ void MergeTreeWriteAheadLog::addPart(const Block & block, const String & part_na
     writeStringBinary(part_name, *out);
     block_out->write(block);
     block_out->flush();
+    sync(lock);
 
     auto max_wal_bytes = storage.getSettings()->write_ahead_log_max_bytes;
     if (out->count() > max_wal_bytes)
@@ -66,6 +75,7 @@ void MergeTreeWriteAheadLog::dropPart(const String & part_name)
     writeIntBinary(static_cast<UInt8>(0), *out);
     writeIntBinary(static_cast<UInt8>(ActionType::DROP_PART), *out);
     writeStringBinary(part_name, *out);
+    sync(lock);
 }
 
 void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> &)
@@ -173,6 +183,24 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
 
     return result;
+}
+
+void MergeTreeWriteAheadLog::sync(const std::lock_guard<std::mutex> &)
+{
+    size_t bytes_to_sync = storage.getSettings()->write_ahead_log_bytes_to_fsync;
+    time_t time_to_sync = storage.getSettings()->write_ahead_log_interval_ms_to_fsync;
+    size_t current_bytes = out->count();
+
+    if (bytes_to_sync && current_bytes - bytes_at_last_sync > bytes_to_sync)
+    {
+        sync_task->schedule();
+        bytes_at_last_sync = current_bytes;
+    }
+    else if (time_to_sync && !sync_scheduled)
+    {
+        sync_task->scheduleAfter(time_to_sync);
+        sync_scheduled = true;
+    }
 }
 
 std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>
