@@ -20,13 +20,13 @@
     M(UInt16) \
     M(UInt32) \
     M(UInt64) \
-    M(bUInt256) \
+    M(UInt256) \
     M(Int8) \
     M(Int16) \
     M(Int32) \
     M(Int64) \
     M(Int128) \
-    M(bInt256) \
+    M(Int256) \
     M(Float32) \
     M(Float64)
 

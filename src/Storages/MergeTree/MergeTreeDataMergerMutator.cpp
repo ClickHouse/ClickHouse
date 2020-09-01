@@ -30,6 +30,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FileSyncGuard.h>
+#include <Parsers/queryToString.h>
 
 #include <cmath>
 #include <ctime>
@@ -593,8 +594,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     TableLockHolder &,
     time_t time_of_merge,
     const ReservationPtr & space_reservation,
-    bool deduplicate,
-    bool force_ttl)
+    bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -642,7 +642,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
-    bool need_remove_expired_values = force_ttl;
+    bool need_remove_expired_values = false;
     for (const auto & part : parts)
         new_data_part->ttl_infos.update(part->ttl_infos);
 
@@ -822,7 +822,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
 
     if (need_remove_expired_values)
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, false);
 
     if (metadata_snapshot->hasSecondaryIndices())
     {
@@ -1141,7 +1141,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         auto indices_to_recalc = getIndicesToRecalculate(in, updated_header.getNamesAndTypesList(), metadata_snapshot, context);
 
-        NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
+        NameSet files_to_skip = collectFilesToSkip(source_part, updated_header, indices_to_recalc, mrk_extension);
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
@@ -1204,7 +1204,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             }
         }
 
-        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values);
+        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values, compression_codec);
     }
 
     return new_data_part;
@@ -1468,9 +1468,12 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
-    const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension)
+    const MergeTreeDataPartPtr & source_part,
+    const Block & updated_header,
+    const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+    const String & mrk_extension)
 {
-    NameSet files_to_skip = {"checksums.txt", "columns.txt"};
+    NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
     /// Skip updated files
     for (const auto & entry : updated_header)
@@ -1758,7 +1761,8 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values)
+    bool need_remove_expired_values,
+    const CompressionCodecPtr & codec)
 {
     auto disk = new_data_part->volume->getDisk();
     if (need_remove_expired_values)
@@ -1777,6 +1781,10 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
+    {
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
+        DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
+    }
 
     {
         /// Write a file with a description of columns.
@@ -1791,6 +1799,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
+    new_data_part->default_codec = codec;
     new_data_part->calculateColumnsSizesOnDisk();
 }
 
