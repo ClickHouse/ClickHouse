@@ -308,7 +308,10 @@ ReturnType DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer 
                                                    const DataTypePtr & nested_data_type)
 {
     return safeDeserialize<ReturnType>(column, *nested_data_type,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
+        [&istr]
+        {
+            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr);
+        },
         [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextQuoted(nested, istr, settings); });
 }
 
@@ -316,7 +319,11 @@ ReturnType DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer 
 void DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     safeDeserialize(column, *nested_data_type,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
+        [&istr]
+        {
+            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr)
+                || checkStringByFirstCharacterAndAssertTheRest("ᴺᵁᴸᴸ", istr);
+        },
         [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsWholeText(nested, istr, settings); });
 }
 
