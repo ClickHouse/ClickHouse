@@ -59,7 +59,8 @@ private:
     void finalizePartOnDisk(
             const MergeTreeData::MutableDataPartPtr & new_part,
             NamesAndTypesList & part_columns,
-            MergeTreeData::DataPart::Checksums & checksums);
+            MergeTreeData::DataPart::Checksums & checksums,
+            bool sync);
 
 private:
     NamesAndTypesList columns_list;

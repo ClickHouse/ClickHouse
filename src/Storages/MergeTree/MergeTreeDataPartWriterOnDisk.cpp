@@ -332,7 +332,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
         if (sync)
-            index_stream->sync();
+            index_file_stream->sync();
         index_stream = nullptr;
     }
 }
