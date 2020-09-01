@@ -58,6 +58,13 @@ public:
             nested->shutdown();
     }
 
+    void drop() override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->drop();
+    }
+
     Pipe read(
             const Names & column_names,
             const StorageMetadataPtr & metadata_snapshot,
@@ -110,6 +117,9 @@ public:
         else
             IStorage::renameInMemory(new_table_id);
     }
+
+    bool isView() const override { return false; }
+    void checkTableCanBeDropped() const override {}
 
 private:
     mutable std::mutex nested_mutex;
