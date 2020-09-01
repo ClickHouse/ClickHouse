@@ -106,11 +106,16 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
 
     # Put some data to source node3
     node3.query("INSERT INTO test_table_update VALUES ('2018-10-01', 5), ('2018-10-02', 6), ('2018-10-03', 7)")
+
+
     # Check that data is placed on node3
     assert node3.query("SELECT count(*) from test_table_update") == "6\n"
 
+    result = node4.exec_in_container(["bash", "-c", "/usr/bin/host node3"])
+    print("HOST RESULT %s", result)
+
     # Because of DNS cache update, ip of node3 would be updated
-    assert_eq_with_retry(node4, "SELECT count(*) from test_table_update", "6")
+    assert_eq_with_retry(node4, "SELECT count(*) from test_table_update", "6", sleep_time=3)
 
     # Just to be sure check one more time
     node3.query("INSERT INTO test_table_update VALUES ('2018-10-01', 8)")
