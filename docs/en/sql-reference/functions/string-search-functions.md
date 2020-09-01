@@ -377,7 +377,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 ```
 
 !!! note "Note"
-    `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
+    `extractAllGroupsHorizontal` function is slower than `extractAllGroupsVertical`.
 
 **Parameters** 
 
@@ -386,7 +386,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 
 **Returned value**
 
--   Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+-   Type: [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -405,7 +405,7 @@ Result:
 ```
 
 **See also**
--    [extractAllGroupsVertical](#extractallgroups-vertical)
+-   [extractAllGroupsVertical](#extractallgroups-vertical)
 
 ## extractAllGroupsVertical {#extractallgroups-vertical}
 
@@ -430,7 +430,7 @@ extractAllGroupsVertical(haystack, pattern)
 
 **Returned value**
 
--   Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+-   Type: [Array](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -449,7 +449,7 @@ Result:
 ```
 
 **See also**
--    [extractAllGroupsHorizontal](#extractallgroups-horizontal)
+-   [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
 
