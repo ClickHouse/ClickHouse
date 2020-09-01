@@ -1,6 +1,7 @@
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -11,9 +12,9 @@ uint8_t CompressionCodecNone::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::NONE);
 }
 
-String CompressionCodecNone::getCodecDesc() const
+ASTPtr CompressionCodecNone::getCodecDesc() const
 {
-    return "NONE";
+    return std::make_shared<ASTIdentifier>("NONE");
 }
 
 UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const

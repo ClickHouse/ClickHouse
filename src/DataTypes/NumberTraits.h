@@ -55,9 +55,9 @@ template <> struct Construct<false, false, 1> { using Type = UInt8; };
 template <> struct Construct<false, false, 2> { using Type = UInt16; };
 template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
-template <> struct Construct<false, false, 16> { using Type = bUInt256; };
-template <> struct Construct<false, false, 32> { using Type = bUInt256; };
-template <> struct Construct<false, false, 48> { using Type = bUInt256; };
+template <> struct Construct<false, false, 16> { using Type = UInt256; };
+template <> struct Construct<false, false, 32> { using Type = UInt256; };
+template <> struct Construct<false, false, 48> { using Type = UInt256; };
 template <> struct Construct<false, true, 1> { using Type = Float32; };
 template <> struct Construct<false, true, 2> { using Type = Float32; };
 template <> struct Construct<false, true, 4> { using Type = Float32; };
@@ -68,7 +68,7 @@ template <> struct Construct<true, false, 4> { using Type = Int32; };
 template <> struct Construct<true, false, 8> { using Type = Int64; };
 template <> struct Construct<true, false, 16> { using Type = Int128; };
 template <> struct Construct<true, false, 32> { using Type = Int128; };
-template <> struct Construct<true, false, 48> { using Type = bInt256; };
+template <> struct Construct<true, false, 48> { using Type = Int256; };
 template <> struct Construct<true, true, 1> { using Type = Float32; };
 template <> struct Construct<true, true, 2> { using Type = Float32; };
 template <> struct Construct<true, true, 4> { using Type = Float32; };
@@ -228,10 +228,7 @@ using ResultOfGreatest = std::conditional_t<LeastGreatestSpecialCase<A, B>,
 template <typename T>
 static inline auto littleBits(const T & x)
 {
-    if constexpr (is_big_int_v<T>)
-        return x. template convert_to<UInt32>();
-    else
-        return UInt8(x);
+    return bigint_cast<UInt8>(x);
 }
 
 }

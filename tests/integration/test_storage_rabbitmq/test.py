@@ -130,6 +130,7 @@ def rabbitmq_setup_teardown():
 
 # Tests
 
+@pytest.mark.skip(reason="Flaky")
 @pytest.mark.timeout(180)
 def test_rabbitmq_select(rabbitmq_cluster):
     instance.query('''
@@ -252,6 +253,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
+@pytest.mark.skip(reason="Flaky")
 @pytest.mark.timeout(180)
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query('''
@@ -422,6 +424,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
+@pytest.mark.skip(reason="Flaky")
 @pytest.mark.timeout(180)
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query('''

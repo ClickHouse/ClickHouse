@@ -57,14 +57,14 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const CompressionCodecPtr & default_codec,
+    const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         shared_from_this(), columns_list, metadata_snapshot, indices_to_recalc,
         index_granularity_info.marks_file_extension,
-        default_codec, writer_settings, computed_index_granularity);
+        default_codec_, writer_settings, computed_index_granularity);
 }
 
 
