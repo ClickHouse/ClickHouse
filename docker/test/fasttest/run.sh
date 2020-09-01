@@ -206,6 +206,8 @@ TESTS_TO_SKIP=(
     01411_bayesian_ab_testing
     01238_http_memory_tracking              # max_memory_usage_for_user can interfere another queries running concurrently
     01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
+    01318_encrypt                           # Depends on OpenSSL
+    01318_decrypt                           # Depends on OpenSSL
 
     # Not sure why these two fail even in sequential mode. Disabled for now
     # to make some progress.
