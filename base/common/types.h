@@ -121,3 +121,18 @@ template <> struct is_big_int<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
+
+template <typename T>
+inline std::string bigintToString(const T & x)
+{
+    return x.str();
+}
+
+template <typename To, typename From>
+inline To bigint_cast(const From & x [[maybe_unused]])
+{
+    if constexpr ((is_big_int_v<From> && std::is_same_v<To, UInt8>) || (is_big_int_v<To> && std::is_same_v<From, UInt8>))
+        return static_cast<uint8_t>(x);
+    else
+        return static_cast<To>(x);
+}
