@@ -1112,13 +1112,13 @@ std::common_type_t<Integral, Integral2> constexpr operator^(const Integral& lhs,
     return CT(lhs) ^ CT(rhs);
 }
 
-template <size_t Bits, typename Signed, typename Int>
-constexpr wide_integer<Bits, Signed> operator<<(const wide_integer<Bits, Signed>& lhs, Int n) noexcept {
-    return wide_integer<Bits, Signed>::_impl::shift_left(lhs, int(n));
+template <size_t Bits, typename Signed>
+constexpr wide_integer<Bits, Signed> operator<<(const wide_integer<Bits, Signed>& lhs, int n) noexcept {
+    return wide_integer<Bits, Signed>::_impl::shift_left(lhs, n);
 }
-template <size_t Bits, typename Signed, typename Int>
-constexpr wide_integer<Bits, Signed> operator>>(const wide_integer<Bits, Signed>& lhs, Int n) noexcept {
-    return wide_integer<Bits, Signed>::_impl::shift_right(lhs, int(n));
+template <size_t Bits, typename Signed>
+constexpr wide_integer<Bits, Signed> operator>>(const wide_integer<Bits, Signed>& lhs, int n) noexcept {
+    return wide_integer<Bits, Signed>::_impl::shift_right(lhs, n);
 }
 
 template <size_t Bits, typename Signed, size_t Bits2, typename Signed2>

@@ -197,6 +197,17 @@ constexpr wide_integer<Bits, Signed> operator<<(const wide_integer<Bits, Signed>
 template <size_t Bits, typename Signed>
 constexpr wide_integer<Bits, Signed> operator>>(const wide_integer<Bits, Signed>& lhs, int n) noexcept;
 
+template <size_t Bits, typename Signed, typename Int, typename = std::enable_if_t<!std::is_same_v<Int, int>> >
+constexpr wide_integer<Bits, Signed> operator<<(const wide_integer<Bits, Signed>& lhs, Int n) noexcept
+{
+    return lhs << int(n);
+}
+template <size_t Bits, typename Signed, typename Int, typename = std::enable_if_t<!std::is_same_v<Int, int>> >
+constexpr wide_integer<Bits, Signed> operator>>(const wide_integer<Bits, Signed>& lhs, Int n) noexcept
+{
+    return lhs >> int(n);
+}
+
 template <size_t Bits, typename Signed, size_t Bits2, typename Signed2>
 constexpr bool operator<(const wide_integer<Bits, Signed>& lhs, const wide_integer<Bits2, Signed2>& rhs);
 template <typename Arithmetic, typename Arithmetic2, class = __only_arithmetic<Arithmetic, Arithmetic2>>

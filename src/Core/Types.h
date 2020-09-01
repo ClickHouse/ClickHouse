@@ -58,7 +58,6 @@ using UInt8 = ::UInt8;
 using UInt16 = ::UInt16;
 using UInt32 = ::UInt32;
 using UInt64 = ::UInt64;
-//using UInt256 = ::bUInt256;
 using UInt256 = ::wUInt256;
 
 using Int8 = ::Int8;
@@ -66,7 +65,7 @@ using Int16 = ::Int16;
 using Int32 = ::Int32;
 using Int64 = ::Int64;
 using Int128 = ::Int128;
-using Int256 = ::bInt256;
+using Int256 = ::wInt256;
 
 using Float32 = float;
 using Float64 = double;

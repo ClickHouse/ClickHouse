@@ -199,7 +199,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
     {
         return intHash64(key.low ^ key.high);
     }
-    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
     {
         return intHash64(static_cast<UInt64>(key) ^
             static_cast<UInt64>(key >> 64) ^
@@ -256,7 +256,7 @@ inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
     {
         return intHashCRC32(key.low ^ key.high);
     }
-    else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
     {
         return intHashCRC32(static_cast<UInt64>(key) ^
             static_cast<UInt64>(key >> 64) ^
@@ -358,7 +358,7 @@ struct IntHash32
         {
             return intHash32<salt>(key.low ^ key.high);
         }
-        else if constexpr (std::is_same_v<T, bInt256> || std::is_same_v<T, bUInt256>)
+        else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
         {
             return intHash32<salt>(static_cast<UInt64>(key) ^
                 static_cast<UInt64>(key >> 64) ^

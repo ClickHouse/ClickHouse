@@ -558,13 +558,9 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
 {
     /// TODO: Decimal scale
     if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
     else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
-#if 1
-    else if constexpr (std::is_same_v<T, UInt256> || std::is_same_v<U, UInt256>)
-        return false;
-#endif
     else
         return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
 }
@@ -592,7 +588,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
     if constexpr (IsDecimalNumber<T>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename T::NativeType(first.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
 }
