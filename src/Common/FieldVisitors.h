@@ -186,7 +186,7 @@ public:
     T operator() (const U & x) const
     {
         if constexpr (IsDecimalNumber<T>)
-            return static_cast<T>(static_cast<typename T::NativeType>(x));
+            return static_cast<T>(bigint_cast<typename T::NativeType>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else

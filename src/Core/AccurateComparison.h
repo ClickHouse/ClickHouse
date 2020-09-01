@@ -100,7 +100,7 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
 {
     using CastA = std::conditional_t<is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>, DB::UInt256, TInt>;
 
-    return bigint_cast<CastA>(a) > b;
+    return bigint_cast<CastA>(a) > bigint_cast<CastA>(b);
 }
 
 template <typename TInt, typename TUInt>
