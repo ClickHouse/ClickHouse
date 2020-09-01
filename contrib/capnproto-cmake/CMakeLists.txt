@@ -29,10 +29,6 @@ set (KJ_SRCS
     ${CAPNPROTO_SOURCE_DIR}/kj/parse/char.c++
 )
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-char8_t")
-endif ()
-
 add_library(kj ${KJ_SRCS})
 target_include_directories(kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
 
@@ -82,8 +78,9 @@ if (COMPILER_GCC)
         -Wno-deprecated-declarations -Wno-class-memaccess)
 elseif (COMPILER_CLANG)
     set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-deprecated-declarations)
+    set (CAPNP_PRIVATE_CXX_FLAGS -fno-char8_t)
 endif ()
 
-target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS})
-target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS})
-target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS})
+target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
