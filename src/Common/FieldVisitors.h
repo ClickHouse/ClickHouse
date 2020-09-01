@@ -82,8 +82,8 @@ public:
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 
-    String operator() (const bUInt256 & x) const;
-    String operator() (const bInt256 & x) const;
+    String operator() (const UInt256 & x) const;
+    String operator() (const Int256 & x) const;
 };
 
 
@@ -106,8 +106,8 @@ public:
     String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 
-    String operator() (const bUInt256 & x) const;
-    String operator() (const bInt256 & x) const;
+    String operator() (const UInt256 & x) const;
+    String operator() (const Int256 & x) const;
 };
 
 
@@ -143,7 +143,7 @@ public:
     T operator() (const Float64 & x) const
     {
         if constexpr (std::is_same_v<Decimal256, T>)
-            return bInt256(x);
+            return Int256(x);
         else
             return T(x);
     }
@@ -187,12 +187,10 @@ public:
     {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
-        else if constexpr (std::is_same_v<T, UInt8>)
-            return static_cast<T>(static_cast<UInt16>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
-            return static_cast<T>(x);
+            return bigint_cast<T>(x);
     }
 };
 
@@ -220,8 +218,8 @@ public:
     void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
 
-    void operator() (const bUInt256 & x) const;
-    void operator() (const bInt256 & x) const;
+    void operator() (const UInt256 & x) const;
+    void operator() (const Int256 & x) const;
 };
 
 

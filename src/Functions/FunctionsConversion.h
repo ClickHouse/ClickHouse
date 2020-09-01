@@ -150,13 +150,10 @@ struct ConvertImpl
                 }
                 else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
                 {
-                    using CastFrom = std::conditional_t<std::is_same_v<FromFieldType, UInt8>, uint8_t, FromFieldType>;
-                    using CastTo = std::conditional_t<std::is_same_v<ToFieldType, UInt8>, uint8_t, ToFieldType>;
-
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
-                        vec_to[i] = static_cast<CastTo>(static_cast<CastFrom>(vec_from[i]));
+                        vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
                     vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
@@ -1063,19 +1060,16 @@ public:
         }
         else if constexpr (to_decimal)
         {
-//            if (!arguments[1].column)
-//                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)
-                return createDecimal<DataTypeDecimal>(9, scale);
+                return createDecimalMaxPrecision<Decimal32>(scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal64>)
-                return createDecimal<DataTypeDecimal>(18, scale);
+                return createDecimalMaxPrecision<Decimal64>(scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
-                return createDecimal<DataTypeDecimal>(38, scale);
+                return createDecimalMaxPrecision<Decimal128>(scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal256>)
-                return createDecimal<DataTypeDecimal>(77, scale);
+                return createDecimalMaxPrecision<Decimal256>(scale);
 
             throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
@@ -1332,16 +1326,7 @@ public:
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
-
-                if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
-                    res = createDecimal<DataTypeDecimal>(9, scale);
-                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
-                    res = createDecimal<DataTypeDecimal>(18, scale);
-                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
-                    res = createDecimal<DataTypeDecimal>(38, scale);
-                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
-                    res = createDecimal<DataTypeDecimal>(77, scale);
-
+                res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
                 if (!res)
                     throw Exception("Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
             }
@@ -1642,13 +1627,13 @@ using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMono
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
 using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicity<UInt32>>;
 using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
-using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<bUInt256>>;
+using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<UInt256>>;
 using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
 using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
 using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
-using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<bInt256>>;
+using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
