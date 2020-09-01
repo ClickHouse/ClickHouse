@@ -25,15 +25,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
 }
 
-void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, const Context & context) const
+void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
-    if (helper)
-        return;
-
     const auto & args_func = ast_function->as<ASTFunction &>();
 
     if (!args_func.arguments)
@@ -65,9 +61,9 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, const Conte
     helper->startBridgeSync();
 }
 
-ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
+    assert(helper);
 
     /* Infer external table structure */
     Poco::URI columns_info_uri = helper->getColumnsInfoURI();
@@ -89,10 +85,10 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const ASTPtr & as
     return ColumnsDescription{columns};
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-    auto columns = getActualTableStructure(ast_function, context);
+    assert(helper);
+    auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StorageXDBC>(StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, context, helper);
     result->startup();
     return result;

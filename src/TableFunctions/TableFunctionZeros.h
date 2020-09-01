@@ -23,7 +23,7 @@ private:
 
     UInt64 evaluateArgument(const Context & context, ASTPtr & argument) const;
 
-    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
 };
 
 

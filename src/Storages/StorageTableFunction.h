@@ -5,9 +5,8 @@
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <Interpreters/getHeaderForProcessingStage.h>
 
-//#include <common/logger_useful.h>
-#include <Storages/StorageMerge.h>
 
 namespace DB
 {
@@ -28,27 +27,18 @@ public:
         StorageInMemoryMetadata cached_metadata;
         cached_metadata.setColumns(std::move(cached_columns));
         setInMemoryMetadata(cached_metadata);
-        //log = &Poco::Logger::get("TABLE_FUNCTION_PROXY");
     }
 
     StoragePtr getNested() const override
     {
-        //LOG_WARNING(log, "getNested()");
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested;
 
-        //LOG_WARNING(log, "getNested() creating");
         auto nested_storage = get_nested();
         nested_storage->startup();
         nested = nested_storage;
         get_nested = {};
-        return nested;
-    }
-
-    StoragePtr maybeGetNested() const
-    {
-        std::lock_guard lock{nested_mutex};
         return nested;
     }
 
@@ -63,9 +53,9 @@ public:
     void startup() override { }
     void shutdown() override
     {
-        auto storage = maybeGetNested();
-        if (storage)
-            storage->shutdown();
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->shutdown();
     }
 
     Pipe read(
@@ -80,19 +70,17 @@ public:
         String cnames;
         for (const auto & c : column_names)
             cnames += c + " ";
-        //LOG_WARNING(log, "read() {} cols: {}", QueryProcessingStage::toString(processed_stage), cnames);
         auto storage = getNested();
         auto nested_metadata = storage->getInMemoryMetadataPtr();
         auto pipe = storage->read(column_names, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
         if (!pipe.empty())
         {
+            auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
             pipe.addSimpleTransform([&](const Block & header)
             {
-                auto to = StorageMerge::getQueryHeader(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
-                //LOG_WARNING(log, "try convert \n{}\n to \n{}\n", header.dumpStructure(), to.dumpStructure());
                 return std::make_shared<ConvertingTransform>(
                        header,
-                       to,
+                       to_header,
                        ConvertingTransform::MatchColumnsMode::Name);
             });
         }
@@ -116,7 +104,8 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override
     {
-        if (maybeGetNested())
+        std::lock_guard lock{nested_mutex};
+        if (nested)
             StorageProxy::renameInMemory(new_table_id);
         else
             IStorage::renameInMemory(new_table_id);
@@ -126,7 +115,6 @@ private:
     mutable std::mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
-    //mutable Poco::Logger * log;
 };
 
 }

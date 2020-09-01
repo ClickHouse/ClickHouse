@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 
 template <bool multithreaded>
-ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) const
+ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(const Context & /*context*/) const
 {
     return ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}});
 }

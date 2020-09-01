@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Context & context) const
+void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -70,9 +70,9 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
     parsed_host_port = parseAddress(host_port, 3306);
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
+    assert(!parsed_host_port.first.empty());
     if (!pool)
         pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
@@ -121,13 +121,13 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(const ASTPtr & as
     return ColumnsDescription{columns};
 }
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
+    assert(!parsed_host_port.first.empty());
     if (!pool)
         pool.emplace(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
-    auto columns = getActualTableStructure(ast_function, context);
+    auto columns = getActualTableStructure(context);
 
     auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),

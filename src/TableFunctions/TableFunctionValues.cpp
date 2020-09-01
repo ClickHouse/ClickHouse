@@ -63,7 +63,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Context & /*context*/) const
+void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
 {
 
 
@@ -90,17 +90,14 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Cont
     structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
     return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-
-    auto columns = getActualTableStructure(ast_function, context);
+    auto columns = getActualTableStructure(context);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())

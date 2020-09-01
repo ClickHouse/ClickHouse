@@ -34,7 +34,9 @@ public:
 
     virtual bool hasStaticStructure() const { return false; }
 
-    virtual ColumnsDescription getActualTableStructure(const ASTPtr & /*ast_function*/, const Context & /*context*/) const = 0;
+    virtual void parseArguments(const ASTPtr & /*ast_function*/, const Context & /*context*/) {}
+
+    virtual ColumnsDescription getActualTableStructure(const Context & /*context*/) const = 0;
 
     /// Create storage according to the query.
     StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
@@ -44,9 +46,6 @@ public:
 private:
     virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const = 0;
     virtual const char * getStorageTypeName() const = 0;
-
-protected:
-    mutable ColumnsDescription cached_columns;
 };
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;

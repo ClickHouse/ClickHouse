@@ -31,15 +31,15 @@ protected:
 
     const char * getStorageTypeName() const override { return "S3"; }
 
-    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
-    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    mutable String filename;
-    mutable String format;
-    mutable String structure;
-    mutable String access_key_id;
-    mutable String secret_access_key;
-    mutable String compression_method = "auto";
+    String filename;
+    String format;
+    String structure;
+    String access_key_id;
+    String secret_access_key;
+    String compression_method = "auto";
 };
 
 class TableFunctionCOS : public TableFunctionS3
