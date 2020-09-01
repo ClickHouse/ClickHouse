@@ -93,7 +93,7 @@ private:
     BlockOutputStreamPtr writer;
 };
 
-class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL final : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
 {
     friend struct ext::shared_ptr_helper<StorageURL>;
 public:

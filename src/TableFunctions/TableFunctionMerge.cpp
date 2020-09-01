@@ -46,7 +46,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
     return any_table->getInMemoryMetadataPtr()->getColumns().getAllPhysical();
 }
 
-void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Context & context) const
+void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -69,19 +69,16 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Conte
     table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionMerge::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionMerge::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
     return ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)};
 }
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(ast_function, context),
+        getActualTableStructure(context),
         source_database,
         table_name_regexp,
         context);

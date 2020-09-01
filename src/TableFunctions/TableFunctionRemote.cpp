@@ -28,11 +28,8 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionRemote::prepareClusterInfo(const ASTPtr & ast_function, const Context & context) const
+void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
-    if (cluster)
-        return;
-
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -198,14 +195,13 @@ void TableFunctionRemote::prepareClusterInfo(const ASTPtr & ast_function, const 
     remote_table_id.table_name = remote_table;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    prepareClusterInfo(ast_function, context);
-
+    assert(cluster);
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(ast_function, context),
+            getActualTableStructure(context),
             ConstraintsDescription{},
             remote_table_function_ptr,
             String{},
@@ -217,7 +213,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             cluster)
         : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(ast_function, context),
+            getActualTableStructure(context),
             ConstraintsDescription{},
             remote_table_id.database_name,
             remote_table_id.table_name,
@@ -233,9 +229,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     return res;
 }
 
-ColumnsDescription TableFunctionRemote::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionRemote::getActualTableStructure(const Context & context) const
 {
-    prepareClusterInfo(ast_function, context);
+    assert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 }
 

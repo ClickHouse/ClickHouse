@@ -22,22 +22,22 @@ public:
 
     std::string getName() const override { return name; }
 
-    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
 
-    void prepareClusterInfo(const ASTPtr & ast_function, const Context & context) const;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
     std::string name;
     bool is_cluster_function;
     std::string help_message;
     bool secure;
 
-    mutable ClusterPtr cluster;
-    mutable StorageID remote_table_id = StorageID::createEmpty();
-    mutable ASTPtr remote_table_function_ptr;
+    ClusterPtr cluster;
+    StorageID remote_table_id = StorageID::createEmpty();
+    ASTPtr remote_table_function_ptr;
 };
 
 }

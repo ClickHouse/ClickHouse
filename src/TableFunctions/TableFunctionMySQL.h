@@ -27,16 +27,16 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
 
-    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
-    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    mutable std::pair<std::string, UInt16> parsed_host_port;
-    mutable String remote_database_name;
-    mutable String remote_table_name;
-    mutable String user_name;
-    mutable String password;
-    mutable bool replace_query = false;
-    mutable String on_duplicate_clause;
+    std::pair<std::string, UInt16> parsed_host_port;
+    String remote_database_name;
+    String remote_table_name;
+    String user_name;
+    String password;
+    bool replace_query = false;
+    String on_duplicate_clause;
 
     mutable std::optional<mysqlxx::Pool> pool;
 };

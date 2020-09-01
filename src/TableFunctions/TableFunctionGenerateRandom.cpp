@@ -29,11 +29,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, const Context & /*context*/) const
+void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
 {
-    if (!structure.empty())
-        return;
-
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -80,16 +77,14 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, co
         max_array_length = args[3]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 }
 
-ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-    auto columns = getActualTableStructure(ast_function, context);
+    auto columns = getActualTableStructure(context);
     auto res = StorageGenerateRandom::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);
     res->startup();
     return res;

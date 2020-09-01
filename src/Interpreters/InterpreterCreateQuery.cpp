@@ -497,9 +497,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     else if (create.as_table_function)
     {
         /// Table function without columns list.
-        auto table_function = TableFunctionFactory::instance().get(create.as_table_function->as<ASTFunction &>().name, context);
-        properties.columns = table_function->getActualTableStructure(create.as_table_function, context);
-        if (properties.columns.empty())     //FIXME
+        auto table_function = TableFunctionFactory::instance().get(create.as_table_function, context);
+        properties.columns = table_function->getActualTableStructure(context);
+        if (properties.columns.empty())     //FIXME TableFunctionFile may return empty structure for Distributed format
             return {};
     }
     else
@@ -768,9 +768,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table, properties.columns);
+        res = factory.get(create.as_table_function, context)->execute(create.as_table_function, context, create.table, properties.columns);
         res->renameInMemory({create.database, create.table, create.uuid});
     }
     else

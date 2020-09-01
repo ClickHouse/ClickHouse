@@ -20,13 +20,13 @@ private:
         const String & source, const String & format, const ColumnsDescription & columns, Context & global_context,
         const std::string & table_name, const String & compression_method) const = 0;
 
-    ColumnsDescription getActualTableStructure(const ASTPtr & ast_function, const Context & context) const override;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
 
-    void parseArguments(const ASTPtr & ast_function, const Context & context) const;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    mutable String filename;
-    mutable String format;
-    mutable String structure;
-    mutable String compression_method = "auto";
+    String filename;
+    String format;
+    String structure;
+    String compression_method = "auto";
 };
 }

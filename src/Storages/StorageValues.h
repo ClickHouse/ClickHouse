@@ -9,7 +9,7 @@ namespace DB
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
-class StorageValues : public ext::shared_ptr_helper<StorageValues>, public IStorage
+class StorageValues final : public ext::shared_ptr_helper<StorageValues>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageValues>;
 public:

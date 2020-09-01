@@ -24,11 +24,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionInput::parseArguments(const ASTPtr & ast_function, const Context & context) const
+void TableFunctionInput::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
-    if (!structure.empty())
-        return;
-
     const auto * function = ast_function->as<ASTFunction>();
 
     if (!function->arguments)
@@ -43,16 +40,14 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, const Conte
     structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionInput::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionInput::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(ast_function, context));
+    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
     return storage;
 }

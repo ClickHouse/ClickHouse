@@ -22,10 +22,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionS3::parseArguments(const ASTPtr & ast_function, const Context & context) const
+void TableFunctionS3::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
-
-
     /// Parse args
     ASTs & args_func = ast_function->children;
 
@@ -60,16 +58,13 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, const Context 
         compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionS3::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription TableFunctionS3::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
     UInt64 min_upload_part_size = context.getSettingsRef().s3_min_upload_part_size;
@@ -81,7 +76,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
             StorageID(getDatabaseName(), table_name),
             format,
             min_upload_part_size,
-            getActualTableStructure(ast_function, context),
+            getActualTableStructure(context),
             ConstraintsDescription{},
             const_cast<Context &>(context),
             compression_method);

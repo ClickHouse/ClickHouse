@@ -22,11 +22,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const Context & context) const
+void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
-    if (!filename.empty())
-        return;
-
     /// Parse args
     ASTs & args_func = ast_function->children;
 
@@ -60,18 +57,16 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const C
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
 {
-    parseArguments(ast_function, context);
-    auto columns = getActualTableStructure(ast_function, context);
+    auto columns = getActualTableStructure(context);
     StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
     storage->startup();
     return storage;
 }
 
-ColumnsDescription ITableFunctionFileLike::getActualTableStructure(const ASTPtr & ast_function, const Context & context) const
+ColumnsDescription ITableFunctionFileLike::getActualTableStructure(const Context & context) const
 {
-    parseArguments(ast_function, context);
     if (structure.empty())
     {
         assert(getName() == "file" && format == "Distributed");
