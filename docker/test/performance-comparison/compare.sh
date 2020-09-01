@@ -536,7 +536,9 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
-    where metric_name = 'server_time'
+    -- 'server_time' is rounded down to ms, which might be bad for very short queries.
+    -- Use 'client_time' instead.
+    where metric_name = 'client_time'
     order by test, query_index, metric_name
     ;
 
@@ -888,7 +890,10 @@ for log in *-err.log
 do
     test=$(basename "$log" "-err.log")
     {
-        grep -H -m2 -i '\(Exception\|Error\):[^:]' "$log" \
+        # The second grep is a heuristic for error messages like
+        # "socket.timeout: timed out".
+        grep -h -m2 -i '\(Exception\|Error\):[^:]' "$log" \
+            || grep -h -m2 -i '^[^ ]\+: ' "$log" \
             || head -2 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
