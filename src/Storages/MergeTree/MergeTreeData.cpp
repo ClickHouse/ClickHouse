@@ -3064,8 +3064,10 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
+    std::cerr << "RECOMPRESSION ENTRIES SIZE:" << recompression_ttl_entries.size() << std::endl;
     for (auto ttl_entry_it = recompression_ttl_entries.begin(); ttl_entry_it != recompression_ttl_entries.end(); ++ttl_entry_it)
     {
+        std::cerr << "RECOMPRESSION TTL SIZE:" << ttl_infos.recompression_ttl.size() << std::endl;
         auto ttl_info_it = ttl_infos.recompression_ttl.find(ttl_entry_it->result_column);
         /// Prefer TTL rule which went into action last.
         if (ttl_info_it != ttl_infos.recompression_ttl.end()
@@ -3078,7 +3080,15 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     }
 
     if (max_max_ttl)
+    {
+        std::cerr << "BEST ENTRY FOUND, MAX MAX:" << max_max_ttl << std::endl;
+        std::cerr << "RECOMPRESSION IS NULLPTR:" << (best_entry_it->recompression_codec == nullptr) << std::endl;
         return CompressionCodecFactory::instance().get(best_entry_it->recompression_codec, {});
+    }
+    else
+    {
+        std::cerr << "NOT FOUND NEW RECOMPRESSION\n";
+    }
 
     return global_context.chooseCompressionCodec(
         part_size_compressed,

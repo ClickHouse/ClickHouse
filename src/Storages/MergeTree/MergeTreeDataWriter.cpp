@@ -13,6 +13,7 @@
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
 
+#include <Parsers/queryToString.h>
 
 namespace ProfileEvents
 {
@@ -234,8 +235,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
+    time_t current_time = time(nullptr);
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
+    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, current_time);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
     auto new_data_part = data.createPart(
@@ -306,7 +308,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
+    auto compression_codec = data.getCompressionCodecForPart(0, new_data_part->ttl_infos, current_time);
+    std::cerr << "SELECTED CODEC:" << queryToString(compression_codec->getCodecDesc()) << std::endl;
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
