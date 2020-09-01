@@ -178,7 +178,7 @@ Pipe StorageMerge::read(
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
     /// What will be result structure depending on query processed stage in source tables?
-    Block header = getQueryHeader(column_names, metadata_snapshot, query_info, context, processed_stage);
+    Block header = getQueryHeader(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
 
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
@@ -431,6 +431,7 @@ void StorageMerge::alter(
 }
 
 Block StorageMerge::getQueryHeader(
+    const IStorage & storage,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -441,7 +442,7 @@ Block StorageMerge::getQueryHeader(
     {
         case QueryProcessingStage::FetchColumns:
         {
-            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
             if (query_info.prewhere_info)
             {
                 query_info.prewhere_info->prewhere_actions->execute(header);
@@ -457,7 +458,7 @@ Block StorageMerge::getQueryHeader(
             removeJoin(*query->as<ASTSelectQuery>());
 
             auto stream = std::make_shared<OneBlockInputStream>(
-                metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()));
+                metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID()));
             return InterpreterSelectQuery(query, context, stream, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
     }
