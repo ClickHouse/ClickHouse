@@ -40,6 +40,7 @@ namespace DB
 static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
 static const auto HEARTBEAT_RESCHEDULE_MS = 3000;
+static const uint32_t QUEUE_SIZE = 100000;
 
 namespace ErrorCodes
 {
@@ -89,6 +90,7 @@ StorageRabbitMQ::StorageRabbitMQ(
                     global_context.getConfigRef().getString("rabbitmq.password")))
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
+        , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
 {
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
@@ -473,7 +475,7 @@ Pipe StorageRabbitMQ::read(
     auto block_size = getMaxBlockSize();
 
     bool update_channels = false;
-    if (!event_handler->connectionRunning())
+    if (!connection->usable())
     {
         if (event_handler->loopRunning())
             deactivateTask(looping_task, false, true);
@@ -558,8 +560,8 @@ void StorageRabbitMQ::shutdown()
     wait_confirm.store(false);
 
     deactivateTask(streaming_task, true, false);
-    deactivateTask(heartbeat_task, true, false);
     deactivateTask(looping_task, true, true);
+    deactivateTask(heartbeat_task, true, false);
 
     connection->close();
 
@@ -617,7 +619,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         consumer_channel, setup_channel, event_handler, consumer_exchange, ++consumer_id,
         unique_strbase, queue_base, log, row_delimiter, hash_exchange, num_queues,
-        deadletter_exchange, stream_cancelled);
+        deadletter_exchange, queue_size, stream_cancelled);
 }
 
 
@@ -711,6 +713,10 @@ bool StorageRabbitMQ::streamToViews()
     auto column_names = block_io.out->getHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
+    /* Need to use event_handler->connectionRunning() because connection might have failed and to start error callbacks need to start
+     * the loop, so it is important not to use connection->usable() method here. And need to use connection->usable() method in cases
+     * when loop is deactivated and connection check is needed.
+     */
     if (!event_handler->loopRunning() && event_handler->connectionRunning())
         looping_task->activateAndSchedule();
 
@@ -828,9 +834,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
         if (has_settings)
-        {
             rabbitmq_settings->loadFromQuery(*args.storage_def);
-        }
 
         // Check arguments and settings
         #define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, ARG_NAME)                                           \

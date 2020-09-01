@@ -105,6 +105,7 @@ private:
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String unique_strbase; /// to make unique consumer channel id
+    uint32_t queue_size;
     String sharding_exchange, bridge_exchange, consumer_exchange;
     std::once_flag flag; /// remove exchange only once
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
@@ -125,11 +126,12 @@ private:
     void heartbeatFunc();
     void loopingFunc();
 
-    Names parseRoutingKeys(String routing_key_list);
-    AMQP::ExchangeType defineExchangeType(String exchange_type_);
+    static Names parseRoutingKeys(String routing_key_list);
+    static AMQP::ExchangeType defineExchangeType(String exchange_type_);
+    static String getTableBasedName(String name, const StorageID & table_id);
+
     Context addSettings(Context context);
     size_t getMaxBlockSize();
-    String getTableBasedName(String name, const StorageID & table_id);
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
     void initExchange();

@@ -35,6 +35,7 @@ public:
             bool hash_exchange_,
             size_t num_queues_,
             const String & deadletter_exchange_,
+            uint32_t queue_size_,
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
@@ -93,10 +94,10 @@ private:
     const bool hash_exchange;
     const size_t num_queues;
     const String deadletter_exchange;
-
     Poco::Logger * log;
     char row_delimiter;
     bool allowed = true;
+    uint32_t queue_size;
     const std::atomic<bool> & stopped;
 
     String channel_id;
