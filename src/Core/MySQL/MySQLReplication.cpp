@@ -103,15 +103,15 @@ namespace MySQLReplication
             = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
-        if (query.rfind("BEGIN", 0) == 0)
+        if (query.rfind("BEGIN", 0) == 0 || query.rfind("COMMIT") == 0)
         {
-            typ = BEGIN;
+            typ = QUERY_EVENT_MULTI_TXN_FLAG;
         }
         else if (query.rfind("XA", 0) == 0)
         {
             if (query.rfind("XA ROLLBACK", 0) == 0)
                 throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
-            typ = XA;
+            typ = QUERY_EVENT_XA;
         }
         else if (query.rfind("SAVEPOINT", 0) == 0)
         {
@@ -841,8 +841,8 @@ namespace MySQLReplication
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
                 {
-                    case BEGIN:
-                    case XA: {
+                    case QUERY_EVENT_MULTI_TXN_FLAG:
+                    case QUERY_EVENT_XA: {
                         event = std::make_shared<DryRunEvent>();
                         break;
                     }

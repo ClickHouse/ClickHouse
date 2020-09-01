@@ -801,7 +801,7 @@ inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -809,8 +809,8 @@ inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writeBigIntBi
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-inline void writeBinary(const bUInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
-inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const Int256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
@@ -835,13 +835,13 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
-inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const UInt256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
+inline void writeText(const Int256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
 
 template <typename T>
 String decimalFractional(const T & x, UInt32 scale)
 {
-    if constexpr (std::is_same_v<T, bInt256>)
+    if constexpr (std::is_same_v<T, Int256>)
     {
         static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
 
@@ -870,15 +870,14 @@ String decimalFractional(const T & x, UInt32 scale)
 template <typename T>
 void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
 {
-    if (x.value < 0)
+    T part = DecimalUtils::getWholePart(x, scale);
+
+    if (x.value < 0 && part == 0)
     {
-        x.value *= -1;
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    T part = DecimalUtils::getWholePart(x, scale);
-
-    if constexpr (std::is_same_v<T, bInt256>)
+    if constexpr (std::is_same_v<T, Int256>)
         writeText(part, ostr);
     else
         writeIntText(part, ostr);
@@ -920,14 +919,14 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
-inline void writeQuoted(const bUInt256 & x, WriteBuffer & buf)
+inline void writeQuoted(const UInt256 & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeText(x, buf);
     writeChar('\'', buf);
 }
 
-inline void writeQuoted(const bInt256 & x, WriteBuffer & buf)
+inline void writeQuoted(const Int256 & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeText(x, buf);

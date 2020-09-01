@@ -35,6 +35,8 @@ public:
             std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }
 
+    bool supportsParallelInsert() const override { return true; }
+
     BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &) override
     {
         return std::make_shared<NullBlockOutputStream>(metadata_snapshot->getSampleBlock());

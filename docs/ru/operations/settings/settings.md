@@ -520,31 +520,6 @@ ClickHouse использует этот параметр при чтении д
 
 Значение по умолчанию: 0.
 
-## network_compression_method {#network_compression_method}
-
-Задает метод сжатия данных, используемый при обмене данными между серверами и при обмене между сервером и [clickhouse-client](../../interfaces/cli.md).
-
-Возможные значения:
-
--   `LZ4` — устанавливает метод сжатия LZ4.
--   `ZSTD` — устанавливает метод сжатия ZSTD.
-
-Значение по умолчанию: `LZ4`.
-
-См. также:
-
--   [network_zstd_compression_level](#network_zstd_compression_level)
-
-## network_zstd_compression_level {#network_zstd_compression_level}
-
-Регулирует уровень сжатия ZSTD. Используется только тогда, когда [network_compression_method](#network_compression_method) имеет значение `ZSTD`.
-
-Возможные значения:
-
--   Положительное целое число от 1 до 15.
-
-Значение по умолчанию: `1`.
-
 ## log\_queries {#settings-log-queries}
 
 Установка логирования запроса.
@@ -555,6 +530,60 @@ ClickHouse использует этот параметр при чтении д
 
 ``` text
 log_queries=1
+```
+
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` минимальный уровень логирования.
+
+Возможные значения:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Значение по умолчанию: `QUERY_START`.
+
+Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` минимальный уровень логирования.
+
+Возможные значения:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Значение по умолчанию: `QUERY_START`.
+
+Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+Задаёт минимальный уровень логирования в `query_log`.
+
+Возможные значения:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Значение по умолчанию: `QUERY_START`.
+
+Можно использовать для ограничения того, какие объекты будут записаны в `query_log`, например, если вас интересуют ошибки, тогда вы можете использовать `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
 ## log\_query\_threads {#settings-log-query-threads}
@@ -571,7 +600,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-Формировать блоки указанного размера (в количестве строк), при вставке в таблицу.
+Формировать блоки указанного размера, при вставке в таблицу.
 Эта настройка действует только в тех случаях, когда сервер сам формирует такие блоки.
 Например, при INSERT-е через HTTP интерфейс, сервер парсит формат данных, и формирует блоки указанного размера.
 А при использовании clickhouse-client, клиент сам парсит данные, и настройка max\_insert\_block\_size на сервере не влияет на размер вставляемых блоков.
@@ -946,7 +975,6 @@ SELECT area/period FROM account_orders FORMAT JSON;
                         "type": "Float64"
                 }
         ],
-
         "data":
         [
                 {
@@ -959,9 +987,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
                         "divide(area, period)": null
                 }
         ],
-
         "rows": 3,
-
         "statistics":
         {
                 "elapsed": 0.003648093,
@@ -982,7 +1008,6 @@ SELECT area/period FROM account_orders FORMAT JSON;
                         "type": "Float64"
                 }
         ],
-
         "data":
         [
                 {
@@ -995,9 +1020,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
                         "divide(area, period)": "-inf"
                 }
         ],
-
         "rows": 3,
-
         "statistics":
         {
                 "elapsed": 0.000070241,
@@ -1006,6 +1029,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
         }
 }
 ```
+
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
@@ -1220,7 +1244,7 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0
 
-## force\_optimize\_skip\_unused\_shards {#force-optimize-skip-unused-shards}
+## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
 Разрешает или запрещает выполнение запроса, если настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards) включена, а пропуск неиспользуемых шардов невозможен. Если данная настройка включена и пропуск невозможен, ClickHouse генерирует исключение.
 
@@ -1234,19 +1258,30 @@ ClickHouse генерирует исключение
 
 ## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
 
-Контролирует настройку [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
+Контролирует настройку [`force_optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) (поэтому все еще требует `optimize_skip_unused_shards`) в зависимости от вложенности распределенного запроса (когда у вас есть `Distributed` таблица которая смотрит на другую `Distributed` таблицу).
 
 Возможные значения:
 
--   0 - Disabled, `force_optimize_skip_unused_shards` works on all levels.
--   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
--   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
+-   0 - Выключена, `force_optimize_skip_unused_shards` работает всегда.
+-   1 — Включает `force_optimize_skip_unused_shards` только для 1-ого уровня вложенности.
+-   2 — Включает `force_optimize_skip_unused_shards` для 1-ого и 2-ого уровня вложенности.
+
+Значение по умолчанию: 0
+
+## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+
+Сбрасывает [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) для вложенных `Distributed` таблиц.
+
+Возможные значения:
+
+-   1 — Включена.
+-   0 — Выключена.
 
 Значение по умолчанию: 0
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-Включает или отключает генерирование исключения в в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) не выполняет мёрж.
+Включает или отключает генерирование исключения в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) не выполняет мёрж.
 
 По умолчанию, `OPTIMIZE` завершается успешно и в тех случаях, когда он ничего не сделал. Настройка позволяет отделить подобные случаи и включает генерирование исключения с поясняющим сообщением.
 
@@ -1367,7 +1402,7 @@ Default value: 0.
 -   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
 -   System table [trace\_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
 
-## background_pool_size {#background_pool_size}
+## background\_pool\_size {#background_pool_size}
 
 Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пулл, тем ниже нагрузка на CPU и диск, при этом фоновые процессы замедляются, что может повлиять на скорость выполнения запроса.
 
@@ -1381,7 +1416,7 @@ Default value: 0.
 
 Включает параллельную обработку распределённых запросов `INSERT ... SELECT`.
 
-Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде. 
+Если при выполнении запроса `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` оказывается, что обе таблицы находятся в одном кластере, то независимо от того [реплицируемые](../../engines/table-engines/mergetree-family/replication.md) они или нет, запрос  выполняется локально на каждом шарде.
 
 Допустимые значения:
 
@@ -1431,7 +1466,7 @@ Default value: 0.
 
 Значение по умолчанию: 0.
 
-**См. также:** 
+**См. также:**
 
 -   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md)
 
@@ -1448,7 +1483,7 @@ Possible values:
 
 Значение по умолчанию: 0.
 
-**Пример** 
+**Пример**
 
 Рассмотрим таблицу `null_in`:
 
@@ -1499,7 +1534,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 └──────┴───────┘
 ```
 
-**См. также** 
+**См. также**
 
 -   [Обработка значения NULL в операторе IN](../../sql-reference/operators/in.md#in-null-processing)
 
@@ -1610,8 +1645,8 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Возможные значения:
 
--   0 - мутации выполняются асинхронно. 
--   1 - запрос ждет завершения всех мутаций на текущем сервере. 
+-   0 - мутации выполняются асинхронно.
+-   1 - запрос ждет завершения всех мутаций на текущем сервере.
 -   2 - запрос ждет завершения всех мутаций на всех репликах (если они есть).
 
 Значение по умолчанию: `0`.
@@ -1621,5 +1656,26 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 -   [Синхронность запросов ALTER](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [Мутации](../../sql-reference/statements/alter/index.md#mutations)
 
+## ttl_only_drop_parts {#ttl_only_drop_parts}
+
+Для таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) включает или отключает  возможность полного удаления кусков данных, в которых все записи устарели. 
+
+Когда настройка `ttl_only_drop_parts` отключена (т.е. по умолчанию), сервер лишь удаляет устаревшие записи в соответствии с их временем жизни (TTL). 
+
+Когда настройка `ttl_only_drop_parts` включена, сервер целиком удаляет куски данных, в которых все записи устарели. 
+
+Удаление целых кусков данных вместо удаления отдельных записей позволяет устанавливать меньший таймаут `merge_with_ttl_timeout` и уменьшает нагрузку на сервер, что способствует росту производительности.
+
+Возможные значения:
+
+-   0 — Возможность удаления целых кусков данных отключена.
+-   1 — Возможность удаления целых кусков данных включена.
+
+Значение по умолчанию: `0`.
+
+**См. также** 
+
+-   [Секции и настройки запроса CREATE TABLE](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (настройка `merge_with_ttl_timeout`)
+-   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

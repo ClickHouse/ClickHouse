@@ -30,6 +30,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 
+namespace
+{
+const UInt64 PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL = 2;
+}
+
 
 namespace DB
 {
@@ -192,6 +197,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (storage_src && storage_dst && storage_src->cluster_name == storage_dst->cluster_name)
         {
             is_distributed_insert_select = true;
+
+            if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
+            {
+                new_query->table_id = StorageID(storage_dst->getRemoteDatabaseName(), storage_dst->getRemoteTableName());
+            }
 
             const auto & cluster = storage_src->getCluster();
             const auto & shards_info = cluster->getShardsInfo();
