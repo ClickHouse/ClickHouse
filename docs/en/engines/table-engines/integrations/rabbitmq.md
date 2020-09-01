@@ -7,7 +7,7 @@ toc_title: RabbitMQ
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
-RabbitMQ lets you:
+`RabbitMQ` lets you:
 
 -   Publish or subscribe to data flows.
 -   Process streams as they become available.
@@ -44,7 +44,7 @@ Optional parameters:
 -   `rabbitmq_routing_key_list` – A comma-separated list of routing keys.
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
--   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient. Single queue can contain up to 50K messages at the same time.
+-   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient. A single queue can contain up to 50K messages at the same time.
 -   `rabbitmq_transactional_channel` – Wrap insert queries in transactions. Default: `0`.
 
 Required configuration:
@@ -86,13 +86,13 @@ There can be no more than one exchange per table. One exchange can be shared bet
 
 Exchange type options:
 
--   `direct` - Routing is based on exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can eqaul any of them.
+-   `direct` - Routing is based on the exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can equal any of them.
 -   `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
 -   `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
 -   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
--   `consistent-hash` - Data is evenly distributed between all bound tables (where exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+-   `consistent-hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
-If exchange type is not specified, then default is `fanout` and routing keys for data publishing must be randomized in range `[1, num_consumers]` for every message/batch (or in range `[1, num_consumers * num_queues]` if `rabbitmq_num_queues` is set). This table configuration works quicker then any other, especially when `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are set.
+If exchange type is not specified, then default is `fanout` and routing keys for data publishing must be randomized in range `[1, num_consumers]` for every message/batch (or in range `[1, num_consumers * num_queues]` if `rabbitmq_num_queues` is set). This table configuration works quicker than any other, especially when `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are set.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` parameters are specified along with `rabbitmq_exchange_type`, then:
 
