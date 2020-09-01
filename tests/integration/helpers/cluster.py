@@ -111,6 +111,7 @@ class ClickHouseCluster:
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
+        self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG")
 
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
@@ -165,7 +166,7 @@ class ClickHouseCluster:
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
-                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
+                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
         """Add an instance to the cluster.
@@ -183,13 +184,16 @@ class ClickHouseCluster:
         if name in self.instances:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
+        if tag is None:
+            tag = self.docker_base_tag
+
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs or [], user_configs or [], macros or {},
             with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
+            env_variables=env_variables or {}, image=image, tag=tag, stay_alive=stay_alive, ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
 
@@ -704,7 +708,7 @@ DOCKER_COMPOSE_TEMPLATE = '''
 version: '2.3'
 services:
     {name}:
-        image: {image}
+        image: {image}:{tag}
         hostname: {hostname}
         volumes:
             - {configs_dir}:/etc/clickhouse-server/
@@ -739,7 +743,7 @@ class ClickHouseInstance:
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
-            image="yandex/clickhouse-integration-test",
+            image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
         self.name = name
@@ -783,6 +787,7 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0  # 20 sec
         self.image = image
+        self.tag = tag
         self.stay_alive = stay_alive
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
@@ -1160,6 +1165,7 @@ class ClickHouseInstance:
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
+                tag=self.tag,
                 name=self.name,
                 hostname=self.hostname,
                 binary_volume=binary_volume,
