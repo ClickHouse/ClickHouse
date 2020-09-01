@@ -45,7 +45,7 @@ Optional parameters:
 -   `rabbitmq_row_delimiter` – Delimiter character, which ends the message.
 -   `rabbitmq_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 -   `rabbitmq_num_queues` – The number of queues per consumer. Default: `1`. Specify more queues if the capacity of one queue per consumer is insufficient. A single queue can contain up to 50K messages at the same time.
--   `rabbitmq_transactional_channel` – Wrap insert queries in transactions. Default: `0`.
+-   `rabbitmq_transactional_channel` – Wrap `INSERT` queries in transactions. Default: `0`.
 
 Required configuration:
 
@@ -72,7 +72,7 @@ Example:
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a RabbitMQ consumer and consider it a data stream.
 2.  Create a table with the desired structure.
