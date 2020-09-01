@@ -220,6 +220,8 @@ MergeTreeData::MergeTreeData(
         format_version = min_format_version;
         auto buf = version_file.second->writeFile(version_file.first);
         writeIntText(format_version.toUnderType(), *buf);
+        if (global_context.getSettingsRef().fsync_metadata)
+            buf->sync();
     }
     else
     {
