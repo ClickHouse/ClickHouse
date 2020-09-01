@@ -10,6 +10,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 #include <Common/hex.h>
 
 namespace DB
@@ -60,6 +61,8 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"default_compression_codec",                   std::make_shared<DataTypeString>()},
     }
     )
 {
@@ -169,6 +172,8 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insert(min_array);
             columns_[i++]->insert(max_array);
         }
+
+        columns_[i++]->insert(queryToString(part->default_codec->getCodecDesc()));
     }
 }
 
