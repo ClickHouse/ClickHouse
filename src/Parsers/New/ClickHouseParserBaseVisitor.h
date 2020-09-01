@@ -41,6 +41,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -301,23 +305,11 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitValueExprList(ClickHouseParser::ValueExprListContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitValueExprLiteral(ClickHouseParser::ValueExprLiteralContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitValueExprTuple(ClickHouseParser::ValueExprTupleContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitValueExprArray(ClickHouseParser::ValueExprArrayContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -438,10 +430,6 @@ public:
   }
 
   virtual antlrcpp::Any visitColumnExprAsterisk(ClickHouseParser::ColumnExprAsteriskContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual antlrcpp::Any visitColumnParamList(ClickHouseParser::ColumnParamListContext *ctx) override {
     return visitChildren(ctx);
   }
 

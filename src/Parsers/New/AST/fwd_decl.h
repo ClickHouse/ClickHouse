@@ -46,11 +46,10 @@ class TableElementExpr;
 class TableExpr;
 class TableIdentifier;
 class TTLExpr;
-class ValueExpr;
 
 using ColumnExprList = List<ColumnExpr>;
 using ColumnNameList = List<Identifier>;
-using ColumnParamList = List<Literal>;
+using ColumnParamList = ColumnExprList;
 using ColumnTypeExprList = List<ColumnTypeExpr>;
 using EnumValueList = List<EnumValue>;
 using OrderExprList = List<OrderExpr>;
@@ -60,6 +59,5 @@ using SettingExprList = List<SettingExpr>;
 using TableArgList = List<TableArgExpr>;
 using TableElementList = List<TableElementExpr>;
 using TTLExprList = List<TTLExpr>;
-using ValueExprList = List<ValueExpr>;
 
 }

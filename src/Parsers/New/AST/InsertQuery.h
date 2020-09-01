@@ -9,7 +9,7 @@ namespace DB::AST
 class ValuesClause : public INode
 {
     public:
-        static PtrTo<ValuesClause> createValues(PtrTo<ValueExprList> list);
+        static PtrTo<ValuesClause> createValues(PtrTo<ColumnExprList> list);
         static PtrTo<ValuesClause> createSelect(PtrTo<SelectUnionQuery> query);
 
     private:

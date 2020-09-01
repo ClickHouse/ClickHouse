@@ -1,8 +1,8 @@
 #include <Parsers/New/AST/InsertQuery.h>
 
+#include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
-#include <Parsers/New/AST/ValueExpr.h>
 
 #include <Parsers/New/ParseTreeVisitor.h>
 
@@ -11,7 +11,7 @@ namespace DB::AST
 {
 
 // static
-PtrTo<ValuesClause> ValuesClause::createValues(PtrTo<ValueExprList> list)
+PtrTo<ValuesClause> ValuesClause::createValues(PtrTo<ColumnExprList> list)
 {
     return PtrTo<ValuesClause>(new ValuesClause(ClauseType::VALUES, {list->begin(), list->end()}));
 }
@@ -46,7 +46,7 @@ antlrcpp::Any ParseTreeVisitor::visitValuesClause(ClickHouseParser::ValuesClause
 {
     if (ctx->VALUES())
     {
-        auto list = std::make_shared<ValueExprList>();
+        auto list = std::make_shared<ColumnExprList>();
         for (auto * expr : ctx->valueTupleExpr()) list->append(visit(expr));
         return ValuesClause::createValues(list);
     }
@@ -56,7 +56,12 @@ antlrcpp::Any ParseTreeVisitor::visitValuesClause(ClickHouseParser::ValuesClause
 
 antlrcpp::Any ParseTreeVisitor::visitValueTupleExpr(ClickHouseParser::ValueTupleExprContext *ctx)
 {
-    return ValueExpr::createTuple(visit(ctx->valueExprList()));
+    // TODO: copy-paste from |visitColumnExprTuple()|,
+    //       should be removed once proper INSERT VALUES parsers are implemented.
+
+    auto name = std::make_shared<Identifier>("tuple");
+    auto args = visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>();
+    return ColumnExpr::createFunction(name, nullptr, args);
 }
 
 }

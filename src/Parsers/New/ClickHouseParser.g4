@@ -23,18 +23,20 @@ query
     | selectUnionStmt
     | setStmt
     | showStmt
+    | systemStmt
     | useStmt
     ;
 
 // ALTER statement
 
 alterStmt
-    : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*  # AlterTableStmt
-    | ALTER TABLE tableIdentifier alterPartitionClause                        # AlterPartitionStmt
+    : ALTER TABLE tableIdentifier alterTableClause (COMMA alterTableClause)*          # AlterTableStmt
+    | ALTER TABLE tableIdentifier alterPartitionClause (COMMA alterPartitionClause)*  # AlterPartitionStmt
     ;
 
 alterTableClause
     : ADD COLUMN (IF NOT EXISTS)? tableColumnDfnt (AFTER nestedIdentifier)?  # AlterTableAddClause
+    | CLEAR COLUMN (IF EXISTS)? nestedIdentifier IN partitionClause          # AlterTableClearClause
     | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL            # AlterTableCommentClause
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                              # AlterTableDropClause
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableModifyClause
@@ -113,7 +115,7 @@ valuesClause
     | selectUnionStmt
     ;
 
-valueTupleExpr: LPAREN valueExprList RPAREN;  // same as ValueExprTuple
+valueTupleExpr: LPAREN columnExprList RPAREN; // same as ColumnExprTuple
 
 // OPTIMIZE statement
 
@@ -199,26 +201,23 @@ showStmt
     | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
     ;
 
+// SYSTEM statements
+
+systemStmt
+    : SYSTEM SYNC REPLICA tableIdentifier  # SystemSyncStmt
+    ;
+
 // USE statement
 
 useStmt: USE databaseIdentifier;
 
 
 
-// Values
-
-valueExprList: valueExpr (COMMA valueExpr)*;
-valueExpr
-    : literal                           # ValueExprLiteral
-    | valueTupleExpr                    # ValueExprTuple
-    | LBRACKET valueExprList? RBRACKET  # ValueExprArray
-    ;
-
 // Columns
 
 columnTypeExpr
     : identifier                                                                             # ColumnTypeExprSimple   // UInt64
-    | identifier LPAREN columnParamList RPAREN                                               # ColumnTypeExprParam    // FixedString(N)
+    | identifier LPAREN columnExprList RPAREN                                                # ColumnTypeExprParam    // FixedString(N)
     | identifier LPAREN enumValue (COMMA enumValue)* RPAREN                                  # ColumnTypeExprEnum     // Enum
     | identifier LPAREN columnTypeExpr (COMMA columnTypeExpr)* RPAREN                        # ColumnTypeExprComplex  // Array, Tuple
     | identifier LPAREN identifier columnTypeExpr (COMMA identifier columnTypeExpr)* RPAREN  # ColumnTypeExprNested   // Nested
@@ -236,7 +235,7 @@ columnExpr
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
     | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
-    | identifier (LPAREN columnParamList? RPAREN)? LPAREN columnArgList? RPAREN      # ColumnExprFunction
+    | identifier (LPAREN columnExprList? RPAREN)? LPAREN columnArgList? RPAREN       # ColumnExprFunction
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
     | columnExpr DOT INTEGER_LITERAL                                                 # ColumnExprTupleAccess
     | unaryOp columnExpr                                                             # ColumnExprUnaryOp
@@ -253,7 +252,6 @@ columnExpr
     | columnIdentifier                                                               # ColumnExprIdentifier
     | literal                                                                        # ColumnExprLiteral
     ;
-columnParamList: literal (COMMA literal)*;
 columnArgList: columnArgExpr (COMMA columnArgExpr)*;
 columnArgExpr: columnLambdaExpr | columnExpr;
 columnLambdaExpr:
@@ -300,12 +298,13 @@ literal
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE
     : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST | CHECK
-    | CLUSTER | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC | DESCENDING | DESCRIBE
-    | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP | HAVING
-    | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL
+    | CLEAR | CLUSTER | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC | DESCENDING
+    | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP
+    | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL
     | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION
-    | PREWHERE | PRIMARY | QUARTER | RENAME | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | TABLE | TABLES | TEMPORARY | THEN
-    | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
+    | PREWHERE | PRIMARY | QUARTER | RENAME | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | SYNC | SYSTEM | TABLE
+    | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH
+    | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.

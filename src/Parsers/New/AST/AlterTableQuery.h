@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/New/AST/DDLQuery.h>
+#include "Parsers/New/AST/fwd_decl.h"
 
 
 namespace DB::AST
@@ -10,6 +11,7 @@ class AlterTableClause : public INode
 {
     public:
         static PtrTo<AlterTableClause> createAdd(bool if_not_exists, PtrTo<TableElementExpr> element, PtrTo<Identifier> after);
+        static PtrTo<AlterTableClause> createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionExprList> clause);
         static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal);
         static PtrTo<AlterTableClause> createDrop(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
@@ -18,6 +20,7 @@ class AlterTableClause : public INode
         enum class ClauseType
         {
             ADD,
+            CLEAR,
             COMMENT,
             DROP,
             MODIFY,

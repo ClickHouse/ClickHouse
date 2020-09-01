@@ -74,7 +74,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprSimple(ClickHouseParser::Colu
 
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprParam(ClickHouseParser::ColumnTypeExprParamContext *ctx)
 {
-    return ColumnTypeExpr::createParam(visit(ctx->identifier()), visit(ctx->columnParamList()));
+    return ColumnTypeExpr::createParam(visit(ctx->identifier()), visit(ctx->columnExprList()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnTypeExprEnum(ClickHouseParser::ColumnTypeExprEnumContext *ctx)

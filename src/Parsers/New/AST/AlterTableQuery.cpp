@@ -20,6 +20,14 @@ PtrTo<AlterTableClause> AlterTableClause::createAdd(bool if_not_exists, PtrTo<Ta
 }
 
 // static
+PtrTo<AlterTableClause> AlterTableClause::createClear(bool if_exists, PtrTo<Identifier> identifier, PtrTo<PartitionExprList> clause)
+{
+    PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::CLEAR, {identifier, clause}));
+    query->if_exists = if_exists;
+    return query;
+}
+
+// static
 PtrTo<AlterTableClause> AlterTableClause::createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal)
 {
     PtrTo<AlterTableClause> query(new AlterTableClause(ClauseType::COMMENT, {identifier, literal}));
@@ -47,6 +55,7 @@ PtrTo<AlterTableClause> AlterTableClause::createModify(bool if_exists, PtrTo<Tab
 AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : clause_type(type)
 {
     children = exprs;
+
     (void)clause_type; // TODO
 }
 
@@ -67,6 +76,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableAddClause(ClickHouseParser::Alter
 {
     auto after = ctx->AFTER() ? visit(ctx->nestedIdentifier()).as<PtrTo<Identifier>>() : nullptr;
     return AlterTableClause::createAdd(!!ctx->IF(), visit(ctx->tableColumnDfnt()), after);
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext *ctx)
+{
+    return AlterTableClause::createClear(!!ctx->IF(), visit(ctx->nestedIdentifier()), visit(ctx->partitionClause()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx)

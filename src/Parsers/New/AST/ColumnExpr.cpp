@@ -303,10 +303,9 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprExtract(ClickHouseParser::ColumnE
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *ctx)
 {
-    return ColumnExpr::createFunction(
-        visit(ctx->identifier()),
-        ctx->columnParamList() ? visit(ctx->columnParamList()).as<PtrTo<ColumnParamList>>() : nullptr,
-        ctx->columnArgList() ? visit(ctx->columnArgList()).as<PtrTo<ColumnExprList>>() : nullptr);
+    auto params = ctx->columnExprList() ? visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>() : nullptr;
+    auto args = ctx->columnArgList() ? visit(ctx->columnArgList()).as<PtrTo<ColumnExprList>>() : nullptr;
+    return ColumnExpr::createFunction(visit(ctx->identifier()), params, args);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnExprIdentifier(ClickHouseParser::ColumnExprIdentifierContext *ctx)
@@ -378,7 +377,7 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTrim(ClickHouseParser::ColumnExpr
 
     args->append(visit(ctx->columnExpr()));
     // TODO: params->append(Literal::createString(???));
-    params->append(Literal::createString(ctx->STRING_LITERAL()));
+    params->append(ColumnExpr::createLiteral(Literal::createString(ctx->STRING_LITERAL())));
 
     return ColumnExpr::createFunction(name, params, args);
 }
@@ -387,7 +386,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprTuple(ClickHouseParser::ColumnExp
 {
     auto name = std::make_shared<Identifier>("tuple");
     auto args = visit(ctx->columnExprList()).as<PtrTo<ColumnExprList>>();
-
     return ColumnExpr::createFunction(name, nullptr, args);
 }
 
@@ -417,13 +415,6 @@ antlrcpp::Any ParseTreeVisitor::visitColumnLambdaExpr(ClickHouseParser::ColumnLa
     auto params = std::make_shared<List<Identifier, ','>>();
     for (auto * id : ctx->identifier()) params->append(visit(id));
     return ColumnExpr::createLambda(params, visit(ctx->columnExpr()));
-}
-
-antlrcpp::Any ParseTreeVisitor::visitColumnParamList(ClickHouseParser::ColumnParamListContext *ctx)
-{
-    auto param_list = std::make_shared<ColumnParamList>();
-    for (auto* param : ctx->literal()) param_list->append(visit(param));
-    return param_list;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitColumnsExprAsterisk(ClickHouseParser::ColumnsExprAsteriskContext *ctx)

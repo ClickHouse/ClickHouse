@@ -21,6 +21,7 @@
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/SetQuery.h>
 #include <Parsers/New/AST/ShowQuery.h>
+#include <Parsers/New/AST/SystemQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
 #include <Parsers/New/AST/UseQuery.h>
 
@@ -72,6 +73,7 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(SelectUnionQuery)
     TRY_POINTER_CAST(SetQuery)
     TRY_POINTER_CAST(ShowCreateTableQuery)
+    TRY_POINTER_CAST(SystemQuery)
     TRY_POINTER_CAST(UseQuery)
 #undef TRY_POINTER_CAST
 
@@ -80,7 +82,9 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
 
 antlrcpp::Any ParseTreeVisitor::visitAlterPartitionStmt(ClickHouseParser::AlterPartitionStmtContext *ctx)
 {
-    return std::make_shared<AlterPartitionQuery>(visit(ctx->tableIdentifier()), visit(ctx->alterPartitionClause()));
+    auto list= std::make_shared<List<AlterPartitionClause>>();
+    for (auto * clause : ctx->alterPartitionClause()) list->append(visit(clause));
+    return std::make_shared<AlterPartitionQuery>(visit(ctx->tableIdentifier()), list);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx)
@@ -215,6 +219,11 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
     select_stmt->setLimitClause(ctx->limitClause() ? visit(ctx->limitClause()).as<PtrTo<LimitClause>>() : nullptr);
 
     return PtrTo<SelectUnionQuery>(new SelectUnionQuery({select_stmt}));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx)
+{
+    return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
 }
 
 antlrcpp::Any ParseTreeVisitor::visitUseStmt(ClickHouseParser::UseStmtContext *ctx)

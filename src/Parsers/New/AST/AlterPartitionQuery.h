@@ -25,7 +25,7 @@ class AlterPartitionClause : public INode
 class AlterPartitionQuery : public DDLQuery
 {
     public:
-        AlterPartitionQuery(PtrTo<TableIdentifier> identifier, PtrTo<AlterPartitionClause> clause);
+        AlterPartitionQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterPartitionClause>> clauses);
 };
 
 }

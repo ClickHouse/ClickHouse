@@ -21,10 +21,10 @@ AlterPartitionClause::AlterPartitionClause(ClauseType type, PtrList exprs) : cla
     (void)clause_type; // TODO
 }
 
-AlterPartitionQuery::AlterPartitionQuery(PtrTo<TableIdentifier> identifier, PtrTo<AlterPartitionClause> clause)
+AlterPartitionQuery::AlterPartitionQuery(PtrTo<TableIdentifier> identifier, PtrTo<List<AlterPartitionClause>> clauses)
 {
     children.push_back(identifier);
-    children.push_back(clause);
+    children.push_back(clauses);
 }
 
 }

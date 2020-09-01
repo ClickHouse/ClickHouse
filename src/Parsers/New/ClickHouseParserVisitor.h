@@ -32,6 +32,8 @@ public:
 
     virtual antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *context) = 0;
@@ -162,15 +164,9 @@ public:
 
     virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *context) = 0;
-
-    virtual antlrcpp::Any visitValueExprList(ClickHouseParser::ValueExprListContext *context) = 0;
-
-    virtual antlrcpp::Any visitValueExprLiteral(ClickHouseParser::ValueExprLiteralContext *context) = 0;
-
-    virtual antlrcpp::Any visitValueExprTuple(ClickHouseParser::ValueExprTupleContext *context) = 0;
-
-    virtual antlrcpp::Any visitValueExprArray(ClickHouseParser::ValueExprArrayContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnTypeExprSimple(ClickHouseParser::ColumnTypeExprSimpleContext *context) = 0;
 
@@ -231,8 +227,6 @@ public:
     virtual antlrcpp::Any visitColumnExprFunction(ClickHouseParser::ColumnExprFunctionContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnExprAsterisk(ClickHouseParser::ColumnExprAsteriskContext *context) = 0;
-
-    virtual antlrcpp::Any visitColumnParamList(ClickHouseParser::ColumnParamListContext *context) = 0;
 
     virtual antlrcpp::Any visitColumnArgList(ClickHouseParser::ColumnArgListContext *context) = 0;
 
