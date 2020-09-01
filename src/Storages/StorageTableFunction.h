@@ -37,6 +37,7 @@ public:
 
         auto nested_storage = get_nested();
         nested_storage->startup();
+        nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
         return nested;

@@ -58,6 +58,7 @@ SRCS(
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
     getClusterName.cpp
+    getHeaderForProcessingStage.cpp
     getTableExpressions.cpp
     HashJoin.cpp
     IdentifierSemantic.cpp
