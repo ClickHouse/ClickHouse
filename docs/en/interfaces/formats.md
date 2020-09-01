@@ -26,7 +26,10 @@ The supported formats are:
 | [VerticalRaw](#verticalraw)                                     | ✗     | ✔      |
 | [JSON](#json)                                                   | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                     | ✗     | ✔      |
+| [JSONStrings](#jsonstrings)                                     | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                     | ✔     | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                       | ✔     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                       | ✔     | ✔      |
 | [TSKV](#tskv)                                                   | ✔     | ✔      |
 | [Pretty](#pretty)                                               | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                 | ✗     | ✔      |
@@ -470,7 +473,7 @@ See also the [JSONEachRow](#jsoneachrow) format.
 
 ## JSONCompact {#jsoncompact}
 
-Differs from JSON only in that data rows are output in arrays, not in objects.
+Differs from JSON only in that data rows are output in arrays of any element type, not in objects.
 
 Example:
 
@@ -514,17 +517,26 @@ Example:
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 See also the `JSONEachRow` format.
 
-## JSONEachRow {#jsoneachrow}
+## JSONStrings {#jsonstrings}
 
-When using this format, ClickHouse outputs rows as separated, newline-delimited JSON objects, but the data as a whole is not valid JSON.
+Differs from JSON and JSONCompact only in that data rows are output in arrays of strings.
+
+This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+See also the `JSONEachRow` format.
+
+## JSONEachRow {#jsoneachrow}
+## JSONCompactEachRow {#jsoncompacteachrow}
+## JSONStringsEachRow {#jsonstringseachrow}
+
+When using these formats, ClickHouse outputs rows as separated, newline-delimited JSON values, but the data as a whole is not valid JSON.
 
 ``` json
-{"SearchPhrase":"curtain designs","count()":"1064"}
-{"SearchPhrase":"baku","count()":"1000"}
-{"SearchPhrase":"","count()":"8267016"}
+{"some_int":42,"some_str":"hello","some_tuple":[1,"a"]} // JSONEachRow
+[42,"hello",[1,"a"]] // JSONCompactEachRow
+["42","hello","(2,'a')"] // JSONStringsEachRow
 ```
 
-When inserting the data, you should provide a separate JSON object for each row.
+When inserting the data, you should provide a separate JSON value for each row.
 
 ### Inserting Data {#inserting-data}
 
