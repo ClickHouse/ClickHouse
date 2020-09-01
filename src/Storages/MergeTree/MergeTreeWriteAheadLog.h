@@ -3,6 +3,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Disks/IDisk.h>
 
 namespace DB
@@ -31,7 +32,7 @@ public:
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
     constexpr static auto DEFAULT_WAL_FILE_NAME = "wal.bin";
 
-    MergeTreeWriteAheadLog(const MergeTreeData & storage_, const DiskPtr & disk_,
+    MergeTreeWriteAheadLog(MergeTreeData & storage_, const DiskPtr & disk_,
         const String & name = DEFAULT_WAL_FILE_NAME);
 
     void addPart(const Block & block, const String & part_name);
@@ -44,6 +45,7 @@ public:
 private:
     void init();
     void rotate(const std::lock_guard<std::mutex> & lock);
+    void sync(const std::lock_guard<std::mutex> & lock);
 
     const MergeTreeData & storage;
     DiskPtr disk;
@@ -55,6 +57,12 @@ private:
 
     Int64 min_block_number = std::numeric_limits<Int64>::max();
     Int64 max_block_number = -1;
+
+    BackgroundSchedulePool & pool;
+    BackgroundSchedulePoolTaskHolder sync_task;
+
+    size_t bytes_at_last_sync = 0;
+    bool sync_scheduled = false;
 
     mutable std::mutex write_mutex;
 };
