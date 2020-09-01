@@ -360,6 +360,97 @@ Extracts a fragment of a string using a regular expression. If ‘haystack’ do
 
 Extracts all the fragments of a string using a regular expression. If ‘haystack’ doesn’t match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
 
+## extractAllGroupsHorizontal {#extractallgroups-horizontal}
+
+Matches all groups of the `haystack` string using the `pattern` regular expression. 
+
+The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is throwed. 
+
+The function returns an array of arrays, where the first array includes all expressions matching the first group, the second array - matching the second group, etc. 
+
+If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is returned. 
+
+**Syntax** 
+
+``` sql
+extractAllGroupsHorizontal(haystack, pattern)
+```
+
+!!! note "Note"
+    `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
+
+**Parameters** 
+
+-   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression. Type: [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+```
+
+Result:
+
+``` text
+┌─extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','def','ghi'],['111','222','333']]                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See also**
+-    [extractAllGroupsVertical](#extractallgroups-vertical)
+
+## extractAllGroupsVertical {#extractallgroups-vertical}
+
+Matches all groups of the `haystack` string using the `pattern` regular expression. 
+
+The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is throwed. 
+
+The function returns an array of arrays, where each array includes matching expressions from every group. 
+
+If `haystack` doesn’t match the `pattern` regex, an empty array is returned. 
+
+**Syntax** 
+
+``` sql
+extractAllGroupsVertical(haystack, pattern)
+```
+
+**Parameters** 
+
+-   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression. Type: [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+```
+
+Result:
+
+``` text
+┌─extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','111'],['def','222'],['ghi','333']]                                            │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See also**
+-    [extractAllGroupsHorizontal](#extractallgroups-horizontal)
+
 ## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
 
 Checks whether a string matches a simple regular expression.
