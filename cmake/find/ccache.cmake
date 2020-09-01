@@ -1,12 +1,25 @@
-option(ENABLE_CCACHE "Speedup re-compilations using ccache" ON)
+if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
+    set(COMPILER_MATCHES_CCACHE 1)
+else()
+    set(COMPILER_MATCHES_CCACHE 0)
+endif()
+
+if ((ENABLE_CCACHE OR NOT DEFINED ENABLE_CCACHE) AND NOT COMPILER_MATCHES_CCACHE)
+    find_program (CCACHE_FOUND ccache)
+endif()
+
+if (NOT CCACHE_FOUND AND NOT DEFINED ENABLE_CCACHE AND NOT COMPILER_MATCHES_CCACHE)
+    message(WARNING "CCache is not found. We recommend setting it up if you build ClickHouse from source often. "
+            "Setting it up will significantly reduce compilation time for 2nd and consequent builds")
+endif()
+
+option(ENABLE_CCACHE "Speedup re-compilations using ccache" ${CCACHE_FOUND})
 
 if (NOT ENABLE_CCACHE)
     return()
 endif()
 
-find_program (CCACHE_FOUND ccache)
-
-if (CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" AND NOT CMAKE_CXX_COMPILER MATCHES "ccache")
+if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
    execute_process(COMMAND ${CCACHE_FOUND} "-V" OUTPUT_VARIABLE CCACHE_VERSION)
    string(REGEX REPLACE "ccache version ([0-9\\.]+).*" "\\1" CCACHE_VERSION ${CCACHE_VERSION})
 
@@ -17,6 +30,6 @@ if (CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" AND NOT CM
    else ()
       message(${RECONFIGURE_MESSAGE_LEVEL} "Not using ${CCACHE_FOUND} ${CCACHE_VERSION} bug: https://bugzilla.samba.org/show_bug.cgi?id=8118")
    endif ()
-elseif (NOT CCACHE_FOUND)
+elseif (NOT CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use ccache")
 endif ()

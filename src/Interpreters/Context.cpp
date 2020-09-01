@@ -306,6 +306,9 @@ struct ContextShared
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
+    mutable std::mutex auxiliary_zookeepers_mutex;
+    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
+
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_io_user;
@@ -1444,6 +1447,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    auto zookeeper = shared->auxiliary_zookeepers.find(name);
+    if (zookeeper == shared->auxiliary_zookeepers.end())
+    {
+        if (!getConfigRef().has("auxiliary_zookeepers." + name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in config.xml", name);
+
+        zookeeper->second = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "auxiliary_zookeepers." + name);
+    }
+    else if (zookeeper->second->expired())
+        zookeeper->second = zookeeper->second->startNewSession();
+
+    return zookeeper->second;
 }
 
 void Context::resetZooKeeper() const
