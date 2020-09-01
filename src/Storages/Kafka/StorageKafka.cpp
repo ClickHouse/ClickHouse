@@ -263,22 +263,22 @@ void StorageKafka::startup()
     }
 
     // Start the reader thread
-    for (size_t i = 0; i < tasks.size(); ++i)
+    for (auto & task : tasks)
     {
-        tasks[i]->holder->activateAndSchedule();
+        task->holder->activateAndSchedule();
     }
 }
 
 
 void StorageKafka::shutdown()
 {
-    for (size_t i = 0; i < tasks.size(); ++i)
+    for (auto & task : tasks)
     {
         // Interrupt streaming thread
-        tasks[i]->stream_cancelled = true;
+        task->stream_cancelled = true;
 
         LOG_TRACE(log, "Waiting for cleanup");
-        tasks[i]->holder->deactivate();
+        task->holder->deactivate();
     }
 
     LOG_TRACE(log, "Closing consumers");
@@ -556,7 +556,7 @@ bool StorageKafka::streamToViews()
 
     // Create a stream for each consumer and join them in a union stream
     BlockInputStreams streams;
-  
+
     auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
     streams.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
