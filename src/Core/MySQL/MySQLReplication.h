@@ -345,9 +345,9 @@ namespace MySQLReplication
 
     enum QueryType
     {
-        DDL = 0,
-        BEGIN = 1,
-        XA = 2
+        QUERY_EVENT_DDL = 0,
+        QUERY_EVENT_MULTI_TXN_FLAG = 1,
+        QUERY_EVENT_XA = 2
     };
 
     class QueryEvent : public EventBase
@@ -361,7 +361,7 @@ namespace MySQLReplication
         String status;
         String schema;
         String query;
-        QueryType typ = DDL;
+        QueryType typ = QUERY_EVENT_DDL;
 
         QueryEvent() : thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0) { }
         void dump(std::ostream & out) const override;

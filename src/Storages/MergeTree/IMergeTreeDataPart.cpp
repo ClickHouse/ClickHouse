@@ -541,8 +541,9 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     CompressionCodecPtr result = nullptr;
     for (const auto & part_column : columns)
     {
-        /// It was compressed with default codec
-        if (!storage_columns.hasCompressionCodec(part_column.name))
+        /// It was compressed with default codec and it's not empty
+        auto column_size = getColumnSize(part_column.name, *part_column.type);
+        if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
             break;

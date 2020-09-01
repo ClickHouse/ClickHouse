@@ -179,4 +179,10 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     }
 }
 
+template <typename T>
+inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
+{
+    return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::maxPrecision<T>(), scale);
+}
+
 }
