@@ -52,7 +52,7 @@ public:
     virtual void initPrimaryIndex() {}
 
     virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
-    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */,  bool /* sync */) {}
+    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
     virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & /* checksums */, bool /* sync */) {}
 
     Columns releaseIndexColumns();
