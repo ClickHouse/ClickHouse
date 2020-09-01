@@ -32,12 +32,5 @@
 		["1", "a", "[1,2,3]", "(1,'a')", "ᴺᵁᴸᴸ", "nan"]
 	],
 
-	"rows": 1,
-
-	"statistics":
-	{
-		"elapsed": 0.00068988,
-		"rows_read": 1,
-		"bytes_read": 1
-	}
+	"rows": 1
 }
