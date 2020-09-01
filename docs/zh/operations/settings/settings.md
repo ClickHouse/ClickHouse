@@ -1252,3 +1252,61 @@ ClickHouse生成异常
 默认值：16。
 
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+
+## transform\_null\_in {#transform_null_in}
+
+为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](../../sql-reference/syntax.md#null-literal) 值的相等性。
+
+默认情况下，无法比较 `NULL` 值，因为 `NULL` 表示未定义的值。 因此，比较 `expr = NULL` 必须始终返回 `false`。 在此设置下，`NULL = NULL` 为IN运算符返回 `true`.
+
+可能的值：
+
+-   0 — 比较 `IN` 运算符中 `NULL` 值将返回 `false`。
+-   1 — 比较 `IN` 运算符中 `NULL` 值将返回 `true`。
+
+默认值：0。
+
+**例**
+
+考虑`null_in`表：
+
+``` text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+│    3 │     3 │
+└──────┴───────┘
+```
+
+查询:
+
+``` sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
+```
+
+结果:
+
+``` text
+┌──idx─┬────i─┐
+│    1 │    1 │
+└──────┴──────┘
+```
+
+查询:
+
+``` sql
+SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
+```
+
+结果:
+
+``` text
+┌──idx─┬─────i─┐
+│    1 │     1 │
+│    2 │  NULL │
+└──────┴───────┘
+```
+
+**另请参阅**
+
+-   [IN 运算符中的 NULL 处理](../../sql-reference/operators/in.md#in-null-processing)
