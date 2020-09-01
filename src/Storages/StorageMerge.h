@@ -47,6 +47,14 @@ public:
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
+    static Block getQueryHeader(
+            const IStorage & storage,
+            const Names & column_names,
+            const StorageMetadataPtr & metadata_snapshot,
+            const SelectQueryInfo & query_info,
+            const Context & context,
+            QueryProcessingStage::Enum processed_stage);
+
 private:
     String source_database;
     OptimizedRegularExpression table_name_regexp;
@@ -74,13 +82,6 @@ protected:
         const String & source_database_,
         const String & table_name_regexp_,
         const Context & context_);
-
-    Block getQueryHeader(
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage);
 
     Pipe createSources(
         const StorageMetadataPtr & metadata_snapshot,
