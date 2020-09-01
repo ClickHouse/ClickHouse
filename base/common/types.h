@@ -123,9 +123,9 @@ template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
 
 template <typename T>
-inline std::string bigintToString(const T & x [[maybe_unused]])
+inline std::string bigintToString(const T & x)
 {
-    return "TODO";
+    return to_string(x);
 }
 
 template <typename To, typename From>

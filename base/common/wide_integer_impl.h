@@ -1184,7 +1184,7 @@ constexpr bool operator!=(const Arithmetic& lhs, const Arithmetic2& rhs) {
 }
 
 template <size_t Bits, typename Signed>
-std::string to_string(const wide_integer<Bits, Signed>& n) {
+inline std::string to_string(const wide_integer<Bits, Signed>& n) {
     std::string res;
     if (wide_integer<Bits, Signed>::_impl::operator_eq(n, 0U)) {
         return "0";
@@ -1211,7 +1211,7 @@ std::string to_string(const wide_integer<Bits, Signed>& n) {
 }
 
 template <size_t Bits, typename Signed>
-std::wstring to_wstring(const wide_integer<Bits, Signed>& n) {
+inline std::wstring to_wstring(const wide_integer<Bits, Signed>& n) {
     std::wstring res;
     if (wide_integer<Bits, Signed>::_impl::operator_eq(n, 0U)) {
         return L"0";
