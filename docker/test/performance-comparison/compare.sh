@@ -197,33 +197,9 @@ function run_tests
     wait
 }
 
-# Run some queries concurrently and report the resulting TPS. This additional
-# (relatively) short test helps detect concurrency-related effects, because the
-# main performance comparison testing is done query-by-query.
-function run_benchmark
-{
-    rm -rf benchmark ||:
-    mkdir benchmark ||:
-
-    # The list is built by run_tests.
-    while IFS= read -r file
-    do
-        name=$(basename "$file" ".xml")
-
-        "$script_dir/perf.py" --print-queries "$file" > "benchmark/$name-queries.txt"
-        "$script_dir/perf.py" --print-settings "$file" > "benchmark/$name-settings.txt"
-
-        readarray -t settings < "benchmark/$name-settings.txt"
-        command=(clickhouse-benchmark --concurrency 6 --cumulative --iterations 1000 --randomize 1 --delay 0 --continue_on_errors "${settings[@]}")
-
-        "${command[@]}" --port 9001 --json "benchmark/$name-left.json" < "benchmark/$name-queries.txt"
-        "${command[@]}" --port 9002 --json "benchmark/$name-right.json" < "benchmark/$name-queries.txt"
-    done < benchmarks-to-run.txt
-}
-
 function get_profiles_watchdog
 {
-    sleep 6000
+    sleep 600
 
     echo "The trace collection did not finish in time." >> profile-errors.log
 
@@ -570,8 +546,8 @@ create table test_time_changes engine File(TSV, 'report/test-time-changes.tsv') 
         select test, count(*) queries,
             sum(left) as left, sum(right) as right,
             (right - left) / right average_time_change
-        from queries
-        group by test
+    from queries
+    group by test
         order by abs(average_time_change) desc
     )
     ;
@@ -979,9 +955,6 @@ case "$stage" in
 "run_tests")
     # Ignore the errors to collect the log and build at least some report, anyway
     time run_tests ||:
-    ;&
-"run_benchmark")
-    time run_benchmark 2> >(tee -a run-errors.tsv 1>&2) ||:
     ;&
 "get_profiles")
     # Check for huge pages.
