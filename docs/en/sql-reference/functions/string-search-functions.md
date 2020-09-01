@@ -364,7 +364,7 @@ Extracts all the fragments of a string using a regular expression. If ‘haystac
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. 
 
-The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is throwed. 
+The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is thrown. 
 
 The function returns an array of arrays, where the first array includes all expressions matching the first group, the second array - matching the second group, etc. 
 
@@ -411,7 +411,7 @@ Result:
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. 
 
-The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is throwed. 
+The `pattern` must contain groups, each group enclosed in brackets. If `pattern` contains no groups, an exception is thrown. 
 
 The function returns an array of arrays, where each array includes matching expressions from every group. 
 
