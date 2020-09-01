@@ -1126,8 +1126,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
-
-        std::cerr << "MUTATING SOME PART COLUMNS\n";
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         auto indices_to_recalc = getIndicesToRecalculate(in, updated_header.getNamesAndTypesList(), metadata_snapshot, context);
 
@@ -1138,11 +1136,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         {
             files_to_skip.insert("ttl.txt");
         }
-        for (const auto & name : files_to_skip)
-        {
-            std::cerr << "SKIPPING " << name << std::endl;
-        }
-
         /// Create hardlinks for unchanged files
         for (auto it = disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
         {
@@ -1174,8 +1167,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         if (in)
         {
-            std::cerr << "HEADER:" << updated_header.dumpStructure() << std::endl;
-            std::cerr << "IN HEADER:" << in->getHeader().dumpStructure() << std::endl;
             mutateSomePartColumns(
                 source_part,
                 metadata_snapshot,
