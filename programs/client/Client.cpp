@@ -861,12 +861,12 @@ private:
                 // We didn't read enough text to parse a query. Will read more.
             }
 
-            if (!connection->ping())
-            {
-                // Uh-oh...
-                last_exception_received_from_server = std::make_unique<Exception>(210, "Lost connection to the server.");
-                return;
-            }
+            // Ensure that we're still connected to the server. If the server died,
+            // the reconnect is going to fail with an exception, and the fuzzer
+            // will exit. The ping() would be the best match here, but it's
+            // private, probably for a good reason that the protocol doesn't allow
+            // pings at any possible moment.
+            connection->forceConnected(connection_parameters.timeouts);
 
             if (text.size() > 4 * 1024)
             {
