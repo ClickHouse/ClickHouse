@@ -130,7 +130,6 @@ def rabbitmq_setup_teardown():
 
 # Tests
 
-@pytest.mark.skip(reason="Flaky")
 @pytest.mark.timeout(180)
 def test_rabbitmq_select(rabbitmq_cluster):
     instance.query('''
@@ -253,7 +252,6 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.skip(reason="Flaky")
 @pytest.mark.timeout(180)
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query('''
@@ -424,7 +422,6 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.skip(reason="Flaky")
 @pytest.mark.timeout(180)
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query('''
@@ -594,7 +591,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
 
 @pytest.mark.timeout(420)
-def test_rabbitmq_read_only_combo(rabbitmq_cluster):
+def test_rabbitmq_mv_combo(rabbitmq_cluster):
 
     NUM_MV = 5;
     NUM_CONSUMERS = 4
@@ -604,6 +601,7 @@ def test_rabbitmq_read_only_combo(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'combo',
+                     rabbitmq_queue_base = 'combo',
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 2,
                      rabbitmq_format = 'JSONEachRow',
@@ -864,7 +862,11 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'over',
+                     rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
+                     rabbitmq_num_consumers = 5,
+                     rabbitmq_num_queues = 2,
+                     rabbitmq_max_block_size = 10000,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -1649,6 +1651,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'producer_reconnect',
                      rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_num_consumers = 2,
                      rabbitmq_row_delimiter = '\\n';
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.consume;

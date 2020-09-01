@@ -19,8 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const auto QUEUE_SIZE = 50000;
-
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
         ChannelPtr setup_channel_,
@@ -34,6 +32,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         bool hash_exchange_,
         size_t num_queues_,
         const String & deadletter_exchange_,
+        uint32_t queue_size_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(consumer_channel_))
@@ -48,8 +47,9 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , deadletter_exchange(deadletter_exchange_)
         , log(log_)
         , row_delimiter(row_delimiter_)
+        , queue_size(queue_size_)
         , stopped(stopped_)
-        , received(QUEUE_SIZE * num_queues)
+        , received(queue_size)
 {
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
         bindQueue(queue_id);
@@ -93,14 +93,24 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
 
     auto error_callback([&](const char * message)
     {
-        throw Exception("Failed to declare queue. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
+         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
+         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
+         * declared queues via any of the various cli tools.
+         */
+        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
+                specifying differently those settings or use a different queue_base or manually delete previously declared queues,      \
+                which  were declared with the same names. ERROR reason: "
+                + std::string(message), ErrorCodes::LOGICAL_ERROR);
     });
 
     AMQP::Table queue_settings;
+
+    queue_settings["x-max-length"] = queue_size;
+    queue_settings["x-overflow"] = "reject-publish";
+
     if (!deadletter_exchange.empty())
-    {
         queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
-    }
 
     /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
      * specific queue when its name is specified in queue_base setting
