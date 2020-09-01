@@ -120,8 +120,3 @@ def test_materialize_database_ddl_with_mysql_8_0(started_cluster, started_mysql_
     materialize_with_ddl.alter_rename_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
     materialize_with_ddl.alter_modify_column_with_materialize_mysql_database(clickhouse_node, started_mysql_8_0, "mysql8_0")
 
-def test_materialize_database_ddl_with_empty_transaction_5_7(started_cluster, started_mysql_5_7):
-    materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_5_7.alloc_connection(), "mysql5_7")
-
-def test_materialize_database_ddl_with_empty_transaction_8_0(started_cluster, started_mysql_8_0):
-    materialize_with_ddl.query_event_with_empty_transaction(clickhouse_node, started_mysql_8_0.alloc_connection(), "mysql8_0")
