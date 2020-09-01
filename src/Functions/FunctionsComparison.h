@@ -634,13 +634,13 @@ private:
                 || executeNumRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
-                || executeNumRightType<T0, bUInt256>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, UInt256>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int8>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int128>(block, result, col_left, col_right_untyped)
-                || executeNumRightType<T0, bInt256>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int256>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
@@ -656,13 +656,13 @@ private:
                 || executeNumConstRightType<T0, UInt32>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, UInt64>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, UInt128>(block, result, col_left_const, col_right_untyped)
-                || executeNumConstRightType<T0, bUInt256>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt256>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int8>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int16>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int32>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int64>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Int128>(block, result, col_left_const, col_right_untyped)
-                || executeNumConstRightType<T0, bInt256>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int256>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Float32>(block, result, col_left_const, col_right_untyped)
                 || executeNumConstRightType<T0, Float64>(block, result, col_left_const, col_right_untyped))
                 return true;
@@ -1223,13 +1223,13 @@ public:
                 || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt128>(block, result, col_left_untyped, col_right_untyped)
-                || executeNumLeftType<bUInt256>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt256>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int128>(block, result, col_left_untyped, col_right_untyped)
-                || executeNumLeftType<bInt256>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int256>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()
@@ -1272,6 +1272,9 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & types) const override
     {
+        if (2 != types.size())
+            return false;
+
         auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1]))
@@ -1284,6 +1287,8 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(2 == types.size() && 2 == values.size());
+
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         auto * x = values[0]();
         auto * y = values[1]();

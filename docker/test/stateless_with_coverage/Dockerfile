@@ -1,6 +1,6 @@
 # docker build -t yandex/clickhouse-stateless-with-coverage-test .
 # TODO: that can be based on yandex/clickhouse-stateless-test (llvm version and CMD differs)
-FROM yandex/clickhouse-deb-builder
+FROM yandex/clickhouse-test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -18,7 +18,6 @@ RUN apt-get update -y \
             python-lxml \
             python-termcolor \
             python-requests \
-            curl \
             sudo \
             openssl \
             ncdu \
@@ -43,12 +42,5 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 COPY run.sh /run.sh
-
-# Sanitizer options
-RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
-  echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
-  echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
-  ln -s /usr/lib/llvm-10/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
-
 
 CMD ["/bin/bash", "/run.sh"]
