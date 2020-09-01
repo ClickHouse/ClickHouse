@@ -82,7 +82,7 @@ namespace CurrentMetrics
 
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
-    
+
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
     extern const Metric MemoryTrackingInBackgroundMessageBrokerSchedulePool;
 }

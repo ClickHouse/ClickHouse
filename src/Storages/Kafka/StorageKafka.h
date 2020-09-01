@@ -100,7 +100,7 @@ private:
         std::atomic<bool> stream_cancelled {false};
         explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
         {
-        } 
+        }
     };
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
