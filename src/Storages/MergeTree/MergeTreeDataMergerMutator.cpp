@@ -659,9 +659,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto compression_codec = data.global_context.chooseCompressionCodec(
-        merge_entry->total_size_bytes_compressed,
-        static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+    auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
 
     /// TODO: Should it go through IDisk interface?
     String rows_sources_file_path;
@@ -1082,15 +1080,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto disk = new_data_part->volume->getDisk();
     String new_part_tmp_path = new_data_part->getFullRelativePath();
 
-    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
-    /// (which is locked in data.getTotalActiveSizeInBytes())
-    /// (which is locked in shared mode when input streams are created) and when inserting new data
-    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
-    /// deadlock is impossible.
-    auto compression_codec = context.chooseCompressionCodec(
-        source_part->getBytesOnDisk(),
-        static_cast<double>(source_part->getBytesOnDisk()) / data.getTotalActiveSizeInBytes());
-
     disk->createDirectories(new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
@@ -1100,11 +1089,27 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     bool need_remove_expired_values = false;
 
     if (in && shouldExecuteTTL(metadata_snapshot, in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
+    {
+        std::cerr << "GOING TO MATERIALIZE TTL\n";
         need_remove_expired_values = true;
+    }
+    else
+    {
+        std::cerr << "NOT GOING TO MATERIALIZE TTL\n";
+        std::cerr << "IN IS NULL:" << (in == nullptr) << std::endl;
+    }
 
     /// All columns from part are changed and may be some more that were missing before in part
     if (!isWidePart(source_part) || (interpreter && interpreter->isAffectingAllColumns()))
     {
+        std::cerr << "MUTATING ALL PART COLUMNS\n";
+        /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
+        /// (which is locked in data.getTotalActiveSizeInBytes())
+        /// (which is locked in shared mode when input streams are created) and when inserting new data
+        /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
+        /// deadlock is impossible.
+        auto compression_codec = data.getCompressionCodecForPart(source_part->getBytesOnDisk(), source_part->ttl_infos, time_of_mutation);
+
         auto part_indices = getIndicesForNewDataPart(metadata_snapshot->getSecondaryIndices(), for_file_renames);
         mutateAllPartColumns(
             new_data_part,
@@ -1121,6 +1126,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
+
+        std::cerr << "MUTATING SOME PART COLUMNS\n";
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         auto indices_to_recalc = getIndicesToRecalculate(in, updated_header.getNamesAndTypesList(), metadata_snapshot, context);
 
@@ -1128,7 +1135,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
+        {
             files_to_skip.insert("ttl.txt");
+        }
+        for (const auto & name : files_to_skip)
+        {
+            std::cerr << "SKIPPING " << name << std::endl;
+        }
 
         /// Create hardlinks for unchanged files
         for (auto it = disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
@@ -1157,8 +1170,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         new_data_part->checksums = source_part->checksums;
 
+        auto compression_codec = source_part->default_codec;
+
         if (in)
         {
+            std::cerr << "HEADER:" << updated_header.dumpStructure() << std::endl;
+            std::cerr << "IN HEADER:" << in->getHeader().dumpStructure() << std::endl;
             mutateSomePartColumns(
                 source_part,
                 metadata_snapshot,
