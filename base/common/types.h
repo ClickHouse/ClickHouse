@@ -7,13 +7,8 @@
 #include <type_traits>
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <common/bigint/impl.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#include <common/generic_template_uintwide_t.h>
-namespace wider = wide_integer::generic_template;
-#pragma GCC diagnostic pop
 
 using Int8 = int8_t;
 using Int16 = int16_t;
@@ -37,8 +32,9 @@ using Int128 = __int128;
 using bInt256 = boost::multiprecision::number<boost::multiprecision::cpp_int_backend<
     255, 255, boost::multiprecision::signed_magnitude, boost::multiprecision::unchecked, void> >;
 using bUInt256 = boost::multiprecision::uint256_t;
-using wUInt256 = wider::uint256_t;
+using wUInt256 = std::wide_integer<256, unsigned>;
 
+static_assert(sizeof(wUInt256) == 32);
 
 using String = std::string;
 
