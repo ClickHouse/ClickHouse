@@ -140,7 +140,7 @@ private:
         dst_data.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            dst_data[i] = convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<ReturnType>>(src_data[i], scale);
+            dst_data[i] = DecimalUtils::convertTo<ReturnType>(src_data[i], scale);
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 

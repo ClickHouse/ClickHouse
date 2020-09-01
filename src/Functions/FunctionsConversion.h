@@ -150,13 +150,10 @@ struct ConvertImpl
                 }
                 else if constexpr (is_big_int_v<FromFieldType> || is_big_int_v<ToFieldType>)
                 {
-                    using CastFrom = std::conditional_t<std::is_same_v<FromFieldType, UInt8>, uint8_t, FromFieldType>;
-                    using CastTo = std::conditional_t<std::is_same_v<ToFieldType, UInt8>, uint8_t, ToFieldType>;
-
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
-                        vec_to[i] = bigint_cast<CastTo>(bigint_cast<CastFrom>(vec_from[i]));
+                        vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
                     vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));
@@ -1063,19 +1060,16 @@ public:
         }
         else if constexpr (to_decimal)
         {
-//            if (!arguments[1].column)
-//                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)
-                return createDecimal<DataTypeDecimal>(9, scale);
+                return createDecimalMaxPrecision<Decimal32>(scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal64>)
-                return createDecimal<DataTypeDecimal>(18, scale);
+                return createDecimalMaxPrecision<Decimal64>(scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
-                return createDecimal<DataTypeDecimal>(38, scale);
+                return createDecimalMaxPrecision<Decimal128>(scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal256>)
-                return createDecimal<DataTypeDecimal>(77, scale);
+                return createDecimalMaxPrecision<Decimal256>(scale);
 
             throw Exception("Something wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
@@ -1332,16 +1326,7 @@ public:
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
-
-                if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
-                    res = createDecimal<DataTypeDecimal>(9, scale);
-                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
-                    res = createDecimal<DataTypeDecimal>(18, scale);
-                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
-                    res = createDecimal<DataTypeDecimal>(38, scale);
-                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
-                    res = createDecimal<DataTypeDecimal>(77, scale);
-
+                res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
                 if (!res)
                     throw Exception("Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
             }

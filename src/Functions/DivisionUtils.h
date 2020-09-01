@@ -50,8 +50,12 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && is_big_int_v<B>)
-        return bigint_cast<A>(a / b);
+    if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
+        return bigint_cast<B>(a) / b;
+    else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
+        return a / bigint_cast<A>(b);
+    else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
+        return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
         return bigint_cast<A>(B(a) / b);
     else
@@ -70,56 +74,24 @@ struct DivideIntegralImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
-            return Result(bigint_cast<B>(a) / b);
-        else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
-            return a / bigint_cast<Result>(b);
-        else if constexpr (is_big_int_v<A> && std::is_same_v<B, UInt8>)
-        {
-            using SignedA = make_signed_t<A>;
-            return bigint_cast<Result>(checkedDivision(bigint_cast<SignedA>(a), Int16(b)));
-        }
-        else if constexpr (is_big_int_v<B> && std::is_same_v<A, UInt8>)
-        {
-            using SignedB = make_signed_t<B>;
-            return checkedDivision(Int16(a), bigint_cast<SignedB>(b));
-        }
+        using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
+        using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
+
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        else if constexpr (is_signed_v<A> || is_signed_v<B>)
+        if constexpr (is_integer_v<A> && is_integer_v<B> && (is_signed_v<A> || is_signed_v<B>))
         {
-            if constexpr (is_integer_v<A> && is_integer_v<B>)
-            {
-                using SignedA = make_signed_t<A>;
-                using SignedB = make_signed_t<B>;
-
-                return bigint_cast<Result>(
-                    checkedDivision(bigint_cast<SignedA>(a), sizeof(A) > sizeof(B) ? bigint_cast<SignedA>(b) : bigint_cast<SignedB>(b)));
-            }
-            else
-                return checkedDivision(a, b);
+            return checkedDivision(make_signed_t<CastA>(a),
+                sizeof(A) > sizeof(B) ? make_signed_t<A>(CastB(b)) : make_signed_t<CastB>(b));
         }
         else
-            return checkedDivision(a, b);
+            return bigint_cast<Result>(checkedDivision(CastA(a), CastB(b)));
     }
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
 #endif
 };
-
-template <typename Result, typename A, typename B>
-inline Result applyBigIntModulo(A a, B b)
-{
-    if constexpr (std::is_same_v<A, UInt8>)
-        return UInt16(a) % b;
-    else if constexpr (std::is_same_v<B, UInt8>)
-        return bigint_cast<UInt16>(a % UInt16(b));
-    else if constexpr (sizeof(A) > sizeof(B))
-        return bigint_cast<Result>(a % bigint_cast<A>(b));
-    else
-        return bigint_cast<Result>(bigint_cast<B>(a) % b);
-}
 
 template <typename A, typename B>
 struct ModuloImpl
@@ -129,7 +101,6 @@ struct ModuloImpl
     using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool is_special = is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -143,8 +114,19 @@ struct ModuloImpl
         {
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (is_special)
-                return applyBigIntModulo<Result>(IntegerAType(a), IntegerBType(b));
+            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            {
+                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
+                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
+
+                CastA int_a(a);
+                CastB int_b(b);
+
+                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                    return bigint_cast<Result>(bigint_cast<CastB>(int_a) % int_b);
+                else
+                    return bigint_cast<Result>(int_a % int_b);
+            }
             else
                 return IntegerAType(a) % IntegerBType(b);
         }
