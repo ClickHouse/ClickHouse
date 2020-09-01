@@ -1,6 +1,6 @@
 #pragma once
 
-#include "int.h"
+#include "wide_integer.h"
 
 #include <array>
 #include <cstring>
@@ -1314,7 +1314,7 @@ to_chars_result to_chars(char* first,
     return {first, {}};
 }
 
-std::array<char, 256> genReverseAlpha() noexcept {
+inline std::array<char, 256> genReverseAlpha() noexcept {
     static const char ALPHA[] = "0123456789abcdefghijklmnopqrstuvwxyz";
     std::array<char, 256> res;
     res.fill(-1);

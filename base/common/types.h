@@ -6,7 +6,7 @@
 #include <string>
 #include <type_traits>
 
-#include <common/bigint/impl.h>
+#include <common/wide_integer.h>
 
 
 using Int8 = int8_t;

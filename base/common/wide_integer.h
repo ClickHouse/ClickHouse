@@ -315,4 +315,4 @@ struct hash<wide_integer<Bits, Signed>>;
 
 } // namespace std
 
-#include "impl.h"
+#include "wide_integer_impl.h"

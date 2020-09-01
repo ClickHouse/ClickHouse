@@ -19,10 +19,8 @@ struct BitTestImpl
     template <typename Result = ResultType>
     NO_SANITIZE_UNDEFINED static inline Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
-        if constexpr (is_big_int_v<B> || std::is_same_v<A, UInt256>)
+        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception("bitTest is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
-        else if constexpr (is_big_int_v<A>)
-            return bit_test(a, static_cast<UInt32>(b));
         else
             return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
     }
