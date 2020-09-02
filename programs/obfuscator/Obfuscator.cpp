@@ -369,7 +369,6 @@ static void transformUUID(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
     SipHash hash;
     hash.update(seed);
     hash.update(reinterpret_cast<const char *>(src), size);
-    seed = hash.get64();
 
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(dst));
