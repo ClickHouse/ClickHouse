@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -79,7 +80,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
-    bool recompress = false; /// Recompress parts on merge
+    MergeType merge_type = MergeType::NORMAL;
     String column_name;
     String index_name;
 

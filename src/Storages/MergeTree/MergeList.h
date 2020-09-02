@@ -45,6 +45,7 @@ struct MergeInfo
     UInt64 columns_written;
     UInt64 memory_usage;
     UInt64 thread_id;
+    std::string merge_type;
 };
 
 struct FutureMergedMutatedPart;
@@ -88,6 +89,7 @@ struct MergeListElement : boost::noncopyable
 
     UInt64 thread_id;
 
+    const std::string merge_type;
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 

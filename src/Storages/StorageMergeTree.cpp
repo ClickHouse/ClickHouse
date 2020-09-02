@@ -650,9 +650,14 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge(false);
+            UInt64 max_source_parts_size_with_ttl = 0;
+
+            if (!aggressive)
+                max_source_parts_size_with_ttl = merger_mutator.getMaxSourcePartsSizeForMerge(true);
+
             if (max_source_parts_size > 0)
-                selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
+                selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, max_source_parts_size_with_ttl, out_disable_reason);
             else if (out_disable_reason)
                 *out_disable_reason = "Current value of max_source_parts_size is zero";
         }
@@ -724,6 +729,7 @@ bool StorageMergeTree::merge(
 
     try
     {
+        std::cerr << "FUTURE PART MERGE TYPE:" << toString(future_part.merge_type) << std::endl;
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space, deduplicate);

@@ -337,7 +337,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         }
         else if (ttl.mode == TTLMode::RECOMPRESS)
         {
-            std::cerr << "GOT RECOMPRESSIOn TTL\n";
+            //std::cerr << "GOT RECOMPRESSIOn TTL\n";
             result.recompression_ttl.emplace_back(std::move(ttl));
         }
         else

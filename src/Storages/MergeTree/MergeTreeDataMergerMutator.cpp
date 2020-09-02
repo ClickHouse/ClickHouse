@@ -158,15 +158,15 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, si
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge()
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(bool with_ttl) const
 {
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
-    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
+    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1, with_ttl); /// 1 is current thread
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used)
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used, bool with_ttl) const
 {
     if (pool_used > pool_size)
         throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
@@ -178,20 +178,27 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
     /// One entry is probably the entry where this function is executed.
     /// This will protect from bad settings.
 
+
+    size_t lowering_setting;
+    if (with_ttl)
+        lowering_setting = data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge_with_ttl;
+    else
+        lowering_setting = data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge;
+
     UInt64 max_size = 0;
-    if (pool_used <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
+    if (pool_used <= 1 || free_entries >= lowering_setting)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
         max_size = interpolateExponential(
             data_settings->max_bytes_to_merge_at_min_space_in_pool,
             data_settings->max_bytes_to_merge_at_max_space_in_pool,
-            static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge);
+            static_cast<double>(free_entries) / lowering_setting);
 
     return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
 {
     const auto data_settings = data.getSettings();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
@@ -213,6 +220,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
+    size_t max_total_size_to_merge_with_ttl,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
@@ -260,8 +268,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.min_ttl = part->ttl_infos.part_min_ttl;
-        part_info.max_ttl = part->ttl_infos.part_max_ttl;
+        part_info.min_delete_ttl = part->ttl_infos.part_min_ttl;
+        part_info.max_delete_ttl = part->ttl_infos.part_max_ttl;
+        part_info.min_recompress_ttl = part->ttl_infos.getMinRecompressionTTL();
+        part_info.max_recompress_ttl = part->ttl_infos.getMaxRecompressionTTL();
 
         partitions.back().emplace_back(part_info);
 
@@ -279,13 +289,26 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (!ttl_merges_blocker.isCancelled())
     {
-        TTLMergeSelector merge_selector(
+        TTLDeleteMergeSelector delete_ttl_selector(
                 next_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
 
-        parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge);
+        parts_to_merge = delete_ttl_selector.select(partitions, max_total_size_to_merge_with_ttl);
+        if (!parts_to_merge.empty())
+            future_part.merge_type = MergeType::TTL_DELETE;
+        else
+        {
+            TTLRecompressMergeSelector recompress_ttl_selector(
+                    next_ttl_merge_times_by_partition,
+                    current_time,
+                    data_settings->merge_with_ttl_timeout);
+
+            parts_to_merge = recompress_ttl_selector.select(partitions, max_total_size_to_merge_with_ttl);
+            if (!parts_to_merge.empty())
+                future_part.merge_type = MergeType::TTL_RECOMPRESS;
+        }
     }
 
     if (parts_to_merge.empty())
@@ -307,6 +330,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return false;
         }
+        future_part.merge_type = MergeType::NORMAL;
     }
 
     MergeTreeData::DataPartsVector parts;
@@ -386,6 +410,12 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
+
+    if (final)
+        future_part.merge_type = MergeType::FINAL;
+    else
+        future_part.merge_type = MergeType::NORMAL;
+
     available_disk_space -= required_disk_space;
     return true;
 }
@@ -634,6 +664,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->setColumns(storage_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
+
+    if (future_part.merge_type == MergeType::TTL_DELETE && ttl_merges_blocker.isCancelled())
+        throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
     bool need_remove_expired_values = false;
     for (const auto & part : parts)
