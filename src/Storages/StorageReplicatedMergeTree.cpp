@@ -2526,12 +2526,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         else
         {
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
-                storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum, MergeType::NORMAL);
+                storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum, false);
 
             UInt64 max_source_parts_size_for_merge_with_ttl = 0;
             if (merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue)
                 max_source_parts_size_for_merge_with_ttl = merger_mutator.getMaxSourcePartsSizeForMerge(
-                storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum, MergeType::TTL_DELETE);
+                    storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum, true);
 
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
