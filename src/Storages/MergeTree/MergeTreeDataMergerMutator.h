@@ -6,6 +6,7 @@
 #include <functional>
 #include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeType.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ struct FutureMergedMutatedPart
     MergeTreeDataPartType type;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
+    MergeType merge_type = MergeType::NORMAL;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
@@ -57,12 +59,12 @@ public:
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    UInt64 getMaxSourcePartsSizeForMerge();
+    UInt64 getMaxSourcePartsSizeForMerge(MergeType merge_type);
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used);
+    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used, MergeType merge_type);
 
     /** Get maximum total size of parts to do mutation, at current moment of time.
       * It depends only on amount of free space in disk.
@@ -81,6 +83,7 @@ public:
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
+        size_t max_total_size_to_merge_with_ttl,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
