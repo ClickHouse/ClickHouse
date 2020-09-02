@@ -683,14 +683,13 @@ void MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & p
             }
         }
 
-        const SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
+        SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
         if (!subqueries_for_sets.empty())
         {
             const Settings & settings = context.getSettingsRef();
             SizeLimits network_transfer_limits(
                     settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-            pipeline.addCreatingSetsTransform(std::make_shared<CreatingSetsTransform>(
-                    pipeline.getHeader(), subqueries_for_sets, network_transfer_limits, context));
+            pipeline.addCreatingSetsTransform(std::move(subqueries_for_sets), network_transfer_limits, context);
         }
     }
 

@@ -64,8 +64,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
 
-#include <TableFunctions/ITableFunction.h>
-
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <Core/Types.h>
@@ -738,7 +736,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     bool intermediate_stage = false;
 
     if (options.only_analyze)
@@ -1826,7 +1824,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
     query_plan.addStep(std::move(extremes_step));
 }
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, const SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_order_info)
         executeMergeSorted(query_plan, query_info.input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
