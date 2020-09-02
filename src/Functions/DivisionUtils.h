@@ -57,7 +57,7 @@ inline auto checkedDivision(A a, B b)
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
-        return bigint_cast<A>(B(a) / b);
+        return static_cast<A>(B(a) / b);
     else
         return a / b;
 }

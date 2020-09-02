@@ -298,7 +298,7 @@ public:
     void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return is_POD; }
+    bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     StringRef getRawData() const override

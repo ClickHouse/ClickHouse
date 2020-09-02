@@ -8,7 +8,6 @@
 
 #include <common/wide_integer.h>
 
-
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
