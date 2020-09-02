@@ -246,7 +246,7 @@ static inline BlockOutputStreamPtr getTableOutput(const String & database_name, 
         if (iterator != insert_columns_names.begin())
             insert_columns_str << ", ";
 
-        insert_columns_str << iterator->name;
+        insert_columns_str << backQuoteIfNeed(iterator->name);
     }
 
 
