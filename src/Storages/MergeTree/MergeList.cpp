@@ -21,6 +21,7 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
+    , merge_type{toString(future_part.merge_type)}
 {
     for (const auto & source_part : future_part.parts)
     {
@@ -70,6 +71,7 @@ MergeInfo MergeListElement::getInfo() const
     res.columns_written = columns_written.load(std::memory_order_relaxed);
     res.memory_usage = memory_tracker.get();
     res.thread_id = thread_id;
+    res.merge_type = merge_type;
 
     for (const auto & source_part_name : source_part_names)
         res.source_part_names.emplace_back(source_part_name);
