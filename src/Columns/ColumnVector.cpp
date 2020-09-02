@@ -347,19 +347,13 @@ UInt64 ColumnVector<T>::get64(size_t n) const
 template <typename T>
 inline Float64 ColumnVector<T>::getFloat64(size_t n) const
 {
-    if constexpr (is_POD)
-        return static_cast<Float64>(data[n]);
-    else
-        return bigint_cast<Float64>(data[n]);
+    return static_cast<Float64>(data[n]);
 }
 
 template <typename T>
 Float32 ColumnVector<T>::getFloat32(size_t n) const
 {
-    if constexpr (is_POD)
-        return static_cast<Float32>(data[n]);
-    else
-        return bigint_cast<Float64>(data[n]);
+    return static_cast<Float32>(data[n]);
 }
 
 template <typename T>

@@ -179,7 +179,6 @@ struct DummyUInt256
 #pragma GCC diagnostic pop
 #endif
 
-
     DummyUInt256 & operator = (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
 };
 

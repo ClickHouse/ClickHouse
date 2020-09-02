@@ -1446,11 +1446,10 @@ struct ToNumberMonotonicity
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
-            Float64 min_t = bigint_cast<Float64>(std::numeric_limits<T>::min());
-            Float64 max_t = bigint_cast<Float64>(std::numeric_limits<T>::max());
-
-            if (left_float >= min_t && left_float <= max_t &&
-                right_float >= min_t && right_float <= max_t)
+            if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
+                && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
+                && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
+                && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
                 return { true };
 
             return {};

@@ -335,7 +335,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto val = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
-        this->data(place).add(bigint_cast<Data::Mean>(val), 1, max_bins);
+        this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

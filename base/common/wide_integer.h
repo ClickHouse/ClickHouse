@@ -25,16 +25,8 @@
 #include <climits> // CHAR_BIT
 #include <cmath>
 #include <cstdint>
-#include <iomanip>
 #include <limits>
-#include <ostream>
-#include <sstream>
-#include <stdexcept>
-#include <stdint.h>
-#include <system_error>
 #include <type_traits>
-
-struct _test;
 
 namespace std {
 template <size_t Bits, typename Signed>
@@ -119,8 +111,6 @@ public:
     struct _impl;
 
 private:
-    friend struct ::_test;
-
     template <size_t Bits2, typename Signed2>
     friend class wide_integer;
 
@@ -241,9 +231,7 @@ constexpr bool operator!=(const Arithmetic& rhs, const Arithmetic2& lhs);
 template <size_t Bits, typename Signed>
 std::string to_string(const wide_integer<Bits, Signed>& n);
 
-template <size_t Bits, typename Signed>
-std::wstring to_wstring(const wide_integer<Bits, Signed>& n);
-
+#if 0 /// Original https://github.com/cerevra/int.git has these and some other needless functions
 template <size_t Bits, typename Signed>
 std::ostream& operator<<(std::ostream& out, const wide_integer<Bits, Signed>& n);
 
@@ -255,56 +243,7 @@ std::istream& operator>>(std::istream& in, wide_integer<Bits, Signed>& n);
 
 template <size_t Bits, typename Signed>
 std::wistream& operator>>(std::wistream& in, wide_integer<Bits, Signed>& n);
-
-//// Must be defined in another header
-struct to_chars_result {
-    char* ptr;
-    std::error_code ec;
-};
-
-struct from_chars_result {
-    const char* ptr;
-    std::error_code ec;
-};
-////
-
-template <size_t Bits, typename Signed>
-to_chars_result to_chars(char* first,
-                         char* last,
-                         const wide_integer<Bits, Signed>& value,
-                         int base = 10);
-
-template <size_t Bits, typename Signed>
-from_chars_result from_chars(const char* first,
-                             const char* last,
-                             wide_integer<Bits, Signed>& value,
-                             int base = 10);
-
-inline namespace literals {
-inline namespace wide_integer_literals {
-template <size_t Bits>
-using wide_int = wide_integer<Bits, signed>;
-
-template <size_t Bits>
-using wide_uint = wide_integer<Bits, unsigned>;
-
-using int128_t = wide_int<128>;
-using uint128_t = wide_uint<128>;
-
-using int256_t = wide_int<256>;
-using uint256_t = wide_uint<256>;
-
-using int512_t = wide_int<512>;
-using uint512_t = wide_uint<512>;
-} // namespace wide_integer_literals
-} // namespace literals
-
-constexpr int128_t operator"" _int128(const char* n);
-constexpr int256_t operator"" _int256(const char* n);
-constexpr int512_t operator"" _int512(const char* n);
-constexpr uint128_t operator"" _uint128(const char* n);
-constexpr uint256_t operator"" _uint256(const char* n);
-constexpr uint512_t operator"" _uint512(const char* n);
+#endif
 
 // numeric limits
 template <size_t Bits, typename Signed>

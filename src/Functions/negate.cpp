@@ -13,7 +13,7 @@ struct NegateImpl
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        return -bigint_cast<ResultType>(a);
+        return -static_cast<ResultType>(a);
     }
 
 #if USE_EMBEDDED_COMPILER
