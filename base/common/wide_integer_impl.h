@@ -149,7 +149,9 @@ struct wide_integer<Bits, Signed>::_impl {
 
     template <typename T>
     constexpr static auto to_Integral(T f) noexcept {
-        if constexpr (std::is_signed<T>::value) {
+        if constexpr (std::is_same_v<T, __int128>) {
+            return f;
+        } else if constexpr (std::is_signed_v<T>) {
             return static_cast<int64_t>(f);
         } else {
             return static_cast<uint64_t>(f);
