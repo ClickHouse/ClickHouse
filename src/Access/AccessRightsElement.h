@@ -71,6 +71,8 @@ struct AccessRightsElement
     {
     }
 
+    bool empty() const { return !access_flags || (!any_column && columns.empty()); }
+
     auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
@@ -85,6 +87,9 @@ struct AccessRightsElement
 
     /// If the database is empty, replaces it with `new_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & new_database);
+
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
 
     /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
@@ -111,6 +116,9 @@ struct AccessRightsElementWithOptions : public AccessRightsElement
     friend bool operator==(const AccessRightsElementWithOptions & left, const AccessRightsElementWithOptions & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElementWithOptions & left, const AccessRightsElementWithOptions & right) { return !(left == right); }
 
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
+
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
 };
@@ -120,8 +128,13 @@ struct AccessRightsElementWithOptions : public AccessRightsElement
 class AccessRightsElements : public std::vector<AccessRightsElement>
 {
 public:
+    bool empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
+
     /// Replaces the empty database with `new_database`.
     void replaceEmptyDatabase(const String & new_database);
+
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
@@ -133,6 +146,9 @@ class AccessRightsElementsWithOptions : public std::vector<AccessRightsElementWi
 public:
     /// Replaces the empty database with `new_database`.
     void replaceEmptyDatabase(const String & new_database);
+
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
@@ -155,6 +171,36 @@ inline void AccessRightsElementsWithOptions::replaceEmptyDatabase(const String &
 {
     for (auto & element : *this)
         element.replaceEmptyDatabase(new_database);
+}
+
+inline void AccessRightsElement::removeNonGrantableFlags()
+{
+    if (!any_column)
+        access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+    else if (!any_table)
+        access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+    else if (!any_database)
+        access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+    else
+        access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+}
+
+inline void AccessRightsElementWithOptions::removeNonGrantableFlags()
+{
+    if (kind == Kind::GRANT)
+        AccessRightsElement::removeNonGrantableFlags();
+}
+
+inline void AccessRightsElements::removeNonGrantableFlags()
+{
+    for (auto & element : *this)
+        element.removeNonGrantableFlags();
+}
+
+inline void AccessRightsElementsWithOptions::removeNonGrantableFlags()
+{
+    for (auto & element : *this)
+        element.removeNonGrantableFlags();
 }
 
 }
