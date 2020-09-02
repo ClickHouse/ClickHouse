@@ -34,10 +34,13 @@ struct BigInt
         return res;
     }
 
-    static std::vector<UInt64> toIntArray(const T &)
+    static std::vector<UInt64> toIntArray(const T & x)
     {
-        /// FIXME
         std::vector<UInt64> parts(4, 0);
+        parts[0] = UInt64(x);
+        parts[1] = UInt64(x >> 64);
+        parts[2] = UInt64(x >> 128);
+        parts[4] = UInt64(x >> 192);
         return parts;
     }
 };
