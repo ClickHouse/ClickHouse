@@ -8,6 +8,7 @@ import math
 import os
 import pprint
 import re
+import scipy.stats
 import statistics
 import string
 import sys
@@ -251,6 +252,10 @@ for query_index, q in enumerate(test_queries):
     start_seconds = time.perf_counter()
     server_seconds = 0
     run = 0
+    max_runs = args.runs;
+    results = [[] for c in this_query_connections]
+    confidence = []
+    stop_reason = 'unknown'
     while True:
         run_id = f'{query_prefix}.run{run}'
 
@@ -263,12 +268,21 @@ for query_index, q in enumerate(test_queries):
                 e.message = run_id + ': ' + e.message
                 raise
 
+            results[conn_index].append(c.last_query.elapsed)
             server_seconds += c.last_query.elapsed
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
 
         # Be careful with the counter, after this line it's the next iteration
         # already.
         run += 1
+
+        # Always make at least the predetermined number of runs. Other stop
+        # conditions might be buggy (e.g. a short query suddenly became very slow),
+        # so having a fixed number runs helps to get at least some data anyway.
+        if run < max_runs:
+            continue
+
+        confidence = [statistics.stdev(rr) / statistics.mean(rr) * scipy.stats.t.ppf(0.99, run - 1) / math.sqrt(run) for rr in results]
 
         # For very short queries we have a special mode where we run them for at
         # least some time. The recommended lower bound of run time for "normal"
@@ -277,14 +291,27 @@ for query_index, q in enumerate(test_queries):
         # reference for "short" queries.
         if is_short[query_index]:
             if server_seconds >= 1 * len(this_query_connections):
+                stop_reason = 'short-overtime'
                 break
             # Also limit the number of runs, so that we don't go crazy processing
             # the results -- 'eqmed.sql' is really suboptimal.
             if run >= 100:
+                stop_reason = 'short-overcount'
                 break
         else:
-            if run >= args.runs:
+            if server_seconds > 90:
+                stop_reason = 'normal-overtime'
                 break
+
+            if max(confidence) >= 0.05:
+                print(f'more\t{query_index}\t{run}\t{confidence}')
+                max_runs = max_runs + 7
+                continue
+
+            stop_reason = 'normal-overcount'
+            break
+
+    print(f'stop\t{query_index}\t{run}\t{confidence}\t{stop_reason}')
 
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
