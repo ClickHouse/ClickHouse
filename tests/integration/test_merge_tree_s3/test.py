@@ -26,8 +26,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6
-FILES_OVERHEAD_PER_PART_COMPACT = 10
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
 def random_string(length):
@@ -55,7 +55,7 @@ def create_table(cluster, table_name, additional_settings=None):
         ORDER BY (dt, id)
         SETTINGS
             storage_policy='s3',
-            old_parts_lifetime=0, 
+            old_parts_lifetime=0,
             index_granularity=512
         """.format(table_name)
 

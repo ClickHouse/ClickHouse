@@ -37,7 +37,7 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
 template <size_t > struct ConstructDecInt { using Type = Int32; };
 template <> struct ConstructDecInt<8> { using Type = Int64; };
 template <> struct ConstructDecInt<16> { using Type = Int128; };
-template <> struct ConstructDecInt<48> { using Type = bInt256; };
+template <> struct ConstructDecInt<48> { using Type = Int256; };
 
 template <typename T, typename U>
 struct DecCompareInt
@@ -228,18 +228,14 @@ private:
         CompareInt x;
         if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<A>)
             x = a.value;
-        else if constexpr (is_big_int_v<CompareInt> && std::is_same_v<A, UInt8>)
-            x = static_cast<UInt16>(a);
         else
-            x = static_cast<CompareInt>(a);
+            x = bigint_cast<CompareInt>(a);
 
         CompareInt y;
         if constexpr (is_big_int_v<CompareInt> && IsDecimalNumber<B>)
             y = b.value;
-        else if constexpr (is_big_int_v<CompareInt> && std::is_same_v<B, UInt8>)
-            y = static_cast<UInt16>(b);
         else
-            y = static_cast<CompareInt>(b);
+            y = bigint_cast<CompareInt>(b);
 
         if constexpr (_check_overflow)
         {

@@ -74,8 +74,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
+        {
+            if (ast_col_decl.default_specifier == "ALIAS")
+                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
             command.codec = ast_col_decl.codec;
-
+        }
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
 
