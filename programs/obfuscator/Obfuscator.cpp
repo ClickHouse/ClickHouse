@@ -363,6 +363,20 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
     }
 }
 
+static void transformUUID(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+{
+    SipHash hash;
+    hash.update(seed);
+    hash.update(reinterpret_cast<const char *>(src), size);
+    seed = hash.get64();
+
+    /// Saving version and variant from an old UUID
+    hash.get128(reinterpret_cast<char *>(dst));
+    dst[6] &= 0b00001111;
+    dst[6] |= src[6] & 0b11110000;
+    dst[8] &= 0b00011111;
+    dst[8] |= src[8] & 0b11100000;
+}
 
 class FixedStringModel : public IModel
 {
@@ -390,6 +404,43 @@ public:
 
         for (size_t i = 0; i < size; ++i)
             transformFixedString(&src_data[i * string_size], &res_data[i * string_size], string_size, seed);
+
+        return res_column;
+    }
+
+    void updateSeed() override
+    {
+        seed = hash(seed);
+    }
+};
+
+class UUIDModel : public IModel
+{
+private:
+    UInt64 seed;
+
+public:
+    explicit UUIDModel(UInt64 seed_) : seed(seed_) {}
+
+    void train(const IColumn &) override {}
+    void finalize() override {}
+
+    ColumnPtr generate(const IColumn & column) override
+    {
+        const ColumnFixedString & column_fixed_string = assert_cast<const ColumnFixedString &>(column);
+        const size_t string_size = column_fixed_string.getN();
+        assert(string_size == 16);
+
+        const auto & src_data = column_fixed_string.getChars();
+        size_t size = column_fixed_string.size();
+
+        auto res_column = ColumnFixedString::create(string_size);
+        auto & res_data = res_column->getChars();
+
+        res_data.resize(src_data.size());
+
+        for (size_t i = 0; i < size; ++i)
+            transformUUID(&src_data[i * string_size], &res_data[i * string_size], string_size, seed);
 
         return res_column;
     }
@@ -934,6 +985,9 @@ public:
 
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
+
+        if (typeid_cast<const DataTypeUUID *>(&data_type))
+            return std::make_unique<UUIDModel>(seed);
 
         if (const auto * type = typeid_cast<const DataTypeArray *>(&data_type))
             return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));
