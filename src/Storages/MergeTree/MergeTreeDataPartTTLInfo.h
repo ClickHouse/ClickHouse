@@ -48,6 +48,9 @@ struct MergeTreeDataPartTTLInfos
     /// Order is important as it would be serialized and hashed for checksums
     std::map<String, MergeTreeDataPartTTLInfo> recompression_ttl;
 
+    time_t getMinRecompressionTTL() const;
+    time_t getMaxRecompressionTTL() const;
+
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);

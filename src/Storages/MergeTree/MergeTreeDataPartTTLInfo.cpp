@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
+#include <algorithm>
 
 #include <common/JSON.h>
 
@@ -17,10 +18,7 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     }
 
     for (const auto & [name, ttl_info] : other_infos.recompression_ttl)
-    {
         recompression_ttl[name].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
-    }
 
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
     {
@@ -161,9 +159,31 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             writeString("}", out);
         }
         writeString("]", out);
-
     }
     writeString("}", out);
+}
+
+time_t MergeTreeDataPartTTLInfos::getMinRecompressionTTL() const
+{
+    time_t min = std::numeric_limits<time_t>::max();
+    for (const auto & [name, info] : recompression_ttl)
+    {
+        if (info.min != 0)
+            min = std::min(info.min, min);
+    }
+
+    if (min == std::numeric_limits<time_t>::max())
+        return 0;
+    return min;
+}
+
+time_t MergeTreeDataPartTTLInfos::getMaxRecompressionTTL() const
+{
+    time_t max = 0;
+    for (const auto & [name, info] : recompression_ttl)
+        max = std::max(info.max, max);
+
+    return max;
 }
 
 }

@@ -41,10 +41,16 @@ public:
         const void * data;
 
         /// Minimal time, when we need to delete some data from this part.
-        time_t min_ttl;
+        time_t min_delete_ttl;
 
         /// Maximum time, when we will need to drop this part altogether because all rows in it are expired.
-        time_t max_ttl;
+        time_t max_delete_ttl;
+
+        /// Minimal time, when we need to recompress this part.
+        time_t min_recompress_ttl;
+
+        /// Maximum time, when we need to recompress this part.
+        time_t max_recompress_ttl;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.
