@@ -729,7 +729,6 @@ bool StorageMergeTree::merge(
 
     try
     {
-        std::cerr << "FUTURE PART MERGE TYPE:" << toString(future_part.merge_type) << std::endl;
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, metadata_snapshot, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space, deduplicate);

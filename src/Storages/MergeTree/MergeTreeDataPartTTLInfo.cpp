@@ -73,15 +73,14 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
     }
     if (json.has("recompression"))
     {
-        const JSON & moves = json["recompression"];
-        for (auto move : moves) // NOLINT
+        const JSON & recompressions = json["recompression"];
+        for (auto recompression : recompressions) // NOLINT
         {
             MergeTreeDataPartTTLInfo ttl_info;
-            ttl_info.min = move["min"].getUInt();
-            ttl_info.max = move["max"].getUInt();
-            String expression = move["expression"].getString();
+            ttl_info.min = recompression["min"].getUInt();
+            ttl_info.max = recompression["max"].getUInt();
+            String expression = recompression["expression"].getString();
             recompression_ttl.emplace(expression, ttl_info);
-            updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
         }
     }
 }

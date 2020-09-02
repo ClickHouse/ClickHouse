@@ -309,7 +309,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getCompressionCodecForPart(0, new_data_part->ttl_infos, current_time);
-    std::cerr << "SELECTED CODEC:" << queryToString(compression_codec->getCodecDesc()) << std::endl;
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);

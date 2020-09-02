@@ -234,6 +234,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         return false;
     }
 
+    //LOG_DEBUG(log, "SELECTING PARTS TO MERGE");
     time_t current_time = std::time(nullptr);
 
     IMergeSelector::Partitions partitions;
@@ -270,7 +271,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.level = part->info.level;
         part_info.data = &part;
         part_info.ttl_infos = part->ttl_infos;
-        part_info.compression_codec_desc = part->default_codec->getCodecDesc();
+        part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
 
         partitions.back().emplace_back(part_info);
 
@@ -288,6 +289,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (!ttl_merges_blocker.isCancelled() && metadata_snapshot->hasAnyTTL())
     {
+
+        //LOG_DEBUG(log, "SELECTING WITH TTL");
         TTLDeleteMergeSelector delete_ttl_selector(
                 next_ttl_merge_times_by_partition,
                 current_time,
@@ -299,6 +302,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
             future_part.merge_type = MergeType::TTL_DELETE;
         else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
+
+            //LOG_DEBUG(log, "SELECTING WITH RECOMPRESSION");
             TTLRecompressMergeSelector recompress_ttl_selector(
                     next_ttl_merge_times_by_partition,
                     current_time,
@@ -307,7 +312,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
             parts_to_merge = recompress_ttl_selector.select(partitions, max_total_size_to_merge_with_ttl);
             if (!parts_to_merge.empty())
+            {
+                //LOG_DEBUG(log, "SELECTED PARTS: {}", parts_to_merge.size());
                 future_part.merge_type = MergeType::TTL_RECOMPRESS;
+            }
         }
     }
 
@@ -410,11 +418,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
-
-    if (final)
-        future_part.merge_type = MergeType::FINAL;
-    else
-        future_part.merge_type = MergeType::NORMAL;
+    future_part.merge_type = MergeType::NORMAL;
 
     available_disk_space -= required_disk_space;
     return true;
@@ -693,6 +697,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
+    LOG_DEBUG(log, "CHOOSEN CODEC {} FOR PART {}", queryToString(compression_codec->getCodecDesc()), new_data_part->name);
 
     /// TODO: Should it go through IDisk interface?
     String rows_sources_file_path;
@@ -840,8 +845,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
 
-    if (need_remove_expired_values || (future_part.merge_type == MergeType::FINAL && !ttl_merges_blocker.isCancelled()))
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, future_part.merge_type == MergeType::FINAL);
+    if (need_remove_expired_values)
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, false);
 
 
     if (metadata_snapshot->hasSecondaryIndices())

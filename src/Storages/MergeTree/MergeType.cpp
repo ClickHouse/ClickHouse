@@ -15,8 +15,6 @@ String toString(MergeType merge_type)
     {
     case MergeType::NORMAL:
         return "NORMAL";
-    case MergeType::FINAL:
-        return "FINAL";
     case MergeType::TTL_DELETE:
         return "TTL_DELETE";
     case MergeType::TTL_RECOMPRESS:
