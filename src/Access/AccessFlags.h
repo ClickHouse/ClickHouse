@@ -100,7 +100,7 @@ public:
     /// The same as allFlags().
     static AccessFlags allFlagsGrantableOnGlobalLevel();
 
-    /// Returns all the flags which could be granted on the global level.
+    /// Returns all the flags which could be granted on the database level.
     /// Returns allDatabaseFlags() | allTableFlags() | allDictionaryFlags() | allColumnFlags().
     static AccessFlags allFlagsGrantableOnDatabaseLevel();
 
