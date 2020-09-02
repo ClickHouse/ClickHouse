@@ -9,6 +9,12 @@ namespace DB::AST
 {
 
 // static
+PtrTo<AlterPartitionClause> AlterPartitionClause::createDetach(PtrTo<PartitionExprList> list)
+{
+    return PtrTo<AlterPartitionClause>(new AlterPartitionClause(ClauseType::DETACH, {list->begin(), list->end()}));
+}
+
+// static
 PtrTo<AlterPartitionClause> AlterPartitionClause::createDrop(PtrTo<PartitionExprList> list)
 {
     return PtrTo<AlterPartitionClause>(new AlterPartitionClause(ClauseType::DROP, {list->begin(), list->end()}));
@@ -33,6 +39,11 @@ namespace DB
 {
 
 using namespace AST;
+
+antlrcpp::Any ParseTreeVisitor::visitAlterPartitionDetachClause(ClickHouseParser::AlterPartitionDetachClauseContext *ctx)
+{
+    return AlterPartitionClause::createDetach(visit(ctx->partitionClause()));
+}
 
 antlrcpp::Any ParseTreeVisitor::visitAlterPartitionDropClause(ClickHouseParser::AlterPartitionDropClauseContext *ctx)
 {

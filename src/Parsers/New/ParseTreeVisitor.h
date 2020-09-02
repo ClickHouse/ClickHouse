@@ -19,6 +19,7 @@ public:
     antlrcpp::Any visitQuery(ClickHouseParser::QueryContext *ctx) override;
     antlrcpp::Any visitAlterPartitionStmt(ClickHouseParser::AlterPartitionStmtContext *ctx) override;
     antlrcpp::Any visitAlterTableStmt(ClickHouseParser::AlterTableStmtContext *ctx) override;
+    antlrcpp::Any visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext *ctx) override;
     antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *ctx) override;
     antlrcpp::Any visitCreateDatabaseStmt(ClickHouseParser::CreateDatabaseStmtContext *ctx) override;
     antlrcpp::Any visitCreateMaterializedViewStmt(ClickHouseParser::CreateMaterializedViewStmtContext *ctx) override;
@@ -28,7 +29,8 @@ public:
     antlrcpp::Any visitDropDatabaseStmt(ClickHouseParser::DropDatabaseStmtContext *ctx) override;
     antlrcpp::Any visitDropTableStmt(ClickHouseParser::DropTableStmtContext *ctx) override;
     antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext *ctx) override;
-    antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *ctx) override;
+    antlrcpp::Any visitInsertFunctionStmt(ClickHouseParser::InsertFunctionStmtContext *ctx) override;
+    antlrcpp::Any visitInsertTableStmt(ClickHouseParser::InsertTableStmtContext *ctx) override;
     antlrcpp::Any visitOptimizeStmt(ClickHouseParser::OptimizeStmtContext *ctx) override;
     antlrcpp::Any visitRenameStmt(ClickHouseParser::RenameStmtContext *ctx) override;
     antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override;
@@ -41,6 +43,7 @@ public:
 
     // ALTER clauses
 
+    antlrcpp::Any visitAlterPartitionDetachClause(ClickHouseParser::AlterPartitionDetachClauseContext *ctx) override;
     antlrcpp::Any visitAlterPartitionDropClause(ClickHouseParser::AlterPartitionDropClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext *ctx) override;
@@ -50,6 +53,7 @@ public:
 
     // CREATE clauses
 
+    antlrcpp::Any visitDestinationClause(ClickHouseParser::DestinationClauseContext *ctx) override;
     antlrcpp::Any visitSchemaDescriptionClause(ClickHouseParser::SchemaDescriptionClauseContext *ctx) override;
     antlrcpp::Any visitSchemaAsTableClause(ClickHouseParser::SchemaAsTableClauseContext *ctx) override;
     antlrcpp::Any visitSchemaAsFunctionClause(ClickHouseParser::SchemaAsFunctionClauseContext *ctx) override;

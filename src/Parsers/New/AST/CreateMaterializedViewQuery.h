@@ -6,6 +6,12 @@
 namespace DB::AST
 {
 
+class DestinationClause : public INode
+{
+    public:
+        explicit DestinationClause(PtrTo<TableIdentifier> identifier);
+};
+
 class CreateMaterializedViewQuery : public DDLQuery
 {
     public:
@@ -13,6 +19,7 @@ class CreateMaterializedViewQuery : public DDLQuery
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
             PtrTo<SchemaClause> schema,
+            PtrTo<DestinationClause> destination,
             PtrTo<EngineClause> engine,
             PtrTo<SelectUnionQuery> query);
 
@@ -20,9 +27,10 @@ class CreateMaterializedViewQuery : public DDLQuery
         enum ChildIndex : UInt8
         {
             NAME = 0,
-            SCHEMA = 1,
-            ENGINE = 2,
-            SUBQUERY = 3,
+            SCHEMA,
+            DESTINATION,
+            ENGINE,
+            SUBQUERY,
         };
 
         const bool if_not_exists;

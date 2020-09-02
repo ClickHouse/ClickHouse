@@ -28,11 +28,23 @@ ValuesClause::ValuesClause(ClauseType type, PtrList exprs) : clause_type(type)
     (void)clause_type; // TODO
 }
 
-InsertQuery::InsertQuery(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<ValuesClause> clause)
+// static
+PtrTo<InsertQuery> InsertQuery::createTable(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<ValuesClause> clause)
 {
-    children.push_back(identifier);
-    children.push_back(list);
-    children.push_back(clause);
+    return PtrTo<InsertQuery>(new InsertQuery(QueryType::TABLE, {identifier, list, clause}));
+}
+
+// static
+PtrTo<InsertQuery> InsertQuery::createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args, PtrTo<ValuesClause> clause)
+{
+    return PtrTo<InsertQuery>(new InsertQuery(QueryType::FUNCTION, {name, args, clause}));
+}
+
+InsertQuery::InsertQuery(QueryType type, PtrList exprs) : query_type(type)
+{
+    children = exprs;
+
+    (void) query_type; // TODO
 }
 
 }

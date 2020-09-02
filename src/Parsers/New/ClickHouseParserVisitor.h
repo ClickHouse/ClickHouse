@@ -40,7 +40,11 @@ public:
 
     virtual antlrcpp::Any visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *context) = 0;
 
+    virtual antlrcpp::Any visitAlterPartitionDetachClause(ClickHouseParser::AlterPartitionDetachClauseContext *context) = 0;
+
     virtual antlrcpp::Any visitAlterPartitionDropClause(ClickHouseParser::AlterPartitionDropClauseContext *context) = 0;
+
+    virtual antlrcpp::Any visitAnalyzeStmt(ClickHouseParser::AnalyzeStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCheckStmt(ClickHouseParser::CheckStmtContext *context) = 0;
 
@@ -51,6 +55,8 @@ public:
     virtual antlrcpp::Any visitCreateTableStmt(ClickHouseParser::CreateTableStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitCreateViewStmt(ClickHouseParser::CreateViewStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitDestinationClause(ClickHouseParser::DestinationClauseContext *context) = 0;
 
     virtual antlrcpp::Any visitSubqueryClause(ClickHouseParser::SubqueryClauseContext *context) = 0;
 
@@ -88,7 +94,9 @@ public:
 
     virtual antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext *context) = 0;
 
-    virtual antlrcpp::Any visitInsertStmt(ClickHouseParser::InsertStmtContext *context) = 0;
+    virtual antlrcpp::Any visitInsertTableStmt(ClickHouseParser::InsertTableStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitInsertFunctionStmt(ClickHouseParser::InsertFunctionStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitValuesClause(ClickHouseParser::ValuesClauseContext *context) = 0;
 

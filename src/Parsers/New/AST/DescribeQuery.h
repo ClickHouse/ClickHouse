@@ -13,7 +13,7 @@ namespace DB::AST
 class DescribeQuery : public Query
 {
     public:
-        explicit DescribeQuery(PtrTo<TableIdentifier> identifier);
+        explicit DescribeQuery(PtrTo<TableExpr> expr);
 };
 
 }

@@ -7,11 +7,10 @@ options {
 // Top-level statements
 
 queryList: queryStmt (SEMICOLON queryStmt)* SEMICOLON? EOF;
-
 queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)?;
-
 query
     : alterStmt     // DDL
+    | analyzeStmt
     | checkStmt
     | createStmt    // DDL
     | describeStmt
@@ -42,8 +41,13 @@ alterTableClause
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableModifyClause
     ;
 alterPartitionClause
-    : DROP partitionClause  # AlterPartitionDropClause
+    : DETACH partitionClause  # AlterPartitionDetachClause
+    | DROP partitionClause    # AlterPartitionDropClause
     ;
+
+// ANALYZE statement
+
+analyzeStmt: ANALYZE queryStmt;
 
 // CHECK statement
 
@@ -52,12 +56,13 @@ checkStmt: CHECK TABLE tableIdentifier;
 // CREATE statement
 
 createStmt
-    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                 # CreateDatabaseStmt
-    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? POPULATE? subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?            # CreateTableStmt
-    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier subqueryClause                                                     # CreateViewStmt
+    : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier engineExpr?                                                                    # CreateDatabaseStmt
+    | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier schemaClause? destinationClause? engineClause? POPULATE? subqueryClause  # CreateMaterializedViewStmt
+    | (ATTACH | CREATE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier schemaClause? engineClause? subqueryClause?                               # CreateTableStmt
+    | (ATTACH | CREATE) VIEW (IF NOT EXISTS)? tableIdentifier subqueryClause                                                                        # CreateViewStmt
     ;
 
+destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
 schemaClause
     : LPAREN tableElementExpr (COMMA tableElementExpr)* RPAREN  # SchemaDescriptionClause
@@ -93,7 +98,7 @@ ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)
 
 // DESCRIBE statement
 
-describeStmt: (DESCRIBE | DESC) TABLE tableIdentifier;
+describeStmt: (DESCRIBE | DESC) TABLE? tableExpr;
 
 // DROP statement
 
@@ -108,7 +113,10 @@ existsStmt: EXISTS TEMPORARY? TABLE tableIdentifier;
 
 // INSERT statement
 
-insertStmt: INSERT INTO tableIdentifier (LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN)? valuesClause;
+insertStmt
+    : INSERT INTO tableIdentifier (LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN)? valuesClause  # InsertTableStmt
+    | INSERT INTO TABLE? FUNCTION identifier LPAREN tableArgList? RPAREN valuesClause                       # InsertFunctionStmt
+    ;
 
 valuesClause
     : VALUES valueTupleExpr (COMMA? valueTupleExpr)*
@@ -296,15 +304,15 @@ literal
     | NULL_SQL
     | identifier LPAREN RPAREN  // TODO: expand to LiteralExpr
     ;
-keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE
-    : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST | CHECK
-    | CLEAR | CLUSTER | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC | DESCENDING
-    | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL | GLOBAL | GROUP
-    | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT | LIKE | LIMIT | LOCAL
-    | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | PARTITION
-    | PREWHERE | PRIMARY | QUARTER | RENAME | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | SYNC | SYSTEM | TABLE
-    | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH
-    | YEAR
+keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER
+    : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
+    | CHECK | CLEAR | CLUSTER | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC
+    | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL
+    | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT
+    | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE
+    | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | SYNC | SYSTEM
+    | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN
+    | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.

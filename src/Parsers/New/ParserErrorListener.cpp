@@ -1,5 +1,8 @@
-#include <Parsers/New/ClickHouseParser.h>
+#include <Common/Exception.h>
+
 #include <Parsers/New/ParserErrorListener.h>
+
+#include <Parsers/New/ClickHouseParser.h>
 
 #include <Exceptions.h>
 #include <Token.h>
@@ -10,10 +13,20 @@ using namespace antlr4;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern int SYNTAX_ERROR;
+
+}
+
 void ParserErrorListener::syntaxError(
     Recognizer * recognizer, Token * token, size_t line, size_t pos, const std::string & message, std::exception_ptr e)
 {
-    auto stream = dynamic_cast<ClickHouseParser*>(recognizer)->getTokenStream();
+    auto * parser = dynamic_cast<ClickHouseParser*>(recognizer);
+    auto * stream = parser->getTokenStream();
+
+    // std::cerr << parser->getContext()->toStringTree(true) << std::endl;
 
     std::string tokens[9];
     try
@@ -43,6 +56,8 @@ void ParserErrorListener::syntaxError(
        << " " << tokens[7]
        << " " << tokens[8]
        << std::endl;
+
+    throw DB::Exception("Can't parse input", ErrorCodes::SYNTAX_ERROR);
 }
 
 }

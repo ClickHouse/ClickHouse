@@ -1,14 +1,14 @@
 #include <Parsers/New/AST/DescribeQuery.h>
 
-#include <Parsers/New/AST/Identifier.h>
+#include <Parsers/New/AST/TableExpr.h>
 
 
 namespace DB::AST
 {
 
-DescribeQuery::DescribeQuery(PtrTo<TableIdentifier> identifier)
+DescribeQuery::DescribeQuery(PtrTo<TableExpr> expr)
 {
-    children.push_back(identifier);
+    children.push_back(expr);
 }
 
 }

@@ -12,6 +12,7 @@ AFTER: A F T E R;
 ALIAS: A L I A S;
 ALL: A L L;
 ALTER: A L T E R;
+ANALYZE: A N A L Y Z E;
 AND: A N D;
 ANTI: A N T I;
 ANY: A N Y;
@@ -56,6 +57,7 @@ FIRST: F I R S T;
 FORMAT: F O R M A T;
 FROM: F R O M;
 FULL: F U L L;
+FUNCTION: F U N C T I O N;
 GLOBAL: G L O B A L;
 GROUP: G R O U P;
 HAVING: H A V I N G;
@@ -148,7 +150,7 @@ FLOATING_LITERAL
     ;
 HEXADECIMAL_LITERAL: '0' X HEX_DIGIT+;
 INTEGER_LITERAL: DEC_DIGIT+;
-STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) )* QUOTE_SINGLE; // It's important that quote-symbol is a single character.
+STRING_LITERAL: QUOTE_SINGLE ( ~([\\']) | (BACKSLASH .) | (QUOTE_SINGLE QUOTE_SINGLE) )* QUOTE_SINGLE;  // It's important that quote-symbol is a single character.
 
 // Alphabet and allowed symbols
 

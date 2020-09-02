@@ -9,11 +9,13 @@ namespace DB::AST
 class AlterPartitionClause : public INode
 {
     public:
+        static PtrTo<AlterPartitionClause> createDetach(PtrTo<PartitionExprList> list);
         static PtrTo<AlterPartitionClause> createDrop(PtrTo<PartitionExprList> list);
 
     private:
         enum class ClauseType
         {
+            DETACH,
             DROP,
         };
 

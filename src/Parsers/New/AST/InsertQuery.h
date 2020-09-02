@@ -27,7 +27,19 @@ class ValuesClause : public INode
 class InsertQuery : public Query
 {
     public:
-        InsertQuery(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<ValuesClause> clause);
+        static PtrTo<InsertQuery> createTable(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<ValuesClause> clause);
+        static PtrTo<InsertQuery> createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args, PtrTo<ValuesClause> clause);
+
+    private:
+        enum class QueryType
+        {
+            TABLE,
+            FUNCTION,
+        };
+
+        QueryType query_type;
+
+        InsertQuery(QueryType type, PtrList exprs);
 };
 
 }
