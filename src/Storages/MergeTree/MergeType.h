@@ -8,7 +8,6 @@ namespace DB
 enum class MergeType
 {
     NORMAL,
-    FINAL,
     TTL_DELETE,
     TTL_RECOMPRESS,
 };

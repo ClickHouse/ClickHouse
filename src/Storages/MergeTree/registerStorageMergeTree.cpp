@@ -559,7 +559,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->ttl_table)
         {
-            std::cerr << "Parsing table ttl in description\n";
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, args.context, metadata.primary_key);
         }

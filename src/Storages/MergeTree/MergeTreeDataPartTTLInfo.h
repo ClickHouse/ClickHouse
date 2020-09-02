@@ -67,7 +67,7 @@ struct MergeTreeDataPartTTLInfos
 
     bool empty()
     {
-        return !part_min_ttl && moves_ttl.empty();
+        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty();
     }
 };
 
