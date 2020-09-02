@@ -193,3 +193,7 @@
 [submodule "contrib/miniselect"]
 	path = contrib/miniselect
 	url = https://github.com/danlark1/miniselect
+[submodule "contrib/rocksdb"]
+	path = contrib/rocksdb
+	url = https://github.com/facebook/rocksdb
+	branch = v6.11.4
