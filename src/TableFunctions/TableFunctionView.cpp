@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/StorageView.h>
@@ -16,25 +15,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionView::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionView::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
 {
-    if (const auto * function = ast_function->as<ASTFunction>())
-    {
-        if (function->query)
-        {
-            if (auto * select = function->query->as<ASTSelectWithUnionQuery>())
-            {
-                auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(function->query, context);
-                auto columns = ColumnsDescription(sample.getNamesAndTypesList());
-                ASTCreateQuery create;
-                create.select = select;
-                auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
-                res->startup();
-                return res;
-            }
-        }
-    }
-    throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
+    const auto * function = ast_function->as<ASTFunction>();
+    if (function && function->query && function->query->as<ASTSelectWithUnionQuery>())
+        create.set(create.select, function->query);
+    else
+        throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
+}
+
+ColumnsDescription TableFunctionView::getActualTableStructure(const Context & context) const
+{
+    assert(create.select);
+    assert(create.children.size() == 1);
+    assert(create.children[0]->as<ASTSelectWithUnionQuery>());
+    auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+    return ColumnsDescription(sample.getNamesAndTypesList());
+}
+
+StoragePtr TableFunctionView::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    auto columns = getActualTableStructure(context);
+    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns);
+    res->startup();
+    return res;
 }
 
 void registerTableFunctionView(TableFunctionFactory & factory)
