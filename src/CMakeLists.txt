@@ -78,6 +78,10 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+if (USE_ROCKSDB)
+    add_headers_and_sources(dbms Storages/Rocksdb)
+endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
@@ -294,6 +298,7 @@ if (USE_KRB5)
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
+
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
@@ -400,6 +405,13 @@ if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
 endif ()
+
+if (USE_ROCKSDB)
+    dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
+    # target_link_libraries (clickhouse_common_io PUBLIC ${ROCKSDB_LIBRARY})
+    # target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
+endif()
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

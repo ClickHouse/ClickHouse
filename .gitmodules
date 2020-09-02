@@ -190,3 +190,7 @@
 	path = contrib/croaring
 	url = https://github.com/RoaringBitmap/CRoaring
 	branch = v0.2.66
+[submodule "contrib/rocksdb"]
+	path = contrib/rocksdb
+	url = https://github.com/facebook/rocksdb
+	branch = v6.11.4

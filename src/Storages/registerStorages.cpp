@@ -53,6 +53,10 @@ void registerStorages()
     #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
+
+    #if USE_ROCKSDB
+    registerStorageEmbeddedRocksdb(factory);
+    #endif
 }
 
 }

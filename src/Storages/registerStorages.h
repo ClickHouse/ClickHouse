@@ -54,6 +54,10 @@ void registerStorageKafka(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
 
+#if USE_ROCKSDB
+void registerStorageEmbeddedRocksdb(StorageFactory & factory);
+#endif
+
 void registerStorages();
 
 }
