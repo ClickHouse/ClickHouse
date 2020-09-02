@@ -111,8 +111,13 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     # Check that data is placed on node3
     assert node3.query("SELECT count(*) from test_table_update") == "6\n"
 
-    result = node4.exec_in_container(["bash", "-c", "/usr/bin/host node3"])
-    print("HOST RESULT %s", result)
+    curl_result = node4.exec_in_container(["bash", "-c", "curl -s 'node3:8123'"])
+    assert curl_result == 'Ok.\n'
+    cat_resolv = node4.exec_in_container(["bash", "-c", "cat /etc/resolv.conf"])
+    print("RESOLV {}".format(cat_resolv))
+
+
+    assert node4.query("SELECT * FROM remote('node3', 'system', 'one')") == "0\n"
 
     # Because of DNS cache update, ip of node3 would be updated
     assert_eq_with_retry(node4, "SELECT count(*) from test_table_update", "6", sleep_time=3)

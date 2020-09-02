@@ -727,6 +727,11 @@ services:
             - {env_file}
         security_opt:
             - label:disable
+        dns_opt:
+            - attempts:2
+            - timeout:1
+            - inet6
+            - rotate
         {networks}
             {app_net}
                 {ipv4_address}
@@ -740,8 +745,8 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
-            base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo,
+            with_redis, with_minio, with_cassandra, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
