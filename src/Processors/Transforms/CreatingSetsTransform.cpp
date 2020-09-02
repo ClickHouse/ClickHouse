@@ -33,12 +33,12 @@ CreatingSetsTransform::CreatingSetsTransform(
 {
 }
 
-void CreatingSetsTransform::addTotalsPort()
+InputPort * CreatingSetsTransform::addTotalsPort()
 {
     if (inputs.size() > 1)
         throw Exception("Totals port was already added to CreatingSetsTransform", ErrorCodes::LOGICAL_ERROR);
 
-    inputs.emplace_back(getInputPort().getHeader(), this);
+    return &inputs.emplace_back(getInputPort().getHeader(), this);
 }
 
 IProcessor::Status CreatingSetsTransform::prepare()

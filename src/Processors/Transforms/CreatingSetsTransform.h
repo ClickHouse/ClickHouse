@@ -33,7 +33,7 @@ public:
     void consume(Chunk chunk) override;
     Chunk generate() override;
 
-    void addTotalsPort();
+    InputPort * addTotalsPort();
 
 protected:
     bool finished = false;
