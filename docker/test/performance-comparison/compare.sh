@@ -546,8 +546,8 @@ create table test_time_changes engine File(TSV, 'report/test-time-changes.tsv') 
         select test, count(*) queries,
             sum(left) as left, sum(right) as right,
             (right - left) / right average_time_change
-    from queries
-    group by test
+        from queries
+        group by test
         order by abs(average_time_change) desc
     )
     ;
