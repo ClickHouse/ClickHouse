@@ -245,10 +245,6 @@ template <size_t Bits, typename Signed>
 std::wistream& operator>>(std::wistream& in, wide_integer<Bits, Signed>& n);
 #endif
 
-// numeric limits
-template <size_t Bits, typename Signed>
-struct numeric_limits<wide_integer<Bits, Signed>>;
-
 template <size_t Bits, typename Signed>
 struct hash<wide_integer<Bits, Signed>>;
 

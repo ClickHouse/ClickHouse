@@ -50,10 +50,6 @@ public:
         }
     }
 
-    static constexpr wide_integer<Bits, Signed> lowest() noexcept {
-        return min();
-    }
-
     static constexpr wide_integer<Bits, Signed> max() noexcept {
         wide_integer<Bits, Signed> res{};
         res.m_arr[0] = is_same<Signed, signed>::value
@@ -65,61 +61,29 @@ public:
         return res;
     }
 
-    static constexpr wide_integer<Bits, Signed> epsilon() noexcept {
-        return 0;
-    }
-
-    static constexpr wide_integer<Bits, Signed> round_error() noexcept {
-        return 0;
-    }
-
-    static constexpr wide_integer<Bits, Signed> infinity() noexcept {
-        return 0;
-    }
-
-    static constexpr wide_integer<Bits, Signed> quiet_NaN() noexcept {
-        return 0;
-    }
-
-    static constexpr wide_integer<Bits, Signed> signaling_NaN() noexcept {
-        return 0;
-    }
-
-    static constexpr wide_integer<Bits, Signed> denorm_min() noexcept {
-        return 0;
-    }
+    static constexpr wide_integer<Bits, Signed> lowest() noexcept { return min(); }
+    static constexpr wide_integer<Bits, Signed> epsilon() noexcept { return 0; }
+    static constexpr wide_integer<Bits, Signed> round_error() noexcept { return 0; }
+    static constexpr wide_integer<Bits, Signed> infinity() noexcept { return 0; }
+    static constexpr wide_integer<Bits, Signed> quiet_NaN() noexcept { return 0; }
+    static constexpr wide_integer<Bits, Signed> signaling_NaN() noexcept { return 0; }
+    static constexpr wide_integer<Bits, Signed> denorm_min() noexcept { return 0; }
 };
-
-namespace detail {
-template <class T>
-constexpr bool valid_specialized_numeric_limits(std::false_type /*is_array*/) {
-    return std::numeric_limits<T>::is_specialized;
-}
-template <class T>
-constexpr bool valid_specialized_numeric_limits(std::true_type /*is_array*/) {
-    return false;
-}
-}
 
 template <typename T>
 static constexpr bool ArithmeticConcept() noexcept {
-    return std::detail::valid_specialized_numeric_limits<T>(std::is_array<T>());
-}
-
-namespace detail {
-template <class T>
-constexpr bool valid_specialized_numeric_limits_and_integral(std::false_type /*is_array*/) {
-    return std::numeric_limits<T>::is_specialized && std::numeric_limits<T>::is_integer;
-}
-template <class T>
-constexpr bool valid_specialized_numeric_limits_and_integral(std::true_type /*is_array*/) {
-    return false;
-}
+    if constexpr (std::is_array_v<T>)
+        return false;
+    else
+        return std::numeric_limits<T>::is_specialized;
 }
 
 template <typename T>
 static constexpr bool IntegralConcept() noexcept {
-    return std::detail::valid_specialized_numeric_limits_and_integral<T>(std::is_array<T>());
+    if constexpr (std::is_array_v<T>)
+        return false;
+    else
+        return std::numeric_limits<T>::is_specialized && std::numeric_limits<T>::is_integer;
 }
 
 // type traits
