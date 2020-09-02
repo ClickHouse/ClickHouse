@@ -154,6 +154,19 @@ private:
     std::unique_ptr<ContextShared> shared;
 };
 
+struct Fingerprints
+{
+    using StringsMap = std::unordered_map<String, std::nullptr_t>;
+    Strings add(const Strings & fps);
+    Strings getList();
+    StringsMap getMap();
+    ~Fingerprints();
+    Fingerprints();
+private:
+    std::mutex mutex;
+    StringsMap map;
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -200,6 +213,9 @@ private:
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
+
+    std::shared_ptr<Fingerprints> fingerprints; /// set of parts' fingerprints, is used for query parts deduplication
+    std::shared_ptr<Fingerprints> excluded_fingerprints; /// set of parts' fingerprints, is used for exluding parts being processed
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -618,6 +634,9 @@ public:
     };
 
     MySQLWireContext mysql;
+
+    std::shared_ptr<Fingerprints> getFingerprints();
+    std::shared_ptr<Fingerprints> getExcludedFingerprints();
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

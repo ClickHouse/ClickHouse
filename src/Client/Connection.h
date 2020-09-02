@@ -63,6 +63,7 @@ struct Packet
     std::vector<String> multistring_message;
     Progress progress;
     BlockStreamProfileInfo profile_info;
+    Strings fingerprints;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -154,6 +155,9 @@ public:
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
+
+    /// Send parts' fingerprints
+    void sendFingerprints(const Strings & fps);
 
     /// Check, if has data to read.
     bool poll(size_t timeout_microseconds = 0);

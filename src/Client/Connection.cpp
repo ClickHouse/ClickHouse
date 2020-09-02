@@ -522,6 +522,13 @@ void Connection::sendScalarsData(Scalars & data)
             ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
+void Connection::sendFingerprints(const Strings & fps)
+{
+    writeVarUInt(Protocol::Client::Fingerprints, *out);
+    writeVectorBinary<>(fps, *out);
+    out->next();
+}
+
 namespace
 {
 /// Sink which sends data for external table.
@@ -712,6 +719,11 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::EndOfStream:
+                return res;
+
+            case Protocol::Server::Fingerprints:
+                LOG_DEBUG(log_wrapper.get(), "got fingerprints packet");
+                readVectorBinary(res.fingerprints, *in);
                 return res;
 
             default:

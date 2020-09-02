@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_MANY_ROWS;
+    extern const int DUPLICATED_FINGERPRINTS;
 }
 
 
@@ -91,14 +92,26 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 
 
 /// Construct a block consisting only of possible values of virtual columns
-static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts)
+static Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool fingerprint)
 {
-    auto column = ColumnString::create();
+    auto partColumn = ColumnString::create();
+    auto partFingerprintColumn = ColumnString::create();
 
-    for (const auto & part : parts)
-        column->insert(part->name);
+    for (const auto & part : parts) {
+        partColumn->insert(part->name);
+        if (fingerprint)
+            partFingerprintColumn->insert(part->fingerprint);
+    }
 
-    return Block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "_part")};
+    if (fingerprint)
+    {
+        return Block(std::initializer_list<ColumnWithTypeAndName>{
+            ColumnWithTypeAndName(std::move(partColumn), std::make_shared<DataTypeString>(), "_part"),
+            ColumnWithTypeAndName(std::move(partFingerprintColumn), std::make_shared<DataTypeString>(), "_part_fingerprint"),
+            });
+    }
+
+    return Block{ColumnWithTypeAndName(std::move(partColumn), std::make_shared<DataTypeString>(), "_part")};
 }
 
 
@@ -182,6 +195,7 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     Names real_column_names;
 
     bool part_column_queried = false;
+    bool part_fingerprint_column_queried = false;
 
     bool sample_factor_column_queried = false;
     Float64 used_sample_factor = 1;
@@ -201,6 +215,11 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == "_part_fingerprint")
+        {
+            part_fingerprint_column_queried = true;
+            virt_column_names.push_back(name);
+        }
         else if (name == "_sample_factor")
         {
             sample_factor_column_queried = true;
@@ -218,9 +237,9 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
-    /// If `_part` virtual column is requested, we try to use it as an index.
-    Block virtual_columns_block = getBlockWithPartColumn(parts);
-    if (part_column_queried)
+    /// If `_part` or `_part_fingerprint` virtual columns are requested, we try to filter out data by them.
+    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, part_fingerprint_column_queried);
+    if (part_column_queried || part_fingerprint_column_queried)
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context);
 
     std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
@@ -269,30 +288,83 @@ Pipe MergeTreeDataSelectExecutor::readFromParts(
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
+    /// Skip parts fingerprints if any to the query context, or skip parts which fingerprints marked as excluded.
     {
-        auto prev_parts = parts;
-        parts.clear();
 
-        for (const auto & part : prev_parts)
-        {
-            if (part_values.find(part->name) == part_values.end())
-                continue;
+        Context & query_context = const_cast<Context &>(context).getQueryContext();
 
-            if (part->isEmpty())
-                continue;
+        auto process_parts = [&]() {
+            auto excluded_fingerprints_map = query_context.getExcludedFingerprints()->getMap();
+            std::set<String> temp_fingerprints;
+            auto prev_parts = parts;
+            parts.clear();
 
-            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                    part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
-                continue;
-
-            if (max_block_numbers_to_read)
+            for (const auto & part : prev_parts)
             {
-                auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
-                if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                if (part_values.find(part->name) == part_values.end())
                     continue;
+
+                if (part->isEmpty())
+                    continue;
+
+                if (minmax_idx_condition
+                    && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
+                    continue;
+
+                if (max_block_numbers_to_read)
+                {
+                    auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+                    if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                        continue;
+                }
+
+                if unlikely(!part->fingerprint.empty())
+                {
+                    /// Skip a part if its fingerprint is meant to be excluded
+                    if unlikely (excluded_fingerprints_map.find(part->fingerprint) != excluded_fingerprints_map.end())
+                        continue;
+
+                    auto result = temp_fingerprints.insert(part->fingerprint);
+                    // found a block with the same fingerprint one the same replica, ignore it
+                    if (!result.second)
+                        continue;
+                }
+                parts.push_back(part);
             }
 
-            parts.push_back(part);
+            if unlikely (!temp_fingerprints.empty())
+            {
+                auto duplicates = query_context.getFingerprints()->add(Strings{temp_fingerprints.begin(),temp_fingerprints.end()});
+                if (!duplicates.empty())
+                {
+                    // if any duplicates appeared during the first pass, adding them to the exclusion, so they will be skipped on second pass
+                    query_context.getExcludedFingerprints()->add(duplicates);
+                    throw Exception("Found duplicate fingerprints while processing query.", ErrorCodes::DUPLICATED_FINGERPRINTS);
+                }
+            }
+        };
+
+        /// TODO(xjewer): should we add a setting on max retries?
+        /// Retry once
+        auto retry = false;
+        while(true)
+        {
+            try {
+                process_parts();
+                break;
+            }
+            catch (const DB::Exception & ex)
+            {
+                if (!retry && ex.code() == ErrorCodes::DUPLICATED_FINGERPRINTS)
+                {
+                    if (log)
+                        LOG_DEBUG(log, "found duplicate fingerprints locally, will retry part selection without them");
+                    retry = true;
+                    continue;
+                } else {
+                    ex.rethrow();
+                }
+            }
         }
     }
 

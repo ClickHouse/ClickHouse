@@ -11,10 +11,10 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int DUPLICATED_FINGERPRINTS;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -146,15 +146,24 @@ void RemoteQueryExecutor::sendQuery()
 
     multiplexed_connections = create_multiplexed_connections();
 
-    const auto& settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
 
     established = true;
+    was_cancelled = false;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context.getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    {
+        std::lock_guard lock(excluded_fingerprints_mutex);
+        if (!excluded_fingerprints.empty())
+        {
+            multiplexed_connections->sendFingerprints(excluded_fingerprints);
+        }
+    }
 
     multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
@@ -176,6 +185,35 @@ Block RemoteQueryExecutor::read()
             return {};
     }
 
+    try
+    {
+        return readPackets();
+    }
+    catch (const DB::Exception & ex)
+    {
+        if (ex.code() == ErrorCodes::DUPLICATED_FINGERPRINTS)
+        {
+            /// Cancel previous query and disconnect before retry.
+            cancel();
+            multiplexed_connections->disconnect();
+
+            if (!resent_query)
+            {
+                if (log)
+                    LOG_DEBUG(log, "found duplicate fingerprints, will retry query without those parts");
+                resent_query = true;
+                sent_query = false;
+                /// Consecutive read will implicitly send query first.
+                return read();
+            }
+            got_fingerprints_duplicates = true;
+        }
+        throw ex;
+    }
+}
+
+Block RemoteQueryExecutor::readPackets()
+{
     while (true)
     {
         if (was_cancelled)
@@ -185,6 +223,9 @@ Block RemoteQueryExecutor::read()
 
         switch (packet.type)
         {
+            case Protocol::Server::Fingerprints:
+                setFingerprints(packet.fingerprints);
+                break;
             case Protocol::Server::Data:
                 /// If the block is not empty and is not a header block
                 if (packet.block && (packet.block.rows() > 0))
@@ -241,6 +282,19 @@ Block RemoteQueryExecutor::read()
                     toString(packet.type),
                     multiplexed_connections->dumpAddresses());
         }
+    }
+}
+
+void RemoteQueryExecutor::setFingerprints(const Strings & fps)
+{
+    Context & query_context = const_cast<Context &>(context).getQueryContext();
+    Strings duplicates = query_context.getFingerprints()->add(fps);
+
+    if (!duplicates.empty())
+    {
+        std::lock_guard lock(excluded_fingerprints_mutex);
+        excluded_fingerprints.insert(excluded_fingerprints.begin(), duplicates.begin(), duplicates.end());
+        throw Exception("Found duplicate fingerprints while processing query.", ErrorCodes::DUPLICATED_FINGERPRINTS);
     }
 }
 
@@ -319,6 +373,7 @@ void RemoteQueryExecutor::sendExternalTables()
     {
         std::lock_guard lock(external_tables_mutex);
 
+        external_tables_data.clear();
         external_tables_data.reserve(count);
 
         for (size_t i = 0; i < count; ++i)
@@ -377,7 +432,7 @@ bool RemoteQueryExecutor::isQueryPending() const
 
 bool RemoteQueryExecutor::hasThrownException() const
 {
-    return got_exception_from_replica || got_unknown_packet_from_replica;
+    return got_exception_from_replica || got_unknown_packet_from_replica || got_fingerprints_duplicates;
 }
 
 }

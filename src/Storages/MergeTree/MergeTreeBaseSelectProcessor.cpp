@@ -241,6 +241,16 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
 
                 inserter.insertUInt64Column(column, virtual_column_name);
             }
+            else if (virtual_column_name == "_part_fingerprint")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeString().createColumnConst(rows, task->data_part->fingerprint)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeString().createColumn();
+
+                inserter.insertStringColumn(column, virtual_column_name);
+            }
             else if (virtual_column_name == "_partition_id")
             {
                 ColumnPtr column;

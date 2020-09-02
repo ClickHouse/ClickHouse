@@ -115,6 +115,9 @@ private:
     /// Query is sent (used before getting first block)
     std::atomic<bool> sent_query { false };
 
+    /// Query is resent to a replica, the query itself can be modified.
+    std::atomic<bool> resent_query { false };
+
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
@@ -140,6 +143,14 @@ private:
       */
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
+    /** Got duplicated fingerprints from replica
+     */
+    std::atomic<bool> got_fingerprints_duplicates { false };
+
+    /// Parts fingerprints, collected from remote replicas
+    std::mutex excluded_fingerprints_mutex;
+    Strings excluded_fingerprints;
+
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
@@ -151,6 +162,11 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
+    /** Set part fingerprints to a query context, collected from remote replicas.
+     * Throws an exception, if there any duplicates
+     */
+    void setFingerprints(const Strings & fps);
+
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void tryCancel(const char * reason);
 
@@ -159,6 +175,9 @@ private:
 
     /// Returns true if exception was thrown
     bool hasThrownException() const;
+
+    /// Reads packet by packet
+    Block readPackets();
 };
 
 }

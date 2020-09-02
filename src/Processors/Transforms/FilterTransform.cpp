@@ -33,6 +33,7 @@ Block FilterTransform::transformHeader(
     const String & filter_column_name,
     bool remove_filter_column)
 {
+
     expression->execute(header);
 
     if (remove_filter_column)

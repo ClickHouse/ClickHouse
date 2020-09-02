@@ -67,6 +67,21 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     }
 }
 
+void MultiplexedConnections::sendFingerprints(const Strings & fps)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (sent_query)
+        throw Exception("Cannot send fingerprints after query is sent.", ErrorCodes::LOGICAL_ERROR);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendFingerprints(fps);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -98,9 +113,10 @@ void MultiplexedConnections::sendQuery(
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
-
     if (sent_query)
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
+
+    cancelled = false;
 
     Settings modified_settings = settings;
 
@@ -116,7 +132,6 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
     }
-
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
     {
@@ -194,6 +209,7 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
+            case Protocol::Server::Fingerprints:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -252,6 +268,7 @@ Packet MultiplexedConnections::receivePacketUnlocked()
 
     switch (packet.type)
     {
+        case Protocol::Server::Fingerprints:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:

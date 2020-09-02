@@ -37,6 +37,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def prepare_node(node, fingerprints=None):
     node.query("""
     CREATE TABLE t(key UInt64, value UInt64)
@@ -78,10 +79,36 @@ def prepare_node(node, fingerprints=None):
     assert str(len(fingerprints)) == node.query("SELECT count() FROM system.parts WHERE table = 't' AND length(fingerprint) > 0").strip()
 
 
-def test_basic(started_cluster):
+@pytest.fixture(scope="module")
+def prepared_cluster(started_cluster):
     prepare_node(node1, fingerprints=[("all_3_3_0", "my_uniq_fp_1")])
     prepare_node(node2, fingerprints=[("all_3_3_0", "my_uniq_fp_1"), ("all_4_4_0", "my_uniq_fp2")])
 
+
+def test_virtual_column(prepared_cluster):
+    # Part containing `key=3` has the same fingerprint on both nodes,
+    #   we expect it to be included only once in the end result.;
+    # select query is using virtucal column _part_fingerprint to filter out part in one shard
+    expected = """
+    1	2
+    2	2
+    3	1
+    4	2
+    5	2
+    """
+    assert TSV(expected) == TSV(node1.query("""
+    SELECT
+        key,
+        count() AS c
+    FROM d
+    WHERE ((_shard_num = 1) AND (_part_fingerprint != 'my_uniq_fp_1')) OR (_shard_num = 2)
+    GROUP BY key
+    ORDER BY
+        key ASC
+    """))
+
+
+def test_basic(prepared_cluster):
     # Part containing `key=3` has the same fingerprint on both nodes,
     #   we expect it to be included only once in the end result.;
     expected = """
@@ -91,4 +118,4 @@ def test_basic(started_cluster):
 4	2
 5	2
 """
-    assert TSV(expected) == TSV(node1.query("SELECT key, count() c FROM d GROUP BY key ORDER BY c, key"))
+    assert TSV(expected) == TSV(node1.query("SELECT key, count() c FROM d GROUP BY key ORDER BY key"))

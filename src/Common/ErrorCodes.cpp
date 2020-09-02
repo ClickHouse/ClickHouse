@@ -508,6 +508,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING = 541;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE = 542;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL = 543;
+    extern const int DUPLICATED_FINGERPRINTS = 544;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

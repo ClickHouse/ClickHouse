@@ -729,8 +729,6 @@ void IMergeTreeDataPart::loadTTLInfos()
 
 void IMergeTreeDataPart::loadFingerprint()
 {
-
-
     String path = getFullRelativePath() + "fingerprint.txt";
     if (volume->getDisk()->exists(path))
     {

@@ -131,6 +131,7 @@ void SelectStreamFactory::createForShard(
     }
 
     auto modified_query_ast = query_ast->clone();
+    /// TODO(xjewer) return earlier if there is a filter by _shard_num, don't need to send remote query
     if (has_virtual_shard_num_column)
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
 

@@ -65,6 +65,8 @@ struct QueryState
     bool need_receive_data_for_insert = false;
     /// Temporary tables read
     bool temporary_tables_read = false;
+    /// A state got fingerprints to exclude from a query
+    bool fingerprints = false;
 
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
@@ -155,6 +157,7 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
+    void receiveFingerprints();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
@@ -183,6 +186,7 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
+    void sendFingerprints();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

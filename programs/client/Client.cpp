@@ -1679,6 +1679,9 @@ private:
 
         switch (packet.type)
         {
+            case Protocol::Server::Fingerprints:
+                return true;
+
             case Protocol::Server::Data:
                 if (!cancelled)
                     onData(packet.block);

@@ -173,9 +173,18 @@ void TCPHandler::runImpl()
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
+             *  It's possible to receive fingerprints packet before the query, so then receivePacket has to be called twice.
              */
             if (!receivePacket())
                 continue;
+
+            /** If fingerprints got received in previous packet, trying to read again.
+             */
+            if (state.empty() && state.fingerprints && !receivePacket())
+            {
+                std::cout << "receiving second packet after fingerprints" << std::endl;
+                continue;
+            }
 
             query_scope.emplace(*query_context);
 
@@ -509,6 +518,8 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
+        sendFingerprints();
+
         /// This allows the client to prepare output format
         if (Block header = state.io.in->getHeader())
             sendData(header);
@@ -571,6 +582,8 @@ void TCPHandler::processOrdinaryQuery()
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
+
+    sendFingerprints();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -671,6 +684,22 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
 
     throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
+
+void TCPHandler::sendFingerprints()
+{
+    auto fps = query_context->getFingerprints()->getList();
+    if (!fps.empty())
+    {
+        LOG_INFO(log, "fingerprints sent");
+        for (const auto & fp : fps)
+            LOG_INFO(log, fp);
+
+        writeVarUInt(Protocol::Server::Fingerprints, *out);
+        writeVectorBinary(fps, *out);
+        out->next();
+    }
+}
+
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
@@ -801,6 +830,10 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
+        case Protocol::Client::Fingerprints:
+            /// fingerpints packet if any comes before query.
+            receiveFingerprints();
+            return true;
         case Protocol::Client::Query:
             if (!state.empty())
                 receiveUnexpectedQuery();
@@ -836,6 +869,17 @@ bool TCPHandler::receivePacket()
     }
 }
 
+void TCPHandler::receiveFingerprints()
+{
+    state.fingerprints = true;
+    Strings fps;
+    readVectorBinary(fps, *in);
+
+    if (!fps.empty()) {
+        auto excluded_fingerprints = query_context->getExcludedFingerprints();
+        excluded_fingerprints->add(fps);
+    }
+}
 
 void TCPHandler::receiveQuery()
 {

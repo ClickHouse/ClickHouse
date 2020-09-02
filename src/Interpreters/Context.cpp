@@ -2312,4 +2312,68 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     return StorageID::createEmpty();
 }
 
+
+std::shared_ptr<Fingerprints> Context::getFingerprints()
+{
+    auto lock = getLock();
+    if (!fingerprints)
+        fingerprints = std::make_shared<Fingerprints>();
+
+    return fingerprints;
+}
+
+std::shared_ptr<Fingerprints> Context::getExcludedFingerprints()
+{
+    auto lock = getLock();
+    if (!excluded_fingerprints)
+        excluded_fingerprints = std::make_shared<Fingerprints>();
+
+    return excluded_fingerprints;
+}
+
+Fingerprints::Fingerprints() = default;
+Fingerprints::~Fingerprints() = default;
+
+Strings Fingerprints::add(const Strings & fps)
+{
+    std::lock_guard lock(mutex);
+    Strings intersection;
+
+    /// First check any presence of fingerprints in a map, return duplicates back if any
+    for(const auto & fp: fps)
+    {
+        if (map.find(fp) != map.end())
+        {
+            intersection.emplace_back(fp);
+        }
+    }
+
+    if (intersection.empty())
+    {
+        for(const auto & fp: fps)
+        {
+            map.emplace(fp, nullptr);
+        }
+    }
+    return intersection;
+}
+
+Strings Fingerprints::getList()
+{
+    std::lock_guard lock(mutex);
+    Strings v;
+    for (const auto &i: map) {
+        v.push_back(i.first);
+    }
+
+    return v;
+}
+
+/// Returns map of fingerprints, is only used in MergeTreeDataSelectExecutor to find a fingerprint
+Fingerprints::StringsMap Fingerprints::getMap()
+{
+    std::lock_guard lock(mutex);
+    return map;
+}
+
 }

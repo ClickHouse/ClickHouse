@@ -50,6 +50,9 @@ public:
     /// Send a request to the replica to cancel the request
     void sendCancel();
 
+    /// Send parts' fingerprints to replicas before the query itself
+    void sendFingerprints(const Strings & fps);
+
     /** On each replica, read and skip all packets to EndOfStream or Exception.
       * Returns EndOfStream if no exception has been received. Otherwise
       * returns the last received packet of type Exception.

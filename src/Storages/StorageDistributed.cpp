@@ -338,6 +338,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
             NameAndTypePair("_table", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+            NameAndTypePair("_part_fingerprint", std::make_shared<DataTypeString>()),
             NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
             NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
             NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
