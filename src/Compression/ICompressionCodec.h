@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -17,7 +18,6 @@ using Codecs = std::vector<CompressionCodecPtr>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
 */
@@ -30,7 +30,11 @@ public:
     virtual uint8_t getMethodByte() const = 0;
 
     /// Codec description, for example "ZSTD(2)" or "LZ4,LZ4HC(5)"
-    virtual String getCodecDesc() const = 0;
+    virtual ASTPtr getCodecDesc() const = 0;
+
+    /// Codec description with "CODEC" prefix, for example "CODEC(ZSTD(2))" or
+    /// "CODEC(LZ4,LZ4HC(5))"
+    ASTPtr getFullCodecDesc() const;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
@@ -58,9 +62,6 @@ public:
 
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
-
-    /// Some codecs may use information about column type which appears after codec creation
-    virtual void useInfoAboutType(const DataTypePtr & /* data_type */) {}
 
     /// Return true if this codec actually compressing something. Otherwise it can be just transformation that helps compression (e.g. Delta).
     virtual bool isCompression() const = 0;

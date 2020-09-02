@@ -18,7 +18,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
@@ -30,11 +29,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <Access/AccessRightsElement.h>
@@ -70,6 +67,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int DICTIONARY_ALREADY_EXISTS;
@@ -281,14 +279,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         }
 
         if (column.codec)
-        {
-            String codec_desc = column.codec->getCodecDesc();
-            codec_desc = "CODEC(" + codec_desc + ")";
-            const char * codec_desc_pos = codec_desc.data();
-            const char * codec_desc_end = codec_desc_pos + codec_desc.size();
-            ParserIdentifierWithParameters codec_p;
-            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        }
+            column_declaration->codec = column.codec;
 
         if (column.ttl)
             column_declaration->ttl = column.ttl;
@@ -422,7 +413,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
-            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type, sanity_check_compression_codecs);
+        {
+            if (col_decl.default_specifier == "ALIAS")
+                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                col_decl.codec, column.type, sanity_check_compression_codecs);
+        }
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;

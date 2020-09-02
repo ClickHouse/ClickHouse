@@ -36,8 +36,9 @@ color_good='#b0d050'
 
 header_template = """
 <!DOCTYPE html>
-<html>
-  <style>
+<html lang="en">
+<link rel="preload" as="font" href="https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2" type="font/woff2" crossorigin="anonymous"/>
+<style>
 @font-face {{
     font-family:'Yandex Sans Display Web';
     src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
@@ -48,7 +49,8 @@ header_template = """
             url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
     font-weight:400;
     font-style:normal;
-    font-stretch:normal
+    font-stretch:normal;
+    font-display: swap;
 }}
 
 body {{
@@ -165,12 +167,6 @@ def nextRowAnchor():
     global row_anchor
     global table_anchor
     return f'{table_anchor}.{row_anchor + 1}'
-
-def setRowAnchor(anchor_row_part):
-    global row_anchor
-    global table_anchor
-    row_anchor = anchor_row_part
-    return currentRowAnchor()
 
 def advanceRowAnchor():
     global row_anchor
@@ -478,11 +474,12 @@ if args.report == 'main':
         total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
         attrs = ['' for c in columns]
         for r in rows:
+            anchor = f'{currentTableAnchor()}.{r[0]}'
             if float(r[6]) > 1.5 * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = f'style="background: {color_bad}"'
-                errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
+                errors_explained.append([f'<a href="#{anchor}">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
                 attrs[6] = ''
 
@@ -493,7 +490,7 @@ if args.report == 'main':
             else:
                 attrs[5] = ''
 
-            text += tableRow(r, attrs)
+            text += tableRow(r, attrs, anchor)
 
         text += tableEnd()
         tables.append(text)
@@ -579,6 +576,7 @@ if args.report == 'main':
         print(t)
 
     print("""
+    </div>
     <p class="links">
     <a href="all-queries.html">All queries</a>
     <a href="compare.log">Log</a>
@@ -696,6 +694,7 @@ elif args.report == 'all-queries':
         print(t)
 
     print("""
+    </div>
     <p class="links">
     <a href="report.html">Main report</a>
     <a href="compare.log">Log</a>

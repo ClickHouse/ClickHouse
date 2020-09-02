@@ -1864,6 +1864,28 @@ Default value: `0`.
 -   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 
+## ttl_only_drop_parts {#ttl_only_drop_parts}
+
+Enables or disables complete dropping of data parts where all rows are expired in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. 
+
+When `ttl_only_drop_parts` is disabled (by default), the ClickHouse server only deletes expired rows according to their TTL. 
+
+When `ttl_only_drop_parts` is enabled, the ClickHouse server drops a whole part when all rows in it are expired. 
+
+Dropping whole parts instead of partial cleaning TTL-d rows allows to have shorter `merge_with_ttl_timeout` times and lower impact on system performance.
+
+Possible values:
+
+-   0 — Complete dropping of data parts is disabled.
+-   1 — Complete dropping of data parts is enabled.
+
+Default value: `0`.
+
+**See Also** 
+
+-   [CREATE TABLE query clauses and settings](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (`merge_with_ttl_timeout` setting)
+-   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
+
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
 Defines how many seconds locking request waits before failing. 
