@@ -51,7 +51,7 @@ struct ComparePairSecond final
 };
 
 template <typename X = Float64, typename Y = Float64>
-struct AggregateFunctionRankCorrelationSpearmanData final
+struct AggregateFunctionRankCorrelationData final
 {
     size_t size_x = 0;
 
@@ -62,23 +62,21 @@ struct AggregateFunctionRankCorrelationSpearmanData final
 };
 
 template <typename X, typename Y>
-class AggregateFunctionRankCorrelationSpearman :
-    public IAggregateFunctionDataHelper<AggregateFunctionRankCorrelationSpearmanData<X, Y>, AggregateFunctionRankCorrelationSpearman<X, Y>>
+class AggregateFunctionRankCorrelation :
+    public IAggregateFunctionDataHelper<AggregateFunctionRankCorrelationData<X, Y>, AggregateFunctionRankCorrelation<X, Y>>
 {
-    using Data = AggregateFunctionRankCorrelationSpearmanData<X, Y>;
+    using Data = AggregateFunctionRankCorrelationData<X, Y>;
     using Allocator = MixedAlignedArenaAllocator<alignof(std::pair<Float64, Float64>), 4096>;
     using Array = PODArray<std::pair<Float64, Float64>, 32, Allocator>;
 
 public:
-    explicit AggregateFunctionRankCorrelationSpearman(const DataTypes & arguments)
-        :IAggregateFunctionDataHelper<AggregateFunctionRankCorrelationSpearmanData<X, Y>,AggregateFunctionRankCorrelationSpearman<X, Y>> ({arguments}, {})
-    {
-        // notice: arguments has been in factory
-    }
+    explicit AggregateFunctionRankCorrelation(const DataTypes & arguments)
+        :IAggregateFunctionDataHelper<AggregateFunctionRankCorrelationData<X, Y>,AggregateFunctionRankCorrelation<X, Y>> ({arguments}, {})
+    {}
 
     String getName() const override
     {
-        return "rankCorrelationSpearman";
+        return "rankCorr";
     }
 
     DataTypePtr getReturnType() const override
@@ -112,10 +110,8 @@ public:
         auto & b = this->data(rhs);
 
         if (b.size_x)
-        {
             for (size_t i = 0; i < b.size_x; ++i)
                 insert(a, b.values[i], arena);
-        }
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -151,9 +147,7 @@ public:
         PODArrayWithStackMemory<std::pair<Float64, Float64>, 32> tmp_values;
         tmp_values.resize(size);
         for (size_t j = 0; j < size; ++ j)
-        {
             tmp_values[j] = static_cast<std::pair<Float64, Float64>>(value[j]);
-        }
 
         //sort x_values
         std::sort(std::begin(tmp_values), std::end(tmp_values), ComparePairFirst<std::greater>{});
@@ -177,17 +171,13 @@ public:
                     j++;
                 }
                 else
-                {
                     break;
-                }
             }
 
             // insert rank is calculated as average of ranks of equal values
             Float64 insert_rank = static_cast<Float64>(cur_sum) / same;
             for (size_t i = cur_start; i <= j; ++i)
-            {
                 tmp_values[i].first = insert_rank;
-            }
             j++;
         }
 
@@ -222,27 +212,21 @@ public:
             // insert rank is calculated as average of ranks of equal values
             Float64 insert_rank = static_cast<Float64>(cur_sum) / same;
             for (size_t i = cur_start; i <= j; ++i)
-            {
                 tmp_values[i].second = insert_rank;
-            }
             j++;
         }
 
         //count d^2 sum
         Float64 answer = static_cast<Float64>(0);
         for (size_t j = 0; j < size; ++ j)
-        {
             answer += (tmp_values[j].first - tmp_values[j].second) * (tmp_values[j].first - tmp_values[j].second);
-        }
 
         answer *= 6;
         answer /= size * (size * size - 1);
-
         answer = 1 - answer;
 
         auto & column = static_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(answer);
-        std::cout << "AAAA" << std::endl;
     }
 
 };

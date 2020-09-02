@@ -45,7 +45,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionMoving(factory);
         registerAggregateFunctionCategoricalIV(factory);
         registerAggregateFunctionAggThrow(factory);
-        registerAggregateFunctionRankCorrelationSpearman(factory);
+        registerAggregateFunctionRankCorrelation(factory);
     }
 
     {
