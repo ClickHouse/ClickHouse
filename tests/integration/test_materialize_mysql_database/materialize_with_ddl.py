@@ -339,8 +339,6 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_cursor.execute("SHOW MASTER STATUS")
     (uuid, seqs) = mysql_cursor.fetchall()[0]["Executed_Gtid_Set"].split(":")
     (seq_begin, seq_end) = seqs.split("-")
-    assert int(seq_begin) == 1
-    assert int(seq_end) == 3
     next_gtid = uuid + ":" + str(int(seq_end) + 1)
     mysql_node.query("SET gtid_next='" + next_gtid + "'")
     mysql_node.query("BEGIN")
