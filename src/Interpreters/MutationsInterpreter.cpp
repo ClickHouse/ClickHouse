@@ -534,14 +534,14 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             stages.emplace_back(context);
             for (const auto & column : unchanged_columns)
             {
-                std::cerr << "ADDING UNCHANGED COLUMN TO STAGE:" << column << std::endl;
+                //std::cerr << "ADDING UNCHANGED COLUMN TO STAGE:" << column << std::endl;
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
-                std::cerr << "OUTPUT COLUMNS:" << stages.back().output_columns.size() << std::endl;
-                for (const auto & col : stages.back().output_columns)
-                {
-                    std::cerr << "OUTPUT COLUMN:" << col << std::endl;
-                }
+                //std::cerr << "OUTPUT COLUMNS:" << stages.back().output_columns.size() << std::endl;
+                //for (const auto & col : stages.back().output_columns)
+                //{
+                //    std::cerr << "OUTPUT COLUMN:" << col << std::endl;
+                //}
             }
         }
     }
