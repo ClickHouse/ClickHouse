@@ -26,4 +26,9 @@ String toString(MergeType merge_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
 }
 
+bool isTTLMergeType(MergeType merge_type)
+{
+    return merge_type == MergeType::TTL_DELETE || merge_type == MergeType::TTL_RECOMPRESS;
+}
+
 }

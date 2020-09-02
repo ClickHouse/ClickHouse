@@ -186,4 +186,32 @@ time_t MergeTreeDataPartTTLInfos::getMaxRecompressionTTL() const
     return max;
 }
 
+
+std::optional<TTLDescription> selectTTLEntryForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
+{
+    time_t best_ttl_time = 0;
+    TTLDescriptions::const_iterator best_entry_it;
+    for (auto ttl_entry_it = descriptions.begin(); ttl_entry_it != descriptions.end(); ++ttl_entry_it)
+    {
+        auto ttl_info_it = ttl_info_map.find(ttl_entry_it->result_column);
+        time_t ttl_time;
+
+        if (use_max)
+            ttl_time = ttl_info_it->second.max;
+        else
+            ttl_time = ttl_info_it->second.min;
+
+        /// Prefer TTL rule which went into action last.
+        if (ttl_info_it != ttl_info_map.end()
+                && ttl_time <= current_time
+                && best_ttl_time <= ttl_time)
+        {
+            best_entry_it = ttl_entry_it;
+            best_ttl_time = ttl_time;
+        }
+    }
+
+    return best_ttl_time ? *best_entry_it : std::optional<TTLDescription>();
+}
+
 }

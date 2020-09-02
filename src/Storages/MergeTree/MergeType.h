@@ -15,4 +15,6 @@ enum class MergeType
 
 String toString(MergeType merge_type);
 
+bool isTTLMergeType(MergeType merge_type);
+
 }

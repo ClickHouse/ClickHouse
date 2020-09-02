@@ -328,7 +328,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
         auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
-        if (ttl.mode == TTLMode::DELETE)
+        if (ttl.mode == TTLMode::DELETE || ttl.mode == TTLMode::GROUP_BY)
         {
             if (seen_delete_ttl)
                 throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);

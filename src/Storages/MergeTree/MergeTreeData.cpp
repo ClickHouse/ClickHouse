@@ -507,6 +507,7 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 
     if (new_table_ttl.definition_ast)
     {
+        std::cerr << "MOVE TTL SIZE:" << new_table_ttl.move_ttl.size() << std::endl;
         for (const auto & move_ttl : new_table_ttl.move_ttl)
         {
             if (!getDestinationForTTL(move_ttl))
@@ -2975,9 +2976,11 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     ReservationPtr reservation;
 
-    auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
+    auto ttl_entry = selectTTLEntryForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
+
     if (ttl_entry)
     {
         SpacePtr destination_ptr = getDestinationForTTL(*ttl_entry);
@@ -3031,64 +3034,16 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     return false;
 }
 
-std::optional<TTLDescription>
-MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const
-{
-    time_t max_max_ttl = 0;
-    TTLDescriptions::const_iterator best_entry_it;
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-
-    const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
-    for (auto ttl_entry_it = move_ttl_entries.begin(); ttl_entry_it != move_ttl_entries.end(); ++ttl_entry_it)
-    {
-        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry_it->result_column);
-        /// Prefer TTL rule which went into action last.
-        if (ttl_info_it != ttl_infos.moves_ttl.end()
-                && ttl_info_it->second.max <= time_of_move
-                && max_max_ttl <= ttl_info_it->second.max)
-        {
-            best_entry_it = ttl_entry_it;
-            max_max_ttl = ttl_info_it->second.max;
-        }
-    }
-
-    return max_max_ttl ? *best_entry_it : std::optional<TTLDescription>();
-}
-
-
 CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
 {
 
-    time_t max_max_ttl = 0;
-    TTLDescriptions::const_iterator best_entry_it;
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
-    //std::cerr << "RECOMPRESSION ENTRIES SIZE:" << recompression_ttl_entries.size() << std::endl;
-    for (auto ttl_entry_it = recompression_ttl_entries.begin(); ttl_entry_it != recompression_ttl_entries.end(); ++ttl_entry_it)
-    {
-        //std::cerr << "RECOMPRESSION TTL SIZE:" << ttl_infos.recompression_ttl.size() << std::endl;
-        auto ttl_info_it = ttl_infos.recompression_ttl.find(ttl_entry_it->result_column);
-        /// Prefer TTL rule which went into action last.
-        if (ttl_info_it != ttl_infos.recompression_ttl.end()
-                && ttl_info_it->second.max <= current_time
-                && max_max_ttl <= ttl_info_it->second.max)
-        {
-            best_entry_it = ttl_entry_it;
-            max_max_ttl = ttl_info_it->second.max;
-        }
-    }
+    auto best_ttl_entry = selectTTLEntryForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, false);
 
-    if (max_max_ttl)
-    {
-        //std::cerr << "BEST ENTRY FOUND, MAX MAX:" << max_max_ttl << std::endl;
-        //std::cerr << "RECOMPRESSION IS NULLPTR:" << (best_entry_it->recompression_codec == nullptr) << std::endl;
-        return CompressionCodecFactory::instance().get(best_entry_it->recompression_codec, {});
-    }
-    //else
-    //{
-    //    std::cerr << "NOT FOUND NEW RECOMPRESSION\n";
-    //}
+    if (best_ttl_entry)
+        return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
 
     return global_context.chooseCompressionCodec(
         part_size_compressed,
