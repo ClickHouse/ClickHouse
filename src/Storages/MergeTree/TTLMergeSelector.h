@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Storages/MergeTree/MergeSelector.h>
+#include <Storages/TTLDescription.h>
 
 #include <map>
 
@@ -21,9 +22,9 @@ public:
     using PartitionIdToTTLs = std::map<String, time_t>;
 
     ITTLMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, Int64 merge_cooldown_time_)
-        : merge_due_times(merge_due_times_),
-          current_time(current_time_),
-          merge_cooldown_time(merge_cooldown_time_)
+        : current_time(current_time_)
+        , merge_due_times(merge_due_times_)
+        , merge_cooldown_time(merge_cooldown_time_)
     {
     }
 
@@ -32,10 +33,13 @@ public:
         const size_t max_total_size_to_merge) override;
 
     virtual time_t getTTLForPart(const IMergeSelector::Part & part) const = 0;
+    virtual bool isTTLAlreadySatisfied(const IMergeSelector::Part & part) const = 0;
+
+protected:
+    time_t current_time;
 
 private:
     PartitionIdToTTLs & merge_due_times;
-    time_t current_time;
     Int64 merge_cooldown_time;
 };
 
@@ -51,6 +55,11 @@ public:
 
     time_t getTTLForPart(const IMergeSelector::Part & part) const override;
 
+    bool isTTLAlreadySatisfied(const IMergeSelector::Part &) const override
+    {
+        return false;
+    }
+
 private:
     bool only_drop_parts;
 };
@@ -58,9 +67,16 @@ private:
 class TTLRecompressMergeSelector : public ITTLMergeSelector
 {
 public:
-    using ITTLMergeSelector::ITTLMergeSelector;
+    TTLRecompressMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, Int64 merge_cooldown_time_, const TTLDescriptions & recompression_ttls_)
+        : ITTLMergeSelector(merge_due_times_, current_time_, merge_cooldown_time_)
+        , recompression_ttls(recompression_ttls_)
+    {}
 
     time_t getTTLForPart(const IMergeSelector::Part & part) const override;
+
+    bool isTTLAlreadySatisfied(const IMergeSelector::Part & part) const override;
+private:
+    TTLDescriptions recompression_ttls;
 };
 
 }

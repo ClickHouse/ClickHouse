@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Parsers/queryToString.h>
 
 #include <algorithm>
 #include <cmath>
@@ -39,7 +40,7 @@ IMergeSelector::PartsInPartition ITTLMergeSelector::select(
         {
             time_t ttl = getTTLForPart(*part_it);
 
-            if (ttl && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
+            if (ttl && !isTTLAlreadySatisfied(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
                 partition_to_merge_min_ttl = ttl;
                 partition_to_merge_index = i;
@@ -59,7 +60,7 @@ IMergeSelector::PartsInPartition ITTLMergeSelector::select(
     {
         time_t ttl = getTTLForPart(*best_begin);
 
-        if (!ttl || ttl > current_time
+        if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
         {
             ++best_begin;
@@ -77,7 +78,7 @@ IMergeSelector::PartsInPartition ITTLMergeSelector::select(
     {
         time_t ttl = getTTLForPart(*best_end);
 
-        if (!ttl || ttl > current_time
+        if (!ttl || isTTLAlreadySatisfied(*best_end) || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
             break;
 
@@ -93,12 +94,32 @@ IMergeSelector::PartsInPartition ITTLMergeSelector::select(
 
 time_t TTLDeleteMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
 {
-    return only_drop_parts ? part.max_delete_ttl : part.min_delete_ttl;
+    return only_drop_parts ? part.ttl_infos.part_max_ttl : part.ttl_infos.part_min_ttl;
 }
 
 time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
 {
-    return part.min_recompress_ttl;
+    return part.ttl_infos.getMinRecompressionTTL();
+}
+
+bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
+{
+    if (recompression_ttls.empty())
+        return false;
+
+    auto ttl_description = selectTTLEntryForTTLInfos(recompression_ttls, part.ttl_infos.recompression_ttl, current_time, false);
+
+    if (!ttl_description)
+        return true;
+
+    auto ast_to_str = [](ASTPtr query) -> String
+    {
+        if (!query)
+            return "";
+        return queryToString(query);
+    };
+
+    return ast_to_str(ttl_description->recompression_codec) == ast_to_str(part.compression_codec_desc);
 }
 
 }

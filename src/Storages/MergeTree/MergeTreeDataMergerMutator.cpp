@@ -225,6 +225,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     if (data_parts.empty())
     {
@@ -268,10 +269,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.min_delete_ttl = part->ttl_infos.part_min_ttl;
-        part_info.max_delete_ttl = part->ttl_infos.part_max_ttl;
-        part_info.min_recompress_ttl = part->ttl_infos.getMinRecompressionTTL();
-        part_info.max_recompress_ttl = part->ttl_infos.getMaxRecompressionTTL();
+        part_info.ttl_infos = part->ttl_infos;
+        part_info.compression_codec_desc = part->default_codec->getCodecDesc();
 
         partitions.back().emplace_back(part_info);
 
@@ -287,7 +286,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsInPartition parts_to_merge;
 
-    if (!ttl_merges_blocker.isCancelled())
+    if (!ttl_merges_blocker.isCancelled() && metadata_snapshot->hasAnyTTL())
     {
         TTLDeleteMergeSelector delete_ttl_selector(
                 next_ttl_merge_times_by_partition,
@@ -298,12 +297,13 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_to_merge = delete_ttl_selector.select(partitions, max_total_size_to_merge_with_ttl);
         if (!parts_to_merge.empty())
             future_part.merge_type = MergeType::TTL_DELETE;
-        else
+        else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
             TTLRecompressMergeSelector recompress_ttl_selector(
                     next_ttl_merge_times_by_partition,
                     current_time,
-                    data_settings->merge_with_ttl_timeout);
+                    data_settings->merge_with_ttl_timeout,
+                    metadata_snapshot->getRecompressionTTLs());
 
             parts_to_merge = recompress_ttl_selector.select(partitions, max_total_size_to_merge_with_ttl);
             if (!parts_to_merge.empty())
@@ -665,7 +665,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
-    if (future_part.merge_type == MergeType::TTL_DELETE && ttl_merges_blocker.isCancelled())
+    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
     bool need_remove_expired_values = false;
@@ -840,8 +840,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
 
-    if (need_remove_expired_values)
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, false);
+    if (need_remove_expired_values || (future_part.merge_type == MergeType::FINAL && !ttl_merges_blocker.isCancelled()))
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, future_part.merge_type == MergeType::FINAL);
 
 
     if (metadata_snapshot->hasSecondaryIndices())
@@ -1123,19 +1123,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (in && shouldExecuteTTL(metadata_snapshot, in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
     {
-        std::cerr << "GOING TO MATERIALIZE TTL\n";
+        //std::cerr << "GOING TO MATERIALIZE TTL\n";
         need_remove_expired_values = true;
     }
     else
     {
-        std::cerr << "NOT GOING TO MATERIALIZE TTL\n";
-        std::cerr << "IN IS NULL:" << (in == nullptr) << std::endl;
+        //std::cerr << "NOT GOING TO MATERIALIZE TTL\n";
+        //std::cerr << "IN IS NULL:" << (in == nullptr) << std::endl;
     }
 
     /// All columns from part are changed and may be some more that were missing before in part
     if (!isWidePart(source_part) || (interpreter && interpreter->isAffectingAllColumns()))
     {
-        std::cerr << "MUTATING ALL PART COLUMNS\n";
+        //std::cerr << "MUTATING ALL PART COLUMNS\n";
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
         /// (which is locked in shared mode when input streams are created) and when inserting new data

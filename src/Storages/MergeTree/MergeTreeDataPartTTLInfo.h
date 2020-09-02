@@ -1,6 +1,7 @@
 #pragma once
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Storages/TTLDescription.h>
 
 #include <map>
 
@@ -30,11 +31,13 @@ struct MergeTreeDataPartTTLInfo
     }
 };
 
+/// Order is important as it would be serialized and hashed for checksums
+using TTLInfoMap = std::map<String, MergeTreeDataPartTTLInfo>;
+
 /// PartTTLInfo for all columns and table with minimal ttl for whole part
 struct MergeTreeDataPartTTLInfos
 {
-    /// Order is important as it would be serialized and hashed for checksums
-    std::map<String, MergeTreeDataPartTTLInfo> columns_ttl;
+    TTLInfoMap columns_ttl;
     MergeTreeDataPartTTLInfo table_ttl;
 
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
@@ -42,11 +45,9 @@ struct MergeTreeDataPartTTLInfos
     time_t part_min_ttl = 0;
     time_t part_max_ttl = 0;
 
-    /// Order is important as it would be serialized and hashed for checksums
-    std::map<String, MergeTreeDataPartTTLInfo> moves_ttl;
+    TTLInfoMap moves_ttl;
 
-    /// Order is important as it would be serialized and hashed for checksums
-    std::map<String, MergeTreeDataPartTTLInfo> recompression_ttl;
+    TTLInfoMap recompression_ttl;
 
     time_t getMinRecompressionTTL() const;
     time_t getMaxRecompressionTTL() const;
@@ -69,5 +70,7 @@ struct MergeTreeDataPartTTLInfos
         return !part_min_ttl && moves_ttl.empty();
     }
 };
+
+std::optional<TTLDescription> selectTTLEntryForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max);
 
 }
