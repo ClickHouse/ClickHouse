@@ -40,7 +40,6 @@ SANITIZER_SIGN = "=================="
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
     with open(full_path, 'w') as f:
-        f.write('TSAN_OPTIONS="external_symbolizer_path=/usr/bin/llvm-symbolizer"\n')
         for var, value in variables.items():
             f.write("=".join([var, value]) + "\n")
     return full_path
@@ -192,13 +191,36 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
 
         instance = ClickHouseInstance(
-            self, self.base_dir, name, base_config_dir if base_config_dir else self.base_config_dir,
-            main_configs or [], user_configs or [], dictionaries or [], macros or {}, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
-            self.server_bin_path, self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables or {}, image=image, tag=tag, stay_alive=stay_alive, ipv4_address=ipv4_address,
+            cluster=self,
+            base_path=self.base_dir,
+            name=name,
+            base_config_dir=base_config_dir if base_config_dir else self.base_config_dir,
+            custom_main_configs=main_configs or [],
+            custom_user_configs=user_configs or [],
+            custom_dictionaries=dictionaries or [],
+            macros=macros or {},
+            with_zookeeper=with_zookeeper,
+            zookeeper_config_path=self.zookeeper_config_path,
+            with_mysql=with_mysql,
+            with_kafka=with_kafka,
+            with_rabbitmq=with_rabbitmq,
+            with_mongo=with_mongo,
+            with_redis=with_redis,
+            with_minio=with_minio,
+            with_cassandra=with_cassandra,
+            server_bin_path=self.server_bin_path,
+            odbc_bridge_bin_path=self.odbc_bridge_bin_path,
+            clickhouse_path_dir=clickhouse_path_dir,
+            with_odbc_drivers=with_odbc_drivers,
+            hostname=hostname,
+            env_variables=env_variables or {},
+            image=image,
+            tag=tag,
+            stay_alive=stay_alive,
+            ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
-            with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
+            with_installed_binary=with_installed_binary,
+            tmpfs=tmpfs or [])
 
         docker_compose_yml_dir = get_docker_compose_path()
 
@@ -769,8 +791,7 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs, custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
-            with_cassandra, server_bin_path, base_config_dir,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
+            with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
