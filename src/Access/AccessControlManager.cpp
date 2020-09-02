@@ -281,41 +281,33 @@ void AccessControlManager::addStoragesFromMainConfig(
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
     String include_from_path = config.getString("include_from", "/etc/metrika.xml");
+    bool has_user_directories = config.has("user_directories");
 
-    if (config.has("user_directories"))
+    /// If path to users' config isn't absolute, try guess its root (current) dir.
+    /// At first, try to find it in dir of main config, after will use current dir.
+    String users_config_path = config.getString("users_config", "");
+    if (users_config_path.empty())
     {
-        if (config.has("users_config"))
-            LOG_WARNING(getLogger(), "<user_directories> is specified, the path from <users_config> won't be used: " + config.getString("users_config"));
-        if (config.has("access_control_path"))
-            LOG_WARNING(getLogger(), "<access_control_path> is specified, the path from <access_control_path> won't be used: " + config.getString("access_control_path"));
-
-        addStoragesFromUserDirectoriesConfig(
-            config,
-            "user_directories",
-            config_dir,
-            dbms_dir,
-            include_from_path,
-            get_zookeeper_function);
-    }
-    else
-    {
-        /// If path to users' config isn't absolute, try guess its root (current) dir.
-        /// At first, try to find it in dir of main config, after will use current dir.
-        String users_config_path = config.getString("users_config", "");
-        if (users_config_path.empty())
+        if (!has_user_directories)
             users_config_path = config_path;
-        else if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
-            users_config_path = config_dir + users_config_path;
+    }
+    else if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+        users_config_path = config_dir + users_config_path;
 
+    if (!users_config_path.empty())
+    {
         if (users_config_path != config_path)
             checkForUsersNotInMainConfig(config, config_path, users_config_path, getLogger());
 
         addUsersConfigStorage(users_config_path, include_from_path, dbms_dir, get_zookeeper_function);
-
-        String disk_storage_dir = config.getString("access_control_path", "");
-        if (!disk_storage_dir.empty())
-            addDiskStorage(disk_storage_dir);
     }
+
+    String disk_storage_dir = config.getString("access_control_path", "");
+    if (!disk_storage_dir.empty())
+        addDiskStorage(disk_storage_dir);
+
+    if (has_user_directories)
+        addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
 }
 
 
