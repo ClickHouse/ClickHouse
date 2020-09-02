@@ -1,4 +1,4 @@
-/// Original is here https://github.com/cerevra/int.git
+/// Original is here https://github.com/cerevra/int
 #pragma once
 
 #include "wide_integer.h"
@@ -42,8 +42,9 @@ public:
 
     static constexpr wide_integer<Bits, Signed> min() noexcept {
         if (is_same<Signed, signed>::value) {
-            wide_integer<Bits, signed> res{};
-            res.m_arr[0] = std::numeric_limits<typename wide_integer<Bits, Signed>::signed_base_type>::min();
+            using T = wide_integer<Bits, signed>;
+            T res{};
+            res.m_arr[T::_impl::big(0)] = std::numeric_limits<typename wide_integer<Bits, Signed>::signed_base_type>::min();
             return res;
         } else {
             return 0;
@@ -51,12 +52,13 @@ public:
     }
 
     static constexpr wide_integer<Bits, Signed> max() noexcept {
-        wide_integer<Bits, Signed> res{};
-        res.m_arr[0] = is_same<Signed, signed>::value
+        using T = wide_integer<Bits, Signed>;
+        T res{};
+        res.m_arr[T::_impl::big(0)] = is_same<Signed, signed>::value
                            ? std::numeric_limits<typename wide_integer<Bits, Signed>::signed_base_type>::max()
                            : std::numeric_limits<typename wide_integer<Bits, Signed>::base_type>::max();
         for (int i = 1; i < wide_integer<Bits, Signed>::_impl::arr_size; ++i) {
-            res.m_arr[i] = std::numeric_limits<typename wide_integer<Bits, Signed>::base_type>::max();
+            res.m_arr[T::_impl::big(i)] = std::numeric_limits<typename wide_integer<Bits, Signed>::base_type>::max();
         }
         return res;
     }
@@ -71,19 +73,23 @@ public:
 };
 
 template <typename T>
+struct IsWideInteger {
+    static const constexpr bool value = false;
+};
+
+template <size_t Bits, typename Signed>
+struct IsWideInteger<wide_integer<Bits, Signed>> {
+    static const constexpr bool value = true;
+};
+
+template <typename T>
 static constexpr bool ArithmeticConcept() noexcept {
-    if constexpr (std::is_array_v<T>)
-        return false;
-    else
-        return std::numeric_limits<T>::is_specialized;
+    return std::is_arithmetic_v<T> || IsWideInteger<T>::value;
 }
 
 template <typename T>
 static constexpr bool IntegralConcept() noexcept {
-    if constexpr (std::is_array_v<T>)
-        return false;
-    else
-        return std::numeric_limits<T>::is_specialized && std::numeric_limits<T>::is_integer;
+    return std::is_integral_v<T> || IsWideInteger<T>::value;
 }
 
 // type traits
@@ -133,10 +139,15 @@ struct wide_integer<Bits, Signed>::_impl {
     static constexpr size_t _Bits = Bits;
     static constexpr bool _is_wide_integer = true;
 
+    // The original implementation is big-endian. We need little one.
+    static constexpr unsigned little(unsigned idx) { return idx; }
+    static constexpr unsigned big(unsigned idx) { return arr_size - 1 - idx; }
+    static constexpr unsigned any(unsigned idx) { return idx; }
+
     template <size_t B, class T>
     constexpr static bool is_negative(const wide_integer<B, T>& n) noexcept {
         if constexpr (std::is_same_v<T, signed>) {
-            return static_cast<signed_base_type>(n.m_arr[0]) < 0;
+            return static_cast<signed_base_type>(n.m_arr[big(0)]) < 0;
         } else {
             return false;
         }
@@ -165,13 +176,13 @@ struct wide_integer<Bits, Signed>::_impl {
         int r_idx = 0;
 
         for (; static_cast<size_t>(r_idx) < sizeof(Integral) && r_idx < arr_size; ++r_idx) {
-            base_type& curr = self.m_arr[arr_size - 1 - r_idx];
+            base_type& curr = self.m_arr[little(r_idx)];
             base_type curr_rhs = (r >> (r_idx * CHAR_BIT)) & std::numeric_limits<base_type>::max();
             curr = curr_rhs;
         }
 
         for (; r_idx < arr_size; ++r_idx) {
-            base_type& curr = self.m_arr[arr_size - 1 - r_idx];
+            base_type& curr = self.m_arr[little(r_idx)];
             curr = r < 0 ? std::numeric_limits<base_type>::max() : 0;
         }
     }
@@ -208,10 +219,10 @@ struct wide_integer<Bits, Signed>::_impl {
         int base_elems_to_copy = _impl::arr_size < rhs_arr_size ? _impl::arr_size
                                                                 : rhs_arr_size;
         for (int i = 0; i < base_elems_to_copy; ++i) {
-            self.m_arr[_impl::arr_size - 1 - i] = rhs.m_arr[rhs_arr_size - 1 - i];
+            self.m_arr[little(i)] = rhs.m_arr[little(i)];
         }
         for (int i = 0; i < arr_size - base_elems_to_copy; ++i) {
-            self.m_arr[i] = is_negative(rhs) ? std::numeric_limits<base_type>::max() : 0;
+            self.m_arr[big(i)] = is_negative(rhs) ? std::numeric_limits<base_type>::max() : 0;
         }
     }
 
@@ -227,22 +238,21 @@ struct wide_integer<Bits, Signed>::_impl {
             return rhs;
 
         wide_integer<Bits, Signed> lhs = rhs;
-        int cur_shift = n % base_bits;
-        if (cur_shift) {
-            lhs.m_arr[0] <<= cur_shift;
+        int bit_shift = n % base_bits;
+        unsigned n_bytes = n / base_bits;
+        if (bit_shift) {
+            lhs.m_arr[big(0)] <<= bit_shift;
             for (int i = 1; i < arr_size; ++i) {
-                lhs.m_arr[i - 1] |= lhs.m_arr[i] >> (base_bits - cur_shift);
-                lhs.m_arr[i] <<= cur_shift;
+                lhs.m_arr[big(i - 1)] |= lhs.m_arr[big(i)] >> (base_bits - bit_shift);
+                lhs.m_arr[big(i)] <<= bit_shift;
             }
-            n -= cur_shift;
         }
-        if (n) {
-            int i = 0;
-            for (; i < arr_size - n / base_bits; ++i) {
-                lhs.m_arr[i] = lhs.m_arr[i + n / base_bits];
+        if (n_bytes) {
+            for (unsigned i = 0; i < arr_size - n_bytes; ++i) {
+                lhs.m_arr[big(i)] = lhs.m_arr[big(i + n_bytes)];
             }
-            for (; i < arr_size; ++i) {
-                lhs.m_arr[i] = 0;
+            for (unsigned i = arr_size - n_bytes; i < arr_size; ++i) {
+                lhs.m_arr[big(i)] = 0;
             }
         }
         return lhs;
@@ -263,22 +273,21 @@ struct wide_integer<Bits, Signed>::_impl {
             return rhs;
 
         wide_integer<Bits, Signed> lhs = rhs;
-        int cur_shift = n % base_bits;
-        if (cur_shift) {
-            lhs.m_arr[arr_size - 1] >>= cur_shift;
-            for (int i = arr_size - 2; i >= 0; --i) {
-                lhs.m_arr[i + 1] |= lhs.m_arr[i] << (base_bits - cur_shift);
-                lhs.m_arr[i] >>= cur_shift;
+        int bit_shift = n % base_bits;
+        unsigned n_bytes = n / base_bits;
+        if (bit_shift) {
+            lhs.m_arr[little(0)] >>= bit_shift;
+            for (int i = 1; i < arr_size; ++i) {
+                lhs.m_arr[little(i - 1)] |= lhs.m_arr[little(i)] << (base_bits - bit_shift);
+                lhs.m_arr[little(i)] >>= bit_shift;
             }
-            n -= cur_shift;
         }
-        if (n) {
-            int i = arr_size - 1;
-            for (; i >= static_cast<int>(n / base_bits); --i) {
-                lhs.m_arr[i] = lhs.m_arr[i - n / base_bits];
+        if (n_bytes) {
+            for (unsigned i = 0; i < arr_size - n_bytes; ++i) {
+                lhs.m_arr[little(i)] = lhs.m_arr[little(i + n_bytes)];
             }
-            for (; i >= 0; --i) {
-                lhs.m_arr[i] = 0;
+            for (unsigned i = arr_size - n_bytes; i < arr_size; ++i) {
+                lhs.m_arr[little(i)] = 0;
             }
         }
         return lhs;
@@ -296,19 +305,18 @@ struct wide_integer<Bits, Signed>::_impl {
         }
 
         wide_integer<Bits, Signed> lhs = rhs;
-        int cur_shift = n % base_bits;
-        if (cur_shift) {
-            lhs = shift_right(wide_integer<Bits, unsigned>(lhs), cur_shift);
-            lhs.m_arr[0] |= std::numeric_limits<base_type>::max() << (base_bits - cur_shift);
-            n -= cur_shift;
+        int bit_shift = n % base_bits;
+        unsigned n_bytes = n / base_bits;
+        if (bit_shift) {
+            lhs = shift_right(wide_integer<Bits, unsigned>(lhs), bit_shift);
+            lhs.m_arr[big(0)] |= std::numeric_limits<base_type>::max() << (base_bits - bit_shift);
         }
-        if (n) {
-            int i = arr_size - 1;
-            for (; i >= static_cast<int>(n / base_bits); --i) {
-                lhs.m_arr[i] = lhs.m_arr[i - n / base_bits];
+        if (n_bytes) {
+            for (unsigned i = 0; i < arr_size - n_bytes; ++i) {
+                lhs.m_arr[little(i)] = lhs.m_arr[little(i - n_bytes)];
             }
-            for (; i >= 0; --i) {
-                lhs.m_arr[i] = std::numeric_limits<base_type>::max();
+            for (unsigned i = arr_size - n_bytes; i < arr_size; ++i) {
+                lhs.m_arr[little(i)] = std::numeric_limits<base_type>::max();
             }
         }
         return lhs;
@@ -331,7 +339,7 @@ private:
         bool is_underflow = false;
         int r_idx = 0;
         for (; static_cast<size_t>(r_idx) < sizeof(T) && r_idx < arr_size; ++r_idx) {
-            base_type& res_i = res.m_arr[arr_size - 1 - r_idx];
+            base_type& res_i = res.m_arr[little(r_idx)];
             base_type curr_rhs = (rhs >> (r_idx * CHAR_BIT)) & std::numeric_limits<base_type>::max();
 
             if (is_underflow) {
@@ -346,10 +354,10 @@ private:
         }
 
         if (is_underflow && r_idx < arr_size) {
-            --res.m_arr[arr_size - 1 - r_idx];
+            --res.m_arr[little(r_idx)];
             for (int i = arr_size - 1 - r_idx - 1; i >= 0; --i) {
-                if (res.m_arr[i + 1] == std::numeric_limits<base_type>::max()) {
-                    --res.m_arr[i];
+                if (res.m_arr[big(i + 1)] == std::numeric_limits<base_type>::max()) {
+                    --res.m_arr[big(i)];
                 } else {
                     break;
                 }
@@ -366,7 +374,7 @@ private:
         bool is_overflow = false;
         int r_idx = 0;
         for (; static_cast<size_t>(r_idx) < sizeof(T) && r_idx < arr_size; ++r_idx) {
-            base_type& res_i = res.m_arr[arr_size - 1 - r_idx];
+            base_type& res_i = res.m_arr[little(r_idx)];
             base_type curr_rhs = (rhs >> (r_idx * CHAR_BIT)) & std::numeric_limits<base_type>::max();
 
             if (is_overflow) {
@@ -381,10 +389,10 @@ private:
         }
 
         if (is_overflow && r_idx < arr_size) {
-            ++res.m_arr[arr_size - 1 - r_idx];
+            ++res.m_arr[little(r_idx)];
             for (int i = arr_size - 1 - r_idx - 1; i >= 0; --i) {
-                if (res.m_arr[i + 1] == 0) {
-                    ++res.m_arr[i];
+                if (res.m_arr[big(i + 1)] == 0) {
+                    ++res.m_arr[big(i)];
                 } else {
                     break;
                 }
@@ -398,7 +406,7 @@ public:
     constexpr static wide_integer<Bits, Signed> operator_unary_tilda(const wide_integer<Bits, Signed>& lhs) noexcept {
         wide_integer<Bits, Signed> res{};
         for (int i = 0; i < arr_size; ++i) {
-            res.m_arr[i] = ~lhs.m_arr[i];
+            res.m_arr[any(i)] = ~lhs.m_arr[any(i)];
         }
         return res;
     }
@@ -445,9 +453,9 @@ private:
         wide_integer<Bits, Signed> res = lhs;
 
         bool is_underflow = false;
-        for (int idx = arr_size - 1; idx >= 0; --idx) {
-            base_type& res_i = res.m_arr[idx];
-            const base_type rhs_i = rhs.m_arr[idx];
+        for (int idx = 0; idx < arr_size; ++idx) {
+            base_type & res_i = res.m_arr[little(idx)];
+            const base_type rhs_i = rhs.m_arr[little(idx)];
 
             if (is_underflow) {
                 --res_i;
@@ -468,9 +476,9 @@ private:
         wide_integer<Bits, Signed> res = lhs;
 
         bool is_overflow = false;
-        for (int idx = arr_size - 1; idx >= 0; --idx) {
-            base_type& res_i = res.m_arr[idx];
-            const base_type rhs_i = rhs.m_arr[idx];
+        for (int idx = 0; idx < arr_size; ++idx) {
+            base_type & res_i = res.m_arr[little(idx)];
+            const base_type rhs_i = rhs.m_arr[little(idx)];
 
             if (is_overflow) {
                 ++res_i;
@@ -497,7 +505,7 @@ public:
             wide_integer<Bits, Signed> res = 0;
 
             for (size_t i = 0; i < arr_size * base_bits; ++i) {
-                if (t.m_arr[arr_size - 1] & 1) {
+                if (t.m_arr[little(0)] & 1) {
                     res = operator_plus(res, shift_left(a, i));
                 }
 
@@ -530,8 +538,8 @@ public:
             }
 
             for (int i = 0; i < arr_size; ++i) {
-                if (lhs.m_arr[i] != t.m_arr[i]) {
-                    return lhs.m_arr[i] > t.m_arr[i];
+                if (lhs.m_arr[big(i)] != t.m_arr[big(i)]) {
+                    return lhs.m_arr[big(i)] > t.m_arr[big(i)];
                 }
             }
 
@@ -556,8 +564,8 @@ public:
             }
 
             for (int i = 0; i < arr_size; ++i) {
-                if (lhs.m_arr[i] != t.m_arr[i]) {
-                    return lhs.m_arr[i] < t.m_arr[i];
+                if (lhs.m_arr[big(i)] != t.m_arr[big(i)]) {
+                    return lhs.m_arr[big(i)] < t.m_arr[big(i)];
                 }
             }
 
@@ -575,7 +583,7 @@ public:
             wide_integer<Bits, Signed> t = rhs;
 
             for (int i = 0; i < arr_size; ++i) {
-                if (lhs.m_arr[i] != t.m_arr[i]) {
+                if (lhs.m_arr[any(i)] != t.m_arr[any(i)]) {
                     return false;
                 }
             }
@@ -595,7 +603,7 @@ public:
             wide_integer<Bits, Signed> res = lhs;
 
             for (int i = 0; i < arr_size; ++i) {
-                res.m_arr[i] |= t.m_arr[i];
+                res.m_arr[any(i)] |= t.m_arr[any(i)];
             }
 
             return res;
@@ -613,7 +621,7 @@ public:
             wide_integer<Bits, Signed> res = lhs;
 
             for (int i = 0; i < arr_size; ++i) {
-                res.m_arr[i] &= t.m_arr[i];
+                res.m_arr[any(i)] &= t.m_arr[any(i)];
             }
 
             return res;
@@ -710,7 +718,7 @@ public:
             wide_integer<Bits, Signed> res = lhs;
 
             for (int i = 0; i < arr_size; ++i) {
-                res.m_arr[i] ^= t.m_arr[i];
+                res.m_arr[any(i)] ^= t.m_arr[any(i)];
             }
 
             return res;
@@ -948,7 +956,7 @@ constexpr wide_integer<Bits, Signed>::operator T() const noexcept {
     static_assert(std::numeric_limits<T>::is_integer, "");
     T res = 0;
     for (size_t r_idx = 0; r_idx < _impl::arr_size && r_idx < sizeof(T); ++r_idx) {
-        res |= (T(m_arr[_impl::arr_size - 1 - r_idx]) << (_impl::base_bits * r_idx));
+        res |= (T(m_arr[_impl::little(r_idx)]) << (_impl::base_bits * r_idx));
     }
     return res;
 }
@@ -969,7 +977,7 @@ constexpr wide_integer<Bits, Signed>::operator long double() const noexcept {
         long double t = res;
         res *= std::numeric_limits<base_type>::max();
         res += t;
-        res += tmp.m_arr[idx];
+        res += tmp.m_arr[_impl::big(idx)];
     }
 
     if (_impl::is_negative(*this)) {
@@ -1190,9 +1198,13 @@ inline std::array<char, 256> genReverseAlpha() noexcept {
 template <size_t Bits, typename Signed>
 struct hash<wide_integer<Bits, Signed>> {
     std::size_t operator()(const wide_integer<Bits, Signed>& lhs) const {
+        static_assert(Bits % (sizeof(size_t) * 8) == 0);
+
+        const auto * ptr = reinterpret_cast<const size_t *>(lhs.m_arr);
+        unsigned count = Bits / (sizeof(size_t) * 8);
         size_t res = 0;
-        for (auto n : lhs.m_arr) {
-            res += n;
+        for (unsigned i = 0; i < count; ++i) {
+            res ^= ptr[i];
         }
         return hash<size_t>()(res);
     }

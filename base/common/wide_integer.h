@@ -114,8 +114,8 @@ private:
     template <size_t Bits2, typename Signed2>
     friend class wide_integer;
 
-    friend struct numeric_limits<wide_integer<Bits, signed>>;
-    friend struct numeric_limits<wide_integer<Bits, unsigned>>;
+    friend class numeric_limits<wide_integer<Bits, signed>>;
+    friend class numeric_limits<wide_integer<Bits, unsigned>>;
 
     base_type m_arr[_impl::arr_size];
 };
