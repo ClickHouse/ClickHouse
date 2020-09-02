@@ -4,7 +4,6 @@
 
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
-#include <Storages/StorageTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -63,7 +62,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(const Context & cont
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);

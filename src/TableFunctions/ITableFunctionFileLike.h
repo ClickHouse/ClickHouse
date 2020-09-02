@@ -1,7 +1,6 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageTableFunction.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ class Context;
 class ITableFunctionFileLike : public ITableFunction
 {
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
 
     virtual StoragePtr getStorage(
         const String & source, const String & format, const ColumnsDescription & columns, Context & global_context,
@@ -23,6 +22,8 @@ private:
     ColumnsDescription getActualTableStructure(const Context & context) const override;
 
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+
+    bool hasStaticStructure() const override { return true; }
 
     String filename;
     String format;

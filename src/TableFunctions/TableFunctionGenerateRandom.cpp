@@ -13,9 +13,6 @@
 #include <TableFunctions/TableFunctionGenerateRandom.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
-#include <Interpreters/Context.h>
-#include <Storages/StorageTableFunction.h>
-
 #include "registerTableFunctions.h"
 
 
@@ -82,7 +79,7 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(const Co
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
     auto res = StorageGenerateRandom::create(StorageID(getDatabaseName(), table_name), columns, max_array_length, max_string_length, random_seed);

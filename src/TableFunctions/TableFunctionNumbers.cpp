@@ -5,7 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <Storages/StorageTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +27,7 @@ ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(
 }
 
 template <bool multithreaded>
-StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {

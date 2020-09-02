@@ -18,11 +18,14 @@ namespace ErrorCodes
 
 using GetNestedStorageFunc = std::function<StoragePtr()>;
 
+/// Lazily creates underlying storage.
+/// Adds ConversionTransform in case of structure mismatch.
 class StorageTableFunctionProxy final : public StorageProxy
 {
 public:
-    StorageTableFunctionProxy(const StorageID & table_id_, GetNestedStorageFunc get_nested_, ColumnsDescription cached_columns)
-    : StorageProxy(table_id_), get_nested(std::move(get_nested_))
+    StorageTableFunctionProxy(const StorageID & table_id_, GetNestedStorageFunc get_nested_,
+            ColumnsDescription cached_columns, bool add_conversion_ = true)
+    : StorageProxy(table_id_), get_nested(std::move(get_nested_)), add_conversion(add_conversion_)
     {
         StorageInMemoryMetadata cached_metadata;
         cached_metadata.setColumns(std::move(cached_columns));
@@ -80,10 +83,12 @@ public:
             cnames += c + " ";
         auto storage = getNested();
         auto nested_metadata = storage->getInMemoryMetadataPtr();
-        auto pipe = storage->read(column_names, nested_metadata, query_info, context, processed_stage, max_block_size, num_streams);
-        if (!pipe.empty())
+        auto pipe = storage->read(column_names, nested_metadata, query_info, context,
+                                  processed_stage, max_block_size, num_streams);
+        if (!pipe.empty() && add_conversion)
         {
-            auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
+            auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot,
+                                                         query_info, context, processed_stage);
             pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<ConvertingTransform>(
@@ -103,7 +108,7 @@ public:
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
         auto actual_structure = storage->getInMemoryMetadataPtr()->getSampleBlock();
-        if (!blocksHaveEqualStructure(actual_structure, cached_structure))
+        if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
             throw Exception("Source storage and table function have different structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
         }
@@ -126,6 +131,7 @@ private:
     mutable std::mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
+    const bool add_conversion;
 };
 
 }

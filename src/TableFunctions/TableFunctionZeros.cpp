@@ -4,7 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/System/StorageSystemZeros.h>
-#include <Storages/StorageTableFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -27,7 +26,7 @@ ColumnsDescription TableFunctionZeros<multithreaded>::getActualTableStructure(co
 }
 
 template <bool multithreaded>
-StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
