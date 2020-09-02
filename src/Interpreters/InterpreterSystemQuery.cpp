@@ -5,6 +5,10 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
+#include "Interpreters/InterpreterAlterQuery.h"
+#include "Interpreters/InterpreterSelectQuery.h"
+#include "Parsers/ASTPartition.h"
+#include "Processors/Executors/PullingPipelineExecutor.h"
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -350,16 +354,20 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
     // 2. Data is present
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
-    const String new_table_name = table_id.table_name + "_" + std::to_string(rand());
+
+    const UUID uuid = table_id.uuid;
+    const String& db_name = table_id.database_name;
+    const String& old_table_name = table_id.table_name;
+    const String new_table_name = old_table_name + "_" + std::to_string(rand());
 
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     {
         ASTPtr create_query_ptr = std::make_shared<ASTCreateQuery>();
         ASTCreateQuery& create_query = create_query_ptr->as<ASTCreateQuery&>();
 
-        create_query.database = table_id.database_name;
-        create_query.uuid = table_id.uuid;
-        create_query.table = table_id.table_name;
+        create_query.database = db_name;
+        create_query.uuid = uuid;
+        create_query.table = old_table_name;
         create_query.as_table = new_table_name;
 
         InterpreterCreateQuery interpreter_create(create_query_ptr, context);
@@ -373,8 +381,8 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         ASTPtr stop_fetches_ptr = std::make_shared<ASTSystemQuery>();
         ASTSystemQuery& stop_fetches_query = stop_fetches_ptr->as<ASTSystemQuery&>();
 
-        stop_fetches_query.database = table_id.database_name;
-        stop_fetches_query.table = table_id.table_name;
+        stop_fetches_query.database = db_name;
+        stop_fetches_query.table = old_table_name;
         stop_fetches_query.type = ASTSystemQuery::Type::STOP_FETCHES;
 
         InterpreterSystemQuery interpreter_stop_fetches(stop_fetches_ptr, context);
@@ -384,17 +392,64 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
 
     /// 3. Move parts to a new table that will register them in zookeeper.
     {
-        /// 3.1 Get partition ids for old table
+        /// 3.1 Form a partitions request (from the old table)
         /// (SELECT partition_id FROM system.parts WHERE database = 'old_db' AND table = 'old' AND active)
 
-        ASTPtr get_partition_ids_ptr = std::make_shared<ASTSelectQuery>();
-        ASTSelectQuery& get_partition_ids_query = get_partition_ids_ptr->as<ASTSelectQuery&>();
+        ASTPtr get_parts_ptr = std::make_shared<ASTSelectQuery>();
+        ASTSelectQuery& get_parts_query = get_parts_ptr->as<ASTSelectQuery&>();
 
-        get_partition_ids_query.
+        // TODO fill select query.
 
-        /// 3.2 Move partitions to the new table (ALTER TABLE old MOVE PARTITION ID x TO TABLE new).
-        ASTPtr move_partition_id_ptr = std::make_shared<ASTAlterQuery>();
-        ASTAlterQuery& move_partition_id_query = move_partition_id_ptr->as<ASTAlterQuery&>();
+        /// 3.2 Execute the request and get the resulting pipeline to execute.
+        const String partition_id{"partition_id"};
+        InterpreterSelectQuery get_parts_interpreter(get_parts_ptr, context, {}, {partition_id});
+        BlockIO parts_block = get_parts_interpreter.execute();
+
+        /// 3.3 Get the resulting block index and prepare the pipeline.
+        PullingPipelineExecutor get_parts_executor(parts_block.pipeline);
+        const size_t parts_result_index = get_parts_executor.getHeader().getPositionByName(partition_id);
+
+        /// 3.4 Form the moving request.
+        /// (ALTER TABLE old MOVE PARTITION ID x TO TABLE new).
+
+        ASTPtr move_parts_ptr = std::make_shared<ASTAlterQuery>();
+        ASTAlterQuery& move_parts_query = move_parts_ptr->as<ASTAlterQuery&>();
+
+        move_parts_query.database = db_name;
+        move_parts_query.table = old_table_name;
+        move_parts_query.uuid = uuid;
+
+        ASTAlterCommand move_parts_alter_command{};
+        ASTAlterCommandList move_parts_command_list{};
+
+        move_parts_alter_command.type = ASTAlterCommand::Type::MOVE_PARTITION;
+        move_parts_alter_command.move_destination_type = DataDestinationType::TABLE;
+        move_parts_alter_command.partition = std::make_shared<ASTPartition>();
+        move_parts_alter_command.to_database = db_name;
+        move_parts_alter_command.to_table = new_table_name;
+
+        move_parts_command_list.commands = {&move_parts_alter_command}; // ok storing pointer to stack value as
+        move_parts_query.command_list = &move_parts_command_list;       // it will be alive by the executor end.
+
+        InterpreterAlterQuery move_parts_interpreter(move_parts_ptr, context);
+
+        Chunk partition_ids_chunk{};
+
+        while (get_parts_executor.pull(partition_ids_chunk))
+        {
+            /// 3.5 Get a bunch of partition ids.
+            const ColumnString& partition_ids_col = *checkAndGetColumn<ColumnString>(
+                    partition_ids_chunk.getColumns()[parts_result_index].get());
+
+            for (size_t i = 0; i < partition_ids_col.size(); ++i)
+            {
+                /// 3.6 Move each partition to new table
+                const StringRef part_id_str = partition_ids_col.getDataAt(i);
+                move_parts_alter_command.partition->as<ASTPartition>()->id = {part_id_str.data, part_id_str.size};
+
+                move_parts_interpreter.execute();
+            }
+        }
     }
 
     /// 4. Rename tables (RENAME TABLE new TO old, old TO new).
