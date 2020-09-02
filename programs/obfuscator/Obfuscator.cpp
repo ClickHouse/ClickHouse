@@ -372,10 +372,8 @@ static void transformUUID(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
     /// Saving version and variant from an old UUID
     hash.get128(reinterpret_cast<char *>(dst));
-    dst[6] &= 0b00001111;
-    dst[6] |= src[6] & 0b11110000;
-    dst[8] &= 0b00011111;
-    dst[8] |= src[8] & 0b11100000;
+    dst[6] = (dst[6] & 0b00001111) | (src[6] & 0b11110000);
+    dst[8] = (dst[8] & 0b00011111) | (src[8] & 0b11100000);
 }
 
 class FixedStringModel : public IModel
