@@ -376,7 +376,8 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();

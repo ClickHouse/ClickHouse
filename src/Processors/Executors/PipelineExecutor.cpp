@@ -133,7 +133,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     for (uint64_t node = 0; node < graph->nodes.size(); ++node)
     {
         direct_edge_sizes[node] = graph->nodes[node]->direct_edges.size();
-        back_edges_sizes[node] = graph->nodes[node]->direct_edges.size();
+        back_edges_sizes[node] = graph->nodes[node]->back_edges.size();
     }
 
     auto updated_nodes = graph->expandPipeline(processors);
@@ -469,7 +469,16 @@ void PipelineExecutor::wakeUpExecutor(size_t thread_num)
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
-    executeStepImpl(thread_num, num_threads);
+    try
+    {
+        executeStepImpl(thread_num, num_threads);
+    }
+    catch (...)
+    {
+        /// In case of exception from executor itself, stop other threads.
+        finish();
+        throw;
+    }
 
 #ifndef NDEBUG
     auto & context = executor_contexts[thread_num];

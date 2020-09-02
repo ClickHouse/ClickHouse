@@ -1,6 +1,5 @@
-#include "Common/quoteString.h"
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/PODArray.h>
 #include <Core/Row.h>
 
 #include <Functions/FunctionFactory.h>
@@ -9,7 +8,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -21,7 +19,6 @@
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 
 #include <Storages/StorageSet.h>
 
@@ -450,6 +447,19 @@ void ScopeStack::addAction(const ExpressionAction & action)
     }
 }
 
+void ScopeStack::addActionNoInput(const ExpressionAction & action)
+{
+    size_t level = 0;
+    Names required = action.getNeededColumns();
+    for (const auto & elem : required)
+        level = std::max(level, getColumnLevel(elem));
+
+    Names added;
+    stack[level].actions->add(action, added);
+
+    stack[level].new_columns.insert(added.begin(), added.end());
+}
+
 ExpressionActionsPtr ScopeStack::popLevel()
 {
     ExpressionActionsPtr res = stack.back().actions;
@@ -546,10 +556,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
         {
             String result_name = column_name.get(ast);
-            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
-            NameSet joined_columns;
-            joined_columns.insert(result_name);
-            data.addAction(ExpressionAction::arrayJoin(joined_columns, false, data.context));
+            /// Here we copy argument because arrayJoin removes source column.
+            /// It makes possible to remove source column before arrayJoin if it won't be needed anymore.
+
+            /// It could have been possible to implement arrayJoin which keeps source column,
+            /// but in this case it will always be replicated (as many arrays), which is expensive.
+            String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
+            data.addActionNoInput(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
+            data.addAction(ExpressionAction::arrayJoin(tmp_name, result_name));
         }
 
         return;

@@ -307,11 +307,15 @@ template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingImpl
 {
 private:
+    static_assert(!IsDecimalNumber<T>);
+
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
+    using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using Container = typename ColumnType::Container;
 
 public:
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -349,10 +353,11 @@ struct IntegerRoundingImpl
 {
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode, tie_breaking_mode>;
+    using Container = typename ColumnVector<T>::Container;
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void applyImpl(const Container & in, Container & out)
     {
         const T * end_in = in.data() + in.size();
 
@@ -367,7 +372,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
@@ -404,6 +409,8 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 class DecimalRoundingImpl
 {
 private:
+    static_assert(IsDecimalNumber<T>);
+
     using NativeType = typename T::NativeType;
     using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative, tie_breaking_mode>;
     using Container = typename ColumnDecimal<T>::Container;
@@ -428,7 +435,15 @@ public:
             }
         }
         else
-            memcpy(out.data(), in.data(), in.size() * sizeof(T));
+        {
+            if constexpr (!is_big_int_v<NativeType>)
+                memcpy(out.data(), in.data(), in.size() * sizeof(T));
+            else
+            {
+                for (size_t i = 0; i < in.size(); i++)
+                    out[i] = in[i];
+            }
+        }
     }
 };
 

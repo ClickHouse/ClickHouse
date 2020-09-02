@@ -211,13 +211,16 @@ TESTS_TO_SKIP=(
     # to make some progress.
     00646_url_engine
     00974_query_profiler
+
+    # Look at DistributedFilesToInsert, so cannot run in parallel.
+    01460_DistributedFilesToInsert
 )
 
 clickhouse-test -j 4 --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_output/test_log.txt
 
 
 # substr is to remove semicolon after test name
-readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' /test_output/test_log.txt)
+readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' /test_output/test_log.txt | tee /test_output/failed-parallel-tests.txt)
 
 # We will rerun sequentially any tests that have failed during parallel run.
 # They might have failed because there was some interference from other tests

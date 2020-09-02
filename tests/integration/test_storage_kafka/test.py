@@ -2163,6 +2163,35 @@ def test_kafka_unavailable(kafka_cluster):
         print("Waiting for consume")
         time.sleep(1)
 
+@pytest.mark.timeout(180)
+def test_kafka_issue14202(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.empty_table (
+            dt Date,
+            some_string String
+        )
+        ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(dt)
+        ORDER BY some_string;
+
+        CREATE TABLE test.kafka_q (t UInt64, `some_string` String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'issue14202',
+                     kafka_group_name = 'issue14202',
+                     kafka_format = 'JSONEachRow';
+        ''')
+
+    time.sleep(3)
+
+    instance.query('INSERT INTO test.kafka_q SELECT t, some_string  FROM ( SELECT dt AS t, some_string FROM test.empty_table )')
+    # check instance is alive
+    assert TSV(instance.query('SELECT 1')) == TSV('1')
+    instance.query('''
+        DROP TABLE test.empty_table;
+        DROP TABLE test.kafka_q;
+    ''')
+
 if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")

@@ -705,7 +705,7 @@ Pero en igualdad de condiciones, se prefiere el código multiplataforma o portá
 
 **3.** Compilación: `gcc`. En este momento (agosto 2020), el código se compila utilizando la versión 9.3. (También se puede compilar usando `clang 8`.)
 
-Se utiliza la biblioteca estándar (`libstdc++` o `libc++`).
+Se utiliza la biblioteca estándar (`libc++`).
 
 **4.**OS: Linux Ubuntu, no más viejo que Precise.
 
