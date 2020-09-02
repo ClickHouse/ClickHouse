@@ -1120,6 +1120,8 @@ void SSDComplexKeyCacheStorage::update(
     AbsentIdHandler && on_key_not_found,
     const DictionaryLifetime lifetime)
 {
+    assert(key_columns.size() == key_types.size());
+
     auto append_block = [&key_types, this](
         const Columns & new_keys,
         const SSDComplexKeyCachePartition::Attributes & new_attributes,
@@ -1447,6 +1449,12 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     const Columns & key_columns, const DataTypes & key_types,
     ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
+    assert(dict_struct.key);
+    assert(key_columns.size() == key_types.size());
+    assert(key_columns.size() == dict_struct.key->size());
+
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
@@ -1527,6 +1535,8 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     ColumnString * out,
     DefaultGetter && get_default) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
