@@ -132,11 +132,14 @@ SRCS(
     concat.cpp
     convertCharset.cpp
     cos.cpp
+    countDigits.cpp
     CRC.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
+    date_trunc.cpp
     defaultValueOfArgumentType.cpp
+    defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
     dumpColumnStructure.cpp
@@ -241,6 +244,7 @@ SRCS(
     intExp10.cpp
     intExp2.cpp
     isConstant.cpp
+    isDecimalOverflow.cpp
     isFinite.cpp
     isInfinite.cpp
     isNaN.cpp
