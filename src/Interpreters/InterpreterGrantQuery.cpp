@@ -29,7 +29,6 @@ namespace
             current_access.grant(access_to_grant);
     }
 
-
     AccessRightsElements getFilteredAccessRightsElementsToRevoke(
         const AccessRights & current_access, const AccessRightsElements & access_to_revoke, bool grant_option)
     {
@@ -214,6 +213,7 @@ BlockIO InterpreterGrantQuery::execute()
     auto access = context.getAccess();
     auto & access_control = context.getAccessControlManager();
     query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    query.removeNonGrantableFlags();
 
     RolesOrUsersSet roles_from_query;
     if (query.roles)
