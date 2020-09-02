@@ -21,9 +21,10 @@
 #include <Parsers/New/AST/SelectStmt.h>
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/SetQuery.h>
-#include <Parsers/New/AST/ShowQuery.h>
+#include <Parsers/New/AST/ShowCreateQuery.h>
 #include <Parsers/New/AST/SystemQuery.h>
 #include <Parsers/New/AST/TableExpr.h>
+#include <Parsers/New/AST/TruncateQuery.h>
 #include <Parsers/New/AST/UseQuery.h>
 
 // antlr-runtime undefines EOF macros, which is required in boost multiprecision numbers
@@ -74,8 +75,9 @@ antlrcpp::Any ParseTreeVisitor::visitQuery(ClickHouseParser::QueryContext *ctx)
     TRY_POINTER_CAST(RenameQuery)
     TRY_POINTER_CAST(SelectUnionQuery)
     TRY_POINTER_CAST(SetQuery)
-    TRY_POINTER_CAST(ShowCreateTableQuery)
+    TRY_POINTER_CAST(ShowCreateQuery)
     TRY_POINTER_CAST(SystemQuery)
+    TRY_POINTER_CAST(TruncateQuery)
     TRY_POINTER_CAST(UseQuery)
 #undef TRY_POINTER_CAST
 
@@ -192,9 +194,14 @@ antlrcpp::Any ParseTreeVisitor::visitSetStmt(ClickHouseParser::SetStmtContext *c
     return std::make_shared<SetQuery>(visit(ctx->settingExprList()).as<PtrTo<SettingExprList>>());
 }
 
+antlrcpp::Any ParseTreeVisitor::visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *ctx)
+{
+    return ShowCreateQuery::createDatabase(visit(ctx->databaseIdentifier()));
+}
+
 antlrcpp::Any ParseTreeVisitor::visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx)
 {
-    return std::make_shared<ShowCreateTableQuery>(!!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
+    return ShowCreateQuery::createTable(!!ctx->TEMPORARY(), visit(ctx->tableIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx)
@@ -238,6 +245,11 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 antlrcpp::Any ParseTreeVisitor::visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx)
 {
     return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
+}
+
+antlrcpp::Any ParseTreeVisitor::visitTruncateStmt(ClickHouseParser::TruncateStmtContext *ctx)
+{
+    return std::make_shared<TruncateQuery>(!!ctx->TEMPORARY(), !!ctx->IF(), visit(ctx->tableIdentifier()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitUseStmt(ClickHouseParser::UseStmtContext *ctx)

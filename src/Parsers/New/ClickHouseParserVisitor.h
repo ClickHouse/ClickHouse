@@ -168,11 +168,15 @@ public:
 
     virtual antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *context) = 0;
 
+    virtual antlrcpp::Any visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *context) = 0;
+
     virtual antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *context) = 0;
+
+    virtual antlrcpp::Any visitTruncateStmt(ClickHouseParser::TruncateStmtContext *context) = 0;
 
     virtual antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *context) = 0;
 

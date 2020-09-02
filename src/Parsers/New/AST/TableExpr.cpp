@@ -18,9 +18,9 @@ TableArgExpr::TableArgExpr(PtrTo<Literal> literal)
     children.push_back(literal);
 }
 
-TableArgExpr::TableArgExpr(PtrTo<TableIdentifier> identifier)
+TableArgExpr::TableArgExpr(PtrTo<TableExpr> expr)
 {
-    children.push_back(identifier);
+    children.push_back(expr);
 }
 
 // static
@@ -81,7 +81,7 @@ ASTPtr TableExpr::convertToOld() const
             expr->children.push_back(func);
 
             func->name = children[NAME]->as<Identifier>()->getName();
-            func->arguments = children[ARGS]->convertToOld();
+            func->arguments = children[ARGS] ? children[ARGS]->convertToOld() : nullptr;
             func->children.push_back(func->arguments);
 
             return expr;
@@ -118,7 +118,7 @@ using namespace AST;
 antlrcpp::Any ParseTreeVisitor::visitTableArgExpr(ClickHouseParser::TableArgExprContext *ctx)
 {
     if (ctx->literal()) return std::make_shared<TableArgExpr>(visit(ctx->literal()).as<PtrTo<Literal>>());
-    if (ctx->tableIdentifier()) return std::make_shared<TableArgExpr>(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
+    if (ctx->tableExpr()) return std::make_shared<TableArgExpr>(visit(ctx->tableExpr()).as<PtrTo<TableExpr>>());
     __builtin_unreachable();
 }
 

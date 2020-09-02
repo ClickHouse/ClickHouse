@@ -23,6 +23,7 @@ query
     | setStmt
     | showStmt
     | systemStmt
+    | truncateStmt  // DDL
     | useStmt
     ;
 
@@ -205,7 +206,8 @@ setStmt: SET settingExprList;
 // SHOW statements
 
 showStmt
-    : SHOW CREATE TEMPORARY? TABLE tableIdentifier                                                                # showCreateTableStmt
+    : SHOW CREATE DATABASE databaseIdentifier                                                                     # showCreateDatabaseStmt
+    | SHOW CREATE TEMPORARY? TABLE tableIdentifier                                                                # showCreateTableStmt
     | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
     ;
 
@@ -214,6 +216,10 @@ showStmt
 systemStmt
     : SYSTEM SYNC REPLICA tableIdentifier  # SystemSyncStmt
     ;
+
+// TRUNCATE statements
+
+truncateStmt: TRUNCATE TEMPORARY? TABLE (IF EXISTS)? tableIdentifier;
 
 // USE statement
 
@@ -282,7 +288,7 @@ tableExpr
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : tableIdentifier
+    : tableExpr
     | literal
     ;
 
@@ -306,13 +312,13 @@ literal
     ;
 keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
-    | CHECK | CLEAR | CLUSTER | COLLATE | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC
-    | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT | FULL
-    | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING | LEFT
-    | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | OUTER | OUTFILE
-    | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | SYNC | SYSTEM
-    | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN
-    | WITH | YEAR
+    | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE
+    | DESC | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT
+    | FULL | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING
+    | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | OUTER
+    | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | SYNC
+    | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW
+    | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.

@@ -313,6 +313,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -322,6 +326,10 @@ public:
   }
 
   virtual antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitTruncateStmt(ClickHouseParser::TruncateStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 

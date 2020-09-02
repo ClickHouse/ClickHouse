@@ -32,16 +32,16 @@ public:
     SECOND = 99, SELECT = 100, SEMI = 101, SET = 102, SETTINGS = 103, SHOW = 104, 
     SYNC = 105, SYSTEM = 106, TABLE = 107, TABLES = 108, TEMPORARY = 109, 
     THEN = 110, TIES = 111, TO = 112, TOTALS = 113, TRAILING = 114, TRIM = 115, 
-    TTL = 116, UNION = 117, USE = 118, USING = 119, VALUES = 120, VIEW = 121, 
-    VOLUME = 122, WEEK = 123, WHEN = 124, WHERE = 125, WITH = 126, YEAR = 127, 
-    IDENTIFIER = 128, FLOATING_LITERAL = 129, HEXADECIMAL_LITERAL = 130, 
-    INTEGER_LITERAL = 131, STRING_LITERAL = 132, ARROW = 133, ASTERISK = 134, 
-    BACKQUOTE = 135, BACKSLASH = 136, COLON = 137, COMMA = 138, CONCAT = 139, 
-    DASH = 140, DOT = 141, EQ_DOUBLE = 142, EQ_SINGLE = 143, GE = 144, GT = 145, 
-    LBRACKET = 146, LE = 147, LPAREN = 148, LT = 149, NOT_EQ = 150, PERCENT = 151, 
-    PLUS = 152, QUERY = 153, QUOTE_DOUBLE = 154, QUOTE_SINGLE = 155, RBRACKET = 156, 
-    RPAREN = 157, SEMICOLON = 158, SLASH = 159, UNDERSCORE = 160, SINGLE_LINE_COMMENT = 161, 
-    MULTI_LINE_COMMENT = 162, WHITESPACE = 163
+    TRUNCATE = 116, TTL = 117, UNION = 118, USE = 119, USING = 120, VALUES = 121, 
+    VIEW = 122, VOLUME = 123, WEEK = 124, WHEN = 125, WHERE = 126, WITH = 127, 
+    YEAR = 128, IDENTIFIER = 129, FLOATING_LITERAL = 130, HEXADECIMAL_LITERAL = 131, 
+    INTEGER_LITERAL = 132, STRING_LITERAL = 133, ARROW = 134, ASTERISK = 135, 
+    BACKQUOTE = 136, BACKSLASH = 137, COLON = 138, COMMA = 139, CONCAT = 140, 
+    DASH = 141, DOT = 142, EQ_DOUBLE = 143, EQ_SINGLE = 144, GE = 145, GT = 146, 
+    LBRACKET = 147, LE = 148, LPAREN = 149, LT = 150, NOT_EQ = 151, PERCENT = 152, 
+    PLUS = 153, QUERY = 154, QUOTE_DOUBLE = 155, QUOTE_SINGLE = 156, RBRACKET = 157, 
+    RPAREN = 158, SEMICOLON = 159, SLASH = 160, UNDERSCORE = 161, SINGLE_LINE_COMMENT = 162, 
+    MULTI_LINE_COMMENT = 163, WHITESPACE = 164
   };
 
   enum {
@@ -62,13 +62,13 @@ public:
     RuleJoinOpCross = 47, RuleJoinConstraintClause = 48, RuleLimitExpr = 49, 
     RuleOrderExprList = 50, RuleOrderExpr = 51, RuleRatioExpr = 52, RuleSettingExprList = 53, 
     RuleSettingExpr = 54, RuleSetStmt = 55, RuleShowStmt = 56, RuleSystemStmt = 57, 
-    RuleUseStmt = 58, RuleColumnTypeExpr = 59, RuleColumnExprList = 60, 
-    RuleColumnsExpr = 61, RuleColumnExpr = 62, RuleColumnArgList = 63, RuleColumnArgExpr = 64, 
-    RuleColumnLambdaExpr = 65, RuleColumnIdentifier = 66, RuleNestedIdentifier = 67, 
-    RuleTableExpr = 68, RuleTableIdentifier = 69, RuleTableArgList = 70, 
-    RuleTableArgExpr = 71, RuleDatabaseIdentifier = 72, RuleFloatingLiteral = 73, 
-    RuleNumberLiteral = 74, RuleLiteral = 75, RuleKeyword = 76, RuleIdentifier = 77, 
-    RuleIdentifierOrNull = 78, RuleUnaryOp = 79, RuleBinaryOp = 80, RuleEnumValue = 81
+    RuleTruncateStmt = 58, RuleUseStmt = 59, RuleColumnTypeExpr = 60, RuleColumnExprList = 61, 
+    RuleColumnsExpr = 62, RuleColumnExpr = 63, RuleColumnArgList = 64, RuleColumnArgExpr = 65, 
+    RuleColumnLambdaExpr = 66, RuleColumnIdentifier = 67, RuleNestedIdentifier = 68, 
+    RuleTableExpr = 69, RuleTableIdentifier = 70, RuleTableArgList = 71, 
+    RuleTableArgExpr = 72, RuleDatabaseIdentifier = 73, RuleFloatingLiteral = 74, 
+    RuleNumberLiteral = 75, RuleLiteral = 76, RuleKeyword = 77, RuleIdentifier = 78, 
+    RuleIdentifierOrNull = 79, RuleUnaryOp = 80, RuleBinaryOp = 81, RuleEnumValue = 82
   };
 
   ClickHouseParser(antlr4::TokenStream *input);
@@ -139,6 +139,7 @@ public:
   class SetStmtContext;
   class ShowStmtContext;
   class SystemStmtContext;
+  class TruncateStmtContext;
   class UseStmtContext;
   class ColumnTypeExprContext;
   class ColumnExprListContext;
@@ -217,6 +218,7 @@ public:
     SetStmtContext *setStmt();
     ShowStmtContext *showStmt();
     SystemStmtContext *systemStmt();
+    TruncateStmtContext *truncateStmt();
     UseStmtContext *useStmt();
 
 
@@ -1475,6 +1477,18 @@ public:
    
   };
 
+  class  ShowCreateDatabaseStmtContext : public ShowStmtContext {
+  public:
+    ShowCreateDatabaseStmtContext(ShowStmtContext *ctx);
+
+    antlr4::tree::TerminalNode *SHOW();
+    antlr4::tree::TerminalNode *CREATE();
+    antlr4::tree::TerminalNode *DATABASE();
+    DatabaseIdentifierContext *databaseIdentifier();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  ShowCreateTableStmtContext : public ShowStmtContext {
   public:
     ShowCreateTableStmtContext(ShowStmtContext *ctx);
@@ -1534,6 +1548,24 @@ public:
   };
 
   SystemStmtContext* systemStmt();
+
+  class  TruncateStmtContext : public antlr4::ParserRuleContext {
+  public:
+    TruncateStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *TRUNCATE();
+    antlr4::tree::TerminalNode *TABLE();
+    TableIdentifierContext *tableIdentifier();
+    antlr4::tree::TerminalNode *TEMPORARY();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *EXISTS();
+
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  TruncateStmtContext* truncateStmt();
 
   class  UseStmtContext : public antlr4::ParserRuleContext {
   public:
@@ -2134,7 +2166,7 @@ public:
   public:
     TableArgExprContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    TableIdentifierContext *tableIdentifier();
+    TableExprContext *tableExpr();
     LiteralContext *literal();
 
 
@@ -2236,6 +2268,7 @@ public:
     antlr4::tree::TerminalNode *CLEAR();
     antlr4::tree::TerminalNode *CLUSTER();
     antlr4::tree::TerminalNode *COLLATE();
+    antlr4::tree::TerminalNode *COLUMN();
     antlr4::tree::TerminalNode *COMMENT();
     antlr4::tree::TerminalNode *CREATE();
     antlr4::tree::TerminalNode *CROSS();
@@ -2318,6 +2351,7 @@ public:
     antlr4::tree::TerminalNode *TOTALS();
     antlr4::tree::TerminalNode *TRAILING();
     antlr4::tree::TerminalNode *TRIM();
+    antlr4::tree::TerminalNode *TRUNCATE();
     antlr4::tree::TerminalNode *TO();
     antlr4::tree::TerminalNode *TTL();
     antlr4::tree::TerminalNode *UNION();

@@ -28,10 +28,11 @@ set (SRCS
     AST/SelectUnionQuery.cpp
     AST/SetQuery.cpp
     AST/SettingExpr.cpp
-    AST/ShowQuery.cpp
+    AST/ShowCreateQuery.cpp
     AST/SystemQuery.cpp
     AST/TableElementExpr.cpp
     AST/TableExpr.cpp
+    AST/TruncateQuery.cpp
     AST/UseQuery.cpp
     ClickHouseLexer.cpp
     ClickHouseParser.cpp

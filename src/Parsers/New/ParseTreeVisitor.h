@@ -36,9 +36,11 @@ public:
     antlrcpp::Any visitSelectUnionStmt(ClickHouseParser::SelectUnionStmtContext *ctx) override;
     antlrcpp::Any visitSelectStmt(ClickHouseParser::SelectStmtContext *ctx) override;
     antlrcpp::Any visitSetStmt(ClickHouseParser::SetStmtContext *ctx) override;
+    antlrcpp::Any visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *ctx) override;
     antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx) override;
     antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx) override;
     antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx) override;
+    antlrcpp::Any visitTruncateStmt(ClickHouseParser::TruncateStmtContext *ctx) override;
     antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *ctx) override;
 
     // ALTER clauses
