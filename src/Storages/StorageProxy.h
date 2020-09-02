@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
