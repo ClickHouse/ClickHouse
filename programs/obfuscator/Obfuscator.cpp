@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
