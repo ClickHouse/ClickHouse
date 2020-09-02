@@ -22,8 +22,8 @@ create_config() {
  default_realm = $REALM
  dns_lookup_realm = false
  dns_lookup_kdc = false
- ticket_lifetime = 24h
- renew_lifetime = 7d
+ ticket_lifetime = 15s
+ renew_lifetime = 15s
  forwardable = true
  # WARNING: We use weaker key types to simplify testing as stronger key types
  # require the enhanced security JCE policy file to be installed. You should
