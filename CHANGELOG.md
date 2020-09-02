@@ -155,7 +155,7 @@
 
 #### Build/Testing/Packaging Improvement
 
-* Use `shellcheck` for sh tests linting. [#13200](https://github.com/ClickHouse/ClickHouse/pull/13200)[#13207](https://github.com/ClickHouse/ClickHouse/pull/13207) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Use `shellcheck` for sh tests linting. [#13200](https://github.com/ClickHouse/ClickHouse/pull/13200) [#13207](https://github.com/ClickHouse/ClickHouse/pull/13207) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Add script which set labels for pull requests in GitHub hook. [#13183](https://github.com/ClickHouse/ClickHouse/pull/13183) ([alesapin](https://github.com/alesapin)).
 * Remove some of recursive submodules. See [#13378](https://github.com/ClickHouse/ClickHouse/issues/13378). [#13379](https://github.com/ClickHouse/ClickHouse/pull/13379) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Ensure that all the submodules are from proper URLs. Continuation of [#13379](https://github.com/ClickHouse/ClickHouse/issues/13379). This fixes [#13378](https://github.com/ClickHouse/ClickHouse/issues/13378). [#13397](https://github.com/ClickHouse/ClickHouse/pull/13397) ([alexey-milovidov](https://github.com/alexey-milovidov)).
