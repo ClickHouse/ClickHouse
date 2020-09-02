@@ -1,4 +1,5 @@
 import time
+import pymysql.cursors
 
 
 def check_query(clickhouse_node, query, result_set, retry_count=3, interval_seconds=3):
@@ -319,5 +320,39 @@ def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_no
     mysql_node.query("INSERT INTO test_database.test_table_4 VALUES(1), (2), (3), (4), (5)")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_4 ORDER BY id FORMAT TSV", "1\n2\n3\n4\n5\n")
 
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
+
+def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("CREATE DATABASE test_database")
+
+    mysql_node.query("RESET MASTER")
+    mysql_node.query("CREATE TABLE test_database.t1(a INT NOT NULL PRIMARY KEY, b VARCHAR(255) DEFAULT 'BEGIN')")
+    mysql_node.query("INSERT INTO test_database.t1(a) VALUES(1)")
+
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+            service_name))
+
+    # Reject one empty GTID QUERY event with 'BEGIN' and 'COMMIT'
+    mysql_cursor = mysql_node.alloc_connection().cursor(pymysql.cursors.DictCursor)
+    mysql_cursor.execute("SHOW MASTER STATUS")
+    (uuid, seqs) = mysql_cursor.fetchall()[0]["Executed_Gtid_Set"].split(":")
+    (seq_begin, seq_end) = seqs.split("-")
+    assert int(seq_begin) == 1
+    assert int(seq_end) == 3
+    next_gtid = uuid + ":" + str(int(seq_end) + 1)
+    mysql_node.query("SET gtid_next='" + next_gtid + "'")
+    mysql_node.query("BEGIN")
+    mysql_node.query("COMMIT")
+    mysql_node.query("SET gtid_next='AUTOMATIC'")
+
+    # Reject one 'BEGIN' QUERY event and 'COMMIT' XID event.
+    mysql_node.query("/* start */ begin /* end */")
+    mysql_node.query("INSERT INTO test_database.t1(a) VALUES(2)")
+    mysql_node.query("/* start */ commit /* end */")
+
+    check_query(clickhouse_node, "SELECT * FROM test_database.t1 ORDER BY a FORMAT TSV",
+                "1\tBEGIN\n2\tBEGIN\n")
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
