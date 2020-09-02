@@ -24,8 +24,10 @@ public:
 
     ColumnsDescription getActualTableStructure(const Context & context) const override;
 
+    bool needStructureConversion() const override { return false; }
+
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
 
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;

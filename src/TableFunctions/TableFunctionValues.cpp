@@ -3,7 +3,6 @@
 
 #include <Core/Block.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageTableFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -95,7 +94,7 @@ ColumnsDescription TableFunctionValues::getActualTableStructure(const Context & 
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 

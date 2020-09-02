@@ -495,8 +495,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         /// Table function without columns list.
         auto table_function = TableFunctionFactory::instance().get(create.as_table_function, context);
         properties.columns = table_function->getActualTableStructure(context);
-        if (properties.columns.empty())     //FIXME TableFunctionFile may return empty structure for Distributed format
-            return {};
+        assert(!properties.columns.empty());
     }
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
@@ -583,6 +582,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
+    if (create.as_table_function)
+        return;
+
     if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
         if (create.temporary && create.storage->engine->name != "Memory")

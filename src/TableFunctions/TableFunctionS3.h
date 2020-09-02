@@ -22,12 +22,14 @@ public:
     {
         return name;
     }
+    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         const Context & context,
-        const std::string & table_name) const override;
+        const std::string & table_name,
+        ColumnsDescription cached_columns) const override;
 
     const char * getStorageTypeName() const override { return "S3"; }
 

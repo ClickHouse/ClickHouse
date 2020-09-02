@@ -6,7 +6,6 @@
 namespace DB
 {
 
-
 class StorageProxy : public IStorage
 {
 public:

@@ -7,10 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Storages/StorageInput.h>
-#include <Storages/StorageTableFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
 
@@ -45,7 +43,7 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(const Context & c
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();

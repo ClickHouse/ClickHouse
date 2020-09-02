@@ -1,7 +1,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMerge.h>
-#include <Storages/StorageTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
@@ -74,7 +73,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(const Context & c
     return ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)};
 }
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),

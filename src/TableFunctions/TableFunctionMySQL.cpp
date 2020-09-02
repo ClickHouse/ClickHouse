@@ -13,7 +13,6 @@
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Storages/StorageMySQL.h>
-#    include <Storages/StorageTableFunction.h>
 #    include <TableFunctions/ITableFunction.h>
 #    include <TableFunctions/TableFunctionFactory.h>
 #    include <TableFunctions/TableFunctionMySQL.h>
@@ -121,7 +120,7 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & c
     return ColumnsDescription{columns};
 }
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     assert(!parsed_host_port.first.empty());
     if (!pool)

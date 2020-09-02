@@ -9,6 +9,8 @@
 #include <Common/typeid_cast.h>
 
 #include <Storages/StorageFile.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -20,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const Context & context)
@@ -57,7 +60,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, const C
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
     StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
@@ -70,7 +73,11 @@ ColumnsDescription ITableFunctionFileLike::getActualTableStructure(const Context
     if (structure.empty())
     {
         assert(getName() == "file" && format == "Distributed");
-        return {};  /// TODO get matching path, read structure
+        Strings paths = StorageFile::getPathsList(filename, context.getUserFilesPath(), context);
+        if (paths.empty())
+            throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+        auto read_stream = StorageDistributedDirectoryMonitor::createStreamFromFile(paths[0]);
+        return ColumnsDescription{read_stream->getHeader().getNamesAndTypesList()};
     }
     return parseColumnsListFromString(structure, context);
 }

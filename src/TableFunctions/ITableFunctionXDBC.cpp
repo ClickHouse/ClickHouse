@@ -10,7 +10,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
-#include <Storages/StorageTableFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/ITableFunctionXDBC.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -85,7 +84,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(const Context & c
     return ColumnsDescription{columns};
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     assert(helper);
     auto columns = getActualTableStructure(context);
