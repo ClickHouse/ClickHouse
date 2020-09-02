@@ -18,6 +18,8 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
@@ -217,10 +219,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
     ParserExpressionList contents(false);
+    ParserSelectWithUnionQuery select;
 
     bool has_distinct_modifier = false;
 
     ASTPtr identifier;
+    ASTPtr query;
     ASTPtr expr_list_args;
     ASTPtr expr_list_params;
 
@@ -231,8 +235,36 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+
     if (distinct.ignore(pos, expected))
         has_distinct_modifier = true;
+    else
+    {
+        auto old_pos = pos;
+        auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+        if (select.parse(pos, query, expected))
+        {
+            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+            {
+                // It's an subquery. Bail out.
+                pos = old_pos;
+            }
+            else
+            {
+                if (pos->type != TokenType::ClosingRoundBracket)
+                    return false;
+                ++pos;
+                auto function_node = std::make_shared<ASTFunction>();
+                tryGetIdentifierNameInto(identifier, function_node->name);
+                function_node->query = query;
+                function_node->children.push_back(function_node->query);
+                node = function_node;
+                return true;
+            }
+        }
+    }
 
     const char * contents_begin = pos->begin;
     if (!contents.parse(pos, expr_list_args, expected))

@@ -157,7 +157,7 @@ if __name__ == "__main__":
             elif image == "yandex/clickhouse-integration-test":
                 env_tags += "-e {}={}".format("DOCKER_BASE_TAG", tag)
             else:
-                raise Exception("Unknown image {}".format(image))
+                logging.info("Unknown image {}".format(image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
