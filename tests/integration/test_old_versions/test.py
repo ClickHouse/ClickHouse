@@ -10,13 +10,13 @@ from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
-node18_14 = cluster.add_instance('node18_14', image='yandex/clickhouse-server:18.14.19', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
-node19_1 = cluster.add_instance('node19_1', image='yandex/clickhouse-server:19.1.16', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
-node19_4 = cluster.add_instance('node19_4', image='yandex/clickhouse-server:19.4.5.35', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
-node19_8 = cluster.add_instance('node19_8', image='yandex/clickhouse-server:19.8.3.8', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
-node19_11 = cluster.add_instance('node19_11', image='yandex/clickhouse-server:19.11.13.74', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
-node19_13 = cluster.add_instance('node19_13', image='yandex/clickhouse-server:19.13.7.57', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
-node19_16 = cluster.add_instance('node19_16', image='yandex/clickhouse-server:19.16.2.2', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node18_14 = cluster.add_instance('node18_14', image='yandex/clickhouse-server', tag='18.14.19', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node19_1 = cluster.add_instance('node19_1', image='yandex/clickhouse-server', tag='19.1.16', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node19_4 = cluster.add_instance('node19_4', image='yandex/clickhouse-server', tag='19.4.5.35', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node19_8 = cluster.add_instance('node19_8', image='yandex/clickhouse-server', tag='19.8.3.8', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node19_11 = cluster.add_instance('node19_11', image='yandex/clickhouse-server', tag='19.11.13.74', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node19_13 = cluster.add_instance('node19_13', image='yandex/clickhouse-server', tag='19.13.7.57', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
+node19_16 = cluster.add_instance('node19_16', image='yandex/clickhouse-server', tag='19.16.2.2', with_installed_binary=True, main_configs=["configs/config.d/test_cluster.xml"])
 old_nodes = [node18_14, node19_1, node19_4, node19_8, node19_11, node19_13, node19_16]
 new_node = cluster.add_instance('node_new')
 
