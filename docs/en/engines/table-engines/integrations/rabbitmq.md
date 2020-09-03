@@ -7,7 +7,7 @@ toc_title: RabbitMQ
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
-RabbitMQ lets you:
+`RabbitMQ` lets you:
 
 -   Publish or subscribe to data flows.
 -   Process streams as they become available.
@@ -84,7 +84,7 @@ Example:
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a RabbitMQ consumer and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -98,11 +98,11 @@ There can be no more than one exchange per table. One exchange can be shared bet
 
 Exchange type options:
 
--   `direct` - Routing is based on exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can eqaul any of them.
+-   `direct` - Routing is based on the exact matching of keys. Example table key list: `key1,key2,key3,key4,key5`, message key can equal any of them.
 -   `fanout` - Routing to all tables (where exchange name is the same) regardless of the keys.
 -   `topic` - Routing is based on patterns with dot-separated keys. Examples: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
 -   `headers` - Routing is based on `key=value` matches with a setting `x-match=all` or `x-match=any`. Example table key list: `x-match=all,format=logs,type=report,year=2020`.
--   `consistent-hash` - Data is evenly distributed between all bound tables (where exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+-   `consistent-hash` - Data is evenly distributed between all bound tables (where the exchange name is the same). Note that this exchange type must be enabled with RabbitMQ plugin: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
 
 Setting `rabbitmq_queue_base` may be used for the following cases:
 -   to let different tables share queues, so that multiple consumers could be registered for the same queues, which makes a better performance. If using `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings, the exact match of queues is achieved in case these parameters are the same.
