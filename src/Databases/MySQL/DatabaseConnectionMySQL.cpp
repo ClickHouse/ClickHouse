@@ -10,6 +10,7 @@
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
+#    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -43,101 +44,14 @@ constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
-static String toQueryStringWithQuote(const std::vector<String> & quote_list)
-{
-    WriteBufferFromOwnString quote_list_query;
-    quote_list_query << "(";
-
-    for (size_t index = 0; index < quote_list.size(); ++index)
-    {
-        if (index)
-            quote_list_query << ",";
-
-        quote_list_query << quote << quote_list[index];
-    }
-
-    quote_list_query << ")";
-    return quote_list_query.str();
-}
-
-std::map<String, NamesAndTypesList> fetchTablesColumnsList(
-        mysqlxx::Pool & pool,
-        const String & database_name,
-        const std::vector<String> & tables_name,
-        bool external_table_functions_use_nulls,
-        MultiEnum<MySQLDataTypesSupport> type_support)
-{
-    std::map<String, NamesAndTypesList> tables_and_columns;
-
-    if (tables_name.empty())
-        return tables_and_columns;
-
-    Block tables_columns_sample_block
-    {
-        { std::make_shared<DataTypeString>(),   "table_name" },
-        { std::make_shared<DataTypeString>(),   "column_name" },
-        { std::make_shared<DataTypeString>(),   "column_type" },
-        { std::make_shared<DataTypeUInt8>(),    "is_nullable" },
-        { std::make_shared<DataTypeUInt8>(),    "is_unsigned" },
-        { std::make_shared<DataTypeUInt64>(),   "length" },
-        { std::make_shared<DataTypeUInt64>(),   "precision" },
-        { std::make_shared<DataTypeUInt64>(),   "scale" },
-    };
-
-    WriteBufferFromOwnString query;
-    query << "SELECT "
-             " TABLE_NAME AS table_name,"
-             " COLUMN_NAME AS column_name,"
-             " COLUMN_TYPE AS column_type,"
-             " IS_NULLABLE = 'YES' AS is_nullable,"
-             " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
-             " CHARACTER_MAXIMUM_LENGTH AS length,"
-             " NUMERIC_PRECISION as '',"
-             " IF(ISNULL(NUMERIC_SCALE), DATETIME_PRECISION, NUMERIC_SCALE) AS scale" // we know DATETIME_PRECISION as a scale in CH
-             " FROM INFORMATION_SCHEMA.COLUMNS"
-             " WHERE TABLE_SCHEMA = " << quote << database_name
-          << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
-
-    MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
-    while (Block block = result.read())
-    {
-        const auto & table_name_col = *block.getByPosition(0).column;
-        const auto & column_name_col = *block.getByPosition(1).column;
-        const auto & column_type_col = *block.getByPosition(2).column;
-        const auto & is_nullable_col = *block.getByPosition(3).column;
-        const auto & is_unsigned_col = *block.getByPosition(4).column;
-        const auto & char_max_length_col = *block.getByPosition(5).column;
-        const auto & precision_col = *block.getByPosition(6).column;
-        const auto & scale_col = *block.getByPosition(7).column;
-
-        size_t rows = block.rows();
-        for (size_t i = 0; i < rows; ++i)
-        {
-            String table_name = table_name_col[i].safeGet<String>();
-            tables_and_columns[table_name].emplace_back(
-                    column_name_col[i].safeGet<String>(),
-                    convertMySQLDataType(
-                            type_support,
-                            column_type_col[i].safeGet<String>(),
-                            external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
-                            is_unsigned_col[i].safeGet<UInt64>(),
-                            char_max_length_col[i].safeGet<UInt64>(),
-                            precision_col[i].safeGet<UInt64>(),
-                            scale_col[i].safeGet<UInt64>()));
-        }
-    }
-    return tables_and_columns;
-}
-
-
-DatabaseConnectionMySQL::DatabaseConnectionMySQL(
-    const Context & query_context_, const String & database_name_, const String & metadata_path_,
+DatabaseConnectionMySQL::DatabaseConnectionMySQL(const Context & context, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
-    , query_context(query_context_.getQueryContext())
+    , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
+    , mysql_datatypes_support_level(context.getQueryContext().getSettingsRef().mysql_datatypes_support_level)
     , mysql_pool(std::move(pool))
 {
     empty(); /// test database is works fine.
@@ -148,7 +62,7 @@ bool DatabaseConnectionMySQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache(query_context);
+    fetchTablesIntoLocalCache(global_context);
 
     if (local_tables_cache.empty())
         return true;
@@ -248,7 +162,7 @@ time_t DatabaseConnectionMySQL::getObjectMetadataModificationTime(const String &
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache(query_context);
+    fetchTablesIntoLocalCache(global_context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
         throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -315,7 +229,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(const std::map
 
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
             StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
-            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, query_context));
+            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context));
     }
 }
 
@@ -359,7 +273,7 @@ std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsL
             database_name_in_mysql,
             tables_name,
             settings.external_table_functions_use_nulls,
-            settings.mysql_datatypes_support_level.value);
+            mysql_datatypes_support_level);
 }
 
 void DatabaseConnectionMySQL::shutdown()
@@ -536,7 +450,7 @@ void DatabaseConnectionMySQL::createTable(const Context &, const String & table_
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
     /// we should compare the old and new create_query to make them completely consistent
-    const auto & origin_create_query = getCreateTableQuery(table_name, query_context);
+    const auto & origin_create_query = getCreateTableQuery(table_name, global_context);
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))

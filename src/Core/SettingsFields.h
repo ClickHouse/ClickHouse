@@ -455,6 +455,4 @@ struct SettingFieldCustom
     void readBinary(ReadBuffer & in);
 };
 
-
-
 }

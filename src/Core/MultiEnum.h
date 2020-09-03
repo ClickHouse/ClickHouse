@@ -10,18 +10,23 @@ struct MultiEnum
     using StorageType = StorageTypeT;
     using EnumType = EnumTypeT;
 
-    template <typename ... EnumValues>
-    explicit MultiEnum(EnumValues ... v)
-        : MultiEnum((toBitFlag(v) | ... | 0u))
+    MultiEnum() = default;
+
+    template <typename ... EnumValues, typename = std::enable_if_t<std::is_same_v<EnumTypeT, EnumValues...>>>
+    explicit MultiEnum(EnumType v0, EnumValues ... v)
+        : MultiEnum(toBitFlag(v0) | (toBitFlag(v) | ... | 0u))
     {}
 
     template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
-    explicit MultiEnum(ValueType v = 0)
+    explicit MultiEnum(ValueType v)
         : bitset(v)
     {
         static_assert(std::is_unsigned_v<ValueType>);
         static_assert(std::is_unsigned_v<StorageType> && std::is_integral_v<StorageType>);
     }
+
+    MultiEnum(const MultiEnum & other) = default;
+    MultiEnum & operator=(const MultiEnum & other) = default;
 
     bool isSet(EnumType value) const
     {
@@ -88,7 +93,7 @@ struct MultiEnum
     }
 
 private:
-    StorageType bitset;
+    StorageType bitset = 0;
 
     static StorageType toBitFlag(EnumType v) { return StorageType{1} << static_cast<StorageType>(v); }
 };

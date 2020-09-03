@@ -25,13 +25,6 @@ class Context;
 
 enum class MySQLDataTypesSupport;
 
-std::map<String, NamesAndTypesList> fetchTablesColumnsList(
-        mysqlxx::Pool & pool,
-        const String & database_name,
-        const std::vector<String> & tables_name,
-        bool external_table_functions_use_nulls,
-        MultiEnum<MySQLDataTypesSupport> type_support);
-
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
@@ -42,7 +35,7 @@ public:
     ~DatabaseConnectionMySQL() override;
 
     DatabaseConnectionMySQL(
-        const Context & query_context, const String & database_name, const String & metadata_path,
+        const Context & context, const String & database_name, const String & metadata_path,
         const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
@@ -79,10 +72,13 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & name, const Context & context, bool throw_on_error) const override;
 
 private:
-    const Context & query_context;
+    const Context & global_context;
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
+    // Cache setting for later from query context upon creation,
+    // so column types depend on the settings set at query-level.
+    MultiEnum<MySQLDataTypesSupport> mysql_datatypes_support_level;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;
