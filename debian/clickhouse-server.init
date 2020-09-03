@@ -67,13 +67,6 @@ if uname -mpi | grep -q 'x86_64'; then
 fi
 
 
-SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
-is_supported_command()
-{
-    echo "$SUPPORTED_COMMANDS" | grep -E "(\{|\|)$1(\||})" &> /dev/null
-}
-
-
 is_running()
 {
     pgrep --pidfile "$CLICKHOUSE_PIDFILE" $(echo "${PROGRAM}" | cut -c1-15) 1> /dev/null 2> /dev/null
@@ -354,7 +347,7 @@ main()
         disable_cron
         ;;
     *)
-        echo "Usage: $0 $SUPPORTED_COMMANDS"
+        echo "Usage: $0 {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|initdb}"
         exit 2
         ;;
     esac
