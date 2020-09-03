@@ -1290,6 +1290,47 @@ Possible values:
 
 Default value: 0.
 
+## distributed\_group\_by\_no\_merge {#distributed-group-by-no-merge}
+
+Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
+
+Possible values:
+
+-   0 — Disabled (final query processing is done on the initiator node).
+-   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data).
+-   2 - Same as 1 but apply `ORDER BY` and `LIMIT` on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+**Example**
+
+```sql
+SELECT *
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY dummy
+LIMIT 1
+SETTINGS distributed_group_by_no_merge = 1
+FORMAT PrettyCompactMonoBlock
+
+┌─dummy─┐
+│     0 │
+│     0 │
+└───────┘
+```
+
+```sql
+SELECT *
+FROM remote('127.0.0.{2,3}', system.one)
+GROUP BY dummy
+LIMIT 1
+SETTINGS distributed_group_by_no_merge = 2
+FORMAT PrettyCompactMonoBlock
+
+┌─dummy─┐
+│     0 │
+└───────┘
+```
+
+Default value: 0
+
 ## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
@@ -1336,6 +1377,40 @@ Possible values:
 -   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 
 Default value: 0
+
+## optimize\_distributed\_group\_by\_sharding\_key {#optimize-distributed-group-by-sharding-key}
+
+Optimize `GROUP BY sharding_key` queries, by avoiding costly aggregation on the initiator server (which will reduce memory usage for the query on the initiator server).
+
+The following types of queries are supported (and all combinations of them):
+
+- `SELECT DISTINCT [..., ]sharding_key[, ...] FROM dist`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...]`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...] ORDER BY x`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1`
+- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1 BY x`
+
+The following types of queries are not supported (support for some of them may be added later):
+
+- `SELECT ... GROUP BY sharding_key[, ...] WITH TOTALS`
+- `SELECT ... GROUP BY sharding_key[, ...] WITH ROLLUP`
+- `SELECT ... GROUP BY sharding_key[, ...] WITH CUBE`
+- `SELECT ... GROUP BY sharding_key[, ...] SETTINGS extremes=1`
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0
+
+See also:
+
+-   [distributed\_group\_by\_no\_merge](#distributed-group-by-no-merge)
+-   [optimize\_skip\_unused\_shards](#optimize-skip-unused-shards)
+
+!!! note "Note"
+    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
