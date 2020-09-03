@@ -33,18 +33,20 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES
 (9, 1, 2)"
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2;"
-$CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read" # Returns 4
 
+# First two numbers are for inserted blocks in two partitions
+# And this will be mutation number 3:
 $CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx CLEAR INDEX idx IN PARTITION 1;" --replication_alter_partitions_sync=2
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2;"
-$CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read" # Returns 6
 
+# And this will be mutation number 4:
 $CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx MATERIALIZE INDEX idx IN PARTITION 1;"
-wait_for_mutation "minmax_idx" "mutation_3.txt" "$CLICKHOUSE_DATABASE"
+wait_for_mutation "minmax_idx" "mutation_4.txt" "$CLICKHOUSE_DATABASE"
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2;"
-$CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
-
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read" # Returns 4
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE minmax_idx"
