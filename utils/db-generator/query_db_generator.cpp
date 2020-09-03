@@ -92,7 +92,7 @@ TableAndColumn get_table_a_column(const std::string & c)
 }
 
 
-enum type : ColumnType 
+enum type : ColumnType
 {
     i = 1,
     // int
@@ -403,22 +403,22 @@ public:
     std::string name;
     std::set<std::string> columns;
     std::map<std::string, Column> column_description;
-    
+
     bool columnExists(const std::string & column_name) const
     {
         return columns.count(column_name); // || columns_maybe.count(column_name);
     }
-    
+
     void addColumn(const std::string & column_name)
     {
         columns.insert(column_name);
     }
-    
+
     void setDescription(Column other)
     {
         column_description[other.name.second].merge(other);
     }
-    
+
     void print()
     {
         std::cout << "Table\n";
@@ -433,7 +433,7 @@ public:
         }
         std::cout << "\n";
     }
-    
+
     void merge(Table other)
     {
         name = other.name;
@@ -441,7 +441,7 @@ public:
         for (auto desc : other.column_description)
             column_description[desc.first].merge(desc.second);
     }
-    
+
     std::string createQuery()
     {
         std::string create;
@@ -461,7 +461,7 @@ public:
         create += "\n) ENGINE = Log;\n\n";
         return create;
     }
-    
+
     std::string insertQuery()
     {
         std::string insert = "INSERT INTO " + name + "\n";
@@ -664,7 +664,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                     }
                 };
 
-                if (type & type::a )
+                if (type & type::a)
                 {
                     auto arr_values = literal->value.get<DB::Array>();
                     routine(arr_values);
