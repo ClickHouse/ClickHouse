@@ -4,6 +4,7 @@
 
 #include <pcg_random.hpp>
 #include <Core/Field.h>
+#include <Core/Types.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.cpp>
 #include <Parsers/ASTIdentifier.h>
@@ -15,11 +16,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
-using column_type = uint32_t;
-using table_a_column = std::pair<std::string, std::string>;
+using ColumnType = uint32_t;
+using TableAndColumn = std::pair<std::string, std::string>;
 pcg64 rng;
 
-std::string random_string(size_t length)
+std::string randomString(size_t length)
 {
     auto randchar = []() -> char
     {
@@ -31,17 +32,19 @@ std::string random_string(size_t length)
     std::generate_n(str.begin(), length, randchar);
     return str;
 }
-std::string random_integer(unsigned int min = 0, unsigned int max = 4294967295)
+std::string randomInteger(unsigned int min = 0, unsigned int max = 4294967295)
 {
     int r = rng() % (max - min) + min;
     return std::to_string(r);
 }
-std::string random_float(unsigned int min = 0, unsigned int max = 4294967295)
+
+std::string randomFloat(unsigned int min = 0, unsigned int max = 4294967295)
 {
     float r = static_cast<float>(rng() % max) / (static_cast<float>(rng() % 100)) + min;
     return std::to_string(r);
 }
-std::string random_date()
+
+std::string randomDate()
 {
     int32_t year = rng() % 136 + 1970;
     int32_t month = rng() % 12 + 1;
@@ -50,7 +53,8 @@ std::string random_date()
     sprintf(ans, "'%04u-%02u-%02u'", year, month, day);
     return std::string(ans);
 }
-std::string random_datetime()
+
+std::string randomDatetime()
 {
     int32_t year = rng() % 136 + 1970;
     int32_t month = rng() % 12 + 1;
@@ -70,11 +74,11 @@ std::string random_datetime()
             seconds);
     return std::string(ans);
 }
-table_a_column get_table_a_column(const std::string & c)
+TableAndColumn get_table_a_column(const std::string & c)
 {
     auto point_place = c.rfind('.');
-    std::string db = "";
-    std::string column = "";
+    std::string db{};
+    std::string column{};
     if (point_place != std::string::npos)
     {
         db = c.substr(0, point_place);
@@ -88,7 +92,7 @@ table_a_column get_table_a_column(const std::string & c)
 }
 
 
-enum type : column_type
+enum type : ColumnType 
 {
     i = 1,
     // int
@@ -106,14 +110,14 @@ enum type : column_type
     a = 64,
     // array
     t = 128,
-    // turple
+    // tuple
 };
 
 
-std::map<column_type, std::string> type_definition = {
+std::map<ColumnType, std::string> type_definition = {
         {type::i, "Int64"}, {type::f, "Float64"}, {type::s, "String"}, {type::d, "Date"}, {type::dt, "DateTime"}, {type::b, "UInt8"}
 };
-column_type time_type(std::string value)
+ColumnType time_type(std::string value)
 {
     if (value.length() == 12)
     {
@@ -149,7 +153,7 @@ column_type time_type(std::string value)
     return type::s;
 }
 // Casting inner clickhouse parser type to our type
-column_type type_cast(int t)
+ColumnType type_cast(int t)
 {
     switch (t)
     {
@@ -181,19 +185,19 @@ column_type type_cast(int t)
 class FuncRet
 {
 public:
-    FuncRet() {}
+    FuncRet() = default;
 
-    FuncRet(column_type t, std::string v)
+    FuncRet(ColumnType t, std::string v)
             : value(v)
             , type(t) {}
 
-    FuncRet(column_type t, std::string v, bool is_a)
+    FuncRet(ColumnType t, std::string v, bool is_a)
             : value(v)
             , type(t)
             , is_array(is_a) {}
 
-    std::string value = "";
-    column_type type = type::all;
+    std::string value{};
+    ColumnType type = type::all;
     bool is_array = false;
 };
 
@@ -218,10 +222,10 @@ std::map<std::string, FuncRet> func_to_return_type = {
 };
 
 std::set<std::string> func_args_same_types = {
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "multiply"
+        "equals", "notequals", "less", "greater", "lessorequals", "greaterorequals", "multiply"
 };
 
-std::map<std::string, column_type> func_to_param_type = {
+std::map<std::string, ColumnType> func_to_param_type = {
         {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f},
         {"minus", type::i | type::f | type::d | type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f},
         {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitNot", type::i}, {"bitShiftLeft", type::i},
@@ -245,29 +249,31 @@ std::map<std::string, column_type> func_to_param_type = {
 class Column
 {
 public:
-    table_a_column name;
-    std::set<table_a_column> equals;
+    TableAndColumn name;
+    std::set<TableAndColumn> equals;
     std::set<std::string> values;
-    column_type type = type::all;
+    ColumnType type = type::all;
     bool is_array = false;
 
-    Column() {}
+    Column() = default;
 
-    Column(const std::string & column_name)
+    explicit Column(const std::string & column_name)
     {
         name = std::make_pair("", column_name);
         type = type::all;
     }
+
     void merge(Column other)
     {
-        if (name.second == "")
+        if (name.second.empty())
             name = other.name;
         equals.insert(other.equals.begin(), other.equals.end());
         values.insert(other.values.begin(), other.values.end());
         type &= other.type;
         is_array |= other.is_array;
     }
-    void print_type()
+
+    void printType() const
     {
         if (type & type::i)
             std::cout << "I";
@@ -283,43 +289,46 @@ public:
             std::cout << "ARR";
         std::cout << "\n";
     }
+
     void print()
     {
         std::cout << name.first << "." << name.second << "\n";
         std::cout << "type: ";
-        print_type();
+        printType();
         std::cout << "values:";
-        for (auto val : values)
+        for (const auto & val : values)
             std::cout << " " << val;
         std::cout << "\n";
         std::cout << "equal:";
-        for (auto col : equals)
+        for (const auto & col : equals)
             std::cout << " " << col.first << "." << col.second;
         std::cout << "\n";
     }
-    std::string generate_one_value()
+
+    std::string generateOneValue() const
     {
         if (type & type::i)
-            return random_integer();
+            return randomInteger();
 
         if (type & type::f)
-            return random_float();
+            return randomFloat();
 
         if (type & type::d)
-            return random_date();
+            return randomDate();
 
         if (type & type::dt)
-            return random_datetime();
+            return randomDatetime();
 
         if (type & type::s)
-            return "'" + random_string(rng() % 40) + "'";
+            return "'" + randomString(rng() % 40) + "'";
 
         if (type & type::b)
             return "0";
 
         return "";
     }
-    bool generate_values(int amount = 0)
+
+    bool generateValues(int amount = 0)
     {
         if (values.size() > 3 && amount == 0)
             return false;
@@ -333,19 +342,20 @@ public:
                 {
                     if (i != 0)
                         v += ", ";
-                    v += generate_one_value();
+                    v += generateOneValue();
                 }
                 v += "]";
                 values.insert(v);
             }
             else
             {
-                values.insert(generate_one_value());
+                values.insert(generateOneValue());
             }
         }
         return true;
     }
-    void unify_type()
+
+    void unifyType()
     {
         if (type & type::i)
             type = type::i;
@@ -360,13 +370,13 @@ public:
         else if (type & type::b)
             type = type::b;
         else
-            throw "error determination column type " + name.first + '.' + name.second;
+            throw std::runtime_error("Error in determination column type " + name.first + '.' + name.second);
     }
 };
 
 
 std::set<std::vector<std::string>>
-decart_mul(
+decartMul(
         std::set<std::vector<std::string>> & prev,
         std::set<std::string> &              mul)
 {
@@ -385,32 +395,36 @@ decart_mul(
 class Table
 {
 public:
-    Table() {}
+    Table() = default;
 
-    Table(std::string table_name)
+    explicit Table(std::string table_name)
             : name(table_name) {}
 
     std::string name;
     std::set<std::string> columns;
     std::map<std::string, Column> column_description;
-    bool column_exists(const std::string & column_name) const
+    
+    bool columnExists(const std::string & column_name) const
     {
         return columns.count(column_name); // || columns_maybe.count(column_name);
     }
-    void add_column(const std::string & column_name)
+    
+    void addColumn(const std::string & column_name)
     {
         columns.insert(column_name);
     }
-    void set_description(Column other)
+    
+    void setDescription(Column other)
     {
         column_description[other.name.second].merge(other);
     }
+    
     void print()
     {
         std::cout << "Table\n";
         std::cout << name << "\n";
         std::cout << "Columns:\n\n";
-        for (auto column : columns)
+        for (const auto & column : columns)
         {
             std::cout << column << "\n";
             if (column_description.count(column))
@@ -419,6 +433,7 @@ public:
         }
         std::cout << "\n";
     }
+    
     void merge(Table other)
     {
         name = other.name;
@@ -426,7 +441,8 @@ public:
         for (auto desc : other.column_description)
             column_description[desc.first].merge(desc.second);
     }
-    std::string create_query()
+    
+    std::string createQuery()
     {
         std::string create;
         std::string db, _;
@@ -445,7 +461,8 @@ public:
         create += "\n) ENGINE = Log;\n\n";
         return create;
     }
-    std::string insert_query()
+    
+    std::string insertQuery()
     {
         std::string insert = "INSERT INTO " + name + "\n";
         insert += "(";
@@ -455,7 +472,7 @@ public:
             if (column != columns.begin())
                 insert += ", ";
             insert += *column;
-            values = decart_mul(values, column_description[*column].values);
+            values = decartMul(values, column_description[*column].values);
         }
         insert += ") VALUES \n";
         for (auto val_set_iter = values.begin(); val_set_iter != values.end();
@@ -486,50 +503,55 @@ public:
     std::map<std::string, std::string> aliases;
     std::unordered_map<std::string, Table> tables;
     std::set<std::string> nested;
-    bool table_exists(const std::string & table_name) const
+
+    bool tableExists(const std::string & table_name) const
     {
         return tables.count(table_name);
     }
-    void add_column(std::string full_column)
+
+    void addColumn(std::string full_column)
     {
         std::string table, column;
         std::tie(table, column) = get_table_a_column(full_column);
-        if (table != "")
+        if (!table.empty())
         {
             if (tables.count(table))
             {
-                tables[table].add_column(column);
+                tables[table].addColumn(column);
                 return;
             }
             if (aliases.count(table))
             {
-                tables[aliases[table]].add_column(column);
+                tables[aliases[table]].addColumn(column);
                 return;
             }
             nested.insert(table);
         }
-        tables[main_table].add_column(full_column);
+        tables[main_table].addColumn(full_column);
     }
-    void add_table(std::string table_name)
+
+    void addTable(std::string table_name)
     {
         if (tables.count(table_name))
             return;
 
         tables[table_name] = Table(table_name);
-        if (main_table == "")
+        if (main_table.empty())
             main_table = table_name;
     }
-    void add_description(const Column & description)
+
+    void addDescription(const Column & description)
     {
         std::string table = description.name.first;
         if (tables.count(table))
-            tables[table].set_description(description);
+            tables[table].setDescription(description);
     }
-    table_a_column get_table(std::string full_column) const
+
+    TableAndColumn getTable(std::string full_column) const
     {
         std::string table, column;
         std::tie(table, column) = get_table_a_column(full_column);
-        if (table != "")
+        if (!table.empty())
         {
             if (tables.count(table))
                 return std::make_pair(table, column);
@@ -542,14 +564,16 @@ public:
         }
         return std::make_pair(main_table, full_column);
     }
+
     void print()
     {
-        for (auto table_d = tables.begin(); table_d != tables.end(); ++table_d)
+        for (auto & table : tables)
         {
-            table_d->second.print();
+            table.second.print();
             std::cout << "\n";
         }
     }
+
     void merge(TableList other)
     {
         for (auto table : other.tables)
@@ -557,40 +581,38 @@ public:
         nested.insert(other.nested.begin(), other.nested.end());
     }
 };
-std::string get_alias(DB::ASTPtr ch)
+
+std::string getAlias(DB::ASTPtr ch)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTWithAlias>(ch);
-    if (X)
-        return X->alias;
-
-
+    auto x = std::dynamic_pointer_cast<DB::ASTWithAlias>(ch);
+    if (x)
+        return x->alias;
+    
     for (const auto & child : (*ch).children)
     {
-        auto alias = get_alias(child);
-        if (alias != "")
+        auto alias = getAlias(child);
+        if (!alias.empty())
             return alias;
     }
     return "";
 }
 
+using FuncHandler = std::function<FuncRet(DB::ASTPtr, std::map<std::string, Column> &)>;
+std::map<std::string, FuncHandler> handlers = {};
 
-typedef FuncRet (* funchandler)(
-        DB::ASTPtr ch,
-        std::map<std::string, Column> & columns);
-std::map<std::string, funchandler> handlers = {};
-FuncRet array_join_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
         std::set<std::string> indents = {};
-        for (auto arg : X->arguments->children)
+        for (auto & arg : x->arguments->children)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
                 indents.insert(ident->name);
         }
-        for (auto indent : indents)
+        for (const auto & indent : indents)
         {
             auto c = Column(indent);
             c.type = type::all;
@@ -606,15 +628,16 @@ FuncRet array_join_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     return FuncRet();
 }
 
-FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
-        std::set<std::string> indents = {};
-        std::set<std::string> values;
-        column_type type_value = type::all;
-        for (auto arg : X->arguments->children)
+        std::set<std::string> indents{};
+        std::set<std::string> values{};
+        ColumnType type_value = type::all;
+
+        for (auto & arg : x->arguments->children)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
@@ -624,10 +647,11 @@ FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
-                column_type type = type_cast(literal->value.getType());
-                if (type & type::a || type & type::t)
+                ColumnType type = type_cast(literal->value.getType());
+
+                /// C++20
+                auto routine = [&] <typename T>(const T & arr_values)
                 {
-                    auto arr_values = literal->value.get<const std::vector<DB::Field>&>();
                     for (auto val : arr_values)
                     {
                         type = type_cast(val.getType());
@@ -636,18 +660,30 @@ FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                         type_value &= type;
                         values.insert(applyVisitor(DB::FieldVisitorToString(), val));
                     }
+                };
+
+                if (type & type::a )
+                {
+                    auto arr_values = literal->value.get<DB::Array>();
+                    routine(arr_values);
+                }
+
+                if (type & type::a)
+                {
+                    auto arr_values = literal->value.get<DB::Tuple>();
+                    routine(arr_values);
                 }
             }
             auto subfunc = std::dynamic_pointer_cast<DB::ASTFunction>(arg);
             if (subfunc)
             {
-                funchandler f;
+                FuncHandler f;
                 auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
                 if (handlers.count(arg_func_name))
                     f = handlers[arg_func_name];
                 else
                     f = handlers[""];
-                FuncRet ret = (*f)(arg, columns);
+                FuncRet ret = f(arg, columns);
                 if (ret.value != "")
                 {
                     values.insert(ret.value);
@@ -655,12 +691,12 @@ FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 type_value &=  ret.type;
             }
         }
-        for (auto indent : indents)
+        for (const auto & indent : indents)
         {
             auto c = Column(indent);
             c.type = type_value;
             c.values.insert(values.begin(), values.end());
-            c.generate_values(1);
+            c.generateValues(1);
             if (columns.count(indent))
                 columns[indent].merge(c);
             else
@@ -672,16 +708,16 @@ FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     return FuncRet();
 }
 
-FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
         std::set<std::string> indents = {};
         std::string value = "[";
-        column_type type_value = type::i | type::f | type::d | type::dt | type::s;
+        ColumnType type_value = type::i | type::f | type::d | type::dt | type::s;
         bool no_indent = true;
-        for (auto arg : X->arguments->children)
+        for (const auto & arg : x->arguments->children)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
@@ -692,7 +728,7 @@ FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal)
             {
-                column_type type = type_cast(literal->value.getType());
+                ColumnType type = type_cast(literal->value.getType());
                 if (type == type::s || type == type::d || type == type::dt)
                     type = time_type(value);
                 type_value &= type;
@@ -702,7 +738,7 @@ FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 value += applyVisitor(DB::FieldVisitorToString(), literal->value);
             }
         }
-        for (auto indent : indents)
+        for (const auto & indent : indents)
         {
             auto c = Column(indent);
             c.type = type_value;
@@ -720,19 +756,19 @@ FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     }
     return FuncRet();
 }
-FuncRet arithmetic_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        column_type type_value = type::i | type::f | type::d | type::dt;
-        column_type args_types = 0;
+        ColumnType type_value = type::i | type::f | type::d | type::dt;
+        ColumnType args_types = 0;
         bool no_indent = true;
-        for (auto arg : X->arguments->children)
+        for (auto & arg : x->arguments->children)
         {
-            column_type type = 0;
+            ColumnType type = 0;
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
             {
@@ -745,13 +781,13 @@ FuncRet arithmetic_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto subfunc = std::dynamic_pointer_cast<DB::ASTFunction>(arg);
             if (subfunc)
             {
-                funchandler f;
+                FuncHandler f;
                 auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
                 if (handlers.count(arg_func_name))
                     f = handlers[arg_func_name];
                 else
                     f = handlers[""];
-                FuncRet ret = (*f)(arg, columns);
+                FuncRet ret = f(arg, columns);
                 type = ret.type;
             }
             args_types |= type;
@@ -769,7 +805,7 @@ FuncRet arithmetic_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             else
                 columns[indent] = c;
         }
-        column_type ret_type = 0;
+        ColumnType ret_type = 0;
         if (args_types & type::dt)
             ret_type = type::dt;
         else if (args_types & type::d)
@@ -789,15 +825,15 @@ FuncRet arithmetic_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     }
     return FuncRet();
 }
-FuncRet like_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        column_type type_value = type::s;
-        for (auto arg : X->arguments->children)
+        ColumnType type_value = type::s;
+        for (auto & arg : x->arguments->children)
         {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
@@ -806,20 +842,20 @@ FuncRet like_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (literal)
             {
                 std::string value = applyVisitor(DB::FieldVisitorToString(), literal->value);
-                std::string example = "";
+                std::string example{};
                 for (size_t i = 0; i != value.size(); ++i)
                 {
                     if (value[i] == '%')
-                        example += random_string(rng() % 10);
+                        example += randomString(rng() % 10);
                     else if (value[i] == '_')
-                        example += random_string(1);
+                        example += randomString(1);
                     else
                         example += value[i];
                 }
                 values.insert(example);
             }
         }
-        for (auto indent : indents)
+        for (const auto & indent : indents)
         {
             auto c = Column(indent);
             c.type = type_value;
@@ -834,14 +870,15 @@ FuncRet like_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     }
     return FuncRet();
 }
-FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+
+FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
     auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
     if (X)
     {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        column_type type_value = type::all;
+        ColumnType type_value = type::all;
         bool is_array = false;
         bool no_indent = true;
         if (func_to_param_type.count(boost::algorithm::to_lower_copy(X->name)))
@@ -851,7 +888,7 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         }
         for (auto arg : X->arguments->children)
         {
-            column_type type = type::all;
+            ColumnType type = type::all;
             std::string value;
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident)
@@ -869,32 +906,32 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto subfunc = std::dynamic_pointer_cast<DB::ASTFunction>(arg);
             if (subfunc)
             {
-                funchandler f;
+                FuncHandler f;
                 auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
                 if (handlers.count(arg_func_name))
                     f = handlers[arg_func_name];
                 else
                     f = handlers[""];
-                FuncRet ret = (*f)(arg, columns);
+                FuncRet ret = f(arg, columns);
                 is_array |= ret.is_array;
                 type = ret.type;
                 value = ret.value;
-                if (value == "")
+                if (value.empty())
                     no_indent = false;
             }
-            if (value != "")
+            if (!value.empty())
             {
                 if (type == type::i)
                 {
                     values.insert(value);
-                    values.insert(value + " + " + random_integer(1, 10));
-                    values.insert(value + " - " + random_integer(1, 10));
+                    values.insert(value + " + " + randomInteger(1, 10));
+                    values.insert(value + " - " + randomInteger(1, 10));
                 }
                 if (type == type::f)
                 {
                     values.insert(value);
-                    values.insert(value + " + " + random_float(1, 10));
-                    values.insert(value + " - " + random_float(1, 10));
+                    values.insert(value + " + " + randomFloat(1, 10));
+                    values.insert(value + " - " + randomFloat(1, 10));
                 }
                 if (type & type::s || type & type::d || type & type::dt)
                 {
@@ -905,23 +942,23 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                     if (type & type::d)
                     {
                         values.insert(value);
-                        values.insert("toDate(" + value + ") + " + random_integer(1, 10));
-                        values.insert("toDate(" + value + ") - " + random_integer(1, 10));
+                        values.insert("toDate(" + value + ") + " + randomInteger(1, 10));
+                        values.insert("toDate(" + value + ") - " + randomInteger(1, 10));
                     }
                     else if (type & type::dt)
                     {
                         values.insert(value);
                         values.insert(
-                                "toDateTime(" + value + ") + " + random_integer(1, 10000));
+                                "toDateTime(" + value + ") + " + randomInteger(1, 10000));
                         values.insert(
-                                "toDateTime(" + value + ") - " + random_integer(1, 10000));
+                                "toDateTime(" + value + ") - " + randomInteger(1, 10000));
                     }
                 }
             }
             if (func_args_same_types.count(boost::algorithm::to_lower_copy(X->name)))
                 type_value &= type;
         }
-        for (auto indent : indents)
+        for (const auto & indent : indents)
         {
             auto c = Column(indent);
             c.type = type_value;
@@ -929,7 +966,7 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             if (func_args_same_types.count(
                     boost::algorithm::to_lower_copy(X->name)))
                 c.values = values;
-            for (auto ind : indents)
+            for (const auto & ind : indents)
                 if (ind != indent)
                     c.equals.insert(std::make_pair("", ind));
 
@@ -969,55 +1006,55 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     return FuncRet();
 }
 
-void process_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+void processFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
-    if (X)
+    auto x = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (x)
     {
-        funchandler f;
-        auto arg_func_name = X->name;
+        FuncHandler f;
+        auto arg_func_name = x->name;
         if (handlers.count(arg_func_name))
             f = handlers[arg_func_name];
         else
             f = handlers[""];
-        (*f)(ch, columns);
+        f(ch, columns);
     }
     else
     {
         for (const auto & child : (*ch).children)
-            process_func(child, columns);
+            processFunc(child, columns);
     }
 }
 
 
-std::set<std::string> get_indent(DB::ASTPtr ch)
+std::set<std::string> getIndent(DB::ASTPtr ch)
 {
     if (!ch)
         return {};
 
     std::set<std::string> ret = {};
-    auto X = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
-    if (X)
-        ret.insert(X->name);
+    auto x = std::dynamic_pointer_cast<DB::ASTIdentifier>(ch);
+    if (x)
+        ret.insert(x->name);
     for (const auto & child : (*ch).children)
     {
-        auto child_ind = get_indent(child);
+        auto child_ind = getIndent(child);
         ret.insert(child_ind.begin(), child_ind.end());
     }
     return ret;
 }
 
 
-std::set<std::string> get_select_indent(
+std::set<std::string> getSelectIndent(
         DB::ASTPtr              asp,
         std::set<std::string> & column_alias)
 {
     std::set<std::string> ret = {};
-    for (auto ch : asp->children)
+    for (auto & ch : asp->children)
     {
-        auto alias = get_alias(ch);
-        auto columns = get_indent(ch);
-        if (alias != "")
+        auto alias = getAlias(ch);
+        auto columns = getIndent(ch);
+        if (alias.empty())
             column_alias.insert(alias);
         ret.insert(columns.begin(), columns.end());
     }
@@ -1025,21 +1062,21 @@ std::set<std::string> get_select_indent(
 }
 
 
-std::set<table_a_column>
-connected_equality_find(
+std::set<TableAndColumn>
+connectedEqualityFind(
         const Column & now,
         std::map<std::string, Column> & columns_descriptions,
-        std::set<table_a_column> & visited)
+        std::set<TableAndColumn> & visited)
 {
-    std::set<table_a_column> result;
-    for (auto column : now.equals)
+    std::set<TableAndColumn> result;
+    for (auto & column : now.equals)
         if (!visited.count(column))
         {
             visited.insert(column);
-            auto sub_r = connected_equality_find(
-                    columns_descriptions[column.first + "." + column.second],
-                    columns_descriptions,
-                    visited);
+            auto sub_r = connectedEqualityFind(
+                columns_descriptions[column.first + "." + column.second],
+                columns_descriptions,
+                visited);
             result.insert(sub_r.begin(), sub_r.end());
         }
     result.insert(now.name);
@@ -1048,17 +1085,17 @@ connected_equality_find(
 
 
 std::map<std::string, Column>
-unificate_columns(
+unificateColumns(
         std::map<std::string, Column> columns_descriptions,
         const TableList & all_tables)
 {
     for (auto & column : columns_descriptions)
     {
-        std::set<table_a_column> changed_equals;
-        for (auto & eq : column.second.equals)
+        std::set<TableAndColumn> changed_equals;
+        for (const auto & eq : column.second.equals)
         {
             std::string t, c;
-            std::tie(t, c) = all_tables.get_table(eq.second);
+            std::tie(t, c) = all_tables.getTable(eq.second);
             changed_equals.insert(std::make_pair(t, c));
         }
         column.second.equals = changed_equals;
@@ -1067,18 +1104,18 @@ unificate_columns(
     for (auto & column : columns_descriptions)
     {
         std::string t, c;
-        std::tie(t, c) = all_tables.get_table(column.first);
+        std::tie(t, c) = all_tables.getTable(column.first);
         column.second.name = std::make_pair(t, c);
         result[t + "." + c].merge(column.second);
     }
-    std::set<table_a_column> visited;
+    std::set<TableAndColumn> visited;
     for (auto & column : result)
         if (!visited.count(column.second.name))
         {
-            auto equal = connected_equality_find(
-                    result[column.second.name.first + "." + column.second.name.second],
-                    result,
-                    visited);
+            auto equal = connectedEqualityFind(
+                result[column.second.name.first + "." + column.second.name.second],
+                result,
+                visited);
             for (auto c : equal)
                 result[c.first + "." + c.second].equals = equal;
         }
@@ -1088,94 +1125,100 @@ unificate_columns(
 
     for (auto & column : result)
     {
-        column.second.unify_type();
-        if (column.second.generate_values())
+        column.second.unifyType();
+        if (column.second.generateValues())
             for (auto e : column.second.equals)
                 result[e.first + "." + e.second].merge(column.second);
 
     }
     return result;
 }
-void parse_select_query(DB::ASTPtr ast, TableList & all_tables)
+void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
 {
-    auto sast = std::dynamic_pointer_cast<DB::ASTSelectQuery>(ast);
-    if (!sast)
+    if (!ast)
+        throw std::runtime_error("Bad ASTPtr in parseSelectQuery" + StackTrace().toString());
+
+    auto select_ast = std::dynamic_pointer_cast<DB::ASTSelectQuery>(ast);
+    if (!select_ast)
     {
         std::cerr << "not select query";
         return;
     }
     std::set<std::string> columns = {};
 
-    auto X = sast->tables();
-    for (auto child : X->children)
+    auto x = select_ast->tables();
+    if (!x)
+        throw std::runtime_error("There is no tables in query. Nothing to generate.");
+
+    for (auto & child : x->children)
     {
         auto ch = std::dynamic_pointer_cast<DB::ASTTablesInSelectQueryElement>(child);
         auto TEast = std::dynamic_pointer_cast<DB::ASTTableExpression>(ch->table_expression);
         if (TEast && TEast->database_and_table_name)
         {
-            auto table_name = *(get_indent(TEast->database_and_table_name).begin());
-            all_tables.add_table(table_name);
-            auto alias = get_alias(ch);
-            if (alias != "")
+            auto table_name = *(getIndent(TEast->database_and_table_name).begin());
+            all_tables.addTable(table_name);
+            auto alias = getAlias(ch);
+            if (!alias.empty())
                 all_tables.aliases[alias] = table_name;
         }
         if (TEast && TEast->subquery)
-            throw "subquery not supported";
+            throw std::runtime_error("Subquery is not supported.");
 
         if (ch->table_join)
         {
             auto jch = std::dynamic_pointer_cast<DB::ASTTableJoin>(ch->table_join);
             if (jch->using_expression_list)
             {
-                auto join_columns = get_indent(jch->using_expression_list);
+                auto join_columns = getIndent(jch->using_expression_list);
                 columns.insert(join_columns.begin(), join_columns.end());
             }
             else if (jch->on_expression)
             {
-                auto join_columns = get_indent(jch->on_expression);
+                auto join_columns = getIndent(jch->on_expression);
                 columns.insert(join_columns.begin(), join_columns.end());
             }
         }
     }
 
     std::set<std::string> column_aliases;
-    auto select_columns = get_select_indent(sast->select(), column_aliases);
+    auto select_columns = getSelectIndent(select_ast->select(), column_aliases);
     columns.insert(select_columns.begin(), select_columns.end());
 
-    auto where_columns = get_indent(sast->where());
+    auto where_columns = getIndent(select_ast->where());
     columns.insert(where_columns.begin(), where_columns.end());
 
-    auto groupby_columns = get_indent(sast->groupBy());
+    auto groupby_columns = getIndent(select_ast->groupBy());
     columns.insert(groupby_columns.begin(), groupby_columns.end());
 
-    auto orderby_columns = get_indent(sast->orderBy());
+    auto orderby_columns = getIndent(select_ast->orderBy());
     columns.insert(orderby_columns.begin(), orderby_columns.end());
 
-    auto having_columns = get_indent(sast->having());
+    auto having_columns = getIndent(select_ast->having());
     columns.insert(having_columns.begin(), having_columns.end());
 
     std::map<std::string, Column> columns_descriptions;
-    process_func(ast, columns_descriptions);
+    processFunc(ast, columns_descriptions);
 
-    for (auto column : columns)
+    for (const auto & column : columns)
         if (!column_aliases.count(column))
         {
             if (!columns_descriptions.count(column))
                 columns_descriptions[column] = Column(column);
-            all_tables.add_column(column);
+            all_tables.addColumn(column);
         }
 
-    columns_descriptions = unificate_columns(columns_descriptions, all_tables);
-    for (auto column : columns_descriptions)
-        all_tables.add_description(column.second);
+    columns_descriptions = unificateColumns(columns_descriptions, all_tables);
+    for (auto & column : columns_descriptions)
+        all_tables.addDescription(column.second);
 }
 
 
-std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex)
+std::vector<DB::ASTPtr> getSelect(DB::ASTPtr vertex)
 {
-    auto X = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
+    auto z = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
     std::vector<DB::ASTPtr> result;
-    if (X)
+    if (z)
     {
         result.push_back(vertex);
         return result;
@@ -1183,62 +1226,71 @@ std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex)
 
     for (const auto & child : (*vertex).children)
     {
-        auto v = get_select(child);
+        auto v = getSelect(child);
         result.insert(result.end(), v.begin(), v.end());
     }
     return result;
+
 }
-TableList get_tables_from_select(std::vector<std::string> queries)
+TableList getTablesFromSelect(std::vector<std::string> queries)
 {
     DB::ParserQueryWithOutput parser;
     TableList result;
-    for (std::string& query : queries)
+    for (std::string & query : queries)
     {
         DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
-        for (auto select : get_select(ast))
+        for (auto & select : getSelect(ast))
         {
             TableList local;
-            parse_select_query(select, local);
+            parseSelectQuery(select, local);
             result.merge(local);
         }
     }
     return result;
 }
+
 int main(int, char **)
 {
-    handlers["plus"] = arithmetic_func;
-    handlers["minus"] = arithmetic_func;
-    handlers["like"] = like_func;
-    handlers["array"] = array_func;
-    handlers["in"] = in_func;
-    handlers[""] = simple_func;
+    handlers["plus"] = arithmeticFunc;
+    handlers["minus"] = arithmeticFunc;
+    handlers["like"] = likeFunc;
+    handlers["array"] = arrayFunc;
+    handlers["in"] = inFunc;
+    handlers[""] = simpleFunc;
 
     std::vector<std::string> queries;
     std::string in;
-    std::string query = "";
+    std::string query{};
     while (getline(std::cin, in))
     {
+        /// Skip comments
+        if (in.find("--") != std::string::npos)
+            continue;
+
         query += in + " ";
+
         if (in.find(';') != std::string::npos)
         {
             queries.push_back(query);
             query = "";
         }
     }
+
     try
     {
-        auto result = get_tables_from_select(queries);
+        auto result = getTablesFromSelect(queries);
 
-        for (auto table : result.tables)
+        for (auto & table : result.tables)
         {
-            std::cout << table.second.create_query();
-            std::cout << table.second.insert_query();
+            std::cout << table.second.createQuery();
+            std::cout << table.second.insertQuery();
         }
-        for (auto q: queries)
+
+        for (auto & q: queries)
             std::cout << q << std::endl;
     }
-    catch (std::string e)
+    catch (std::string & e)
     {
-        std::cerr << "Exception: " << std::endl;
+        std::cerr << "Exception: " << e << std::endl;
     }
 }
