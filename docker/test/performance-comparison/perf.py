@@ -276,11 +276,11 @@ for query_index, q in enumerate(test_queries):
         # time per query per server of about one second. Use this value as a
         # reference for "short" queries.
         if is_short[query_index]:
-            if server_seconds >= 1 * len(this_query_connections):
+            if server_seconds >= 2 * len(this_query_connections):
                 break
             # Also limit the number of runs, so that we don't go crazy processing
             # the results -- 'eqmed.sql' is really suboptimal.
-            if run >= 100:
+            if run >= 200:
                 break
         else:
             if run >= args.runs:
