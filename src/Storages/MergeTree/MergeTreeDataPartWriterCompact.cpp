@@ -29,9 +29,18 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
+
+    /// Create compressed stream for every different codec.
+    std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
     for (const auto & column : columns_list)
-        compressed_streams[column.name] = std::make_unique<CompressedStream>(
-            plain_hashing, storage_columns.getCodecOrDefault(column.name, default_codec));
+    {
+        auto codec = storage_columns.getCodecOrDefault(column.name, default_codec);
+        auto & stream = streams_by_codec[codec->getHash()];
+        if (!stream)
+            stream = std::make_shared<CompressedStream>(plain_hashing, codec);
+
+        compressed_streams.push_back(stream);
+    }
 }
 
 void MergeTreeDataPartWriterCompact::write(
@@ -101,14 +110,15 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         if (rows_to_write)
             data_written = true;
 
-        for (const auto & column : columns_list)
+        auto name_and_type = columns_list.begin();
+        for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            auto & stream = compressed_streams[column.name];
+            auto & stream = compressed_streams[i];
 
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(stream->hashing_buf.offset(), marks);
 
-            writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream, current_row, rows_to_write);
 
             /// Write one compressed block per column in granule for more optimal reading.
             stream->hashing_buf.next();
@@ -133,12 +143,15 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
     next_mark = from_mark;
 }
 
-void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows) const
+void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
+    const ColumnWithTypeAndName & column,
+    const CompressedStreamPtr & stream,
+    size_t from_row, size_t number_of_rows) const
 {
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
-    serialize_settings.getter = [this, &column](IDataType::SubstreamPath) -> WriteBuffer * { return &compressed_streams.at(column.name)->hashing_buf; };
+    serialize_settings.getter = [&stream](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->hashing_buf; };
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 
@@ -213,7 +226,7 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     size_t uncompressed_size = 0;
     CityHash_v1_0_2::uint128 uncompressed_hash{0, 0};
 
-    for (const auto & [_, stream] : compressed_streams)
+    for (const auto & stream : compressed_streams)
     {
         uncompressed_size += stream->hashing_buf.count();
         auto stream_hash = stream->hashing_buf.getHash();
