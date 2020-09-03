@@ -451,7 +451,7 @@ namespace MySQLReplication
                         UInt32 hour = readBits(val, 2, 10, 24);
                         UInt32 minute = readBits(val, 12, 6, 24);
                         UInt32 second = readBits(val, 18, 6, 24);
-                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&frac_part), meta);
+                        readTimeFractionalPart(payload, frac_part, meta);
 
                         if (frac_part != 0)
                         {
@@ -481,9 +481,10 @@ namespace MySQLReplication
                         break;
                     }
                     case MYSQL_TYPE_DATETIME2: {
-                        Int64 val = 0, fsp = 0;
+                        Int64 val = 0;
+                        UInt32 fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 5);
-                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&fsp), meta);
+                        readTimeFractionalPart(payload, fsp, meta);
 
                         UInt32 year_month = readBits(val, 1, 17, 40);
                         time_t date_time = DateLUT::instance().makeDateTime(
@@ -491,14 +492,35 @@ namespace MySQLReplication
                             , readBits(val, 23, 5, 40), readBits(val, 28, 6, 40), readBits(val, 34, 6, 40)
                         );
 
-                        row.push_back(Field{UInt32(date_time)});
+                        if (!meta)
+                            row.push_back(Field{UInt32(date_time)});
+                        else
+                        {
+                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
+                                static_cast<DateTime64::NativeType>(date_time), 0};
+
+                            components.fractional = fsp;
+                            row.push_back(Field(DecimalUtils::decimalFromComponents<DateTime64>(components, meta)));
+                        }
+
                         break;
                     }
                     case MYSQL_TYPE_TIMESTAMP2: {
                         UInt32 sec = 0, fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
-                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&fsp), meta);
-                        row.push_back(Field{sec});
+                        readTimeFractionalPart(payload, fsp, meta);
+
+                        if (!meta)
+                            row.push_back(Field{sec});
+                        else
+                        {
+                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
+                                static_cast<DateTime64::NativeType>(sec), 0};
+
+                            components.fractional = fsp;
+                            row.push_back(Field(DecimalUtils::decimalFromComponents<DateTime64>(components, meta)));
+                        }
+
                         break;
                     }
                     case MYSQL_TYPE_NEWDECIMAL: {
