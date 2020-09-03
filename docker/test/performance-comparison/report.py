@@ -126,7 +126,6 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 .test-times tr :nth-child(5),
 .test-times tr :nth-child(6),
 .test-times tr :nth-child(7),
-.test-times tr :nth-child(8),
 .concurrent-benchmarks tr :nth-child(2),
 .concurrent-benchmarks tr :nth-child(3),
 .concurrent-benchmarks tr :nth-child(4),
@@ -461,10 +460,9 @@ if args.report == 'main':
             'Wall clock time,&nbsp;s',                            #1
             'Total client time,&nbsp;s',                          #2
             'Total queries',                                 #3
-            'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs),&nbsp;s',        #5
-            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #6
-            'Shortest query<br>(sum for all runs),&nbsp;s',       #7
+            'Longest query<br>(sum for all runs),&nbsp;s',        #4
+            'Avg wall clock time<br>(sum for all runs),&nbsp;s',  #5
+            'Shortest query<br>(sum for all runs),&nbsp;s',       #6
             ]
 
         text = tableStart('Test times')
@@ -475,20 +473,20 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
-            if float(r[6]) > 1.5 * total_runs:
+            if float(r[5]) > 1.5 * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
-                attrs[6] = f'style="background: {color_bad}"'
+                attrs[5] = f'style="background: {color_bad}"'
                 errors_explained.append([f'<a href="#{anchor}">The test \'{r[0]}\' is too slow to run as a whole. Investigate whether the create and fill queries can be sped up'])
             else:
-                attrs[6] = ''
+                attrs[5] = ''
 
-            if float(r[5]) > allowed_single_run_time * total_runs:
+            if float(r[4]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
-                attrs[5] = f'style="background: {color_bad}"'
+                attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append([f'<a href="./all-queries.html#all-query-times.{r[0]}.0">Some query of the test \'{r[0]}\' is too slow to run. See the all queries report'])
             else:
-                attrs[5] = ''
+                attrs[4] = ''
 
             text += tableRow(r, attrs, anchor)
 

@@ -488,18 +488,11 @@ create view query_metric_stats as
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
-        -- Comparison mode doesn't make sense for queries that complete
-        -- immediately (on the same order of time as noise). If query duration is
-        -- less that some threshold, we just skip it. If there is a significant
-        -- regression in such query, the time will exceed the threshold, and we
-        -- well process it normally and detect the regression.
-        right < $short_query_threshold as short,
-
-        not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
-        not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
+        abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
+        abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
         
-        not short and not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
-        not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
+        not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
+        not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
@@ -590,9 +583,9 @@ create table wall_clock_time_per_test engine Memory as select *
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
-        maxIf(client, not short) query_max,
-        minIf(client, not short) query_min,
-        count(*) queries, sum(short) short_queries
+        max(client) query_max,
+        min(client) query_min,
+        count(*) queries
     from total_client_time_per_query full join queries using (test, query_index)
     group by test;
 
@@ -600,7 +593,6 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
     select wall_clock_time_per_test.test, real,
         toDecimal64(total_client_time, 3),
         queries,
-        short_queries,
         toDecimal64(query_max, 3),
         toDecimal64(real / queries, 3) avg_real_per_query,
         toDecimal64(query_min, 3)
@@ -641,17 +633,18 @@ create table unmarked_short_queries_report
     engine File(TSV, 'report/unmarked-short-queries.tsv')
     as select time, test, query_index, query_display_name
     from (
-            select right time, test, query_index from queries where short
+            select right time, test, query_index from queries
             union all
             select time_median, test, query_index from partial_query_times
-                where time_median < $short_query_threshold
         ) times
         left join query_display_names
             on times.test = query_display_names.test
                 and times.query_index = query_display_names.query_index
-    where (test, query_index) not in
-        (select * from file('analyze/marked-short-queries.tsv', TSV,
-            'test text, query_index int'))
+    where
+        (test, query_index) not in
+            (select * from file('analyze/marked-short-queries.tsv', TSV,
+                'test text, query_index int'))
+        and time < $short_query_threshold
     order by test, query_index
     ;
 
@@ -660,7 +653,7 @@ create table unmarked_short_queries_report
 
 -- keep the table in old format so that we can analyze new and old data together
 create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
-    as select short, changed_fail, unstable_fail, left, right, diff,
+    as select 0 short, changed_fail, unstable_fail, left, right, diff,
         stat_threshold, test, query_display_name query
     from queries
     ;
