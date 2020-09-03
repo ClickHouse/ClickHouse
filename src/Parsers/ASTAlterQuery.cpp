@@ -265,16 +265,15 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE" << (settings.hilite ? hilite_none : "");
+
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
             partition->formatImpl(settings, state, frame);
         }
-        if (predicate)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-            predicate->formatImpl(settings, state, frame);
-        }
+
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        predicate->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::UPDATE)
     {
@@ -287,11 +286,8 @@ void ASTAlterCommand::formatImpl(
             partition->formatImpl(settings, state, frame);
         }
 
-        if (predicate)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-            predicate->formatImpl(settings, state, frame);
-        }
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        predicate->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
