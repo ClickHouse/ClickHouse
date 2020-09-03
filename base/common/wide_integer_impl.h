@@ -1285,4 +1285,4 @@ struct hash<wide_integer<Bits, Signed>>
 };
 
 #undef CT
-} // namespace std
+}

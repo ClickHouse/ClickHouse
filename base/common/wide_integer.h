@@ -244,6 +244,6 @@ std::string to_string(const wide_integer<Bits, Signed> & n);
 template <size_t Bits, typename Signed>
 struct hash<wide_integer<Bits, Signed>>;
 
-} // namespace std
+}
 
 #include "wide_integer_impl.h"
