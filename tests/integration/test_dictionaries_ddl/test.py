@@ -8,10 +8,10 @@ import warnings
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_mysql=True, main_configs=['configs/enable_dictionaries.xml', 'configs/dictionaries/simple_dictionary.xml'])
-node2 = cluster.add_instance('node2', with_mysql=True, main_configs=['configs/enable_dictionaries.xml', 'configs/dictionaries/simple_dictionary.xml', 'configs/dictionaries/lazy_load.xml', 'configs/allow_remote_node.xml'])
-node3 = cluster.add_instance('node3', main_configs=['configs/allow_remote_node.xml', 'configs/dictionaries/dictionary_with_conflict_name.xml'])
-node4 = cluster.add_instance('node4', user_configs=['configs/config_password.xml']) # hardcoded value 33333
+node1 = cluster.add_instance('node1', with_mysql=True, dictionaries=['configs/dictionaries/simple_dictionary.xml'], user_configs=['configs/user_admin.xml', 'configs/user_default.xml'])
+node2 = cluster.add_instance('node2', with_mysql=True, dictionaries=['configs/dictionaries/simple_dictionary.xml'], main_configs=['configs/dictionaries/lazy_load.xml', 'configs/allow_remote_node.xml'], user_configs=['configs/user_admin.xml', 'configs/user_default.xml'])
+node3 = cluster.add_instance('node3', main_configs=['configs/allow_remote_node.xml'], dictionaries=['configs/dictionaries/dictionary_with_conflict_name.xml', 'configs/dictionaries/conflict_name_dictionary.xml'], user_configs=['configs/user_admin.xml'])
+node4 = cluster.add_instance('node4', user_configs=['configs/user_admin.xml', 'configs/config_password.xml'])
 
 
 def create_mysql_conn(user, password, hostname, port):
