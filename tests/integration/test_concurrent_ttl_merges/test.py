@@ -58,6 +58,9 @@ def count_running_mutations(node, table):
     return int(result.strip())
 
 
+# This test was introduced to check concurrency for TTLs merges and mutations
+# but it revealed a bug when we assign different merges to the same part
+# on the borders of partitions.
 def test_no_ttl_merges_in_busy_pool(started_cluster):
     node1.query("CREATE TABLE test_ttl (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0, number_of_free_entries_in_pool_to_execute_mutation = 0")
 
