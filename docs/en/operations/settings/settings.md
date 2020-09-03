@@ -1894,9 +1894,9 @@ Locking timeout is used to protect from deadlocks while executing read/write ope
 
 Possible values:
 
--   Positive integer.
+-   Positive integer (in seconds).
 -   0 — No locking timeout.
 
-Default value: `120`.
+Default value: `120` seconds.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
