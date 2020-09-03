@@ -352,56 +352,65 @@ namespace MySQLReplication
 
                 switch (field_type)
                 {
-                    case MYSQL_TYPE_TINY: {
+                    case MYSQL_TYPE_TINY:
+                    {
                         UInt8 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
                         row.push_back(Field{UInt8{val}});
                         break;
                     }
-                    case MYSQL_TYPE_SHORT: {
+                    case MYSQL_TYPE_SHORT:
+                    {
                         UInt16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 2);
                         row.push_back(Field{UInt16{val}});
                         break;
                     }
-                    case MYSQL_TYPE_INT24: {
+                    case MYSQL_TYPE_INT24:
+                    {
                         Int32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 3);
                         row.push_back(Field{Int32{val}});
                         break;
                     }
-                    case MYSQL_TYPE_LONG: {
+                    case MYSQL_TYPE_LONG:
+                    {
                         UInt32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
                         row.push_back(Field{UInt32{val}});
                         break;
                     }
-                    case MYSQL_TYPE_LONGLONG: {
+                    case MYSQL_TYPE_LONGLONG:
+                    {
                         UInt64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
                         row.push_back(Field{UInt64{val}});
                         break;
                     }
-                    case MYSQL_TYPE_FLOAT: {
+                    case MYSQL_TYPE_FLOAT:
+                    {
                         Float32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
                         row.push_back(Field{Float32{val}});
                         break;
                     }
-                    case MYSQL_TYPE_DOUBLE: {
+                    case MYSQL_TYPE_DOUBLE:
+                    {
                         Float64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
                         row.push_back(Field{Float64{val}});
                         break;
                     }
-                    case MYSQL_TYPE_TIMESTAMP: {
+                    case MYSQL_TYPE_TIMESTAMP:
+                    {
                         UInt32 val = 0;
 
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
                         row.push_back(Field{val});
                         break;
                     }
-                    case MYSQL_TYPE_DATE: {
+                    case MYSQL_TYPE_DATE:
+                    {
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
@@ -411,7 +420,8 @@ namespace MySQLReplication
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
                     }
-                    case MYSQL_TYPE_DATETIME2: {
+                    case MYSQL_TYPE_DATETIME2:
+                    {
                         Int64 val = 0;
                         UInt32 fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 5);
@@ -436,7 +446,8 @@ namespace MySQLReplication
 
                         break;
                     }
-                    case MYSQL_TYPE_TIMESTAMP2: {
+                    case MYSQL_TYPE_TIMESTAMP2:
+                    {
                         UInt32 sec = 0, fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
                         readTimeFractionalPart(payload, fsp, meta);
@@ -454,7 +465,8 @@ namespace MySQLReplication
 
                         break;
                     }
-                    case MYSQL_TYPE_NEWDECIMAL: {
+                    case MYSQL_TYPE_NEWDECIMAL:
+                    {
                         Int8 digits_per_integer = 9;
                         Int8 precision = meta >> 8;
                         Int8 decimals = meta & 0xff;
@@ -539,7 +551,8 @@ namespace MySQLReplication
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:
-                    case MYSQL_TYPE_VAR_STRING: {
+                    case MYSQL_TYPE_VAR_STRING:
+                    {
                         uint32_t size = 0;
                         if (meta < 256)
                         {
@@ -556,7 +569,8 @@ namespace MySQLReplication
                         row.push_back(Field{String{val}});
                         break;
                     }
-                    case MYSQL_TYPE_STRING: {
+                    case MYSQL_TYPE_STRING:
+                    {
                         UInt32 size = 0;
                         if (field_len < 256)
                         {
@@ -573,7 +587,8 @@ namespace MySQLReplication
                         row.push_back(Field{String{val}});
                         break;
                     }
-                    case MYSQL_TYPE_BLOB: {
+                    case MYSQL_TYPE_BLOB:
+                    {
                         UInt32 size = 0;
                         switch (meta)
                         {
