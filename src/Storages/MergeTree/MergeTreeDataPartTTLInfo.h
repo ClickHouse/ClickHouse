@@ -65,7 +65,7 @@ struct MergeTreeDataPartTTLInfos
             part_max_ttl = time_max;
     }
 
-    bool empty()
+    bool empty() const
     {
         return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty();
     }
