@@ -17,7 +17,6 @@ RUN apt-get update \
         odbc-postgresql \
         sqlite3 \
         curl \
-        bind9-host \
         tar
 RUN rm -rf \
         /var/lib/apt/lists/* \

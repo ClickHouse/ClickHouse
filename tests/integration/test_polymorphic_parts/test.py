@@ -214,7 +214,7 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
 
 
 node7 = cluster.add_instance('node7', user_configs=["configs_old/users.d/not_optimize_count.xml"], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.17.8.54', stay_alive=True, with_installed_binary=True)
-node8 = cluster.add_instance('node8', main_configs=[], user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
+node8 = cluster.add_instance('node8', user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
 
 settings7 = {'index_granularity_bytes' : 10485760}
 settings8 = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
