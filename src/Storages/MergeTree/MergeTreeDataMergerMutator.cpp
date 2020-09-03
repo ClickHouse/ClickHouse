@@ -232,8 +232,20 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
+
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
+        const String & partition_id = part->info.partition_id;
+
+        if (!prev_partition_id || partition_id != *prev_partition_id)
+        {
+            if (partitions.empty() || !partitions.back().empty())
+                partitions.emplace_back();
+            /// New partition frame.
+            prev_partition_id = &partition_id;
+            prev_part = nullptr;
+        }
+
         /// Check predicate only for first part in each partition.
         if (!prev_part)
         {
@@ -244,15 +256,19 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
             if (!can_merge_callback(nullptr, part, nullptr))
                 continue;
         }
-
-        const String & partition_id = part->info.partition_id;
-        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))
+        else
         {
-            if (partitions.empty() || !partitions.back().empty())
-                partitions.emplace_back();
-            /// New partition frame.
-            prev_partition_id = &partition_id;
-            prev_part = nullptr;
+            /// If we cannot merge with previous part we had to start new parts
+            /// interval (in the same partition)
+            if (!can_merge_callback(*prev_part, part, nullptr))
+            {
+                /// Starting new interval in the same partition
+                if (!partitions.back().empty())
+                    partitions.emplace_back();
+
+                /// Now we haven't previous part, but it affects only logging
+                prev_part = nullptr;
+            }
         }
 
         IMergeSelector::Part part_info;
