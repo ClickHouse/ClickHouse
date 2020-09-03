@@ -192,7 +192,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -200,16 +200,8 @@ namespace
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
         for (const auto & user_name : user_names)
-        {
-            try
-            {
-                users.push_back(parseUser(config, user_name));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Could not parse user " + backQuote(user_name));
-            }
-        }
+            users.push_back(parseUser(config, user_name));
+
         return users;
     }
 
@@ -256,12 +248,11 @@ namespace
         }
 
         quota->to_roles.add(user_ids);
-
         return quota;
     }
 
 
-    std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -278,75 +269,62 @@ namespace
         quotas.reserve(quota_names.size());
         for (const auto & quota_name : quota_names)
         {
-            try
-            {
-                auto it = quota_to_user_ids.find(quota_name);
-                const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
-                quotas.push_back(parseQuota(config, quota_name, quota_users));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Could not parse quota " + backQuote(quota_name));
-            }
+            auto it = quota_to_user_ids.find(quota_name);
+            const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
+            quotas.push_back(parseQuota(config, quota_name, quota_users));
         }
         return quotas;
     }
 
 
-    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config)
     {
         std::map<std::pair<String /* database */, String /* table */>, std::unordered_map<String /* user */, String /* filter */>> all_filters_map;
+
         Poco::Util::AbstractConfiguration::Keys user_names;
+        config.keys("users", user_names);
 
-        try
+        for (const String & user_name : user_names)
         {
-            config.keys("users", user_names);
-            for (const String & user_name : user_names)
+            const String databases_config = "users." + user_name + ".databases";
+            if (config.has(databases_config))
             {
-                const String databases_config = "users." + user_name + ".databases";
-                if (config.has(databases_config))
+                Poco::Util::AbstractConfiguration::Keys database_keys;
+                config.keys(databases_config, database_keys);
+
+                /// Read tables within databases
+                for (const String & database_key : database_keys)
                 {
-                    Poco::Util::AbstractConfiguration::Keys database_keys;
-                    config.keys(databases_config, database_keys);
+                    const String database_config = databases_config + "." + database_key;
 
-                    /// Read tables within databases
-                    for (const String & database_key : database_keys)
+                    String database_name;
+                    if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
+                        database_name = config.getString(database_config + "[@name]");
+                    else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
+                        database_name = database_key.substr(0, bracket_pos);
+                    else
+                        database_name = database_key;
+
+                    Poco::Util::AbstractConfiguration::Keys table_keys;
+                    config.keys(database_config, table_keys);
+
+                    /// Read table properties
+                    for (const String & table_key : table_keys)
                     {
-                        const String database_config = databases_config + "." + database_key;
-
-                        String database_name;
-                        if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
-                            database_name = config.getString(database_config + "[@name]");
-                        else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
-                            database_name = database_key.substr(0, bracket_pos);
+                        String table_config = database_config + "." + table_key;
+                        String table_name;
+                        if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
+                            table_name = config.getString(table_config + "[@name]");
+                        else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
+                            table_name = table_key.substr(0, bracket_pos);
                         else
-                            database_name = database_key;
+                            table_name = table_key;
 
-                        Poco::Util::AbstractConfiguration::Keys table_keys;
-                        config.keys(database_config, table_keys);
-
-                        /// Read table properties
-                        for (const String & table_key : table_keys)
-                        {
-                            String table_config = database_config + "." + table_key;
-                            String table_name;
-                            if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
-                                table_name = config.getString(table_config + "[@name]");
-                            else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
-                                table_name = table_key.substr(0, bracket_pos);
-                            else
-                                table_name = table_key;
-
-                            String filter_config = table_config + ".filter";
-                            all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
-                        }
+                        String filter_config = table_config + ".filter";
+                        all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
                     }
                 }
             }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Could not parse row policies");
         }
 
         std::vector<AccessEntityPtr> policies;
@@ -450,23 +428,14 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        const std::function<void(const std::string_view &)> & check_setting_name_function,
-        Poco::Logger * log)
+        const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
         config.keys("profiles", profile_names);
         for (const auto & profile_name : profile_names)
-        {
-            try
-            {
-                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Could not parse profile " + backQuote(profile_name));
-            }
-        }
+            profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+
         return profiles;
     }
 }
@@ -520,13 +489,13 @@ void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration
 void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-    for (const auto & entity : parseUsers(config, getLogger()))
+    for (const auto & entity : parseUsers(config))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseQuotas(config, getLogger()))
+    for (const auto & entity : parseQuotas(config))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseRowPolicies(config, getLogger()))
+    for (const auto & entity : parseRowPolicies(config))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function, getLogger()))
+    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }

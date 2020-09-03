@@ -6,13 +6,5 @@
             <custom_c>Float64_-43.25e-1</custom_c>
             <custom_d>'some text'</custom_d>
         </default>
-
-        <profile_with_unknown_setting>
-            <x>1</x>
-        </profile_with_unknown_setting>
-
-        <profile_illformed_setting>
-            <custom_f>1</custom_f>
-        </profile_illformed_setting>
     </profiles>
 </yandex>
