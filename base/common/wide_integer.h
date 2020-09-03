@@ -54,8 +54,8 @@ public:
 
     template <typename T>
     constexpr wide_integer(T rhs) noexcept;
-    template <size_t Bits2, typename Signed2>
-    constexpr wide_integer(const wide_integer<Bits2, Signed2> & rhs) noexcept;
+    template <typename T>
+    constexpr wide_integer(std::initializer_list<T> il) noexcept;
 
     // assignment
     template <size_t Bits2, typename Signed2>

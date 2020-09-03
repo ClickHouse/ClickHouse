@@ -854,16 +854,29 @@ public:
 
 template <size_t Bits, typename Signed>
 template <typename T>
-constexpr wide_integer<Bits, Signed>::wide_integer(T rhs) noexcept : m_arr{}
+constexpr wide_integer<Bits, Signed>::wide_integer(T rhs) noexcept
+    : m_arr{}
 {
-    _impl::wide_integer_from_bultin(*this, rhs);
+    if constexpr (IsWideInteger<T>::value)
+        _impl::wide_integer_from_wide_integer(*this, rhs);
+    else
+        _impl::wide_integer_from_bultin(*this, rhs);
 }
 
 template <size_t Bits, typename Signed>
-template <size_t Bits2, typename Signed2>
-constexpr wide_integer<Bits, Signed>::wide_integer(const wide_integer<Bits2, Signed2> & rhs) noexcept : m_arr{}
+template <typename T>
+constexpr wide_integer<Bits, Signed>::wide_integer(std::initializer_list<T> il) noexcept
+    : m_arr{}
 {
-    _impl::wide_integer_from_wide_integer(*this, rhs);
+    if (il.size() == 1)
+    {
+        if constexpr (IsWideInteger<T>::value)
+            _impl::wide_integer_from_wide_integer(*this, *il.begin());
+        else
+            _impl::wide_integer_from_bultin(*this, *il.begin());
+    }
+    else
+        _impl::wide_integer_from_bultin(*this, 0);
 }
 
 template <size_t Bits, typename Signed>
