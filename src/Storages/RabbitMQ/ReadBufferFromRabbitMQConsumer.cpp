@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
@@ -49,7 +50,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , row_delimiter(row_delimiter_)
         , queue_size(queue_size_)
         , stopped(stopped_)
-        , received(queue_size)
+        , received(queue_size * num_queues)
 {
     for (size_t queue_id = 0; queue_id < num_queues; ++queue_id)
         bindQueue(queue_id);
@@ -101,7 +102,7 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
         throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
                 specifying differently those settings or use a different queue_base or manually delete previously declared queues,      \
                 which  were declared with the same names. ERROR reason: "
-                + std::string(message), ErrorCodes::LOGICAL_ERROR);
+                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
     });
 
     AMQP::Table queue_settings;
@@ -220,8 +221,6 @@ void ReadBufferFromRabbitMQConsumer::setupChannel()
 
     consumer_channel->onError([&](const char * message)
     {
-        /// If here, then fatal error occured on the channel and it is not usable anymore, need to close it
-        consumer_channel->close();
         LOG_ERROR(log, "Channel {} error: {}", channel_id, message);
 
         channel_error.store(true);
