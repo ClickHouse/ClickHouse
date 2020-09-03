@@ -67,7 +67,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         if (!connection->closed())
              connection->close(true);
 
-        throw Exception("Cannot connect to RabbitMQ", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+        throw Exception("Cannot connect to RabbitMQ host: " + parsed_address.first + ", port: " + std::to_string(parsed_address.second),
+                ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
 
     writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });

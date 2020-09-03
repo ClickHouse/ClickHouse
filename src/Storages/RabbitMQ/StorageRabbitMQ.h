@@ -92,6 +92,7 @@ private:
 
     bool hash_exchange;
     Poco::Logger * log;
+    String address;
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
 
