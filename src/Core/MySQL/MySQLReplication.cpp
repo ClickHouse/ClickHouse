@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace MySQLReplication
@@ -103,19 +104,19 @@ namespace MySQLReplication
             = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
-        if (query.rfind("BEGIN", 0) == 0)
+        if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
         {
-            typ = BEGIN;
+            typ = QUERY_EVENT_MULTI_TXN_FLAG;
         }
-        else if (query.rfind("XA", 0) == 0)
+        else if (query.starts_with("XA"))
         {
-            if (query.rfind("XA ROLLBACK", 0) == 0)
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
-            typ = XA;
+            if (query.starts_with("XA ROLLBACK"))
+                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+            typ = QUERY_EVENT_XA;
         }
-        else if (query.rfind("SAVEPOINT", 0) == 0)
+        else if (query.starts_with("SAVEPOINT"))
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
+            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -841,8 +842,8 @@ namespace MySQLReplication
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
                 {
-                    case BEGIN:
-                    case XA: {
+                    case QUERY_EVENT_MULTI_TXN_FLAG:
+                    case QUERY_EVENT_XA: {
                         event = std::make_shared<DryRunEvent>();
                         break;
                     }

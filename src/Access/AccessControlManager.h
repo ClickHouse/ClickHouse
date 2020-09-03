@@ -47,7 +47,7 @@ class AccessControlManager : public MultipleAccessStorage
 {
 public:
     AccessControlManager();
-    ~AccessControlManager();
+    ~AccessControlManager() override;
 
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
