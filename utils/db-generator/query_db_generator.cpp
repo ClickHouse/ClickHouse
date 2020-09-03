@@ -218,14 +218,14 @@ std::map<std::string, FuncRet> func_to_return_type = {
 };
 
 std::set<std::string> func_args_same_types = {
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "multiply"
+        "equals", "notEquals", "less", "greater", "lessorequals", "greaterorequals", "multiply"
 };
 
 std::map<std::string, column_type> func_to_param_type = {
         {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f},
         {"minus", type::i | type::f | type::d | type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f},
-        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitNot", type::i}, {"bitShiftLeft", type::i},
-        {"bitShiftRight", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
+        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitNot", type::i}, {"bitshiftleft", type::i},
+        {"bitshiftright", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
         {"exp2", type::i | type::f}, {"log2", type::i | type::f}, {"exp10", type::i | type::f}, {"log10", type::i | type::f},
         {"sqrt", type::i | type::f}, {"cbrt", type::i | type::f}, {"erf", type::i | type::f}, {"erfc", type::i | type::f},
         {"lgamma", type::i | type::f}, {"tgamma", type::i | type::f}, {"sin", type::i | type::f}, {"cos", type::i | type::f},
@@ -321,9 +321,9 @@ public:
     }
     bool generate_values(int amount = 0)
     {
-        if (values.size() > 3 && amount == 0)
+        if (values.size() > 2 && amount == 0)
             return false;
-        while (values.size() < 3 or amount > 0)
+        while (values.size() < 1 or amount > 0)
         {
             amount -= 1;
             if (is_array)
@@ -555,6 +555,10 @@ public:
         for (auto table : other.tables)
             tables[table.first].merge(table.second);
         nested.insert(other.nested.begin(), other.nested.end());
+        if (main_table.empty())
+        {
+            main_table = other.main_table;
+        }
     }
 };
 std::string get_alias(DB::ASTPtr ch)
@@ -1096,6 +1100,25 @@ unificate_columns(
     }
     return result;
 }
+
+std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex)
+{
+    auto X = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
+    std::vector<DB::ASTPtr> result;
+    if (X)
+    {
+        result.push_back(vertex);
+        return result;
+    }
+
+    for (const auto & child : (*vertex).children)
+    {
+        auto v = get_select(child);
+        result.insert(result.end(), v.begin(), v.end());
+    }
+    return result;
+}
+
 void parse_select_query(DB::ASTPtr ast, TableList & all_tables)
 {
     auto sast = std::dynamic_pointer_cast<DB::ASTSelectQuery>(ast);
@@ -1120,8 +1143,14 @@ void parse_select_query(DB::ASTPtr ast, TableList & all_tables)
                 all_tables.aliases[alias] = table_name;
         }
         if (TEast && TEast->subquery)
-            throw "subquery not supported";
-
+        {
+            for (auto select : get_select(TEast->subquery))
+            {
+                TableList local;
+                parse_select_query(select, local);
+                all_tables.merge(local);
+            }
+        }
         if (ch->table_join)
         {
             auto jch = std::dynamic_pointer_cast<DB::ASTTableJoin>(ch->table_join);
@@ -1171,23 +1200,6 @@ void parse_select_query(DB::ASTPtr ast, TableList & all_tables)
 }
 
 
-std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex)
-{
-    auto X = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
-    std::vector<DB::ASTPtr> result;
-    if (X)
-    {
-        result.push_back(vertex);
-        return result;
-    }
-
-    for (const auto & child : (*vertex).children)
-    {
-        auto v = get_select(child);
-        result.insert(result.end(), v.begin(), v.end());
-    }
-    return result;
-}
 TableList get_tables_from_select(std::vector<std::string> queries)
 {
     DB::ParserQueryWithOutput parser;
@@ -1228,7 +1240,6 @@ int main(int, char **)
     try
     {
         auto result = get_tables_from_select(queries);
-
         for (auto table : result.tables)
         {
             std::cout << table.second.create_query();
