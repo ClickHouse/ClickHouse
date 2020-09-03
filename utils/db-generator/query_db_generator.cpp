@@ -228,8 +228,8 @@ std::set<std::string> func_args_same_types = {
 std::map<std::string, ColumnType> func_to_param_type = {
         {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f},
         {"minus", type::i | type::f | type::d | type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f},
-        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitNot", type::i}, {"bitShiftLeft", type::i},
-        {"bitShiftRight", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
+        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitnot", type::i}, {"bitshiftleft", type::i},
+        {"bitshiftright", type::i}, {"bittest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
         {"exp2", type::i | type::f}, {"log2", type::i | type::f}, {"exp10", type::i | type::f}, {"log10", type::i | type::f},
         {"sqrt", type::i | type::f}, {"cbrt", type::i | type::f}, {"erf", type::i | type::f}, {"erfc", type::i | type::f},
         {"lgamma", type::i | type::f}, {"tgamma", type::i | type::f}, {"sin", type::i | type::f}, {"cos", type::i | type::f},
@@ -330,9 +330,9 @@ public:
 
     bool generateValues(int amount = 0)
     {
-        if (values.size() > 3 && amount == 0)
+        if (values.size() > 2 && amount == 0)
             return false;
-        while (values.size() < 3 or amount > 0)
+        while (values.size() < 1 or amount > 0)
         {
             amount -= 1;
             if (is_array)
@@ -579,6 +579,8 @@ public:
         for (auto table : other.tables)
             tables[table.first].merge(table.second);
         nested.insert(other.nested.begin(), other.nested.end());
+        if (main_table.empty())
+            main_table = other.main_table;
     }
 };
 
@@ -1133,6 +1135,26 @@ unificateColumns(
     }
     return result;
 }
+
+std::vector<DB::ASTPtr> getSelect(DB::ASTPtr vertex)
+{
+    auto z = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
+    std::vector<DB::ASTPtr> result;
+    if (z)
+    {
+        result.push_back(vertex);
+        return result;
+    }
+
+    for (const auto & child : (*vertex).children)
+    {
+        auto v = getSelect(child);
+        result.insert(result.end(), v.begin(), v.end());
+    }
+    return result;
+}
+
+
 void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
 {
     if (!ast)
@@ -1163,7 +1185,14 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
                 all_tables.aliases[alias] = table_name;
         }
         if (TEast && TEast->subquery)
-            throw std::runtime_error("Subquery is not supported.");
+        {
+            for (auto select : getSelect(TEast->subquery))
+            {
+                TableList local;
+                parseSelectQuery(select, local);
+                all_tables.merge(local);
+            }
+        }
 
         if (ch->table_join)
         {
@@ -1214,24 +1243,6 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
 }
 
 
-std::vector<DB::ASTPtr> getSelect(DB::ASTPtr vertex)
-{
-    auto z = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
-    std::vector<DB::ASTPtr> result;
-    if (z)
-    {
-        result.push_back(vertex);
-        return result;
-    }
-
-    for (const auto & child : (*vertex).children)
-    {
-        auto v = getSelect(child);
-        result.insert(result.end(), v.begin(), v.end());
-    }
-    return result;
-
-}
 TableList getTablesFromSelect(std::vector<std::string> queries)
 {
     DB::ParserQueryWithOutput parser;
