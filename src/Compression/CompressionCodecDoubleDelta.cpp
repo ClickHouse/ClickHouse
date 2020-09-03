@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -333,9 +334,9 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
-String CompressionCodecDoubleDelta::getCodecDesc() const
+ASTPtr CompressionCodecDoubleDelta::getCodecDesc() const
 {
-    return "DoubleDelta";
+    return std::make_shared<ASTIdentifier>("DoubleDelta");
 }
 
 UInt32 CompressionCodecDoubleDelta::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -406,11 +407,6 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     }
 }
 
-void CompressionCodecDoubleDelta::useInfoAboutType(const DataTypePtr & data_type)
-{
-    data_bytes_size = getDataBytesSize(data_type);
-}
-
 void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::DoubleDelta);
@@ -420,7 +416,7 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         if (arguments)
             throw Exception("Codec DoubleDelta does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;   /// Maybe postponed to the call to "useInfoAboutType"
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }
