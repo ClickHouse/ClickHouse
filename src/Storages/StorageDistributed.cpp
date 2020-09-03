@@ -258,7 +258,8 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
         size_t i = 0;
         for (auto & expr : exprs)
         {
-            if (++i > limit)
+            ++i;
+            if (i > limit)
                 break;
 
             auto id = expr->template as<ASTIdentifier>();
