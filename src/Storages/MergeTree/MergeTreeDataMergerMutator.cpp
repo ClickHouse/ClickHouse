@@ -208,11 +208,29 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
 }
 
 
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMergeWithTTL()
+{
+    const auto data_settings = data.getSettings();
+    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
+
+    /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
+    UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
+
+    /// Allow merges with TTL only if there are enough threads, leave free threads for regular merges
+    if (busy_threads_in_pool <= 1
+        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_merge_with_ttl)
+        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
+
+    return 0;
+
+}
+
 bool MergeTreeDataMergerMutator::selectPartsToMerge(
     FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
+    size_t max_total_size_to_merge_with_ttl,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
@@ -284,7 +302,9 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
-        parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge);
+        parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge_with_ttl);
+        if (!parts_to_merge.empty())
+            future_part.merge_type = MergeType::TTL_DELETE;
     }
 
     if (parts_to_merge.empty())
@@ -592,6 +612,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
+    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
+        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
