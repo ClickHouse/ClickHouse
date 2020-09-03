@@ -276,13 +276,12 @@ use_cron()
     fi
     return 0
 }
-
+# returns false if cron disabled (with systemd)
 enable_cron()
 {
     use_cron && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
 }
-
-
+# returns false if cron disabled (with systemd)
 disable_cron()
 {
     use_cron && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
@@ -305,15 +304,14 @@ main()
     EXIT_STATUS=0
     case "$1" in
     start)
-        start && enable_cron
+        service_or_func start && enable_cron
         ;;
     stop)
-        # disable_cron returns false if cron disabled (with systemd) - not checking return status
         disable_cron
-        stop
+        service_or_func stop
         ;;
     restart)
-        restart && enable_cron
+        service_or_func restart && enable_cron
         ;;
     forcestop)
         disable_cron
@@ -323,7 +321,7 @@ main()
         forcerestart && enable_cron
         ;;
     reload)
-        restart
+        service_or_func restart
         ;;
     condstart)
         is_running || service_or_func start
