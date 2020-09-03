@@ -57,7 +57,7 @@ public:
       * If better not to do any merge, it returns empty result.
       */
     virtual PartsRange select(
-        const PartsRanges & partitions,
+        const PartsRanges & parts_ranges,
         const size_t max_total_size_to_merge) = 0;
 
     virtual ~IMergeSelector() = default;
