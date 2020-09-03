@@ -106,3 +106,6 @@ select 'GROUP BY sharding_key, ...';
 select * from dist_01247 group by key, value;
 select 'GROUP BY ..., sharding_key';
 select * from dist_01247 group by value, key;
+
+drop table dist_01247;
+drop table data_01247;
