@@ -62,6 +62,11 @@ private:
     };
 
     using CompressedStreamPtr = std::shared_ptr<CompressedStream>;
+
+    /// Create compressed stream for every different codec.
+    std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
+
+    /// For better performance save pointer to stream by every column.
     std::vector<CompressedStreamPtr> compressed_streams;
 
     /// marks -> marks_file

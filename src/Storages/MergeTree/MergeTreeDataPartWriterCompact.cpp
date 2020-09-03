@@ -29,9 +29,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
-
-    /// Create compressed stream for every different codec.
-    std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
     for (const auto & column : columns_list)
     {
         auto codec = storage_columns.getCodecOrDefault(column.name, default_codec);
@@ -226,7 +223,7 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     size_t uncompressed_size = 0;
     CityHash_v1_0_2::uint128 uncompressed_hash{0, 0};
 
-    for (const auto & stream : compressed_streams)
+    for (const auto & [_, stream] : streams_by_codec)
     {
         uncompressed_size += stream->hashing_buf.count();
         auto stream_hash = stream->hashing_buf.getHash();
