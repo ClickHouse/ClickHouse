@@ -589,7 +589,7 @@ std::string getAlias(DB::ASTPtr ch)
     auto x = std::dynamic_pointer_cast<DB::ASTWithAlias>(ch);
     if (x)
         return x->alias;
-    
+
     for (const auto & child : (*ch).children)
     {
         auto alias = getAlias(child);
