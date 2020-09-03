@@ -2,7 +2,6 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
-. "$CURDIR"/mergetree_mutations.lib
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS minmax_idx;"
 
@@ -35,16 +34,12 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read" # Returns 4
 
-# First two numbers are for inserted blocks in two partitions
-# And this will be mutation number 3:
-$CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx CLEAR INDEX idx IN PARTITION 1;" --replication_alter_partitions_sync=2
+$CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx CLEAR INDEX idx IN PARTITION 1;" --mutations_sync=1
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read" # Returns 6
 
-# And this will be mutation number 4:
-$CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx MATERIALIZE INDEX idx IN PARTITION 1;"
-wait_for_mutation "minmax_idx" "mutation_4.txt" "$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query="ALTER TABLE minmax_idx MATERIALIZE INDEX idx IN PARTITION 1;" --mutations_sync=1
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read" # Returns 4
