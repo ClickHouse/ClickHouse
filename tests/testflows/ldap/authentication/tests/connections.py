@@ -1,8 +1,8 @@
 from testflows.core import *
 from testflows.asserts import error
 
-from ldap.tests.common import login
-from ldap.requirements import *
+from ldap.authentication.tests.common import login
+from ldap.authentication.requirements import *
 
 @TestScenario
 @Requirements(

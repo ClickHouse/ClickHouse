@@ -172,7 +172,7 @@ def create_ldap_users_config_content(*users, config_d_dir="/etc/clickhouse-serve
     return Config(content, path, name, uid, "users.xml")
 
 def add_users_identified_with_ldap(*users):
-    """Add one or more users that are identified via 
+    """Add one or more users that are identified via
     an ldap server using RBAC.
     """
     node = current().context.node

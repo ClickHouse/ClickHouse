@@ -4,8 +4,8 @@ import random
 from multiprocessing.dummy import Pool
 from testflows.core import *
 from testflows.asserts import error
-from ldap.tests.common import *
-from ldap.requirements import *
+from ldap.authentication.tests.common import *
+from ldap.authentication.requirements import *
 
 servers = {
     "openldap1": {
