@@ -543,7 +543,16 @@ void PipelineExecutor::wakeUpExecutor(size_t thread_num)
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
-    executeStepImpl(thread_num, num_threads);
+    try
+    {
+        executeStepImpl(thread_num, num_threads);
+    }
+    catch (...)
+    {
+        /// In case of exception from executor itself, stop other threads.
+        finish();
+        throw;
+    }
 
 #ifndef NDEBUG
     auto & context = executor_contexts[thread_num];
