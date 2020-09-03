@@ -87,6 +87,8 @@ private:
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;
+
+    bool prefix_written = false;
 };
 }
 

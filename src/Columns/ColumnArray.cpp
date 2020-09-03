@@ -31,7 +31,16 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
+  * Just don't allow to do it.
+  * You can increase the limit if the following query:
+  *  SELECT range(10000000)
+  * will take less than 500ms on your machine.
+  */
+static constexpr size_t max_array_size_as_field = 1000000;
 
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
@@ -117,6 +126,11 @@ Field ColumnArray::operator[](size_t n) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
     Array res(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -130,6 +144,11 @@ void ColumnArray::get(size_t n, Field & res) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
+
+    if (size > max_array_size_as_field)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
+            size, max_array_size_as_field);
+
     res = Array(size);
     Array & res_arr = DB::get<Array &>(res);
 

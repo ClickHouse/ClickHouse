@@ -17,7 +17,7 @@ class StorageSystemColumns final : public ext::shared_ptr_helper<StorageSystemCo
 public:
     std::string getName() const override { return "SystemColumns"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
@@ -27,7 +27,7 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageSystemColumns(const std::string & name_);
+    StorageSystemColumns(const StorageID & table_id_);
 };
 
 }

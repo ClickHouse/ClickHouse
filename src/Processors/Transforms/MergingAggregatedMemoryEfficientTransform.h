@@ -136,12 +136,12 @@ private:
     void addChunk(Chunk chunk, size_t from_input);
 };
 
-/// Creates piece of pipeline which performs memory efficient merging of partially aggregated data from several sources.
-/// First processor will have num_inputs, last - single output. You should connect them to create pipeline.
-Processors createMergingAggregatedMemoryEfficientPipe(
-    Block header,
+class Pipe;
+
+/// Adds processors to pipe which performs memory efficient merging of partially aggregated data from several sources.
+void addMergingAggregatedMemoryEfficientTransform(
+    Pipe & pipe,
     AggregatingTransformParamsPtr params,
-    size_t num_inputs,
     size_t num_merging_processors);
 
 }

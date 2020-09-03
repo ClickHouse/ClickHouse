@@ -33,6 +33,7 @@ using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -186,7 +187,8 @@ public:
      *  arguments and params are for nested_function.
      */
     virtual AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/,
+        const Array & /*params*/, const AggregateFunctionProperties & /*properties*/) const
     {
         return nullptr;
     }
@@ -388,13 +390,14 @@ public:
         {
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
-                if (has_data[j * 256 + k])
+                size_t idx = j * 256 + k;
+                if (has_data[idx])
                 {
                     AggregateDataPtr & place = map[k];
                     if (unlikely(!place))
                         init(place);
 
-                    func.merge(place + place_offset, reinterpret_cast<const char *>(&places[256 * j + k]), arena);
+                    func.merge(place + place_offset, reinterpret_cast<const char *>(&places[idx]), nullptr);
                 }
             }
         }

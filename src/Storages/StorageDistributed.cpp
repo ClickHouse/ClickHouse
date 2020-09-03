@@ -467,7 +467,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     return getQueryProcessingStageImpl(context, to_stage, cluster);
 }
 
-Pipes StorageDistributed::read(
+Pipe StorageDistributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,

@@ -17,3 +17,10 @@ If your test continued more than 10 minutes, please, add tag `long` to have an o
 ### How to run performance test
 
 TODO @akuzm
+
+### How to validate single test
+
+```
+pip3 install clickhouse_driver
+../../docker/test/performance-comparison/perf.py --runs 1 insert_parallel.xml
+```

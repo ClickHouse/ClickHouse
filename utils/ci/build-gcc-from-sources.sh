@@ -18,7 +18,7 @@ THREADS=$(grep -c ^processor /proc/cpuinfo)
 mkdir "${WORKSPACE}/gcc"
 pushd "${WORKSPACE}/gcc"
 
-wget https://ftpmirror.gnu.org/gcc/${GCC_SOURCES_VERSION}/${GCC_SOURCES_VERSION}.tar.xz
+wget -nv https://ftpmirror.gnu.org/gcc/${GCC_SOURCES_VERSION}/${GCC_SOURCES_VERSION}.tar.xz
 tar xf ${GCC_SOURCES_VERSION}.tar.xz
 pushd ${GCC_SOURCES_VERSION}
 ./contrib/download_prerequisites
