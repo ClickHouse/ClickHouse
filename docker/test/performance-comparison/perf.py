@@ -282,7 +282,9 @@ for query_index, q in enumerate(test_queries):
         if run < max_runs:
             continue
 
-        confidence = [statistics.stdev(rr) / statistics.mean(rr) * scipy.stats.t.ppf(0.99, run - 1) / math.sqrt(run) for rr in results]
+        trim = math.floor(run * 0.05)
+        trimmed = [sorted(r)[trim:(-trim or None)] for r in results]
+        confidence = [statistics.stdev(r) / statistics.mean(r) * scipy.stats.t.ppf(0.99, run - 1) / math.sqrt(run) for r in trimmed]
 
         # For very short queries we have a special mode where we run them for at
         # least some time. The recommended lower bound of run time for "normal"
@@ -304,14 +306,14 @@ for query_index, q in enumerate(test_queries):
                 break
 
             if max(confidence) >= 0.05:
-                print(f'more\t{query_index}\t{run}\t{confidence}')
+                print(f'more\t{query_index}\t{run}\t{confidence}\t{trim}')
                 max_runs = max_runs + 7
                 continue
 
             stop_reason = 'normal-overcount'
             break
 
-    print(f'stop\t{query_index}\t{run}\t{confidence}\t{stop_reason}')
+    print(f'stop\t{query_index}\t{run}\t{confidence}\t{trim}\t{stop_reason}')
 
     client_seconds = time.perf_counter() - start_seconds
     print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
