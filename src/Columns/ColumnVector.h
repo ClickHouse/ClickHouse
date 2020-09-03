@@ -303,18 +303,12 @@ public:
 
     StringRef getRawData() const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
-        else
-            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-        else
-            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool structureEquals(const IColumn & rhs) const override

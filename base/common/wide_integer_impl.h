@@ -313,7 +313,7 @@ struct wide_integer<Bits, Signed>::_impl {
         }
         if (n_bytes) {
             for (unsigned i = 0; i < arr_size - n_bytes; ++i) {
-                lhs.m_arr[little(i)] = lhs.m_arr[little(i - n_bytes)];
+                lhs.m_arr[little(i)] = lhs.m_arr[little(i + n_bytes)];
             }
             for (unsigned i = arr_size - n_bytes; i < arr_size; ++i) {
                 lhs.m_arr[little(i)] = std::numeric_limits<base_type>::max();
