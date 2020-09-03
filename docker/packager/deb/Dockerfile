@@ -1,6 +1,7 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:18.04
 
+# (REMOVE ME): This line is added to force docker image rebuilding
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
