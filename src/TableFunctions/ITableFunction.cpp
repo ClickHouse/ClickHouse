@@ -20,8 +20,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, const Context & 
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
     context.checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
 
-    bool no_conversion_required = hasStaticStructure() && cached_columns == getActualTableStructure(context);
-    if (cached_columns.empty() || no_conversion_required)
+    if (cached_columns.empty() || (hasStaticStructure() && cached_columns == getActualTableStructure(context)))
         return executeImpl(ast_function, context, table_name, std::move(cached_columns));
 
     auto get_storage = [=, tf = shared_from_this()]() -> StoragePtr

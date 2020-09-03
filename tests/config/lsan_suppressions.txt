@@ -1,0 +1,2 @@
+# See src/TableFunctions/tests/test-strange-memory-leak.cpp
+leak:getActualTableStructure
