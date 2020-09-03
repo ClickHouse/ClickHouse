@@ -26,12 +26,6 @@ protected:
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
 private:
-    /// Write single granule of one column (rows between 2 marks)
-    void writeColumnSingleGranule(
-        const ColumnWithTypeAndName & column,
-        size_t from_row,
-        size_t number_of_rows) const;
-
     void writeBlock(const Block & block);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksumns);
@@ -67,11 +61,19 @@ private:
             : compressed_buf(buf, codec), hashing_buf(compressed_buf) {}
     };
 
-    std::unordered_map<String, std::unique_ptr<CompressedStream>> compressed_streams;
+    using CompressedStreamPtr = std::shared_ptr<CompressedStream>;
+    std::vector<CompressedStreamPtr> compressed_streams;
 
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
+
+    /// Write single granule of one column (rows between 2 marks)
+    void writeColumnSingleGranule(
+        const ColumnWithTypeAndName & column,
+        const CompressedStreamPtr & stream,
+        size_t from_row,
+        size_t number_of_rows) const;
 };
 
 }
