@@ -55,6 +55,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int SYSTEM_ERROR;
+    extern const int NO_ZOOKEEPER;
+    extern const int NO_AVAILABLE_DATA;
 }
 
 
@@ -350,10 +353,20 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
     /// 0. Check if the replica needs to be restored (metadata missing).
-    // 1. Metadata is not present
-    // 2. Data is present
 
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    const zkutil::ZooKeeperPtr& zookeeper = context.getZooKeeper();
+
+    if (zookeeper->expired())
+        throw Exception(
+            "Cannot restore table metadata because ZooKeeper session has expired.",
+            ErrorCodes::NO_ZOOKEEPER);
+
+    if (zookeeper->exists(query.replica_zk_path))
+        throw Exception(
+            "Replica's metadata is present at " + query.replica_zk_path + " -- nothing to restore",
+            ErrorCodes::NO_AVAILABLE_DATA);
+
+    auto [db, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
 
     const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
@@ -367,13 +380,15 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
 
         create_query.database = db_name;
         create_query.uuid = uuid;
-        create_query.table = old_table_name;
-        create_query.as_table = new_table_name;
+        create_query.table = new_table_name;
+        create_query.as_table = old_table_name;
 
         InterpreterCreateQuery interpreter_create(create_query_ptr, context);
 
         /// catch the exception here
         interpreter_create.execute();
+
+        LOG_DEBUG(log, "Created a new replicated table " + db_name + "." + new_table_name);
     }
 
     /// 2. Stop replica fetches for the old table (SYSTEM STOP FETCHES old)
@@ -388,6 +403,8 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         InterpreterSystemQuery interpreter_stop_fetches(stop_fetches_ptr, context);
 
         interpreter_stop_fetches.execute();
+
+        LOG_DEBUG(log, "Stopped replica fetches for " + db_name + "." + old_table_name);
     }
 
     /// 3. Move parts to a new table that will register them in zookeeper.
@@ -396,13 +413,48 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         /// (SELECT partition_id FROM system.parts WHERE database = 'old_db' AND table = 'old' AND active)
 
         ASTPtr get_parts_ptr = std::make_shared<ASTSelectQuery>();
-        ASTSelectQuery& get_parts_query = get_parts_ptr->as<ASTSelectQuery&>();
+        auto& get_parts_query = get_parts_ptr->as<ASTSelectQuery&>();
 
-        // TODO fill select query.
+        /// 3.1.1 SELECT partition_id
+        const String partition_id{"partition_id"};
+
+        ASTPtr get_parts_select_ptr = std::make_shared<ASTExpressionList>();
+
+        get_parts_select_ptr->as<ASTExpressionList&>().children = {std::make_shared<ASTIdentifier>(partition_id)};
+
+        /// 3.1.2 FROM system.parts
+
+        ASTPtr get_parts_from_ptr = std::make_shared<ASTTablesInSelectQuery>();
+        auto& get_parts_from = get_parts_from_ptr->as<ASTTablesInSelectQuery&>();
+
+        ASTPtr get_parts_from_table_ptr = std::make_shared<ASTTableExpression>();
+        auto& get_parts_from_table = get_parts_from_table_ptr->as<ASTTableExpression&>();
+
+        get_parts_from_table.database_and_table_name = std::make_shared<ASTIdentifier>(
+            std::vector<String>{"system", "parts"});
+
+        get_parts_from.children.emplace_back(std::move(get_parts_from_table_ptr));
+
+        /// 3.1.3 WHERE database = 'db' AND table = 'old' AND active
+        /// and(active, and(equals(database, db), equals(table, old_table_name)))
+
+        ASTPtr get_parts_where_ptr = makeASTFunction("and",
+            std::make_shared<ASTIdentifier>("active"),
+            makeASTFunction("and",
+                makeASTFunction("equals",
+                    std::make_shared<ASTIdentifier>("database"),
+                    std::make_shared<ASTLiteral>(db_name)),
+                makeASTFunction("equals",
+                    std::make_shared<ASTIdentifier>("table"),
+                    std::make_shared<ASTLiteral>(old_table_name))));
+
+        /// 3.1.4 Set main query parts
+        get_parts_query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(get_parts_select_ptr));
+        get_parts_query.setExpression(ASTSelectQuery::Expression::TABLES, std::move(get_parts_from_ptr));
+        get_parts_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(get_parts_where_ptr));
 
         /// 3.2 Execute the request and get the resulting pipeline to execute.
-        const String partition_id{"partition_id"};
-        InterpreterSelectQuery get_parts_interpreter(get_parts_ptr, context, {}, {partition_id});
+        InterpreterSelectQuery get_parts_interpreter(get_parts_ptr, context, {}, Names{});
         BlockIO parts_block = get_parts_interpreter.execute();
 
         /// 3.3 Get the resulting block index and prepare the pipeline.
@@ -441,15 +493,28 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
             const ColumnString& partition_ids_col = *checkAndGetColumn<ColumnString>(
                     partition_ids_chunk.getColumns()[parts_result_index].get());
 
+            String part_id_str;
+
             for (size_t i = 0; i < partition_ids_col.size(); ++i)
             {
                 /// 3.6 Move each partition to new table
-                const StringRef part_id_str = partition_ids_col.getDataAt(i);
-                move_parts_alter_command.partition->as<ASTPartition>()->id = {part_id_str.data, part_id_str.size};
+                const StringRef part_id_ref = partition_ids_col.getDataAt(i);
+
+                part_id_str = {part_id_ref.data, part_id_ref.size};
+                move_parts_alter_command.partition->as<ASTPartition>()->id = part_id_str;
 
                 move_parts_interpreter.execute();
+
+                LOG_TRACE(log,
+                    "Moved partition " + part_id_str +
+                    " from table " + db_name + "." + old_table_name +
+                    " to table " + db_name + "." + new_table_name);
             }
         }
+
+        LOG_DEBUG(log,
+            "Moved all parts from table " + db_name + "." + old_table_name +
+            " to table " + db_name + "." + new_table_name);
     }
 
     /// 4. Rename tables (RENAME TABLE new TO old, old TO new).
@@ -458,13 +523,17 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
 
         rename_ptr->as<ASTRenameQuery&>().elements =
         {
-            {{table_id.database_name, table_id.table_name}, {table_id.database_name, new_table_name}}, // old -> new
-            {{table_id.database_name, new_table_name}, {table_id.database_name, table_id.table_name}}  // new -> old
+            {{db_name, old_table_name}, {db_name, new_table_name}}, // old -> new
+            {{db_name, new_table_name}, {db_name, new_table_name}}  // new -> old
         };
 
         InterpreterRenameQuery interpreter_rename(rename_ptr, context);
 
         interpreter_rename.execute();
+
+        LOG_DEBUG(log,
+            "Renamed tables " + db_name + "." + old_table_name +
+            " <-> " + db_name + "." + new_table_name);
     }
 
     /// 5. Detach old table (DETACH TABLE old).
@@ -473,17 +542,36 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         ASTDropQuery& detach_query = detach_ptr->as<ASTDropQuery&>();
 
         detach_query.kind = ASTDropQuery::Kind::Detach;
-        detach_query.database = table_id.database_name;
-        detach_query.uuid = table_id.uuid;
-        detach_query.table = table_id.table_name;
+        detach_query.database = db_name;
+        detach_query.uuid = uuid;
+        detach_query.table = old_table_name;
 
         InterpreterDropQuery interpreter_drop(detach_ptr, context);
 
         interpreter_drop.execute();
+
+        LOG_DEBUG(log, "Detached table " + db_name + "." + old_table_name);
     }
 
-     // 6. Delete information about the old table, so it wouldn't be attached after clickhouse-server restart.
-     // rm -rf /var/lib/clickhouse/metadata/default/table_repl_old.sql
+    /// 6. Delete information about the old table, so it wouldn't be attached after server restart.
+    {
+        const String old_table_metadata_file = db->getObjectMetadataPath(old_table_name);
+
+        std::error_code file_delete_error;
+
+        if (std::filesystem::remove(old_table_metadata_file, file_delete_error))
+        {
+            LOG_DEBUG(log,
+                "Removed table " + db_name + "." + old_table_name +
+                " 's metadata at " + old_table_metadata_file);
+
+            return;
+        }
+
+        throw Exception(
+            ErrorCodes::SYSTEM_ERROR,
+            "Error removing file " + old_table_metadata_file + ": " + file_delete_error.message());
+    }
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
