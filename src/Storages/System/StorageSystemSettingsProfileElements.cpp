@@ -126,12 +126,12 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
         }
 
-        if ((element.setting_index != static_cast<size_t>(-1))
+        if (!element.setting_name.empty()
             && (!element.value.isNull() || !element.min_value.isNull() || !element.max_value.isNull() || element.readonly))
         {
-            auto setting_name = Settings::getName(element.setting_index);
+            const auto & setting_name = element.setting_name;
             column_index.push_back(index++);
-            column_setting_name.insertData(setting_name.data, setting_name.size);
+            column_setting_name.insertData(setting_name.data(), setting_name.size());
             column_setting_name_null_map.push_back(false);
 
             if (element.value.isNull())
@@ -141,7 +141,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
             else
             {
-                String str = Settings::valueToString(element.setting_index, element.value);
+                String str = Settings::valueToStringUtil(setting_name, element.value);
                 column_value.insertData(str.data(), str.length());
                 column_value_null_map.push_back(false);
             }
@@ -153,7 +153,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
             else
             {
-                String str = Settings::valueToString(element.setting_index, element.min_value);
+                String str = Settings::valueToStringUtil(setting_name, element.min_value);
                 column_min.insertData(str.data(), str.length());
                 column_min_null_map.push_back(false);
             }
@@ -165,7 +165,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             }
             else
             {
-                String str = Settings::valueToString(element.setting_index, element.max_value);
+                String str = Settings::valueToStringUtil(setting_name, element.max_value);
                 column_max.insertData(str.data(), str.length());
                 column_max_null_map.push_back(false);
             }

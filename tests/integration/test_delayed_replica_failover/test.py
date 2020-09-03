@@ -69,6 +69,12 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 ''').strip() == '3'
 
+        assert instance_with_dist_table.query('''
+SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
+    load_balancing='in_order',
+    max_replica_delay_for_distributed_queries=1
+''').strip() == '3\n\n3'
+
         pm.drop_instance_zk_connections(node_1_2)
         pm.drop_instance_zk_connections(node_2_2)
 

@@ -3,14 +3,13 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
 namespace DB
 {
+
+class ReadBuffer;
 
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
@@ -74,68 +73,16 @@ public:
         size_t min_chunk_bytes;
     };
 
-    explicit ParallelParsingBlockInputStream(const Params & params)
-            : header(params.input_creator_params.sample),
-              row_input_format_params(params.input_creator_params.row_input_format_params),
-              format_settings(params.input_creator_params.settings),
-              input_processor_creator(params.input_processor_creator),
-              min_chunk_bytes(params.min_chunk_bytes),
-              original_buffer(params.read_buffer),
-              // Subtract one thread that we use for segmentation and one for
-              // reading. After that, must have at least two threads left for
-              // parsing. See the assertion below.
-              pool(std::max(2, params.max_threads - 2)),
-              file_segmentation_engine(params.file_segmentation_engine)
-    {
-        // See comment above.
-        assert(params.max_threads >= 4);
-
-        // One unit for each thread, including segmentator and reader, plus a
-        // couple more units so that the segmentation thread doesn't spuriously
-        // bump into reader thread on wraparound.
-        processing_units.resize(params.max_threads + 2);
-
-        segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
-    }
+    explicit ParallelParsingBlockInputStream(const Params & params);
+    ~ParallelParsingBlockInputStream() override;
 
     String getName() const override { return "ParallelParsing"; }
+    Block getHeader() const override { return header; }
 
-    ~ParallelParsingBlockInputStream() override
-    {
-        finishAndWait();
-    }
-
-    void cancel(bool kill) override
-    {
-        /**
-          * Can be called multiple times, from different threads. Saturate the
-          * the kill flag with OR.
-          */
-        if (kill)
-            is_killed = true;
-        is_cancelled = true;
-
-        /*
-         * The format parsers themselves are not being cancelled here, so we'll
-         * have to wait until they process the current block. Given that the
-         * chunk size is on the order of megabytes, this should't be too long.
-         * We can't call IInputFormat->cancel here, because the parser object is
-         * local to the parser thread, and we don't want to introduce any
-         * synchronization between parser threads and the other threads to get
-         * better performance. An ideal solution would be to add a callback to
-         * IInputFormat that checks whether it was cancelled.
-         */
-
-        finishAndWait();
-    }
-
-    Block getHeader() const override
-    {
-        return header;
-    }
+    void cancel(bool kill) override;
 
 protected:
-    //Reader routine
+    // Reader routine
     Block readImpl() override;
 
     const BlockMissingValues & getMissingValues() const override
@@ -212,36 +159,11 @@ private:
     std::deque<ProcessingUnit> processing_units;
 
 
-    void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
-    {
-        pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, ticket_number));
-    }
+    void scheduleParserThreadForUnitWithNumber(size_t ticket_number);
+    void finishAndWait();
 
-    void finishAndWait()
-    {
-        finished = true;
-
-        {
-            std::unique_lock<std::mutex> lock(mutex);
-            segmentator_condvar.notify_all();
-            reader_condvar.notify_all();
-        }
-
-        if (segmentator_thread.joinable())
-            segmentator_thread.join();
-
-        try
-        {
-            pool.wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void segmentatorThreadFunction();
-    void parserThreadFunction(size_t current_ticket_number);
+    void segmentatorThreadFunction(ThreadGroupStatusPtr thread_group);
+    void parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number);
 
     // Save/log a background exception, set termination flag, wake up all
     // threads. This function is used by segmentator and parsed threads.

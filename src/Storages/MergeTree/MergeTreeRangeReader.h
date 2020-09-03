@@ -222,7 +222,6 @@ private:
     Stream stream;
 
     Block sample_block;
-    Block sample_block_before_prewhere;
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;

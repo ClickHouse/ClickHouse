@@ -22,7 +22,7 @@ class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public ISt
 public:
     std::string getName() const override { return "Null"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo &,
@@ -31,11 +31,11 @@ public:
         size_t,
         unsigned) override
     {
-        Pipes pipes;
-        pipes.emplace_back(
+        return Pipe(
             std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-        return pipes;
     }
+
+    bool supportsParallelInsert() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &) override
     {

@@ -134,7 +134,6 @@ public:
     }
 
 private:
-    /// FormatsDictionary dict;
     FormatsDictionary dict;
 
     FormatFactory();
@@ -194,12 +193,12 @@ void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatProcessorPretty(FormatFactory & factory);
 void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
 void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
+void registerOutputFormatProcessorPrettyASCII(FormatFactory & factory);
 void registerOutputFormatProcessorVertical(FormatFactory & factory);
 void registerOutputFormatProcessorJSON(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatProcessorXML(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
 void registerOutputFormatProcessorNull(FormatFactory & factory);
 void registerOutputFormatProcessorMySQLWire(FormatFactory & factory);

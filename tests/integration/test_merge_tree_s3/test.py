@@ -26,8 +26,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6
-FILES_OVERHEAD_PER_PART_COMPACT = 10
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
 def random_string(length):
@@ -55,7 +55,7 @@ def create_table(cluster, table_name, additional_settings=None):
         ORDER BY (dt, id)
         SETTINGS
             storage_policy='s3',
-            old_parts_lifetime=0, 
+            old_parts_lifetime=0,
             index_granularity=512
         """.format(table_name)
 
@@ -224,6 +224,10 @@ def test_move_partition_to_another_disk(cluster):
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+
+    node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 's3'")
+    assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
 
 
 def test_table_manipulations(cluster):

@@ -17,7 +17,7 @@ public:
 
     uint8_t getMethodByte() const override;
 
-    String getCodecDesc() const override;
+    ASTPtr getCodecDesc() const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -32,9 +32,5 @@ protected:
 private:
     const int level;
 };
-
-
-class CompressionCodecFactory;
-void registerCodecZSTD(CompressionCodecFactory & factory);
 
 }

@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -159,7 +160,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     else
         writeString(" WHERE ", out);
 
-    writeQuoted(update_field, out);
+    writeString(update_field, out);
     writeString(" >= '", out);
     writeString(time_point, out);
     writeChar('\'', out);
@@ -239,11 +240,14 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 }
 
 
-std::string
-ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
+std::string ExternalQueryBuilder::composeLoadKeysQuery(
+    const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+
+    if (key_columns.size() != dict_struct.key->size())
+        throw Exception{"The size of key_columns does not equal to the size of dictionary key", ErrorCodes::LOGICAL_ERROR};
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);

@@ -204,6 +204,7 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
+    , name(uri_.storage_name)
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -217,7 +218,7 @@ StorageS3::StorageS3(
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
     client = S3::ClientFactory::instance().create(
-        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers));
+        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers), context_.getRemoteHostFilter());
 }
 
 
@@ -283,7 +284,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
 }
 
 
-Pipes StorageS3::read(
+Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -318,7 +319,9 @@ Pipes StorageS3::read(
             uri.bucket,
             key));
 
-    return narrowPipes(std::move(pipes), num_streams);
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    narrowPipe(pipe, num_streams);
+    return pipe;
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
@@ -329,9 +332,9 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         client, uri.bucket, uri.key);
 }
 
-void registerStorageS3(StorageFactory & factory)
+void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
-    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
+    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
@@ -369,6 +372,16 @@ void registerStorageS3(StorageFactory & factory)
     {
         .source_access_type = AccessType::S3,
     });
+}
+
+void registerStorageS3(StorageFactory & factory)
+{
+    return registerStorageS3Impl("S3", factory);
+}
+
+void registerStorageCOS(StorageFactory & factory)
+{
+    return registerStorageS3Impl("COSN", factory);
 }
 
 NamesAndTypesList StorageS3::getVirtuals() const

@@ -111,6 +111,7 @@ class ClickHouseCluster:
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
+        self.docker_base_tag = os.environ.get("DOCKER_BASE_TAG")
 
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
@@ -137,12 +138,13 @@ class ClickHouseCluster:
         self.with_cassandra = False
 
         self.with_minio = False
+        self.minio_certs_dir = None
         self.minio_host = "minio1"
         self.minio_bucket = "root"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
-        self.minio_redirect_host = "redirect"
-        self.minio_redirect_port = 80
+        self.minio_redirect_host = "proxy1"
+        self.minio_redirect_port = 8080
 
         # available when with_kafka == True
         self.schema_registry_client = None
@@ -164,9 +166,9 @@ class ClickHouseCluster:
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
-                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
+                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True, minio_certs_dir=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -182,13 +184,16 @@ class ClickHouseCluster:
         if name in self.instances:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
+        if tag is None:
+            tag = self.docker_base_tag
+
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs or [], user_configs or [], macros or {},
             with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
+            env_variables=env_variables or {}, image=image, tag=tag, stay_alive=stay_alive, ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
             with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
 
@@ -285,6 +290,7 @@ class ClickHouseCluster:
 
         if with_minio and not self.with_minio:
             self.with_minio = True
+            self.minio_certs_dir = minio_certs_dir
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                    self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
@@ -343,7 +349,7 @@ class ClickHouseCluster:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id)
 
-    def exec_in_container(self, container_id, cmd, detach=False, **kwargs):
+    def exec_in_container(self, container_id, cmd, detach=False, nothrow=False, **kwargs):
         exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
         output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
@@ -359,7 +365,11 @@ class ClickHouseCluster:
             print("Container {} uses image {}: ".format(container_id, image_id))
             pprint.pprint(image_info)
             print("")
-            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output))
+            message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output)
+            if nothrow:
+                print(message)
+            else:
+                raise Exception(message)
         return output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
@@ -442,11 +452,11 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=30):
+    def wait_minio_to_start(self, timeout=30, secure=False):
         minio_client = Minio('localhost:9001',
                              access_key='minio',
                              secret_key='minio123',
-                             secure=False)
+                             secure=secure)
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -568,11 +578,34 @@ class ClickHouseCluster:
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
+                env = os.environ.copy()
+                prev_ca_certs = os.environ.get('SSL_CERT_FILE')
+                if self.minio_certs_dir:
+                    minio_certs_dir = p.join(self.base_dir, self.minio_certs_dir)
+                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+                    # Minio client (urllib3) uses SSL_CERT_FILE for certificate validation.
+                    os.environ['SSL_CERT_FILE'] = p.join(minio_certs_dir, 'public.crt')
+                else:
+                    # Attach empty certificates directory to ensure non-secure mode.
+                    minio_certs_dir = p.join(self.instances_dir, 'empty_minio_certs_dir')
+                    os.mkdir(minio_certs_dir)
+                    env['MINIO_CERTS_DIR'] = minio_certs_dir
+
                 minio_start_cmd = self.base_minio_cmd + common_opts
+
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                subprocess_check_call(minio_start_cmd)
-                logging.info("Trying to connect to Minio...")
-                self.wait_minio_to_start()
+                subprocess.check_call(minio_start_cmd, env=env)
+
+                try:
+                    logging.info("Trying to connect to Minio...")
+                    self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+                finally:
+                    # Safely return previous value of SSL_CERT_FILE environment variable.
+                    if self.minio_certs_dir:
+                        if prev_ca_certs:
+                            os.environ['SSL_CERT_FILE'] = prev_ca_certs
+                        else:
+                            os.environ.pop('SSL_CERT_FILE')
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
@@ -675,7 +708,7 @@ DOCKER_COMPOSE_TEMPLATE = '''
 version: '2.3'
 services:
     {name}:
-        image: {image}
+        image: {image}:{tag}
         hostname: {hostname}
         volumes:
             - {configs_dir}:/etc/clickhouse-server/
@@ -694,6 +727,11 @@ services:
             - {env_file}
         security_opt:
             - label:disable
+        dns_opt:
+            - attempts:2
+            - timeout:1
+            - inet6
+            - rotate
         {networks}
             {app_net}
                 {ipv4_address}
@@ -707,10 +745,10 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio, with_cassandra,
-            base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo,
+            with_redis, with_minio, with_cassandra, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
-            image="yandex/clickhouse-integration-test",
+            image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
         self.name = name
@@ -754,6 +792,7 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0  # 20 sec
         self.image = image
+        self.tag = tag
         self.stay_alive = stay_alive
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
@@ -863,9 +902,9 @@ class ClickHouseInstance:
         from helpers.test_tools import assert_eq_with_retry
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
-    def exec_in_container(self, cmd, detach=False, **kwargs):
+    def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         container_id = self.get_docker_handle().id
-        return self.cluster.exec_in_container(container_id, cmd, detach, **kwargs)
+        return self.cluster.exec_in_container(container_id, cmd, detach, nothrow, **kwargs)
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
@@ -903,7 +942,8 @@ class ClickHouseInstance:
 
         # force kill if server hangs
         if self.get_process_pid("clickhouse server"):
-            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], nothrow=True, user='root')
 
         if callback_onstop:
             callback_onstop(self)
@@ -1095,7 +1135,6 @@ class ClickHouseInstance:
 
         if self.with_minio:
             depends_on.append("minio1")
-            depends_on.append("redirect")
 
         env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
 
@@ -1131,6 +1170,7 @@ class ClickHouseInstance:
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
+                tag=self.tag,
                 name=self.name,
                 hostname=self.hostname,
                 binary_volume=binary_volume,
@@ -1167,4 +1207,3 @@ class ClickHouseKiller(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.restore_clickhouse()
-

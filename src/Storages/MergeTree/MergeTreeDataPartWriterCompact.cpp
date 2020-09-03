@@ -106,9 +106,11 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
             auto & stream = compressed_streams[column.name];
 
             writeIntBinary(plain_hashing.count(), marks);
-            writeIntBinary(UInt64(0), marks);
+            writeIntBinary(stream->hashing_buf.offset(), marks);
 
             writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+
+            /// Write one compressed block per column in granule for more optimal reading.
             stream->hashing_buf.next();
         }
 
@@ -205,14 +207,11 @@ void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granulari
 
 void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums & checksums)
 {
-    using uint128 = CityHash_v1_0_2::uint128;
-
     String data_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
     String marks_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME +  marks_file_extension;
 
-    checksums.files[data_file_name].is_compressed = true;
     size_t uncompressed_size = 0;
-    uint128 uncompressed_hash{0, 0};
+    CityHash_v1_0_2::uint128 uncompressed_hash{0, 0};
 
     for (const auto & [_, stream] : compressed_streams)
     {
@@ -222,6 +221,7 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
             reinterpret_cast<char *>(&stream_hash), sizeof(stream_hash), uncompressed_hash);
     }
 
+    checksums.files[data_file_name].is_compressed = true;
     checksums.files[data_file_name].uncompressed_size = uncompressed_size;
     checksums.files[data_file_name].uncompressed_hash = uncompressed_hash;
     checksums.files[data_file_name].file_size = plain_hashing.count();

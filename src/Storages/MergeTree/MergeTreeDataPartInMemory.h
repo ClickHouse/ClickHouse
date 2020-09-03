@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class UncompressedCache;
+
 class MergeTreeDataPartInMemory : public IMergeTreeDataPart
 {
 public:

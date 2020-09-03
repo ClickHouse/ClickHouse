@@ -1,6 +1,6 @@
 ---
 toc_priority: 65
-toc_title: How to Build ClickHouse on Mac OS X
+toc_title: Build on Mac OS X
 ---
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
@@ -45,14 +45,12 @@ $ cd ..
 
 ## Caveats {#caveats}
 
-If you intend to run clickhouse-server, make sure to increase the system’s maxfiles variable.
+If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
 
 !!! info "Note"
     You’ll need to use sudo.
 
-To do so, create the following file:
-
-/Library/LaunchDaemons/limit.maxfiles.plist:
+To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>

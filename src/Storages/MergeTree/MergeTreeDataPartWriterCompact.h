@@ -54,7 +54,7 @@ private:
 
     ColumnsBuffer columns_buffer;
 
-    /// compressed -> compressed_buf -> plain_hashing -> plain_file
+    /// hashing_buf -> compressed_buf -> plain_hashing -> plain_file
     std::unique_ptr<WriteBufferFromFileBase> plain_file;
     HashingWriteBuffer plain_hashing;
 

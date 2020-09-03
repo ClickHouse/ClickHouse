@@ -3,7 +3,7 @@ toc_priority: 34
 toc_title: INSERT INTO
 ---
 
-## INSERT {#insert}
+## INSERT INTO Statement {#insert}
 
 Adding data.
 

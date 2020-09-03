@@ -15,13 +15,11 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const Context & context_,
-    const Names & columns,
-    Poco::Logger * log_)
+    const Names & columns)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , context(context_)
         , column_names(columns)
-        , log(log_)
         , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
         , virtual_header(metadata_snapshot->getSampleBlockForColumns({"_exchange"}, storage.getVirtuals(), storage.getStorageID()))
 {

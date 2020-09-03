@@ -149,7 +149,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
         const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
@@ -508,20 +508,35 @@ private:
 
     void parseConstPolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
     {
-        ColumnPtr polygon_column_float64 = castColumn(
-            block.getByPosition(arguments[1]),
-            std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeTuple>(DataTypes{
-                    std::make_shared<DataTypeFloat64>(),
-                    std::make_shared<DataTypeFloat64>()})));
-
-        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
-        const IColumn & column_const_data = column_const.getDataColumn();
-
         if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
+        {
+            ColumnPtr polygon_column_float64 = castColumn(
+                block.getByPosition(arguments[1]),
+                std::make_shared<DataTypeArray>(
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeTuple>(DataTypes{
+                            std::make_shared<DataTypeFloat64>(),
+                            std::make_shared<DataTypeFloat64>()}))));
+
+            const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+            const IColumn & column_const_data = column_const.getDataColumn();
+
             parseConstPolygonWithHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        }
         else
+        {
+            ColumnPtr polygon_column_float64 = castColumn(
+                block.getByPosition(arguments[1]),
+                std::make_shared<DataTypeArray>(
+                    std::make_shared<DataTypeTuple>(DataTypes{
+                        std::make_shared<DataTypeFloat64>(),
+                        std::make_shared<DataTypeFloat64>()})));
+
+            const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+            const IColumn & column_const_data = column_const.getDataColumn();
+
             parseConstPolygonWithoutHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        }
     }
 
     void parseConstPolygon(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const

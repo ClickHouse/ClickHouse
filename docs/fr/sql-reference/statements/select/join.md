@@ -12,7 +12,7 @@ Syntaxe:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -34,14 +34,10 @@ Autres types de jointure disponibles dans ClickHouse:
 
 -   `LEFT SEMI JOIN` et `RIGHT SEMI JOIN` une liste blanche sur “join keys”, sans produire un produit cartésien.
 -   `LEFT ANTI JOIN` et `RIGHT ANTI JOIN` une liste noire sur “join keys”, sans produire un produit cartésien.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` et `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
+-   `ASOF JOIN` et `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Rigueur {#select-join-strictness}
-
-Modifie la façon dont la correspondance par “join keys” est effectué
-
--   `ALL` — The standard `JOIN` comportement en SQL comme décrit ci-dessus. Défaut.
--   `ANY` — Partially (for opposite side of `LEFT` et `RIGHT`) ou complètement (pour `INNER` et `FULL`) désactive le produit cartésien de la norme `JOIN` type.
--   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` l'utilisation est décrite ci-dessous.
+## Setting {#join-settings}
 
 !!! note "Note"
     La valeur de rigueur par défaut peut être remplacée à l'aide [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) paramètre.

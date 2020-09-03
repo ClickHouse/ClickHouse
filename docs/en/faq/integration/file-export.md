@@ -30,7 +30,7 @@ See [File](../../engines/table-engines/special/file.md) table engine.
 
 ## Using Command-Line Redirection {#using-command-line-redirection}
 
-``` sql
+``` bash
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 

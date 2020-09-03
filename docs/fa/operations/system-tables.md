@@ -532,7 +532,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `query` (String) – The query text. For `INSERT` این شامل داده ها برای وارد کردن نیست.
 -   `query_id` (String) – Query ID, if defined.
 
-## سیستم.\_خروج {#system-tables-text-log}
+## سیستم.\_خروج {#system_tables-text_log}
 
 شامل ورودی ورود به سیستم. سطح ورود به سیستم که می رود به این جدول را می توان با محدود `text_log.level` تنظیم سرور.
 
@@ -794,9 +794,9 @@ inserts_in_queue:           0
 merges_in_queue:            1
 part_mutations_in_queue:    0
 queue_oldest_time:          2020-02-20 08:34:30
-inserts_oldest_time:        0000-00-00 00:00:00
+inserts_oldest_time:        1970-01-01 00:00:00
 merges_oldest_time:         2020-02-20 08:34:30
-part_mutations_oldest_time: 0000-00-00 00:00:00
+part_mutations_oldest_time: 1970-01-01 00:00:00
 oldest_part_to_get:
 oldest_part_to_merge_to:    20200220_20284_20840_7
 oldest_part_to_mutate_to:
