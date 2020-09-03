@@ -9,6 +9,7 @@
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnDecimal.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
@@ -451,6 +452,8 @@ static void writeFieldsToColumn(
             write_data_to_column(casted_float32_column, Float64(), Float32());
         else if (ColumnFloat64 * casted_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
             write_data_to_column(casted_float64_column, Float64(), Float64());
+        else if (ColumnDecimal<DateTime64> * casted_date_time_64_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column_to))
+            write_data_to_column(casted_date_time_64_column, DateTime64(), DateTime64());
         else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
