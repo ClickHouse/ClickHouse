@@ -221,6 +221,11 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
     StoragePtr table = detachTable(table_name);
+
+    /// This is possible for Lazy database.
+    if (!table)
+        return;
+
     bool renamed = false;
     try
     {

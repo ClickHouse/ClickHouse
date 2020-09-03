@@ -21,6 +21,8 @@ class QueryPipelineProcessorsCollector;
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
+class QueryPlan;
+
 class QueryPipeline
 {
 public:
@@ -93,6 +95,7 @@ public:
     void addTableLock(const TableLockHolder & lock) { pipe.addTableLock(lock); }
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
+    void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);

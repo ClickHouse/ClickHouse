@@ -13,6 +13,8 @@
 #include <Common/escapeForFileName.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
+#include <Compression/getCompressionCodecForFile.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -30,10 +32,6 @@ namespace ErrorCodes
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
 }
-
-
-extern const char * DELETE_ON_DESTROY_MARKER_PATH;
-
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
@@ -418,9 +416,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
     loadTTLInfos();
-
     if (check_consistency)
         checkConsistency(require_columns_checksums);
+    loadDefaultCompressionCodec();
+
 }
 
 void IMergeTreeDataPart::loadIndexGranularity()
@@ -472,6 +471,89 @@ void IMergeTreeDataPart::loadIndex()
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
+}
+
+NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
+{
+    if (!isStoredOnDisk())
+        return {};
+
+    NameSet result = {"checksums.txt", "columns.txt"};
+    String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    if (volume->getDisk()->exists(default_codec_path))
+        result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    return result;
+}
+
+void IMergeTreeDataPart::loadDefaultCompressionCodec()
+{
+    /// In memory parts doesn't have any compression
+    if (!isStoredOnDisk())
+    {
+        default_codec = CompressionCodecFactory::instance().get("NONE", {});
+        return;
+    }
+
+    String path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+    if (!volume->getDisk()->exists(path))
+    {
+        default_codec = detectDefaultCompressionCodec();
+    }
+    else
+    {
+
+        auto file_buf = openForReading(volume->getDisk(), path);
+        String codec_line;
+        readEscapedStringUntilEOL(codec_line, *file_buf);
+
+        ReadBufferFromString buf(codec_line);
+
+        if (!checkString("CODEC", buf))
+        {
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be deduced automatically, from data on disk", name, path, codec_line);
+            default_codec = detectDefaultCompressionCodec();
+        }
+
+        try
+        {
+            ParserCodec codec_parser;
+            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
+        }
+        catch (const DB::Exception & ex)
+        {
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
+            default_codec = detectDefaultCompressionCodec();
+        }
+    }
+}
+
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
+{
+    /// In memory parts doesn't have any compression
+    if (!isStoredOnDisk())
+        return CompressionCodecFactory::instance().get("NONE", {});
+
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    CompressionCodecPtr result = nullptr;
+    for (const auto & part_column : columns)
+    {
+        /// It was compressed with default codec and it's not empty
+        auto column_size = getColumnSize(part_column.name, *part_column.type);
+        if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
+        {
+            result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
+            break;
+        }
+    }
+
+    if (!result)
+        result = CompressionCodecFactory::instance().getDefaultCodec();
+
+    return result;
 }
 
 void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
@@ -795,7 +877,9 @@ void IMergeTreeDataPart::remove() const
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
                 volume->getDisk()->remove(to + "/" + file);
-            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+
+            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
             volume->getDisk()->remove(to);
         }
@@ -850,7 +934,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
 
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(volume->getDisk(), getFullRelativePath(), destination_path, 0);
-    volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+    volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
@@ -867,7 +951,7 @@ void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservat
     reserved_disk->createDirectory(path_to_clone);
 
     volume->getDisk()->copy(getFullRelativePath(), reserved_disk, path_to_clone);
-    volume->getDisk()->removeIfExists(path_to_clone + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+    volume->getDisk()->removeIfExists(path_to_clone + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
