@@ -74,8 +74,9 @@ size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool continue_reading
 
             auto mutable_column = res_columns[i]->assumeMutable();
             auto & res_offstes = assert_cast<ColumnArray &>(*mutable_column).getOffsets();
+            size_t start_offset = total_rows_read ? source_offsets[total_rows_read - 1] : 0;
             for (size_t row = 0; row < rows_to_read; ++row)
-                res_offstes.push_back(source_offsets[total_rows_read + row]);
+                res_offstes.push_back(source_offsets[total_rows_read + row] - start_offset);
 
             res_columns[i] = std::move(mutable_column);
         }

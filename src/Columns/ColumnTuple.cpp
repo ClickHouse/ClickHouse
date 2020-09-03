@@ -349,7 +349,7 @@ void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_directio
     for (const auto& column : columns)
     {
         column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
-        while (limit && limit <= equal_range.back().first)
+        while (limit && !equal_range.empty() && limit <= equal_range.back().first)
             equal_range.pop_back();
 
         if (equal_range.empty())

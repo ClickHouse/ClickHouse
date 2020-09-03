@@ -43,7 +43,7 @@ struct TTLDescription
     ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
 
-    /// Expresion actions evaluated from AST
+    /// Expression actions evaluated from AST
     ExpressionActionsPtr expression;
 
     /// Result column of this TTL expression

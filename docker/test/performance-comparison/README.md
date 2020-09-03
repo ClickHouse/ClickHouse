@@ -36,6 +36,9 @@ Action required for every item -- these are errors that must be fixed. The error
 #### Slow on client
 Action required for every item -- these are errors that must be fixed. This table shows queries that take significantly longer to process on the client than on the server. A possible reason might be sending too much data to the client, e.g., a forgotten `format Null`.
 
+#### Short queries not marked as short
+Action required for every item -- these are errors that must be fixed. This table shows queries that are "short" but not explicitly marked as such. "Short" queries are too fast to meaningfully compare performance, because the changes are drowned by the noise. We consider all queries that run faster than 0.02 s to be "short", and only check the performance if they became slower than this threshold. Probably this mode is not what you want, so you have to increase the query run time to be between 1 and 0.1 s, so that the performance can be compared. You do want this "short" mode for queries that complete "immediately", such as some varieties of `select count(*)`. You have to mark them as "short" explicitly by writing `<query short="1">...`. The value of "short" attribute is evaluated as a python expression, and substitutions are performed, so you can write something like `<query short="{column1} = {column2}">select count(*) from table where {column1} > {column2}</query>`, to mark only a particular combination of variables as short.
+
 #### Partial queries
 Action required for the cells marked in red. Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.
 

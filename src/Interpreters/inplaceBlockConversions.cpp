@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ColumnDefault.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTExpressionList.h>
@@ -98,7 +98,7 @@ void executeExpressionsOnBlock(
 
     if (!save_unneeded_columns)
     {
-        auto syntax_result = SyntaxAnalyzer(context).analyze(expr_list, block.getNamesAndTypesList());
+        auto syntax_result = TreeRewriter(context).analyze(expr_list, block.getNamesAndTypesList());
         ExpressionAnalyzer{expr_list, syntax_result, context}.getActions(true)->execute(block);
         return;
     }
@@ -107,7 +107,7 @@ void executeExpressionsOnBlock(
       * we are going to operate on a copy instead of the original block */
     Block copy_block{block};
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expr_list, block.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(expr_list, block.getNamesAndTypesList());
     auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
     auto required_source_columns = syntax_result->requiredSourceColumns();
     auto rows_was = copy_block.rows();

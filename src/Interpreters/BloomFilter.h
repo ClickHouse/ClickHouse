@@ -9,10 +9,13 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/IDataType.h>
 
+
 namespace DB
 {
 struct BloomFilterParameters
 {
+    BloomFilterParameters(size_t filter_size_, size_t filter_hashes_, size_t seed_);
+
     /// size of filter in bytes.
     size_t filter_size;
     /// number of used hash functions.

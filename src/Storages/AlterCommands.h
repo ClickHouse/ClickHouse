@@ -28,6 +28,7 @@ struct AlterCommand
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_SAMPLE_BY,
         ADD_INDEX,
         DROP_INDEX,
         ADD_CONSTRAINT,
@@ -69,6 +70,9 @@ struct AlterCommand
     /// For MODIFY_ORDER_BY
     ASTPtr order_by = nullptr;
 
+    /// For MODIFY_SAMPLE_BY
+    ASTPtr sample_by = nullptr;
+
     /// For ADD INDEX
     ASTPtr index_decl = nullptr;
     String after_index_name;
@@ -92,7 +96,7 @@ struct AlterCommand
     bool clear = false;
 
     /// For ADD and MODIFY
-    CompressionCodecPtr codec = nullptr;
+    ASTPtr codec = nullptr;
 
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
@@ -103,7 +107,7 @@ struct AlterCommand
     /// Target column name
     String rename_to;
 
-    static std::optional<AlterCommand> parse(const ASTAlterCommand * command, bool sanity_check_compression_codecs);
+    static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
 
@@ -113,6 +117,10 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
+    /// Check that alter command require data modification (mutation) to be
+    /// executed. For example, cast from Date to UInt16 type can be executed
+    /// without any data modifications. But column drop or modify from UInt16 to
+    /// UInt32 require data modification.
     bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
     /// Checks that only settings changed by alter
@@ -143,7 +151,7 @@ private:
 
 public:
     /// Validate that commands can be applied to metadata.
-    /// Checks that all columns exist and dependecies between them.
+    /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;

@@ -11,8 +11,7 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 
-#include <fmt/format.h>
-
+#include <random>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -469,11 +468,12 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 
     parser.parse(token_iterator, codec_ast, expected);
 
-    return CompressionCodecFactory::instance().get(codec_ast, data_type, false);
+    return CompressionCodecFactory::instance().get(codec_ast, data_type);
 }
 
 template <typename Timer>
-void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence, std::optional<double> expected_compression_ratio = std::optional<double>{})
+void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSequence & test_sequence,
+                     std::optional<double> expected_compression_ratio = {})
 {
     const auto & source_data = test_sequence.serialized_data;
 
@@ -540,11 +540,6 @@ TEST_P(CodecTest, TranscodingWithDataType)
     testTranscoding(*codec);
 }
 
-TEST_P(CodecTest, TranscodingWithoutDataType)
-{
-    const auto codec = makeCodec(CODEC_WITHOUT_DATA_TYPE);
-    testTranscoding(*codec);
-}
 
 // Param is tuple-of-tuple to simplify instantiating with values, since typically group of cases test only one codec.
 class CodecTestCompatibility : public ::testing::TestWithParam<std::tuple<Codec, std::tuple<CodecTestSequence, std::string>>>
@@ -703,7 +698,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integral_v<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
@@ -1279,7 +1274,7 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
     )
 );
 
-// These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
+// These 'tests' try to measure performance of encoding and decoding and hence only make sense to be run locally,
 // also they require pretty big data to run against and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 

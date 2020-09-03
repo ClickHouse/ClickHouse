@@ -21,9 +21,9 @@ class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadB
 {
 private:
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator;
-    UncompressedCache * cache;
     std::unique_ptr<ReadBufferFromFileBase> file_in_holder;
     ReadBufferFromFileBase * file_in = nullptr;
+    UncompressedCache * cache;
 
     const std::string path;
     size_t file_pos;

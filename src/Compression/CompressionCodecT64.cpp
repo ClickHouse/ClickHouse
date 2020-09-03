@@ -5,6 +5,8 @@
 #include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -630,19 +632,18 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
-void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)
-{
-    if (data_type)
-    {
-        type_idx = typeIdx(data_type);
-        if (type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
-    }
-}
-
 uint8_t CompressionCodecT64::getMethodByte() const
 {
     return codecId();
+}
+
+ASTPtr CompressionCodecT64::getCodecDesc() const
+{
+    if (variant == Variant::Byte)
+        return std::make_shared<ASTIdentifier>("T64");
+
+    auto literal = std::make_shared<ASTLiteral>("bit");
+    return makeASTFunction("T64", literal);
 }
 
 void registerCodecT64(CompressionCodecFactory & factory)

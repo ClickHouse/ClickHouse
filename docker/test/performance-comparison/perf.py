@@ -37,21 +37,44 @@ available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
 for e in subst_elems:
     available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
 
-# Take care to keep the order of queries -- sometimes we have DROP IF EXISTS
+# Takes parallel lists of templates, substitutes them with all combos of
+# parameters. The set of parameters is determined based on the first list.
+# Note: keep the order of queries -- sometimes we have DROP IF EXISTS
 # followed by CREATE in create queries section, so the order matters.
-def substitute_parameters(query_templates):
-    result = []
-    for q in query_templates:
+def substitute_parameters(query_templates, other_templates = []):
+    query_results = []
+    other_results = [[]] * (len(other_templates))
+    for i, q in enumerate(query_templates):
         keys = set(n for _, n, _, _ in string.Formatter().parse(q) if n)
         values = [available_parameters[k] for k in keys]
-        result.extend([
-            q.format(**dict(zip(keys, values_combo)))
-                for values_combo in itertools.product(*values)])
-    return result
+        combos = itertools.product(*values)
+        for c in combos:
+            with_keys = dict(zip(keys, c))
+            query_results.append(q.format(**with_keys))
+            for j, t in enumerate(other_templates):
+                other_results[j].append(t[i].format(**with_keys))
+    if len(other_templates):
+        return query_results, other_results
+    else:
+        return query_results
 
-# Build a list of test queries, processing all substitutions
-test_query_templates = [q.text for q in root.findall('query')]
-test_queries = substitute_parameters(test_query_templates)
+
+# Build a list of test queries, substituting parameters to query templates,
+# and reporting the queries marked as short.
+test_queries = []
+for e in root.findall('query'):
+    new_queries = []
+    if 'short' in e.attrib:
+        new_queries, [is_short] = substitute_parameters([e.text], [[e.attrib['short']]])
+        for i, s in enumerate(is_short):
+            # Don't print this if we only need to print the queries.
+            if eval(s) and not args.print_queries:
+                print(f'short\t{i + len(test_queries)}')
+    else:
+        new_queries = substitute_parameters([e.text])
+
+    test_queries += new_queries
+
 
 # If we're only asked to print the queries, do that and exit
 if args.print_queries:
@@ -166,7 +189,7 @@ for conn_index, c in enumerate(connections):
         c.execute(q)
         print(f'fill\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}')
 
-# Run test queries
+# Run test queries.
 for query_index, q in enumerate(test_queries):
     query_prefix = f'{test_name}.query{query_index}'
 
@@ -199,17 +222,22 @@ for query_index, q in enumerate(test_queries):
             query_error_on_connection[conn_index] = traceback.format_exc();
             continue
 
-    # If prewarm fails for the query on both servers -- report the error, skip
-    # the query and continue testing the next query.
-    if query_error_on_connection.count(None) == 0:
-        print(query_error_on_connection[0], file = sys.stderr)
-        continue
 
+    # Report all errors that ocurred during prewarm and decide what to do next.
+    # If prewarm fails for the query on all servers -- skip the query and
+    # continue testing the next query.
     # If prewarm fails on one of the servers, run the query on the rest of them.
-    # Useful for queries that use new functions added in the new server version.
-    if query_error_on_connection.count(None) < len(query_error_on_connection):
-        no_error = [i for i, e in enumerate(query_error_on_connection) if not e]
-        print(f'partial\t{query_index}\t{no_error}')
+    no_errors = []
+    for i, e in enumerate(query_error_on_connection):
+        if e:
+            print(e, file = sys.stderr)
+        else:
+            no_errors.append(i)
+
+    if len(no_errors) == 0:
+        continue
+    elif len(no_errors) < len(connections):
+        print(f'partial\t{query_index}\t{no_errors}')
 
     # Now, perform measured runs.
     # Track the time spent by the client to process this query, so that we can
@@ -222,7 +250,15 @@ for query_index, q in enumerate(test_queries):
         for conn_index, c in enumerate(connections):
             if query_error_on_connection[conn_index]:
                 continue
-            res = c.execute(q, query_id = run_id)
+
+            try:
+                res = c.execute(q, query_id = run_id)
+            except Exception as e:
+                # Add query id to the exception to make debugging easier.
+                e.args = (run_id, *e.args)
+                e.message = run_id + ': ' + e.message
+                raise
+
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
 

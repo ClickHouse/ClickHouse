@@ -74,6 +74,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         thread_group->thread_ids.emplace_back(thread_id);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
+        fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
 
         if (!global_context)

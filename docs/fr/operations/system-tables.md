@@ -532,7 +532,7 @@ Colonne:
 -   `query` (String) – The query text. For `INSERT` il n'inclut pas les données à insérer.
 -   `query_id` (String) – Query ID, if defined.
 
-## système.text\_log {#system-tables-text-log}
+## système.text\_log {#system_tables-text_log}
 
 Contient des entrées de journalisation. Niveau de journalisation qui va à cette table peut être limité `text_log.level` paramètre de serveur.
 
@@ -794,9 +794,9 @@ inserts_in_queue:           0
 merges_in_queue:            1
 part_mutations_in_queue:    0
 queue_oldest_time:          2020-02-20 08:34:30
-inserts_oldest_time:        0000-00-00 00:00:00
+inserts_oldest_time:        1970-01-01 00:00:00
 merges_oldest_time:         2020-02-20 08:34:30
-part_mutations_oldest_time: 0000-00-00 00:00:00
+part_mutations_oldest_time: 1970-01-01 00:00:00
 oldest_part_to_get:
 oldest_part_to_merge_to:    20200220_20284_20840_7
 oldest_part_to_mutate_to:

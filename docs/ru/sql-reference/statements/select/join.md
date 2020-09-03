@@ -7,7 +7,7 @@ Join создаёт новую таблицу путем объединения 
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
+[GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -15,7 +15,7 @@ FROM <left_table>
 
 ## Поддерживаемые типы соединения {#select-join-types}
 
-Весе типы из стандартого [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) поддерживаются:
+Все типы из стандартого [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) поддерживаются:
 
 -   `INNER JOIN`, возвращаются только совпадающие строки.
 -   `LEFT OUTER JOIN`, не совпадающие строки из левой таблицы возвращаются в дополнение к совпадающим строкам.
@@ -29,17 +29,15 @@ FROM <left_table>
 
 -   `LEFT SEMI JOIN` и `RIGHT SEMI JOIN`, белый список по ключам соединения, не производит декартово произведение.
 -   `LEFT ANTI JOIN` и `RIGHT ANTI JOIN`, черный список по ключам соединения, не производит декартово произведение.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` и `INNER ANY JOIN`, Частично (для противоположных сторон `LEFT` и `RIGHT`) или полностью (для `INNER` и `FULL`) отключает декартово произведение для стандартых видов `JOIN`.
+-   `ASOF JOIN` и `LEFT ASOF JOIN`, Для соединения последовательностей по нечеткому совпадению. Использование `ASOF JOIN` описано ниже.
 
-## Строгость {#select-join-strictness}
-
-Изменяет способ сопоставления по ключам соединения:
-
--   `ALL` — стандартное поведение `JOIN` в SQL, как описано выше. По умолчанию.
--   `ANY` — Частично (для противоположных сторон `LEFT` и `RIGHT`) или полностью (для `INNER` и `FULL`) отключает декартово произведение для стандартых видов `JOIN`.
--   `ASOF` — Для соединения последовательностей по нечеткому совпадению. Использование `ASOF JOIN` описано ниже.
+## Настройки {#join-settings}
 
 !!! note "Примечание"
     Значение строгости по умолчанию может быть переопределено с помощью настройки [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
+
+Поведение сервера ClickHouse для операций `ANY JOIN` зависит от параметра [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys).
 
 ### Использование ASOF JOIN {#asof-join-usage}
 

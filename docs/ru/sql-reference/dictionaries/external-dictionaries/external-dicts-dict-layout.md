@@ -34,7 +34,7 @@
 </yandex>
 ```
 
-Соответствущий [DDL-запрос](../../statements/create.md#create-dictionary-query):
+Соответствущий [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY (...)

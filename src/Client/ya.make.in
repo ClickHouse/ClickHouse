@@ -1,0 +1,12 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/poco/NetSSL_OpenSSL
+)
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

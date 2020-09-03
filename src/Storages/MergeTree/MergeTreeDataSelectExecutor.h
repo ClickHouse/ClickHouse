@@ -24,7 +24,7 @@ public:
       */
     using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -33,7 +33,7 @@ public:
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
-    Pipes readFromParts(
+    Pipe readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -48,7 +48,7 @@ private:
 
     Poco::Logger * log;
 
-    Pipes spreadMarkRangesAmongStreams(
+    Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -61,7 +61,7 @@ private:
         const MergeTreeReaderSettings & reader_settings) const;
 
     /// out_projection - save projection only with columns, requested to read
-    Pipes spreadMarkRangesAmongStreamsWithOrder(
+    Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -75,7 +75,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         ExpressionActionsPtr & out_projection) const;
 
-    Pipes spreadMarkRangesAmongStreamsFinal(
+    Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -99,15 +99,17 @@ private:
         const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const Settings & settings);
+        const Settings & settings,
+        Poco::Logger * log);
 
-    MarkRanges filterMarksUsingIndex(
+    static MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings,
+        Poco::Logger * log);
 };
 
 }

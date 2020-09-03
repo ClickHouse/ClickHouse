@@ -1,5 +1,4 @@
 #include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -48,7 +47,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         const ColumnPtr & input_column = block.getByPosition(arguments[0]).column;
 
@@ -93,7 +92,7 @@ public:
 
 private:
     template <typename InputData>
-    void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count)
+    void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count) const
     {
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = !input_data[i];
@@ -101,7 +100,7 @@ private:
 
     template <typename InputData>
     void processNullable(const InputData & input_data, const NullMap & input_null_map,
-        ColumnUInt8::Container & result_data, size_t input_rows_count)
+        ColumnUInt8::Container & result_data, size_t input_rows_count) const
     {
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = input_null_map[i] || !input_data[i];
