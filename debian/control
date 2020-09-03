@@ -19,7 +19,7 @@ Package: clickhouse-client
 Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
 Replaces: clickhouse-compressor
-Conflicts: clickhouse-compressor
+Conflicts: clickhouse-compressor, clickhouse-server (>> ${binary:Version}), clickhouse-server (<< ${binary:Version})
 Description: Client binary for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
@@ -41,6 +41,7 @@ Description: Common files for ClickHouse
 Package: clickhouse-server
 Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser
+Conflicts: clickhouse-client (>> ${binary:Version}), clickhouse-client (<< ${binary:Version})
 Recommends: libcap2-bin
 Replaces: clickhouse-server-common, clickhouse-server-base
 Provides: clickhouse-server-common
@@ -54,7 +55,7 @@ Package: clickhouse-common-static-dbg
 Architecture: any
 Section: debug
 Priority: optional
-Depends: ${misc:Depends}
+Depends: ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
 Replaces: clickhouse-common-dbg
 Conflicts: clickhouse-common-dbg
 Description: debugging symbols for clickhouse-common-static
