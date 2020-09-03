@@ -198,10 +198,9 @@ namespace MySQLReplication
                 case MYSQL_TYPE_LONGLONG:
                 case MYSQL_TYPE_INT24:
                 case MYSQL_TYPE_DATE:
-                case MYSQL_TYPE_TIME:
                 case MYSQL_TYPE_DATETIME:
-                case MYSQL_TYPE_YEAR:
-                case MYSQL_TYPE_NEWDATE: {
+                case MYSQL_TYPE_NEWDATE:
+                {
                     /// No data here.
                     column_meta.emplace_back(0);
                     break;
@@ -211,24 +210,21 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DOUBLE:
                 case MYSQL_TYPE_TIMESTAMP2:
                 case MYSQL_TYPE_DATETIME2:
-                case MYSQL_TYPE_TIME2:
-                case MYSQL_TYPE_JSON:
                 case MYSQL_TYPE_BLOB:
-                case MYSQL_TYPE_GEOMETRY: {
+                {
                     column_meta.emplace_back(UInt16(meta[pos]));
                     pos += 1;
                     break;
                 }
                 case MYSQL_TYPE_NEWDECIMAL:
-                case MYSQL_TYPE_STRING: {
+                case MYSQL_TYPE_STRING:
+                {
                     auto b0 = UInt16(meta[pos] << 8);
                     auto b1 = UInt8(meta[pos + 1]);
                     column_meta.emplace_back(UInt16(b0 + b1));
                     pos += 2;
                     break;
                 }
-
-                case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
                     auto b0 = UInt8(meta[pos]);
@@ -405,21 +401,6 @@ namespace MySQLReplication
                         row.push_back(Field{val});
                         break;
                     }
-                    case MYSQL_TYPE_TIME: {
-                        UInt32 i24 = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&i24), 3);
-
-                        String time_buff;
-                        time_buff.resize(8);
-                        sprintf(
-                            time_buff.data(),
-                            "%02d:%02d:%02d",
-                            static_cast<int>(i24 / 10000),
-                            static_cast<int>(i24 % 10000) / 100,
-                            static_cast<int>(i24 % 100));
-                        row.push_back(Field{String{time_buff}});
-                        break;
-                    }
                     case MYSQL_TYPE_DATE: {
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
@@ -428,56 +409,6 @@ namespace MySQLReplication
                             static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f));
 
                         row.push_back(Field(date_day_number.toUnderType()));
-                        break;
-                    }
-                    case MYSQL_TYPE_YEAR: {
-                        Int32 val = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&val), 1);
-
-                        String time_buff;
-                        time_buff.resize(4);
-                        sprintf(time_buff.data(), "%04d", (val + 1900));
-                        row.push_back(Field{String{time_buff}});
-                        break;
-                    }
-                    case MYSQL_TYPE_TIME2: {
-                        UInt32 val = 0, frac_part = 0;
-
-                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 3);
-                        if (readBits(val, 0, 1, 24) == 0)
-                        {
-                            val = ~val + 1;
-                        }
-                        UInt32 hour = readBits(val, 2, 10, 24);
-                        UInt32 minute = readBits(val, 12, 6, 24);
-                        UInt32 second = readBits(val, 18, 6, 24);
-                        readTimeFractionalPart(payload, frac_part, meta);
-
-                        if (frac_part != 0)
-                        {
-                            String time_buff;
-                            time_buff.resize(15);
-                            sprintf(
-                                time_buff.data(),
-                                "%02d:%02d:%02d.%06d",
-                                static_cast<int>(hour),
-                                static_cast<int>(minute),
-                                static_cast<int>(second),
-                                static_cast<int>(frac_part));
-                            row.push_back(Field{String{time_buff}});
-                        }
-                        else
-                        {
-                            String time_buff;
-                            time_buff.resize(8);
-                            sprintf(
-                                time_buff.data(),
-                                "%02d:%02d:%02d",
-                                static_cast<int>(hour),
-                                static_cast<int>(minute),
-                                static_cast<int>(second));
-                            row.push_back(Field{String{time_buff}});
-                        }
                         break;
                     }
                     case MYSQL_TYPE_DATETIME2: {
@@ -607,42 +538,6 @@ namespace MySQLReplication
                         row.push_back(Field{String{format}});
                         break;
                     }
-                    case MYSQL_TYPE_ENUM: {
-                        Int32 val = 0;
-                        Int32 len = (meta & 0xff);
-                        switch (len)
-                        {
-                            case 1: {
-                                payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                                break;
-                            }
-                            case 2: {
-                                payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                                break;
-                            }
-                            default:
-                                break;
-                        }
-                        row.push_back(Field{Int32{val}});
-                        break;
-                    }
-                    case MYSQL_TYPE_BIT: {
-                        UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
-                        UInt32 size = (bits + 7) / 8;
-
-                        Bitmap bitmap1;
-                        readBitmap(payload, bitmap1, size);
-                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
-                        break;
-                    }
-                    case MYSQL_TYPE_SET: {
-                        UInt32 size = (meta & 0xff);
-
-                        Bitmap bitmap1;
-                        readBitmap(payload, bitmap1, size);
-                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
-                        break;
-                    }
                     case MYSQL_TYPE_VARCHAR:
                     case MYSQL_TYPE_VAR_STRING: {
                         uint32_t size = 0;
@@ -678,7 +573,6 @@ namespace MySQLReplication
                         row.push_back(Field{String{val}});
                         break;
                     }
-                    case MYSQL_TYPE_GEOMETRY:
                     case MYSQL_TYPE_BLOB: {
                         UInt32 size = 0;
                         switch (meta)
@@ -702,16 +596,6 @@ namespace MySQLReplication
                             default:
                                 break;
                         }
-
-                        String val;
-                        val.resize(size);
-                        payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                        row.push_back(Field{String{val}});
-                        break;
-                    }
-                    case MYSQL_TYPE_JSON: {
-                        UInt32 size = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&size), meta);
 
                         String val;
                         val.resize(size);
