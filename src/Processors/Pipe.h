@@ -1,12 +1,15 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
 
 class Pipe;
 using Pipes = std::vector<Pipe>;
+
+class QueryPipeline;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
@@ -86,6 +89,8 @@ public:
 
     /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
     static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
+    /// Get processors from Pipe w/o destroying pipe (used for EXPLAIN to keep QueryPlan).
+    const Processors & getProcessors() const { return processors; }
 
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const SourceWithProgress::LocalLimits & limits);
@@ -96,6 +101,8 @@ public:
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
+    /// For queries with nested interpreters (i.e. StorageDistributed)
+    void addQueryPlan(std::unique_ptr<QueryPlan> plan) { holder.query_plans.emplace_back(std::move(plan)); }
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
@@ -113,6 +120,7 @@ private:
         std::vector<std::shared_ptr<Context>> interpreter_context;
         std::vector<StoragePtr> storage_holders;
         std::vector<TableLockHolder> table_locks;
+        std::vector<std::unique_ptr<QueryPlan>> query_plans;
     };
 
     Holder holder;
