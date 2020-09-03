@@ -2514,13 +2514,13 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// and in the same time, many small parts could be created and won't be merged.
 
         auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
-        size_t merges_and_mutations_sum = merges_and_mutations_queued.first + merges_and_mutations_queued.second;
+        size_t merges_and_mutations_sum = merges_and_mutations_queued.merges + merges_and_mutations_queued.mutations;
         if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges ({}) and part mutations ({})"
                 " is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.",
-                merges_and_mutations_queued.first,
-                merges_and_mutations_queued.second,
+                merges_and_mutations_queued.merges,
+                merges_and_mutations_queued.mutations,
                 storage_settings_ptr->max_replicated_merges_in_queue);
         }
         else
@@ -2529,16 +2529,20 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum);
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
+            UInt64 max_source_part_size_for_merge_with_ttl = 0;
+            if (merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue)
+               max_source_part_size_for_merge_with_ttl = merger_mutator.getMaxSourcePartsSizeForMergeWithTTL();
+
             FutureMergedMutatedPart future_merged_part;
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, nullptr))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, max_source_part_size_for_merge_with_ttl, nullptr))
             {
                 create_result = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
-                    future_merged_part.name, future_merged_part.type, deduplicate, nullptr, merge_pred.getVersion());
+                    future_merged_part.name, future_merged_part.type, deduplicate, nullptr, merge_pred.getVersion(), future_merged_part.merge_type);
             }
             /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
-                     && merges_and_mutations_queued.second < storage_settings_ptr->max_replicated_mutations_in_queue)
+                     && merges_and_mutations_queued.mutations < storage_settings_ptr->max_replicated_mutations_in_queue)
             {
                 /// Choose a part to mutate.
                 DataPartsVector data_parts = getDataPartsVector();
@@ -2617,7 +2621,8 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     const MergeTreeDataPartType & merged_part_type,
     bool deduplicate,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
-    int32_t log_version)
+    int32_t log_version,
+    MergeType merge_type)
 {
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
     exists_futures.reserve(parts.size());
@@ -2650,6 +2655,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.new_part_name = merged_name;
     entry.new_part_type = merged_part_type;
     entry.deduplicate = deduplicate;
+    entry.merge_type = merge_type;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -3584,7 +3590,7 @@ bool StorageReplicatedMergeTree::optimize(
                     CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                         zookeeper, future_merged_part.parts,
                         future_merged_part.name, future_merged_part.type, deduplicate,
-                        &merge_entry, can_merge.getVersion());
+                        &merge_entry, can_merge.getVersion(), future_merged_part.merge_type);
 
                     if (create_result == CreateMergeEntryResult::MissingPart)
                         return handle_noop("Can't create merge queue node in ZooKeeper, because some parts are missing");
@@ -3614,7 +3620,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!partition)
                 {
                     selected = merger_mutator.selectPartsToMerge(
-                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
+                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, &disable_reason);
                 }
                 else
                 {
@@ -3639,7 +3645,7 @@ bool StorageReplicatedMergeTree::optimize(
                 CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                     zookeeper, future_merged_part.parts,
                     future_merged_part.name, future_merged_part.type, deduplicate,
-                    &merge_entry, can_merge.getVersion());
+                    &merge_entry, can_merge.getVersion(), future_merged_part.merge_type);
 
                 if (create_result == CreateMergeEntryResult::MissingPart)
                     return handle_noop("Can't create merge queue node in ZooKeeper, because some parts are missing");

@@ -651,8 +651,21 @@ bool StorageMergeTree::merge(
         if (partition_id.empty())
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
+            UInt64 max_source_parts_size_with_ttl = merger_mutator.getMaxSourcePartsSizeForMergeWithTTL();
+
+            /// TTL requirements is much more strict than for regular merge, so
+            /// if regular not possible, than merge with ttl is not also not
+            /// possible.
             if (max_source_parts_size > 0)
-                selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
+            {
+                selected = merger_mutator.selectPartsToMerge(
+                    future_part,
+                    aggressive,
+                    max_source_parts_size,
+                    can_merge,
+                    max_source_parts_size_with_ttl,
+                    out_disable_reason);
+            }
             else if (out_disable_reason)
                 *out_disable_reason = "Current value of max_source_parts_size is zero";
         }
