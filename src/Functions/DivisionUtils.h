@@ -81,8 +81,10 @@ struct DivideIntegralImpl
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
         if constexpr (is_integer_v<A> && is_integer_v<B> && (is_signed_v<A> || is_signed_v<B>))
         {
-            return checkedDivision(make_signed_t<CastA>(a),
-                sizeof(A) > sizeof(B) ? make_signed_t<A>(CastB(b)) : make_signed_t<CastB>(b));
+            using SignedCastA = make_signed_t<CastA>;
+            using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
+
+            return bigint_cast<Result>(checkedDivision(bigint_cast<SignedCastA>(a), bigint_cast<SignedCastB>(b)));
         }
         else
             return bigint_cast<Result>(checkedDivision(CastA(a), CastB(b)));
@@ -108,7 +110,7 @@ struct ModuloImpl
         if constexpr (std::is_floating_point_v<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
-            return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
+            return bigint_cast<ResultType>(a) - trunc(bigint_cast<ResultType>(a) / bigint_cast<ResultType>(b)) * bigint_cast<ResultType>(b);
         }
         else
         {
@@ -125,7 +127,7 @@ struct ModuloImpl
                 if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
                     return bigint_cast<Result>(bigint_cast<CastB>(int_a) % int_b);
                 else
-                    return bigint_cast<Result>(int_a % int_b);
+                    return bigint_cast<Result>(int_a % bigint_cast<CastA>(int_b));
             }
             else
                 return IntegerAType(a) % IntegerBType(b);

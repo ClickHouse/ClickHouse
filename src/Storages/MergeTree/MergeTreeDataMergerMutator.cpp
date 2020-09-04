@@ -227,13 +227,25 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     time_t current_time = std::time(nullptr);
 
-    IMergeSelector::Partitions partitions;
+    IMergeSelector::PartsRanges parts_ranges;
 
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
+
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
+        const String & partition_id = part->info.partition_id;
+
+        if (!prev_partition_id || partition_id != *prev_partition_id)
+        {
+            if (parts_ranges.empty() || !parts_ranges.back().empty())
+                parts_ranges.emplace_back();
+            /// New partition frame.
+            prev_partition_id = &partition_id;
+            prev_part = nullptr;
+        }
+
         /// Check predicate only for first part in each partition.
         if (!prev_part)
         {
@@ -244,15 +256,19 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
             if (!can_merge_callback(nullptr, part, nullptr))
                 continue;
         }
-
-        const String & partition_id = part->info.partition_id;
-        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))
+        else
         {
-            if (partitions.empty() || !partitions.back().empty())
-                partitions.emplace_back();
-            /// New partition frame.
-            prev_partition_id = &partition_id;
-            prev_part = nullptr;
+            /// If we cannot merge with previous part we had to start new parts
+            /// interval (in the same partition)
+            if (!can_merge_callback(*prev_part, part, nullptr))
+            {
+                /// Starting new interval in the same partition
+                if (!parts_ranges.back().empty())
+                    parts_ranges.emplace_back();
+
+                /// Now we have no previous part, but it affects only logging
+                prev_part = nullptr;
+            }
         }
 
         IMergeSelector::Part part_info;
@@ -263,7 +279,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.min_ttl = part->ttl_infos.part_min_ttl;
         part_info.max_ttl = part->ttl_infos.part_max_ttl;
 
-        partitions.back().emplace_back(part_info);
+        parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
@@ -275,7 +291,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         prev_part = &part;
     }
 
-    IMergeSelector::PartsInPartition parts_to_merge;
+    IMergeSelector::PartsRange parts_to_merge;
 
     if (!ttl_merges_blocker.isCancelled())
     {
@@ -284,7 +300,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
                 current_time,
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
-        parts_to_merge = merge_selector.select(partitions, max_total_size_to_merge);
+        parts_to_merge = merge_selector.select(parts_ranges, max_total_size_to_merge);
     }
 
     if (parts_to_merge.empty())
@@ -294,7 +310,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
             merge_settings.base = 1;
 
         parts_to_merge = SimpleMergeSelector(merge_settings)
-                            .select(partitions, max_total_size_to_merge);
+                            .select(parts_ranges, max_total_size_to_merge);
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
@@ -635,8 +651,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->is_temp = true;
 
     bool need_remove_expired_values = false;
+    bool force_ttl = false;
     for (const auto & part : parts)
+    {
         new_data_part->ttl_infos.update(part->ttl_infos);
+        if (metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(metadata_snapshot))
+        {
+            LOG_INFO(log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
+            need_remove_expired_values = true;
+            force_ttl = true;
+        }
+    }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)
@@ -809,7 +834,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
 
     if (need_remove_expired_values)
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, false);
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
 
 
     if (metadata_snapshot->hasSecondaryIndices())

@@ -1756,4 +1756,17 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 -   [Секции и настройки запроса CREATE TABLE](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (настройка `merge_with_ttl_timeout`)
 -   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
 
+## lock_acquire_timeout {#lock_acquire_timeout}
+
+Устанавливает, сколько секунд сервер ожидает возможности выполнить блокировку таблицы.
+
+Таймаут устанавливается для защиты от взаимоблокировки при выполнении операций чтения или записи. Если время ожидания истекло, а блокировку выполнить не удалось, сервер возвращает исключение с кодом `DEADLOCK_AVOIDED` и сообщением "Locking attempt timed out! Possible deadlock avoided. Client should retry." ("Время ожидания блокировки истекло! Возможная взаимоблокировка предотвращена. Повторите запрос.").
+
+Возможные значения:
+
+-   Положительное целое число (в секундах).
+-   0 — таймаут не устанавливается.
+
+Значение по умолчанию: `120` секунд.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

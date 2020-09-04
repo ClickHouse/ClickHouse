@@ -282,6 +282,23 @@ def test_mysql_federated(mysql_server, server_address):
         assert stdout == '\n'.join(['col', '0', '0', '1', '1', '5', '5', ''])
 
 
+def test_mysql_set_variables(mysql_client, server_address):
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e 
+        "
+        SET NAMES=default;
+        SET character_set_results=default;
+        SET FOREIGN_KEY_CHECKS=false;
+        SET AUTOCOMMIT=1;
+        SET sql_mode='strict';
+        SET @@wait_timeout = 2147483;
+        SET SESSION TRANSACTION ISOLATION LEVEL READ;
+        "
+    '''.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+
 def test_python_client(server_address):
     client = pymysql.connections.Connection(host=server_address, user='user_with_double_sha1', password='abacaba', database='default', port=server_port)
 
