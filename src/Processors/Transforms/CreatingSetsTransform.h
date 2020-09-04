@@ -12,10 +12,10 @@ class QueryStatus;
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
 
-/// This processor creates sets during execution.
+/// This processor creates set during execution.
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
-/// TODO: several independent processors can be created for each subquery. Make subquery a piece of pipeline.
+/// Independent processors is created for each subquery.
 class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
@@ -28,15 +28,9 @@ public:
 
     String getName() const override { return "CreatingSetsTransform"; }
 
-    Status prepare() override;
     void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;
-
-    InputPort * addTotalsPort();
-
-protected:
-    bool finished = false;
 
 private:
     SubqueryForSet subquery;
