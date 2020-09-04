@@ -145,8 +145,9 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /// try to find any of the valid operators
 
             const char ** it;
+            Expected silent_expected;
             for (it = skip_operators; *it; ++it)
-                if (ParserKeyword{*it}.checkWithoutMoving(pos))
+                if (ParserKeyword{*it}.checkWithoutMoving(pos, silent_expected))
                     break;
 
             if (*it)
