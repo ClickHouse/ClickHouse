@@ -21,6 +21,7 @@ SRCS(
     TableFunctionRemote.cpp
     TableFunctionURL.cpp
     TableFunctionValues.cpp
+    TableFunctionView.cpp
     TableFunctionZeros.cpp
 
 )

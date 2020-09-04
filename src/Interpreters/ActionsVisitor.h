@@ -12,6 +12,7 @@ namespace DB
 class Context;
 class ASTFunction;
 
+struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -49,6 +50,8 @@ struct ScopeStack
     size_t getColumnLevel(const std::string & name);
 
     void addAction(const ExpressionAction & action);
+    /// For arrayJoin() to avoid double columns in the input.
+    void addActionNoInput(const ExpressionAction & action);
 
     ExpressionActionsPtr popLevel();
 
@@ -114,6 +117,10 @@ public:
         void addAction(const ExpressionAction & action)
         {
             actions_stack.addAction(action);
+        }
+        void addActionNoInput(const ExpressionAction & action)
+        {
+            actions_stack.addActionNoInput(action);
         }
 
         const Block & getSampleBlock() const

@@ -13,6 +13,7 @@ class ASTFunction : public ASTWithAlias
 {
 public:
     String name;
+    ASTPtr query; // It's possible for a function to accept a query as its only argument.
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
