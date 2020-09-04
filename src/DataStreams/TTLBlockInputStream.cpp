@@ -370,13 +370,12 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         block.erase(column);
 }
 
-void TTLBlockInputStream::updateMovesTTL(Block & block)
+void TTLBlockInputStream::updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map)
 {
     std::vector<String> columns_to_remove;
-    for (const auto & ttl_entry : metadata_snapshot->getMoveTTLs())
+    for (const auto & ttl_entry : descriptions)
     {
-        auto & new_ttl_info = new_ttl_infos.moves_ttl[ttl_entry.result_column];
-
+        auto & new_ttl_info = ttl_info_map[ttl_entry.result_column];
         if (!block.has(ttl_entry.result_column))
         {
             columns_to_remove.push_back(ttl_entry.result_column);
@@ -396,31 +395,14 @@ void TTLBlockInputStream::updateMovesTTL(Block & block)
         block.erase(column);
 }
 
+void TTLBlockInputStream::updateMovesTTL(Block & block)
+{
+    updateTTLWithDescriptions(block, metadata_snapshot->getMoveTTLs(), new_ttl_infos.moves_ttl);
+}
 
 void TTLBlockInputStream::updateRecompressionTTL(Block & block)
 {
-    std::vector<String> columns_to_remove;
-    for (const auto & ttl_entry : metadata_snapshot->getRecompressionTTLs())
-    {
-        auto & new_ttl_info = new_ttl_infos.recompression_ttl[ttl_entry.result_column];
-
-        if (!block.has(ttl_entry.result_column))
-        {
-            columns_to_remove.push_back(ttl_entry.result_column);
-            ttl_entry.expression->execute(block);
-        }
-
-        const IColumn * ttl_column = block.getByName(ttl_entry.result_column).column.get();
-
-        for (size_t i = 0; i < block.rows(); ++i)
-        {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
-            new_ttl_info.update(cur_ttl);
-        }
-    }
-
-    for (const String & column : columns_to_remove)
-        block.erase(column);
+    updateTTLWithDescriptions(block, metadata_snapshot->getRecompressionTTLs(), new_ttl_infos.recompression_ttl);
 }
 
 UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t ind)
