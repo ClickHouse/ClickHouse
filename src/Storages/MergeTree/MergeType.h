@@ -13,7 +13,9 @@ namespace DB
 /// Order is important, don't try to change it.
 enum class MergeType
 {
+    /// Just regular merge
     REGULAR = 1,
+    /// Merge assigned to delete some data from parts (with TTLMergeSelector)
     TTL_DELETE = 2,
 };
 
