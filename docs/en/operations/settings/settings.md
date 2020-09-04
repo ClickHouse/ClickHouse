@@ -1923,7 +1923,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Result:
 
-```
+```text
 ┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
 │ 0 │ Int32                                             │
 └───┴───────────────────────────────────────────────────┘
@@ -1938,7 +1938,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Result:
 
-```
+```text
 ┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
 │ 0 │ Nullable(Int32)                                   │
 └───┴───────────────────────────────────────────────────┘
