@@ -329,73 +329,110 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
     }
 }
 
-void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (limit >= equal_range.back().second || limit >= size())
+    if (limit >= equal_ranges.back().second || limit >= size())
         limit = 0;
 
-    EqualRanges new_ranges, temp_ranges;
+    EqualRanges new_ranges;
 
-    for (const auto &[first, last] : equal_range)
+    const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
+
+    if (is_nulls_last)
     {
-        bool direction = ((null_direction_hint > 0) != reverse);
         /// Shift all NULL values to the end.
-
-        size_t read_idx = first;
-        size_t write_idx = first;
-        while (read_idx < last && (isNullAt(res[read_idx])^direction))
+        for (const auto & [first, last] : equal_ranges)
         {
-            ++read_idx;
-            ++write_idx;
-        }
+            /// Consider a half interval [first, last)
+            size_t read_idx = first;
+            size_t write_idx = first;
+            size_t end_idx = last;
 
-        ++read_idx;
+            if (!limit)
+                limit = end_idx;
+            else
+                limit = std::min(end_idx - first + 1, limit);
 
-        /// Invariants:
-        ///  write_idx < read_idx
-        ///  write_idx points to NULL
-        ///  read_idx will be incremented to position of next not-NULL
-        ///  there are range of NULLs between write_idx and read_idx - 1,
-        /// We are moving elements from end to begin of this range,
-        ///  so range will "bubble" towards the end.
-        /// Relative order of NULL elements could be changed,
-        ///  but relative order of non-NULLs is preserved.
-
-        while (read_idx < last && write_idx < last)
-        {
-            if (isNullAt(res[read_idx])^direction)
+            while (read_idx < limit && !isNullAt(res[read_idx]))
             {
-                std::swap(res[read_idx], res[write_idx]);
+                ++read_idx;
                 ++write_idx;
             }
-            ++read_idx;
-        }
 
-        if (write_idx - first > 1)
-        {
-            if (direction)
-                temp_ranges.emplace_back(first, write_idx);
-            else
+            ++read_idx;
+
+            /// Invariants:
+            ///  write_idx < read_idx
+            ///  write_idx points to NULL
+            ///  read_idx will be incremented to position of next not-NULL
+            ///  there are range of NULLs between write_idx and read_idx - 1,
+            /// We are moving elements from end to begin of this range,
+            ///  so range will "bubble" towards the end.
+            /// Relative order of NULL elements could be changed,
+            ///  but relative order of non-NULLs is preserved.
+
+            while (read_idx < end_idx && write_idx < limit)
+            {
+                if (!isNullAt(res[read_idx]))
+                {
+                    std::swap(res[read_idx], res[write_idx]);
+                    ++write_idx;
+                }
+                ++read_idx;
+            }
+
+            /// We have a range [first, write_idx) of non-NULL values
+            if (first != write_idx)
                 new_ranges.emplace_back(first, write_idx);
 
-        }
 
-        if (last - write_idx > 1)
-        {
-            if (direction)
+            /// We have a range [write_idx, list) of NULL values
+            if (write_idx != last)
                 new_ranges.emplace_back(write_idx, last);
-            else
-                temp_ranges.emplace_back(write_idx, last);
         }
     }
-    while (!new_ranges.empty() && limit && limit <= new_ranges.back().first)
-        new_ranges.pop_back();
+    else
+    {
+        for (const auto & [first, last] : equal_ranges)
+        {
+            /// Shift all NULL values to the beginning.
 
-    if (!temp_ranges.empty())
-        getNestedColumn().updatePermutation(reverse, limit, null_direction_hint, res, temp_ranges);
+            ssize_t read_idx = last - 1;
+            ssize_t write_idx = last - 1;
+            ssize_t begin_idx = first;
 
-    equal_range.resize(temp_ranges.size() + new_ranges.size());
-    std::merge(temp_ranges.begin(), temp_ranges.end(), new_ranges.begin(), new_ranges.end(), equal_range.begin());
+            while (read_idx >= begin_idx && !isNullAt(res[read_idx]))
+            {
+                --read_idx;
+                --write_idx;
+            }
+
+            --read_idx;
+
+            while (read_idx >= begin_idx && write_idx >= begin_idx)
+            {
+                if (!isNullAt(res[read_idx]))
+                {
+                    std::swap(res[read_idx], res[write_idx]);
+                    --write_idx;
+                }
+                --read_idx;
+            }
+
+            /// We have a range [write_idx+1, last) of non-NULL values
+            if (write_idx != static_cast<ssize_t>(last))
+                new_ranges.emplace_back(write_idx + 1, last);
+
+
+            /// We have a range [first, write_idx+1) of NULL values
+            if (static_cast<ssize_t>(first) != write_idx)
+                new_ranges.emplace_back(first, write_idx + 1);
+        }
+    }
+
+    getNestedColumn().updatePermutation(reverse, 0, null_direction_hint, res, new_ranges);
+
+    equal_ranges = std::move(new_ranges);
 }
 
 void ColumnNullable::gather(ColumnGathererStream & gatherer)
