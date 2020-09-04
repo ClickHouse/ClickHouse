@@ -84,6 +84,7 @@ SRCS(
     MergeTree/MergeTreeThreadSelectBlockInputProcessor.cpp
     MergeTree/MergeTreeWhereOptimizer.cpp
     MergeTree/MergeTreeWriteAheadLog.cpp
+    MergeTree/MergeType.cpp
     MergeTree/registerStorageMergeTree.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
