@@ -746,4 +746,9 @@ void DiskS3::setReadOnly(const String & path)
     Poco::File(metadata_path + path).setReadOnly(true);
 }
 
+void DiskS3::shutdown()
+{
+    client->DisableRequestProcessing();
+}
+
 }
