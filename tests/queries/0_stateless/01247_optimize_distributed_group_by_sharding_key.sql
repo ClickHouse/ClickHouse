@@ -54,26 +54,58 @@ select 'DISTINCT';
 select DISTINCT number from dist_01247;
 
 select 'HAVING';
-select count() cnt, * from dist_01247 group by number having cnt < 0;
+select count() cnt, * from dist_01247 group by number having cnt == 2;
+
+select 'HAVING LIMIT';
+select count() cnt, * from dist_01247 group by number having cnt == 1 limit 1;
 
 select 'LIMIT';
 select count(), * from dist_01247 group by number limit 1;
+select 'LIMIT OFFSET';
 select count(), * from dist_01247 group by number limit 1 offset 1;
+-- this will emulate different data on for different shards
+select 'WHERE LIMIT OFFSET';
+select count(), * from dist_01247 where number = _shard_num-1 group by number limit 1 offset 1;
 
-select 'LIMIT BY';
-select count(), * from dist_01247 group by number limit 0 by number;
-select count(), * from dist_01247 group by number limit 1 by number;
+select 'LIMIT BY 1';
+select count(), * from dist_01247 group by number order by number limit 1 by number;
 
 select 'GROUP BY (Distributed-over-Distributed)';
 select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number;
 select 'GROUP BY (Distributed-over-Distributed) distributed_group_by_no_merge';
 select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number settings distributed_group_by_no_merge=1;
 
-select 'extremes';
+select 'GROUP BY (extemes)';
 select count(), * from dist_01247 group by number settings extremes=1;
-select 'WITH TOTALS';
+
+select 'LIMIT (extemes)';
+select count(), * from dist_01247 group by number limit 1 settings extremes=1;
+
+select 'GROUP BY WITH TOTALS';
 select count(), * from dist_01247 group by number with totals;
-select 'WITH ROLLUP';
+select 'GROUP BY WITH ROLLUP';
 select count(), * from dist_01247 group by number with rollup;
-select 'WITH CUBE';
+select 'GROUP BY WITH CUBE';
 select count(), * from dist_01247 group by number with cube;
+
+select 'GROUP BY WITH TOTALS ORDER BY';
+select count(), * from dist_01247 group by number with totals order by number;
+
+select 'GROUP BY WITH TOTALS ORDER BY LIMIT';
+select count(), * from dist_01247 group by number with totals order by number limit 1;
+
+select 'GROUP BY WITH TOTALS LIMIT';
+select count(), * from dist_01247 group by number with totals limit 1;
+
+-- GROUP BY (compound)
+drop table if exists dist_01247;
+drop table if exists data_01247;
+create table data_01247 engine=Memory() as select number key, 0 value from numbers(2);
+create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01247, key);
+select 'GROUP BY sharding_key, ...';
+select * from dist_01247 group by key, value;
+select 'GROUP BY ..., sharding_key';
+select * from dist_01247 group by value, key;
+
+drop table dist_01247;
+drop table data_01247;
