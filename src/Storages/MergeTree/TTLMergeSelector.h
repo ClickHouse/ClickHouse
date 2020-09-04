@@ -28,8 +28,8 @@ public:
     {
     }
 
-    PartsInPartition select(
-        const Partitions & partitions,
+    PartsRange select(
+        const PartsRanges & parts_ranges,
         const size_t max_total_size_to_merge) override;
 
     virtual time_t getTTLForPart(const IMergeSelector::Part & part) const = 0;

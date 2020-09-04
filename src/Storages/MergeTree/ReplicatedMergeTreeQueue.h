@@ -56,7 +56,6 @@ private:
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
-
     StorageReplicatedMergeTree & storage;
     MergeTreeDataFormatVersion format_version;
 

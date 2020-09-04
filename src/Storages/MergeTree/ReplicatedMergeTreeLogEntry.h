@@ -80,7 +80,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
-    MergeType merge_type = MergeType::NORMAL;
+    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
 
