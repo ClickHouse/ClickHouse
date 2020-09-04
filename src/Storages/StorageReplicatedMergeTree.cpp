@@ -1377,6 +1377,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
     future_merged_part.updatePath(*this, reserved_space);
+    future_merged_part.merge_type = entry.merge_type;
 
     auto table_id = getStorageID();
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
@@ -2525,13 +2526,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
-            const auto & merge_list = global_context.getMergeList();
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
                 storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum);
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue &&
-                merge_list.getExecutingMergesWithTTLCount() < storage_settings_ptr->max_number_of_merges_with_ttl_in_pool;
+                getTotalMergesWithTTLInMergeList() < storage_settings_ptr->max_number_of_merges_with_ttl_in_pool;
 
             FutureMergedMutatedPart future_merged_part;
             if (max_source_parts_size_for_merge > 0 &&

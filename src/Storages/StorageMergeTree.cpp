@@ -633,7 +633,7 @@ bool StorageMergeTree::merge(
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
-    auto & merge_list = global_context.getMergeList();
+    MergeList::EntryPtr merge_entry;
 
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -653,7 +653,7 @@ bool StorageMergeTree::merge(
         if (partition_id.empty())
         {
             UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-            bool merge_with_ttl_allowed = merge_list.getExecutingMergesWithTTLCount() < data_settings->max_number_of_merges_with_ttl_in_pool;
+            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
 
             /// TTL requirements is much more strict than for regular merge, so
             /// if regular not possible, than merge with ttl is not also not
@@ -716,10 +716,9 @@ bool StorageMergeTree::merge(
         }
 
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+        auto table_id = getStorageID();
+        merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
     }
-
-    auto table_id = getStorageID();
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
     /// Logging
     Stopwatch stopwatch;
