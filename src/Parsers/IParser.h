@@ -124,12 +124,6 @@ public:
         return parse(pos, node, expected);
     }
 
-    bool checkWithoutMoving(Pos pos)
-    {
-        Expected expected;
-        return checkWithoutMoving(pos, expected);
-    }
-
     virtual ~IParser() = default;
 };
 
