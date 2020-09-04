@@ -447,6 +447,19 @@ void ScopeStack::addAction(const ExpressionAction & action)
     }
 }
 
+void ScopeStack::addActionNoInput(const ExpressionAction & action)
+{
+    size_t level = 0;
+    Names required = action.getNeededColumns();
+    for (const auto & elem : required)
+        level = std::max(level, getColumnLevel(elem));
+
+    Names added;
+    stack[level].actions->add(action, added);
+
+    stack[level].new_columns.insert(added.begin(), added.end());
+}
+
 ExpressionActionsPtr ScopeStack::popLevel()
 {
     ExpressionActionsPtr res = stack.back().actions;
@@ -549,7 +562,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// It could have been possible to implement arrayJoin which keeps source column,
             /// but in this case it will always be replicated (as many arrays), which is expensive.
             String tmp_name = data.getUniqueName("_array_join_" + arg->getColumnName());
-            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
+            data.addActionNoInput(ExpressionAction::copyColumn(arg->getColumnName(), tmp_name));
             data.addAction(ExpressionAction::arrayJoin(tmp_name, result_name));
         }
 
