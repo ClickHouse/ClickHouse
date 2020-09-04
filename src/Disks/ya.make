@@ -7,6 +7,8 @@ PEERDIR(
 
 SRCS(
     createVolume.cpp
+    DiskCacheWrapper.cpp
+    DiskDecorator.cpp
     DiskFactory.cpp
     DiskLocal.cpp
     DiskMemory.cpp

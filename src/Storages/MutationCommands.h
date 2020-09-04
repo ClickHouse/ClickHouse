@@ -17,7 +17,7 @@ class WriteBuffer;
 class ReadBuffer;
 
 /// Represents set of actions which should be applied
-/// to values from set of columns which statisfy predicate.
+/// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
     ASTPtr ast; /// The AST of the whole command

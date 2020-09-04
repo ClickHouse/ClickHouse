@@ -171,16 +171,35 @@ def create_ldap_users_config_content(*users, config_d_dir="/etc/clickhouse-serve
 
     return Config(content, path, name, uid, "users.xml")
 
+def add_users_identified_with_ldap(*users):
+    """Add one or more users that are identified via 
+    an ldap server using RBAC.
+    """
+    node = current().context.node
+    try:
+        with Given("I create users"):
+            for user in users:
+                node.query(f"CREATE USER '{user['username']}' IDENTIFIED WITH ldap_server BY '{user['server']}'")
+        yield
+    finally:
+        with Finally("I remove users"):
+            for user in users:
+                with By(f"dropping user {user['username']}", flags=TE):
+                    node.query(f"DROP USER IF EXISTS '{user['username']}'")
+
 @contextmanager
 def ldap_authenticated_users(*users, config_d_dir="/etc/clickhouse-server/users.d",
-        config_file=None, timeout=20, restart=True, config=None):
-    """Add LDAP authenticated user configuration.
+        config_file=None, timeout=20, restart=True, config=None, rbac=False):
+    """Add LDAP authenticated users.
     """
-    if config_file is None:
-        config_file = f"ldap_users_{getuid()}.xml"
-    if config is None:
-        config = create_ldap_users_config_content(*users, config_d_dir=config_d_dir, config_file=config_file)
-    return add_config(config, restart=restart)
+    if rbac:
+        return add_users_identified_with_ldap(*users)
+    else:
+        if config_file is None:
+            config_file = f"ldap_users_{getuid()}.xml"
+        if config is None:
+            config = create_ldap_users_config_content(*users, config_d_dir=config_d_dir, config_file=config_file)
+        return add_config(config, restart=restart)
 
 def invalid_server_config(servers, message=None, tail=13, timeout=20):
     """Check that ClickHouse errors when trying to load invalid LDAP servers configuration file.
@@ -375,4 +394,3 @@ def login(servers, *users, config=None):
                             settings=[("user", user["username"]), ("password", user["password"])],
                             exitcode=user.get("exitcode", None),
                             message=user.get("message", None))
-

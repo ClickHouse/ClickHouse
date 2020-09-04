@@ -422,7 +422,7 @@ public:
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
-    /// If increment != nullptr, part index is determing using increment. Otherwise part index remains unchanged.
+    /// If increment != nullptr, part index is determining using increment. Otherwise part index remains unchanged.
     /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
@@ -533,9 +533,6 @@ public:
     {
         return DB::extractKeyExpressionList(node);
     }
-
-    /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -850,7 +847,7 @@ protected:
         const MergeListEntry * merge_entry);
 
     /// If part is assigned to merge or mutation (possibly replicated)
-    /// Should be overriden by childs, because they can have different
+    /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 

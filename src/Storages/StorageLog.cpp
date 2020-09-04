@@ -605,7 +605,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount(const StorageMeta
     return it->second.marks;
 }
 
-Pipes StorageLog::read(
+Pipe StorageLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -648,7 +648,7 @@ Pipes StorageLog::read(
             max_read_buffer_size));
     }
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)

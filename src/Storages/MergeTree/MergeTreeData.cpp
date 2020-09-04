@@ -113,8 +113,12 @@ namespace ErrorCodes
 }
 
 
-const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
-
+static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
+{
+    const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
+    if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
+        throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+}
 
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
@@ -180,12 +184,9 @@ MergeTreeData::MergeTreeData(
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
-        const auto & pk_sample_block = metadata_.getPrimaryKey().sample_block;
-        if (!pk_sample_block.has(metadata_.sampling_key.column_names[0]) && !attach
-            && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
-            throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+        /// This is for backward compatibility.
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key);
     }
-
 
     checkTTLExpressions(metadata_, metadata_);
 
@@ -375,7 +376,7 @@ void MergeTreeData::checkProperties(
 
             if (indices_names.find(index.name) != indices_names.end())
                 throw Exception(
-                        "Index with name " + backQuote(index.name) + " already exsists",
+                        "Index with name " + backQuote(index.name) + " already exists",
                         ErrorCodes::LOGICAL_ERROR);
 
             indices_names.insert(index.name);
@@ -629,8 +630,8 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                                   std::back_inserter(names_intersection));
 
             if (!names_intersection.empty())
-                throw Exception("Colums: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
-                " listed both in colums to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Columns: " + Nested::createCommaSeparatedStringFrom(names_intersection) +
+                " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -777,7 +778,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             bool broken = false;
 
             String part_path = relative_data_path + "/" + part_name;
-            String marker_path = part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH;
+            String marker_path = part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
             if (part_disk_ptr->exists(marker_path))
             {
                 LOG_WARNING(log, "Detaching stale part {}{}, which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.", getFullPathOnDisk(part_disk_ptr), part_name);
@@ -904,6 +905,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (auto & part : broken_parts_to_detach)
         part->renameToDetached("");
 
+
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
     /// were merged), but that for some reason are still not deleted from the filesystem.
     /// Deletion of files will be performed later in the clearOldParts() method.
@@ -953,6 +955,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     calculateColumnSizesImpl();
+
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
@@ -1037,7 +1040,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
                 ((part_remove_time < now &&
                 now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds()) || force
-                || isInMemoryPart(part))) /// Remove in-memory parts immediatly to not store excessive data in RAM
+                || isInMemoryPart(part))) /// Remove in-memory parts immediately to not store excessive data in RAM
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1225,7 +1228,8 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
-    global_context.dropCaches();
+    if (!getStorageID().hasUUID())
+        global_context.dropCaches();
 
     relative_data_path = new_table_path;
     renameInMemory(new_table_id);
@@ -1244,7 +1248,10 @@ void MergeTreeData::dropAllData()
     data_parts_indexes.clear();
     column_sizes.clear();
 
-    global_context.dropCaches();
+    /// Tables in atomic databases have UUID and stored in persistent locations.
+    /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
+    if (!getStorageID().hasUUID())
+        global_context.dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
@@ -1252,7 +1259,17 @@ void MergeTreeData::dropAllData()
     clearPartsFromFilesystem(all_parts);
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
-        disk->removeRecursive(path);
+    {
+        try
+        {
+            disk->removeRecursive(path);
+        }
+        catch (const Poco::FileNotFoundException &)
+        {
+            /// If the file is already deleted, log the error message and do nothing.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     LOG_TRACE(log, "dropAllData: done.");
 }
@@ -1402,6 +1419,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             throw Exception(
                 "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
+        {
+            if (!is_custom_partitioned)
+                throw Exception(
+                    "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
+                    ErrorCodes::BAD_ARGUMENTS);
+
+            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
@@ -2343,7 +2369,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             modifyPartState(part_it, DataPartState::Committed);
 
             auto disk = original_active_part->volume->getDisk();
-            String marker_path = original_active_part->getFullRelativePath() + DELETE_ON_DESTROY_MARKER_PATH;
+            String marker_path = original_active_part->getFullRelativePath() + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
             try
             {
                 disk->createFile(marker_path);
@@ -2413,14 +2439,6 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
 }
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const
-{
-    MutableDataPartPtr part = createPart(Poco::Path(relative_path).getFileName(), volume, relative_path);
-    loadPartAndFixMetadataImpl(part);
-    return part;
-}
-
 
 void MergeTreeData::calculateColumnSizesImpl()
 {
@@ -2892,6 +2910,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     LOG_DEBUG(log, "Checking parts");
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", part_names.second);
@@ -3259,7 +3278,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
-    disk->removeIfExists(dst_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+    disk->removeIfExists(dst_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
@@ -3350,7 +3369,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
         else
             localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);
 
-        part->volume->getDisk()->removeIfExists(backup_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+        part->volume->getDisk()->removeIfExists(backup_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{

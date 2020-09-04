@@ -122,6 +122,11 @@ inline bool isPrintableASCII(char c)
     return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
 }
 
+inline bool isValidIdentifier(const std::string_view & str)
+{
+    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {

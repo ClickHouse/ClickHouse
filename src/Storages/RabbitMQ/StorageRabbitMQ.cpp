@@ -139,7 +139,7 @@ void StorageRabbitMQ::loopingFunc()
 }
 
 
-Pipes StorageRabbitMQ::read(
+Pipe StorageRabbitMQ::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & /* query_info */,
@@ -171,7 +171,7 @@ Pipes StorageRabbitMQ::read(
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

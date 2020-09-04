@@ -65,6 +65,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(const Context &)
 {
+    assert(tables.empty());
     try
     {
         Poco::File(path_to_metadata_symlink).remove();
@@ -351,13 +352,13 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
+void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     if (has_force_restore_data_flag)
         Poco::File(path_to_table_symlinks).remove(true);
 
-    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
+    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
     if (has_force_restore_data_flag)
     {
@@ -366,6 +367,8 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
             std::lock_guard lock{mutex};
             table_names = table_name_to_path;
         }
+
+        Poco::File(path_to_table_symlinks).createDirectories();
         for (const auto & table : table_names)
             tryCreateSymlink(table.first, table.second);
     }

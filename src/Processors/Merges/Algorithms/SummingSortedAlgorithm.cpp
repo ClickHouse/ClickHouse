@@ -230,7 +230,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Are they inside the primary key or partiton key?
+            /// Are they inside the primary key or partition key?
             if (isInPrimaryKey(description, column.name, i) ||  isInPartitionKey(column.name, partition_key_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);

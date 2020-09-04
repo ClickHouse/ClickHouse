@@ -292,7 +292,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
-Pipes StorageStripeLog::read(
+Pipe StorageStripeLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
@@ -312,8 +312,7 @@ Pipes StorageStripeLog::read(
     String index_file = table_path + "index.mrk";
     if (!disk->exists(index_file))
     {
-        pipes.emplace_back(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-        return pipes;
+        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }
 
     CompressedReadBufferFromFile index_in(disk->readFile(index_file, INDEX_BUFFER_SIZE));
@@ -337,7 +336,7 @@ Pipes StorageStripeLog::read(
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
 
-    return pipes;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
