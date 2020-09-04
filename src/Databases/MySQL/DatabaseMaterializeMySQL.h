@@ -34,6 +34,10 @@ protected:
     ASTPtr engine_define;
     DatabasePtr nested_database;
     std::unique_ptr<MaterializeMySQLSettings> settings;
+    MaterializeMetadata materialize_metadata;
+    mutable mysqlxx::Pool pool;
+    String mysql_database_name;
+    String database_name;
 
     Poco::Logger * log;
     MaterializeMySQLSyncThread materialize_thread;

@@ -2,7 +2,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <Interpretes/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB {
 
@@ -17,7 +17,7 @@ public:
         const String & mysql_table_name,
         const Context & context);
 
-    BlockPtr readBlock(const StorageID & table_id);
+    Block readBlock(const StorageID & table_id);
     MySQLDatabaseBufferPtr readDatabaseBuffer();
 
     void registerTable(const StorageID & table_id);
