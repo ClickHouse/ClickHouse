@@ -145,9 +145,18 @@ void registerDiskS3(DiskFactory & factory)
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
         /// This code is used only to check access to the corresponding disk.
-        checkWriteAccess(*s3disk);
-        checkReadAccess(name, *s3disk);
-        checkRemoveAccess(*s3disk);
+        try
+        {
+            checkWriteAccess(*s3disk);
+            checkReadAccess(name, *s3disk);
+            checkRemoveAccess(*s3disk);
+        }
+        catch(...)
+        {
+            tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Disk " + name + "  has no access to S3");
+            if (config.getBool(config_prefix + ".fail_if_unavailable", true))
+                throw;
+        }
 
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
