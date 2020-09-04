@@ -51,8 +51,6 @@ public:
 
     bool isRemote() const override { return true; }
 
-    /// Return true if distributed_group_by_no_merge may be applied.
-    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
     Pipe read(
