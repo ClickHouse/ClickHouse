@@ -207,34 +207,17 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     return 0;
 }
 
-
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMergeWithTTL()
-{
-    const auto data_settings = data.getSettings();
-    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
-
-    /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
-    UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
-
-    /// Allow merges with TTL only if there are enough threads, leave free threads for regular merges
-    if (busy_threads_in_pool <= 1
-        || background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_merge_with_ttl)
-        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
-
-    return 0;
-
-}
-
 bool MergeTreeDataMergerMutator::selectPartsToMerge(
     FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
-    size_t max_total_size_to_merge_with_ttl,
+    bool merge_with_ttl_allowed,
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     if (data_parts.empty())
     {
@@ -311,7 +294,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     IMergeSelector::PartsRange parts_to_merge;
 
-    if (!ttl_merges_blocker.isCancelled())
+    if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
         TTLMergeSelector merge_selector(
                 next_ttl_merge_times_by_partition,
@@ -319,7 +302,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
                 data_settings->merge_with_ttl_timeout,
                 data_settings->ttl_only_drop_parts);
 
-        parts_to_merge = merge_selector.select(parts_ranges, max_total_size_to_merge_with_ttl);
+        parts_to_merge = merge_selector.select(parts_ranges, max_total_size_to_merge);
         if (!parts_to_merge.empty())
             future_part.merge_type = MergeType::TTL_DELETE;
     }

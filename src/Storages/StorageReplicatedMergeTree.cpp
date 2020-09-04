@@ -2525,17 +2525,17 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
+            const auto & merge_list = global_context.getMergeList();
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
                 storage_settings_ptr->max_replicated_merges_in_queue, merges_and_mutations_sum);
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
-            UInt64 max_source_part_size_for_merge_with_ttl = 0;
-            if (merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue)
-               max_source_part_size_for_merge_with_ttl = merger_mutator.getMaxSourcePartsSizeForMergeWithTTL();
+            bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < storage_settings_ptr->max_replicated_merges_with_ttl_in_queue &&
+                merge_list.getExecutingMergesWithTTLCount() < storage_settings_ptr->max_number_of_merges_with_ttl_in_pool;
 
             FutureMergedMutatedPart future_merged_part;
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, max_source_part_size_for_merge_with_ttl, nullptr))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, merge_with_ttl_allowed, nullptr))
             {
                 create_result = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, future_merged_part.type, deduplicate, nullptr, merge_pred.getVersion(), future_merged_part.merge_type);
@@ -3620,7 +3620,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!partition)
                 {
                     selected = merger_mutator.selectPartsToMerge(
-                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, &disable_reason);
+                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, true, &disable_reason);
                 }
                 else
                 {

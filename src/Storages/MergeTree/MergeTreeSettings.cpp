@@ -100,19 +100,6 @@ void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
             number_of_free_entries_in_pool_to_lower_max_size_of_merge,
             query_settings.background_pool_size);
     }
-
-    if (number_of_free_entries_in_pool_to_execute_merge_with_ttl >= query_settings.background_pool_size)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_merge_with_ttl' setting"
-            " ({}) (default values are defined in <merge_tree> section of config.xml"
-            " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater or equals to the value of 'background_pool_size'"
-            " ({}) (the value is defined in users.xml for default profile)."
-            " This indicates incorrect configuration because TTL cannot work with these settings.",
-            number_of_free_entries_in_pool_to_execute_merge_with_ttl,
-            query_settings.background_pool_size);
-    }
-
 }
 
 }
