@@ -29,6 +29,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (convert-month-partitioned-parts)
     add_subdirectory (checksum-for-compressed-block)
     add_subdirectory (wal-dump)
+    add_subdirectory (git-to-clickhouse)
 endif ()
 
 if (ENABLE_CODE_QUALITY)
