@@ -103,26 +103,56 @@ TEST(MySQLCreateRewritten, PartitionPolicy)
         {"TIMESTAMP", "DateTime", " PARTITION BY toYYYYMM(key)"}, {"BOOLEAN", "Int8", " PARTITION BY key"}
     };
 
-    const auto & replace_string = [](const String & str, const String & old_str, const String & new_str)
-    {
-        String new_string = str;
-        size_t pos = new_string.find(old_str);
-        if (pos != std::string::npos)
-            new_string = new_string.replace(pos, old_str.size(), new_str);
-        return new_string;
-    };
-
     for (const auto & [test_type, mapped_type, partition_policy] : test_types)
     {
         EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
             "CREATE TABLE `test_database`.`test_table_1` (`key` " + test_type + " PRIMARY KEY)", context_holder.context)),
-            "CREATE TABLE test_database.test_table_1 (`key` Nullable(" + mapped_type + "), `_sign` Int8() MATERIALIZED 1, "
-            "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + replace_string(partition_policy, "key", "assumeNotNull(key)") + " ORDER BY tuple(key)");
+            "CREATE TABLE test_database.test_table_1 (`key` " + mapped_type + ", `_sign` Int8() MATERIALIZED 1, "
+            "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + partition_policy + " ORDER BY tuple(key)");
 
         EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
             "CREATE TABLE `test_database`.`test_table_1` (`key` " + test_type + " NOT NULL PRIMARY KEY)", context_holder.context)),
             "CREATE TABLE test_database.test_table_1 (`key` " + mapped_type + ", `_sign` Int8() MATERIALIZED 1, "
             "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + partition_policy + " ORDER BY tuple(key)");
+    }
+}
+
+TEST(MySQLCreateRewritten, OrderbyPolicy)
+{
+    tryRegisterFunctions();
+    const auto & context_holder = getContext();
+
+    std::vector<std::tuple<String, String, String>> test_types
+    {
+        {"TINYINT", "Int8", " PARTITION BY key"}, {"SMALLINT", "Int16", " PARTITION BY intDiv(key, 65)"},
+        {"MEDIUMINT", "Int32", " PARTITION BY intDiv(key, 4294967)"}, {"INT", "Int32", " PARTITION BY intDiv(key, 4294967)"},
+        {"INTEGER", "Int32", " PARTITION BY intDiv(key, 4294967)"}, {"BIGINT", "Int64", " PARTITION BY intDiv(key, 18446744073709551)"},
+        {"FLOAT", "Float32", ""}, {"DOUBLE", "Float64", ""}, {"VARCHAR(10)", "String", ""}, {"CHAR(10)", "String", ""},
+        {"Date", "Date", " PARTITION BY toYYYYMM(key)"}, {"DateTime", "DateTime", " PARTITION BY toYYYYMM(key)"},
+        {"TIMESTAMP", "DateTime", " PARTITION BY toYYYYMM(key)"}, {"BOOLEAN", "Int8", " PARTITION BY key"}
+    };
+
+    for (const auto & [test_type, mapped_type, partition_policy] : test_types)
+    {
+        EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+            "CREATE TABLE `test_database`.`test_table_1` (`key` " + test_type + " PRIMARY KEY, `key2` " + test_type + " UNIQUE KEY)", context_holder.context)),
+            "CREATE TABLE test_database.test_table_1 (`key` " + mapped_type + ", `key2` Nullable(" + mapped_type + "), `_sign` Int8() MATERIALIZED 1, "
+            "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + partition_policy + " ORDER BY (key, assumeNotNull(key2))");
+
+        EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+            "CREATE TABLE `test_database`.`test_table_1` (`key` " + test_type + " NOT NULL PRIMARY KEY, `key2` " + test_type + " NOT NULL UNIQUE KEY)", context_holder.context)),
+            "CREATE TABLE test_database.test_table_1 (`key` " + mapped_type + ", `key2` " + mapped_type + ", `_sign` Int8() MATERIALIZED 1, "
+            "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + partition_policy + " ORDER BY (key, key2)");
+
+        EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+            "CREATE TABLE `test_database`.`test_table_1` (`key` " + test_type + " KEY UNIQUE KEY)", context_holder.context)),
+            "CREATE TABLE test_database.test_table_1 (`key` " + mapped_type + ", `_sign` Int8() MATERIALIZED 1, "
+            "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + partition_policy + " ORDER BY tuple(key)");
+
+        EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+            "CREATE TABLE `test_database`.`test_table_1` (`key` " + test_type + ", `key2` " + test_type + " UNIQUE KEY, PRIMARY KEY(`key`, `key2`))", context_holder.context)),
+            "CREATE TABLE test_database.test_table_1 (`key` " + mapped_type + ", `key2` " + mapped_type + ", `_sign` Int8() MATERIALIZED 1, "
+            "`_version` UInt64() MATERIALIZED 1) ENGINE = ReplacingMergeTree(_version)" + partition_policy + " ORDER BY (key, key2)");
     }
 }
 
