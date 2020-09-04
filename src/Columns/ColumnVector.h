@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
@@ -298,23 +293,17 @@ public:
     void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return is_POD; }
+    bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     StringRef getRawData() const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
-        else
-            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-        else
-            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool structureEquals(const IColumn & rhs) const override
