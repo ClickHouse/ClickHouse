@@ -3620,7 +3620,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!partition)
                 {
                     selected = merger_mutator.selectPartsToMerge(
-                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, true, &disable_reason);
+                        future_merged_part, true, storage_settings_ptr->max_bytes_to_merge_at_max_space_in_pool, can_merge, false, &disable_reason);
                 }
                 else
                 {
