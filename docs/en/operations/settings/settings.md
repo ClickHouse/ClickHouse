@@ -1901,7 +1901,7 @@ Default value: `120`.
 
 ## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
-Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the setting, the value is cut. 
+Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
 
 Possible values:
 
