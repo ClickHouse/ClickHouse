@@ -154,15 +154,17 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         if (format_version >= 4)
         {
             in >> "\ndeduplicate: " >> deduplicate;
+
+            /// Trying to be more backward compatible
             in >> "\n";
-            if (in.eof())
-                trailing_newline_found = true;
-            else if (checkString("merge_type: ", in))
+            if (checkString("merge_type: ", in))
             {
                 UInt64 value;
                 in >> value;
                 merge_type = checkAndGetMergeType(value);
             }
+            else
+                trailing_newline_found = true;
         }
     }
     else if (type_str == "drop" || type_str == "detach")

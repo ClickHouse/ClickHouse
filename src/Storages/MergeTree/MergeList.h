@@ -142,7 +142,8 @@ public:
     {
         std::lock_guard lock{mutex};
         auto entry = std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
-        merges_with_ttl_counter += (*entry)->merge_type == MergeType::TTL_DELETE;
+        if (isTTLMergeType((*entry)->merge_type))
+            ++merges_with_ttl_counter;
         return entry;
     }
 
@@ -179,7 +180,7 @@ inline MergeListEntry::~MergeListEntry()
     std::lock_guard lock{list.mutex};
 
     if (it->merge_type == MergeType::TTL_DELETE)
-        list.merges_with_ttl_counter--;
+        --list.merges_with_ttl_counter;
 
     list.merges.erase(it);
 }
