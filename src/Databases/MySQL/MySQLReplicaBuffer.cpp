@@ -83,7 +83,7 @@ std::vector<BufferAndSortingColumnsPtr> MySQLReplicaBuffer::getTableDataBuffers(
     }
 }
 
-BlockPtr MySQLReplicaBuffer::readBlock(const StorageID & table_id) {
+Block MySQLReplicaBuffer::readBlock(const StorageID & table_id) {
     std::lock_guard<std::mutex> lock(mutex);
 
     const auto it = data.find(table_id.getFullTableName());
@@ -95,7 +95,7 @@ BlockPtr MySQLReplicaBuffer::readBlock(const StorageID & table_id) {
         return old_buffer->first;
     }
 
-    return nullptr;
+    return Block();
 }
 
 MySQLDatabaseBufferPtr readDatabaseBuffer() {

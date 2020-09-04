@@ -141,10 +141,8 @@ void MaterializeMetadata::fetchMetadata(mysqlxx::PoolWithFailover::Entry & conne
 MaterializeMetadata::MaterializeMetadata(
     mysqlxx::PoolWithFailover::Entry & connection,
     const String & path_,
-    const String & mysql_database_name_,
     const String & mysql_version)
     : persistent_path(path_)
-    , mysql_database_name(mysql_database_name_)
 {
     if (!Poco::File(persistent_path).exists()) {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);

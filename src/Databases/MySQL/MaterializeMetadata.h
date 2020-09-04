@@ -20,7 +20,6 @@ namespace DB
  * binlog_file  - currently executing binlog_file
  * binlog_position  - position of the currently executing binlog file
  * executed_gtid_set - currently executing gtid
- * need_dumping_tables - Table structure snapshot at the current moment(Only when database first created or executed binlog file is deleted)
  */
 struct MaterializeMetadata
 {
@@ -34,7 +33,6 @@ struct MaterializeMetadata
 
     size_t data_version = 1;
     size_t meta_version = 2;
-    std::unordered_map<String, String> need_dumping_tables;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
@@ -43,8 +41,9 @@ struct MaterializeMetadata
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
     MaterializeMetadata(
-        mysqlxx::PoolWithFailover::Entry & connection, const String & path
-        , const String & database, bool & opened_transaction, const String & mysql_version);
+        mysqlxx::PoolWithFailover::Entry & connection,
+        const String & path,
+        const String & mysql_version);
 };
 
 using MaterializeMetadataPtr = std::shared_ptr<MaterializeMetadata>;
