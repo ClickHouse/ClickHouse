@@ -402,6 +402,11 @@ void PipelineExecutor::execute(size_t num_threads)
         for (auto & node : graph->nodes)
             if (node->exception)
                 std::rethrow_exception(node->exception);
+
+        /// Exception which happened in executing thread, but not at processor.
+        for (auto & executor_context : executor_contexts)
+            if (executor_context->exception)
+                std::rethrow_exception(executor_context->exception);
     }
     catch (...)
     {
@@ -431,11 +436,6 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     for (auto & node : graph->nodes)
         if (node->exception)
             std::rethrow_exception(node->exception);
-
-    /// Exception which happened in executing thread, but not at processor.
-    for (auto & executor_context : executor_contexts)
-        if (executor_context->exception)
-            std::rethrow_exception(executor_context->exception);
 
     finalizeExecution();
 
