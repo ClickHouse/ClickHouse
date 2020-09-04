@@ -742,7 +742,9 @@ namespace MySQLReplication
 
     void GTIDEvent::dump(std::ostream & out) const
     {
-        auto gtid_next = gtid.uuid.toUnderType().toHexString() + ":" + std::to_string(gtid.seq_no);
+        WriteBufferFromOwnString ws;
+        writeUUIDText(gtid.uuid, ws);
+        auto gtid_next = ws.str() + ":" + std::to_string(gtid.seq_no);
 
         header.dump(out);
         out << "GTID Next: " << gtid_next << std::endl;
