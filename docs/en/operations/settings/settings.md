@@ -1899,4 +1899,53 @@ Possible values:
 
 Default value: `120`.
 
+## cast_keep_nullable {#cast_keep_nullable}
+
+Enables or disables converstion to nullable types for [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operator. 
+
+If set, `CAST(something_nullable AS Type)` returns `Nullable(Type)`.
+
+Possible values:
+
+-   0 — Nullable type converstion disabled.
+-   1 — Nullable type converstion enabled.
+
+Default value: `0`.
+
+**Examples** 
+
+Query with nullable type converstion disabled:
+
+```sql
+SET cast_keep_nullable = 0;
+SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
+```
+
+Result:
+
+```
+┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
+│ 0 │ Int32                                             │
+└───┴───────────────────────────────────────────────────┘
+```
+
+Query with nullable type converstion enabled:
+
+```sql
+SET cast_keep_nullable = 1;
+SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
+```
+
+Result:
+
+```
+┌─x─┬─toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))─┐
+│ 0 │ Nullable(Int32)                                   │
+└───┴───────────────────────────────────────────────────┘
+```
+
+**See Also** 
+
+-   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) operator
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
