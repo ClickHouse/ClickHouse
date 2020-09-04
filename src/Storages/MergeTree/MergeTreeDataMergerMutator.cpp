@@ -706,7 +706,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
-    LOG_DEBUG(log, "CHOOSEN CODEC {} FOR PART {}", queryToString(compression_codec->getCodecDesc()), new_data_part->name);
 
     /// TODO: Should it go through IDisk interface?
     String rows_sources_file_path;
