@@ -273,7 +273,6 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
-            //std::cerr << "GOT INTO RECOMPRESS\n";
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {}, !context.getSettingsRef().allow_suspicious_codecs);
@@ -337,7 +336,6 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         }
         else if (ttl.mode == TTLMode::RECOMPRESS)
         {
-            //std::cerr << "GOT RECOMPRESSIOn TTL\n";
             result.recompression_ttl.emplace_back(std::move(ttl));
         }
         else
