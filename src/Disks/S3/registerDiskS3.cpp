@@ -151,7 +151,7 @@ void registerDiskS3(DiskFactory & factory)
             checkReadAccess(name, *s3disk);
             checkRemoveAccess(*s3disk);
         }
-        catch(...)
+        catch (...)
         {
             tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Disk " + name + "  has no access to S3");
             if (config.getBool(config_prefix + ".fail_if_unavailable", true))
