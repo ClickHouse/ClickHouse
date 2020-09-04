@@ -15,6 +15,8 @@ MergeType checkAndGetMergeType(UInt64 merge_type)
         return MergeType::REGULAR;
     else if (merge_type == static_cast<UInt64>(MergeType::TTL_DELETE))
         return MergeType::TTL_DELETE;
+    else if (merge_type == static_cast<UInt64>(MergeType::TTL_RECOMPRESS))
+        return MergeType::TTL_RECOMPRESS;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
 }
