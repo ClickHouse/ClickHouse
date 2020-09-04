@@ -132,6 +132,7 @@ class MergeList
     mutable std::mutex mutex;
     container_t merges;
 
+    std::atomic<size_t> merges_with_ttl_counter = 0;
 public:
     using Entry = MergeListEntry;
     using EntryPtr = std::unique_ptr<Entry>;
@@ -140,7 +141,9 @@ public:
     EntryPtr insert(Args &&... args)
     {
         std::lock_guard lock{mutex};
-        return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+        auto entry = std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+        merges_with_ttl_counter += (*entry)->merge_type == MergeType::TTL_DELETE;
+        return entry;
     }
 
     info_container_t get() const
@@ -163,12 +166,21 @@ public:
                 merge_element.is_cancelled = true;
         }
     }
+
+    size_t getExecutingMergesWithTTLCount() const
+    {
+        return merges_with_ttl_counter;
+    }
 };
 
 
 inline MergeListEntry::~MergeListEntry()
 {
     std::lock_guard lock{list.mutex};
+
+    if (it->merge_type == MergeType::TTL_DELETE)
+        list.merges_with_ttl_counter--;
+
     list.merges.erase(it);
 }
 

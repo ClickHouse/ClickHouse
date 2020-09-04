@@ -61,13 +61,6 @@ public:
       */
     UInt64 getMaxSourcePartsSizeForMerge();
 
-    /** Get maximum total size of parts to do merge with TTL, at current moment
-      * of time. If busy threads count is less than value specified by
-      * number_of_free_entries_in_pool_to_execute_merge_with_ttl than maximum
-      * size (available on disk) is allowed.
-      */
-    UInt64 getMaxSourcePartsSizeForMergeWithTTL();
-
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
@@ -90,7 +83,7 @@ public:
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
-        size_t max_total_size_to_merge_with_ttl,
+        bool merge_with_ttl_allowed,
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
