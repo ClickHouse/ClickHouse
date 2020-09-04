@@ -334,7 +334,8 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
     if (limit >= equal_ranges.back().second || limit >= size())
         limit = 0;
 
-    EqualRanges new_ranges;
+    /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
+    EqualRanges new_ranges, null_ranges;
 
     const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
 
@@ -388,7 +389,7 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
 
             /// We have a range [write_idx, list) of NULL values
             if (write_idx != last)
-                new_ranges.emplace_back(write_idx, last);
+                null_ranges.emplace_back(write_idx, last);
         }
     }
     else
@@ -426,13 +427,14 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
 
             /// We have a range [first, write_idx+1) of NULL values
             if (static_cast<ssize_t>(first) != write_idx)
-                new_ranges.emplace_back(first, write_idx + 1);
+                null_ranges.emplace_back(first, write_idx + 1);
         }
     }
 
     getNestedColumn().updatePermutation(reverse, 0, null_direction_hint, res, new_ranges);
 
     equal_ranges = std::move(new_ranges);
+    equal_ranges.insert(equal_ranges.end(), null_ranges.begin(), null_ranges.end());
 }
 
 void ColumnNullable::gather(ColumnGathererStream & gatherer)
