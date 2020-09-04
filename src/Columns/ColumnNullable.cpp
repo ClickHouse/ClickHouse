@@ -331,6 +331,9 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
 
 void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (equal_ranges.empty())
+        return;
+
     if (limit >= equal_ranges.back().second || limit >= size())
         limit = 0;
 
@@ -433,8 +436,13 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
 
     getNestedColumn().updatePermutation(reverse, 0, null_direction_hint, res, new_ranges);
 
+    std::cout << "new_ranges " << new_ranges.size() << std::endl;
+    std::cout << "null_ranges " << null_ranges.size() << std::endl;
+
     equal_ranges = std::move(new_ranges);
-    equal_ranges.insert(equal_ranges.end(), null_ranges.begin(), null_ranges.end());
+    std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
+
+    std::cout << "end" << std::endl;
 }
 
 void ColumnNullable::gather(ColumnGathererStream & gatherer)

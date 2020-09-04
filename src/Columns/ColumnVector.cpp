@@ -243,6 +243,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= data.size() || limit >= equal_range.back().second)
         limit = 0;
 

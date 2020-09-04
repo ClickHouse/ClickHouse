@@ -144,6 +144,9 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 template <typename T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= data.size() || limit >= equal_range.back().second)
         limit = 0;
 

@@ -389,6 +389,9 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
 template <typename ColumnType>
 void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     bool found_null_value_index = false;
     for (size_t i = 0; i < equal_range.size() && !found_null_value_index; ++i)
     {

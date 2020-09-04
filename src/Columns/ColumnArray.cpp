@@ -781,6 +781,9 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     if (limit >= size() || limit >= equal_range.back().second)
         limit = 0;
 
