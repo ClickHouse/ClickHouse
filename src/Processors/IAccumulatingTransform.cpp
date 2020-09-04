@@ -27,7 +27,9 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
     /// Check can output.
     if (output.isFinished())
     {
-        input.close();
+        for (auto & in : inputs)
+            in.close();
+
         return Status::Finished;
     }
 
