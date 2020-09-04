@@ -12,9 +12,9 @@ struct MultiEnum
 
     MultiEnum() = default;
 
-    template <typename ... EnumValues, typename = std::enable_if_t<std::is_same_v<EnumTypeT, EnumValues...>>>
-    explicit MultiEnum(EnumType v0, EnumValues ... v)
-        : MultiEnum(toBitFlag(v0) | (toBitFlag(v) | ... | 0u))
+    template <typename ... EnumValues, typename = std::enable_if_t<std::conjunction_v<std::is_same<EnumTypeT, EnumValues>...>>>
+    explicit MultiEnum(EnumValues ... v)
+        : MultiEnum((toBitFlag(v) | ... | 0u))
     {}
 
     template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>

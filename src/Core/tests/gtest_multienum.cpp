@@ -34,6 +34,20 @@ GTEST_TEST(MultiEnum, WithDefault)
     ASSERT_FALSE(multi_enum.isSet(TestEnum::FIVE));
 }
 
+GTEST_TEST(MultiEnum, WitheEnum)
+{
+    MultiEnum<TestEnum, UInt8> multi_enum(TestEnum::FOUR);
+    ASSERT_EQ(16, multi_enum.getValue());
+    ASSERT_EQ(16, multi_enum);
+
+    ASSERT_FALSE(multi_enum.isSet(TestEnum::ZERO));
+    ASSERT_FALSE(multi_enum.isSet(TestEnum::ONE));
+    ASSERT_FALSE(multi_enum.isSet(TestEnum::TWO));
+    ASSERT_FALSE(multi_enum.isSet(TestEnum::THREE));
+    ASSERT_TRUE(multi_enum.isSet(TestEnum::FOUR));
+    ASSERT_FALSE(multi_enum.isSet(TestEnum::FIVE));
+}
+
 GTEST_TEST(MultiEnum, WithValue)
 {
     const MultiEnum<TestEnum> multi_enum(13u); // (1 | (1 << 2 | 1 << 3)
