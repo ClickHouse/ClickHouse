@@ -240,16 +240,13 @@ void QueryPipeline::addCreatingSetsTransform(SubqueriesForSets subqueries_for_se
     source.collected_processors = nullptr;
 
     resize(1);
-    pipe = Pipe::unitePipes({std::move(pipe), std::move(source)}, collected_processors);
 
-    /// Order is important for concat. Connect manually.
-    pipe.transform([&](OutputPortRawPtrs ports) -> Processors
-    {
-        auto concat = std::make_shared<ConcatProcessor>(getHeader(), 2);
-        connect(*ports.front(), concat->getInputs().front());
-        connect(*ports.back(), concat->getInputs().back());
-        return { std::move(concat) };
-    });
+    Pipes pipes;
+    pipes.emplace_back(std::move(source));
+    pipes.emplace_back(std::move(pipe));
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
+
+    pipe.addTransform(std::make_shared<ConcatProcessor>(getHeader(), 2));
 }
 
 void QueryPipeline::setOutputFormat(ProcessorPtr output)
@@ -324,9 +321,6 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProgressCallback(callback);
-
-        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
-            source->setProgressCallback(callback);
     }
 }
 
@@ -337,9 +331,6 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     for (auto & processor : pipe.processors)
     {
         if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProcessListElement(elem);
-
-        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
             source->setProcessListElement(elem);
     }
 }

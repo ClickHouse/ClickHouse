@@ -1833,7 +1833,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_p
 
     auto creating_sets = std::make_unique<CreatingSetsStep>(
             query_plan.getCurrentDataStream(),
-            subqueries_for_sets,
+            std::move(subqueries_for_sets),
             SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
             *context);
 

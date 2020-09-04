@@ -18,6 +18,7 @@ protected:
 
     Chunk current_input_chunk;
     Chunk current_output_chunk;
+    Chunk totals;
     bool has_input = false;
     bool finished_input = false;
     bool finished_generate = false;
@@ -34,6 +35,7 @@ public:
 
     Status prepare() override;
     void work() override;
+    InputPort * addTotalsPort();
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
