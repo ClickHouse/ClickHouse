@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 template <typename T>
 inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
 roundDownToPowerOfTwo(T x)
@@ -48,10 +53,9 @@ roundDownToPowerOfTwo(T x)
 
 template <typename T>
 inline std::enable_if_t<is_big_int_v<T>, T>
-roundDownToPowerOfTwo(T x)
+roundDownToPowerOfTwo(T)
 {
-    // extention from boost/multiprecision/number.hpp
-    return T(1) << msb(x);
+    throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 /** For integer data types:
