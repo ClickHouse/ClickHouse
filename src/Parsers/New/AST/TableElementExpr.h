@@ -26,7 +26,11 @@ class TableElementExpr : public INode
 {
     public:
         static PtrTo<TableElementExpr> createColumn(
-            PtrTo<Identifier> name, PtrTo<ColumnTypeExpr> type, PtrTo<TableColumnPropertyExpr> property, PtrTo<ColumnExpr> ttl);
+            PtrTo<Identifier> name,
+            PtrTo<ColumnTypeExpr> type,
+            PtrTo<TableColumnPropertyExpr> property,
+            PtrTo<StringLiteral> comment,
+            PtrTo<ColumnExpr> ttl);
 
     private:
         enum class ExprType
@@ -39,9 +43,10 @@ class TableElementExpr : public INode
         {
             // COLUMN
             NAME = 0,
-            TYPE = 1,
-            PROPERTY = 2,
-            TTL = 3,
+            TYPE,
+            PROPERTY,
+            COMMENT,
+            TTL,
         };
 
         const ExprType expr_type;

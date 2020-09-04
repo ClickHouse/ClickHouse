@@ -1,5 +1,6 @@
 #include <Parsers/New/AST/AlterTableQuery.h>
 
+#include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/Identifier.h>
 #include <Parsers/New/AST/Literal.h>
 #include <Parsers/New/AST/TableElementExpr.h>
@@ -52,6 +53,12 @@ PtrTo<AlterTableClause> AlterTableClause::createModify(bool if_exists, PtrTo<Tab
     return query;
 }
 
+// static
+PtrTo<AlterTableClause> AlterTableClause::createOrderBy(PtrTo<ColumnExpr> expr)
+{
+    return PtrTo<AlterTableClause>(new AlterTableClause(ClauseType::ORDER_BY, {expr}));
+}
+
 AlterTableClause::AlterTableClause(ClauseType type, PtrList exprs) : clause_type(type)
 {
     children = exprs;
@@ -96,6 +103,11 @@ antlrcpp::Any ParseTreeVisitor::visitAlterTableDropClause(ClickHouseParser::Alte
 antlrcpp::Any ParseTreeVisitor::visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx)
 {
     return AlterTableClause::createModify(!!ctx->IF(), visit(ctx->tableColumnDfnt()));
+}
+
+antlrcpp::Any ParseTreeVisitor::visitAlterTableOrderByClause(ClickHouseParser::AlterTableOrderByClauseContext *ctx)
+{
+    return AlterTableClause::createOrderBy(visit(ctx->columnExpr()));
 }
 
 }

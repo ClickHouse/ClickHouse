@@ -20,28 +20,30 @@ public:
     COMMENT = 26, CREATE = 27, CROSS = 28, DATABASE = 29, DAY = 30, DEDUPLICATE = 31, 
     DEFAULT = 32, DELAY = 33, DELETE = 34, DESC = 35, DESCENDING = 36, DESCRIBE = 37, 
     DETACH = 38, DISK = 39, DISTINCT = 40, DROP = 41, ELSE = 42, END = 43, 
-    ENGINE = 44, EXISTS = 45, EXTRACT = 46, FINAL = 47, FIRST = 48, FORMAT = 49, 
-    FROM = 50, FULL = 51, FUNCTION = 52, GLOBAL = 53, GROUP = 54, HAVING = 55, 
-    HOUR = 56, ID = 57, IF = 58, IN = 59, INF = 60, INNER = 61, INSERT = 62, 
-    INTERVAL = 63, INTO = 64, IS = 65, JOIN = 66, KEY = 67, LAST = 68, LEADING = 69, 
-    LEFT = 70, LIKE = 71, LIMIT = 72, LOCAL = 73, MATERIALIZED = 74, MINUTE = 75, 
-    MODIFY = 76, MONTH = 77, NAN_SQL = 78, NO = 79, NOT = 80, NULL_SQL = 81, 
-    NULLS = 82, OFFSET = 83, ON = 84, OPTIMIZE = 85, OR = 86, ORDER = 87, 
-    OUTER = 88, OUTFILE = 89, PARTITION = 90, POPULATE = 91, PREWHERE = 92, 
-    PRIMARY = 93, QUARTER = 94, RENAME = 95, REPLICA = 96, RIGHT = 97, SAMPLE = 98, 
-    SECOND = 99, SELECT = 100, SEMI = 101, SET = 102, SETTINGS = 103, SHOW = 104, 
-    SYNC = 105, SYSTEM = 106, TABLE = 107, TABLES = 108, TEMPORARY = 109, 
-    THEN = 110, TIES = 111, TO = 112, TOTALS = 113, TRAILING = 114, TRIM = 115, 
-    TRUNCATE = 116, TTL = 117, UNION = 118, USE = 119, USING = 120, VALUES = 121, 
-    VIEW = 122, VOLUME = 123, WEEK = 124, WHEN = 125, WHERE = 126, WITH = 127, 
-    YEAR = 128, IDENTIFIER = 129, FLOATING_LITERAL = 130, HEXADECIMAL_LITERAL = 131, 
-    INTEGER_LITERAL = 132, STRING_LITERAL = 133, ARROW = 134, ASTERISK = 135, 
-    BACKQUOTE = 136, BACKSLASH = 137, COLON = 138, COMMA = 139, CONCAT = 140, 
-    DASH = 141, DOT = 142, EQ_DOUBLE = 143, EQ_SINGLE = 144, GE = 145, GT = 146, 
-    LBRACKET = 147, LE = 148, LPAREN = 149, LT = 150, NOT_EQ = 151, PERCENT = 152, 
-    PLUS = 153, QUERY = 154, QUOTE_DOUBLE = 155, QUOTE_SINGLE = 156, RBRACKET = 157, 
-    RPAREN = 158, SEMICOLON = 159, SLASH = 160, UNDERSCORE = 161, SINGLE_LINE_COMMENT = 162, 
-    MULTI_LINE_COMMENT = 163, WHITESPACE = 164
+    ENGINE = 44, EXISTS = 45, EXTRACT = 46, FETCHES = 47, FINAL = 48, FIRST = 49, 
+    FOR = 50, FORMAT = 51, FROM = 52, FULL = 53, FUNCTION = 54, GLOBAL = 55, 
+    GROUP = 56, HAVING = 57, HOUR = 58, ID = 59, IF = 60, IN = 61, INF = 62, 
+    INNER = 63, INSERT = 64, INTERVAL = 65, INTO = 66, IS = 67, JOIN = 68, 
+    KEY = 69, LAST = 70, LEADING = 71, LEFT = 72, LIKE = 73, LIMIT = 74, 
+    LOCAL = 75, MATERIALIZED = 76, MERGES = 77, MINUTE = 78, MODIFY = 79, 
+    MONTH = 80, NAN_SQL = 81, NO = 82, NOT = 83, NULL_SQL = 84, NULLS = 85, 
+    OFFSET = 86, ON = 87, OPTIMIZE = 88, OR = 89, ORDER = 90, OUTER = 91, 
+    OUTFILE = 92, PARTITION = 93, POPULATE = 94, PREWHERE = 95, PRIMARY = 96, 
+    QUARTER = 97, RENAME = 98, REPLACE = 99, REPLICA = 100, RIGHT = 101, 
+    SAMPLE = 102, SECOND = 103, SELECT = 104, SEMI = 105, SET = 106, SETTINGS = 107, 
+    SHOW = 108, START = 109, STOP = 110, SUBSTRING = 111, SYNC = 112, SYSTEM = 113, 
+    TABLE = 114, TABLES = 115, TEMPORARY = 116, THEN = 117, TIES = 118, 
+    TO = 119, TOTALS = 120, TRAILING = 121, TRIM = 122, TRUNCATE = 123, 
+    TTL = 124, UNION = 125, USE = 126, USING = 127, VALUES = 128, VIEW = 129, 
+    VOLUME = 130, WEEK = 131, WHEN = 132, WHERE = 133, WITH = 134, YEAR = 135, 
+    IDENTIFIER = 136, FLOATING_LITERAL = 137, HEXADECIMAL_LITERAL = 138, 
+    INTEGER_LITERAL = 139, STRING_LITERAL = 140, ARROW = 141, ASTERISK = 142, 
+    BACKQUOTE = 143, BACKSLASH = 144, COLON = 145, COMMA = 146, CONCAT = 147, 
+    DASH = 148, DOT = 149, EQ_DOUBLE = 150, EQ_SINGLE = 151, GE = 152, GT = 153, 
+    LBRACKET = 154, LE = 155, LPAREN = 156, LT = 157, NOT_EQ = 158, PERCENT = 159, 
+    PLUS = 160, QUERY = 161, QUOTE_DOUBLE = 162, QUOTE_SINGLE = 163, RBRACKET = 164, 
+    RPAREN = 165, SEMICOLON = 166, SLASH = 167, UNDERSCORE = 168, SINGLE_LINE_COMMENT = 169, 
+    MULTI_LINE_COMMENT = 170, WHITESPACE = 171
   };
 
   enum {
@@ -312,6 +314,18 @@ public:
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  AlterTableOrderByClauseContext : public AlterTableClauseContext {
+  public:
+    AlterTableOrderByClauseContext(AlterTableClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *MODIFY();
+    antlr4::tree::TerminalNode *ORDER();
+    antlr4::tree::TerminalNode *BY();
+    ColumnExprContext *columnExpr();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  AlterTableAddClauseContext : public AlterTableClauseContext {
   public:
     AlterTableAddClauseContext(AlterTableClauseContext *ctx);
@@ -388,6 +402,30 @@ public:
 
     antlr4::tree::TerminalNode *DROP();
     PartitionClauseContext *partitionClause();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  AlterPartitionReplaceClauseContext : public AlterPartitionClauseContext {
+  public:
+    AlterPartitionReplaceClauseContext(AlterPartitionClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *REPLACE();
+    PartitionClauseContext *partitionClause();
+    antlr4::tree::TerminalNode *FROM();
+    TableIdentifierContext *tableIdentifier();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  AlterPartitionAttachClauseContext : public AlterPartitionClauseContext {
+  public:
+    AlterPartitionAttachClauseContext(AlterPartitionClauseContext *ctx);
+
+    antlr4::tree::TerminalNode *ATTACH();
+    PartitionClauseContext *partitionClause();
+    antlr4::tree::TerminalNode *FROM();
+    TableIdentifierContext *tableIdentifier();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -720,6 +758,8 @@ public:
     NestedIdentifierContext *nestedIdentifier();
     ColumnTypeExprContext *columnTypeExpr();
     TableColumnPropertyExprContext *tableColumnPropertyExpr();
+    antlr4::tree::TerminalNode *COMMENT();
+    antlr4::tree::TerminalNode *STRING_LITERAL();
     antlr4::tree::TerminalNode *TTL();
     ColumnExprContext *columnExpr();
 
@@ -1224,9 +1264,9 @@ public:
 
     std::vector<JoinExprContext *> joinExpr();
     JoinExprContext* joinExpr(size_t i);
-    JoinOpContext *joinOp();
     antlr4::tree::TerminalNode *JOIN();
     JoinConstraintClauseContext *joinConstraintClause();
+    JoinOpContext *joinOp();
     antlr4::tree::TerminalNode *GLOBAL();
     antlr4::tree::TerminalNode *LOCAL();
 
@@ -1495,9 +1535,9 @@ public:
 
     antlr4::tree::TerminalNode *SHOW();
     antlr4::tree::TerminalNode *CREATE();
-    antlr4::tree::TerminalNode *TABLE();
     TableIdentifierContext *tableIdentifier();
     antlr4::tree::TerminalNode *TEMPORARY();
+    antlr4::tree::TerminalNode *TABLE();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1525,26 +1565,19 @@ public:
   class  SystemStmtContext : public antlr4::ParserRuleContext {
   public:
     SystemStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-   
-    SystemStmtContext() = default;
-    void copyFrom(SystemStmtContext *context);
-    using antlr4::ParserRuleContext::copyFrom;
-
     virtual size_t getRuleIndex() const override;
-
-   
-  };
-
-  class  SystemSyncStmtContext : public SystemStmtContext {
-  public:
-    SystemSyncStmtContext(SystemStmtContext *ctx);
-
     antlr4::tree::TerminalNode *SYSTEM();
+    TableIdentifierContext *tableIdentifier();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *STOP();
+    antlr4::tree::TerminalNode *FETCHES();
+    antlr4::tree::TerminalNode *MERGES();
     antlr4::tree::TerminalNode *SYNC();
     antlr4::tree::TerminalNode *REPLICA();
-    TableIdentifierContext *tableIdentifier();
+
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
   };
 
   SystemStmtContext* systemStmt();
@@ -1830,6 +1863,21 @@ public:
     antlr4::tree::TerminalNode *LPAREN();
     ColumnExprListContext *columnExprList();
     antlr4::tree::TerminalNode *RPAREN();
+
+    virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ColumnExprSubstringContext : public ColumnExprContext {
+  public:
+    ColumnExprSubstringContext(ColumnExprContext *ctx);
+
+    antlr4::tree::TerminalNode *SUBSTRING();
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<ColumnExprContext *> columnExpr();
+    ColumnExprContext* columnExpr(size_t i);
+    antlr4::tree::TerminalNode *FROM();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *FOR();
 
     virtual antlrcpp::Any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2290,6 +2338,7 @@ public:
     antlr4::tree::TerminalNode *ENGINE();
     antlr4::tree::TerminalNode *EXISTS();
     antlr4::tree::TerminalNode *EXTRACT();
+    antlr4::tree::TerminalNode *FETCHES();
     antlr4::tree::TerminalNode *FINAL();
     antlr4::tree::TerminalNode *FIRST();
     antlr4::tree::TerminalNode *FORMAT();
@@ -2316,6 +2365,7 @@ public:
     antlr4::tree::TerminalNode *LIMIT();
     antlr4::tree::TerminalNode *LOCAL();
     antlr4::tree::TerminalNode *MATERIALIZED();
+    antlr4::tree::TerminalNode *MERGES();
     antlr4::tree::TerminalNode *MINUTE();
     antlr4::tree::TerminalNode *MODIFY();
     antlr4::tree::TerminalNode *MONTH();
@@ -2333,6 +2383,7 @@ public:
     antlr4::tree::TerminalNode *PRIMARY();
     antlr4::tree::TerminalNode *QUARTER();
     antlr4::tree::TerminalNode *RENAME();
+    antlr4::tree::TerminalNode *REPLACE();
     antlr4::tree::TerminalNode *REPLICA();
     antlr4::tree::TerminalNode *RIGHT();
     antlr4::tree::TerminalNode *SAMPLE();
@@ -2341,6 +2392,9 @@ public:
     antlr4::tree::TerminalNode *SET();
     antlr4::tree::TerminalNode *SETTINGS();
     antlr4::tree::TerminalNode *SHOW();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *STOP();
+    antlr4::tree::TerminalNode *SUBSTRING();
     antlr4::tree::TerminalNode *SYNC();
     antlr4::tree::TerminalNode *SYSTEM();
     antlr4::tree::TerminalNode *TABLE();

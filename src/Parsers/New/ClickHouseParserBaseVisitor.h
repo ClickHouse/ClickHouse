@@ -57,11 +57,23 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual antlrcpp::Any visitAlterTableOrderByClause(ClickHouseParser::AlterTableOrderByClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitAlterPartitionAttachClause(ClickHouseParser::AlterPartitionAttachClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual antlrcpp::Any visitAlterPartitionDetachClause(ClickHouseParser::AlterPartitionDetachClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
   virtual antlrcpp::Any visitAlterPartitionDropClause(ClickHouseParser::AlterPartitionDropClauseContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitAlterPartitionReplaceClause(ClickHouseParser::AlterPartitionReplaceClauseContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -325,7 +337,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx) override {
+  virtual antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -402,6 +414,10 @@ public:
   }
 
   virtual antlrcpp::Any visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual antlrcpp::Any visitColumnExprSubstring(ClickHouseParser::ColumnExprSubstringContext *ctx) override {
     return visitChildren(ctx);
   }
 

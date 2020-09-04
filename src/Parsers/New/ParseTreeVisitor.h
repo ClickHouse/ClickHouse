@@ -39,19 +39,22 @@ public:
     antlrcpp::Any visitShowCreateDatabaseStmt(ClickHouseParser::ShowCreateDatabaseStmtContext *ctx) override;
     antlrcpp::Any visitShowCreateTableStmt(ClickHouseParser::ShowCreateTableStmtContext *ctx) override;
     antlrcpp::Any visitShowTablesStmt(ClickHouseParser::ShowTablesStmtContext *ctx) override;
-    antlrcpp::Any visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx) override;
+    antlrcpp::Any visitSystemStmt(ClickHouseParser::SystemStmtContext *ctx) override;
     antlrcpp::Any visitTruncateStmt(ClickHouseParser::TruncateStmtContext *ctx) override;
     antlrcpp::Any visitUseStmt(ClickHouseParser::UseStmtContext *ctx) override;
 
     // ALTER clauses
 
+    antlrcpp::Any visitAlterPartitionAttachClause(ClickHouseParser::AlterPartitionAttachClauseContext *ctx) override;
     antlrcpp::Any visitAlterPartitionDetachClause(ClickHouseParser::AlterPartitionDetachClauseContext *ctx) override;
     antlrcpp::Any visitAlterPartitionDropClause(ClickHouseParser::AlterPartitionDropClauseContext *ctx) override;
+    antlrcpp::Any visitAlterPartitionReplaceClause(ClickHouseParser::AlterPartitionReplaceClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableAddClause(ClickHouseParser::AlterTableAddClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableClearClause(ClickHouseParser::AlterTableClearClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableCommentClause(ClickHouseParser::AlterTableCommentClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableDropClause(ClickHouseParser::AlterTableDropClauseContext *ctx) override;
     antlrcpp::Any visitAlterTableModifyClause(ClickHouseParser::AlterTableModifyClauseContext *ctx) override;
+    antlrcpp::Any visitAlterTableOrderByClause(ClickHouseParser::AlterTableOrderByClauseContext *ctx) override;
 
     // CREATE clauses
 
@@ -140,6 +143,7 @@ public:
     antlrcpp::Any visitColumnExprLiteral(ClickHouseParser::ColumnExprLiteralContext *ctx) override;
     antlrcpp::Any visitColumnExprParens(ClickHouseParser::ColumnExprParensContext *ctx) override;
     antlrcpp::Any visitColumnExprSubquery(ClickHouseParser::ColumnExprSubqueryContext *ctx) override;
+    antlrcpp::Any visitColumnExprSubstring(ClickHouseParser::ColumnExprSubstringContext *ctx) override;
     antlrcpp::Any visitColumnExprTernaryOp(ClickHouseParser::ColumnExprTernaryOpContext *ctx) override;
     antlrcpp::Any visitColumnExprTrim(ClickHouseParser::ColumnExprTrimContext *ctx) override;
     antlrcpp::Any visitColumnExprTuple(ClickHouseParser::ColumnExprTupleContext *ctx) override;

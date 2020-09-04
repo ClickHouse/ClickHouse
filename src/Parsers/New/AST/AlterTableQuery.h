@@ -15,6 +15,7 @@ class AlterTableClause : public INode
         static PtrTo<AlterTableClause> createComment(bool if_exists, PtrTo<Identifier> identifier, PtrTo<StringLiteral> literal);
         static PtrTo<AlterTableClause> createDrop(bool if_exists, PtrTo<Identifier> identifier);
         static PtrTo<AlterTableClause> createModify(bool if_exists, PtrTo<TableElementExpr> element);
+        static PtrTo<AlterTableClause> createOrderBy(PtrTo<ColumnExpr> expr);
 
     private:
         enum class ClauseType
@@ -24,6 +25,7 @@ class AlterTableClause : public INode
             COMMENT,
             DROP,
             MODIFY,
+            ORDER_BY,
         };
 
         const ClauseType clause_type;

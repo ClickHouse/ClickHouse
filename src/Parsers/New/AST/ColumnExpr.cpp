@@ -359,6 +359,16 @@ antlrcpp::Any ParseTreeVisitor::visitColumnExprSubquery(ClickHouseParser::Column
     return ColumnExpr::createSubquery(visit(ctx->selectUnionStmt()), !(parent && parent->binaryOp()->IN()));
 }
 
+antlrcpp::Any ParseTreeVisitor::visitColumnExprSubstring(ClickHouseParser::ColumnExprSubstringContext *ctx)
+{
+    auto name = std::make_shared<Identifier>("substring");
+    auto args = std::make_shared<ColumnExprList>();
+
+    for (auto * expr : ctx->columnExpr()) args->append(visit(expr));
+
+    return ColumnExpr::createFunction(name, nullptr, args);
+}
+
 antlrcpp::Any ParseTreeVisitor::visitColumnExprTernaryOp(ClickHouseParser::ColumnExprTernaryOpContext *ctx)
 {
     auto name = std::make_shared<Identifier>("if");

@@ -242,9 +242,11 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
     return PtrTo<SelectUnionQuery>(new SelectUnionQuery({select_stmt}));
 }
 
-antlrcpp::Any ParseTreeVisitor::visitSystemSyncStmt(ClickHouseParser::SystemSyncStmtContext *ctx)
+antlrcpp::Any ParseTreeVisitor::visitSystemStmt(ClickHouseParser::SystemStmtContext *ctx)
 {
-    return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
+    if (ctx->SYNC()) return SystemQuery::createSync(visit(ctx->tableIdentifier()).as<PtrTo<TableIdentifier>>());
+    if (ctx->MERGES()) return SystemQuery::createMerges(!!ctx->STOP(), visit(ctx->tableIdentifier()));
+    __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitTruncateStmt(ClickHouseParser::TruncateStmtContext *ctx)

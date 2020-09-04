@@ -40,10 +40,13 @@ alterTableClause
     | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL            # AlterTableCommentClause
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                              # AlterTableDropClause
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                             # AlterTableModifyClause
+    | MODIFY ORDER BY columnExpr                                             # AlterTableOrderByClause
     ;
 alterPartitionClause
-    : DETACH partitionClause  # AlterPartitionDetachClause
-    | DROP partitionClause    # AlterPartitionDropClause
+    : ATTACH partitionClause (FROM tableIdentifier)?  # AlterPartitionAttachClause
+    | DETACH partitionClause                          # AlterPartitionDetachClause
+    | DROP partitionClause                            # AlterPartitionDropClause
+    | REPLACE partitionClause FROM tableIdentifier    # AlterPartitionReplaceClause
     ;
 
 // ANALYZE statement
@@ -91,8 +94,8 @@ tableElementExpr
     // TODO: CONSTRAINT
     ;
 tableColumnDfnt
-    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? /*TODO: codecExpr?*/ (TTL columnExpr)?
-    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr /*TODO: codexExpr?*/ (TTL columnExpr)?
+    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? /*TODO: codecExpr?*/ (TTL columnExpr)?
+    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? /*TODO: codexExpr?*/ (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
 ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
@@ -172,10 +175,10 @@ limitClause: LIMIT limitExpr (WITH TIES)?;
 settingsClause: SETTINGS settingExprList;
 
 joinExpr
-    : tableExpr                                                           # JoinExprTable
-    | LPAREN joinExpr RPAREN                                              # JoinExprParens
-    | joinExpr (GLOBAL|LOCAL)? joinOp JOIN joinExpr joinConstraintClause  # JoinExprOp
-    | joinExpr joinOpCross joinExpr                                       # JoinExprCrossOp
+    : LPAREN joinExpr RPAREN                                               # JoinExprParens
+    | joinExpr (GLOBAL|LOCAL)? joinOp? JOIN joinExpr joinConstraintClause  # JoinExprOp
+    | joinExpr joinOpCross joinExpr                                        # JoinExprCrossOp
+    | tableExpr                                                            # JoinExprTable
     ;
 joinOp
     : (ANY? INNER | INNER ANY?)                                                                                  # JoinOpInner
@@ -207,14 +210,15 @@ setStmt: SET settingExprList;
 
 showStmt
     : SHOW CREATE DATABASE databaseIdentifier                                                                     # showCreateDatabaseStmt
-    | SHOW CREATE TEMPORARY? TABLE tableIdentifier                                                                # showCreateTableStmt
+    | SHOW CREATE TEMPORARY? TABLE? tableIdentifier                                                               # showCreateTableStmt
     | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
     ;
 
 // SYSTEM statements
 
 systemStmt
-    : SYSTEM SYNC REPLICA tableIdentifier  # SystemSyncStmt
+    : SYSTEM (START | STOP) (FETCHES | MERGES) tableIdentifier
+    | SYSTEM SYNC REPLICA tableIdentifier
     ;
 
 // TRUNCATE statements
@@ -248,6 +252,7 @@ columnExpr
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                # ColumnExprCast
     | EXTRACT LPAREN INTERVAL_TYPE FROM columnExpr RPAREN                            # ColumnExprExtract
     | INTERVAL columnExpr INTERVAL_TYPE                                              # ColumnExprInterval
+    | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN           # ColumnExprSubstring
     | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN  # ColumnExprTrim
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN columnArgList? RPAREN       # ColumnExprFunction
     | columnExpr LBRACKET columnExpr RBRACKET                                        # ColumnExprArrayAccess
@@ -310,15 +315,15 @@ literal
     | NULL_SQL
     | identifier LPAREN RPAREN  // TODO: expand to LiteralExpr
     ;
-keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER
+keyword  // except NULL_SQL, SELECT, INF, NAN, USING, FROM, WHERE, POPULATE, ORDER, FOR
     : AFTER | ALIAS | ALL | ALTER | ANALYZE | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | ATTACH | BETWEEN | BOTH | BY | CASE | CAST
     | CHECK | CLEAR | CLUSTER | COLLATE | COLUMN | COMMENT | CREATE | CROSS | DATABASE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE
-    | DESC | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FINAL | FIRST | FORMAT
-    | FULL | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST | LEADING
-    | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | OUTER
-    | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET | SETTINGS | SHOW | SYNC
-    | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW
-    | VOLUME | WEEK | WHEN | WITH | YEAR
+    | DESC | DESCENDING | DESCRIBE | DETACH | DISK | DISTINCT | DROP | ELSE | END | ENGINE | EXISTS | EXTRACT | FETCHES | FINAL | FIRST
+    | FORMAT | FULL | FUNCTION | GLOBAL | GROUP | HAVING | HOUR | ID | IF | IN | INNER | INSERT | INTERVAL | INTO | IS | JOIN | KEY | LAST
+    | LEADING | LEFT | LIKE | LIMIT | LOCAL | MATERIALIZED | MERGES | MINUTE | MODIFY | MONTH | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE
+    | OR | OUTER | OUTFILE | PARTITION | PREWHERE | PRIMARY | QUARTER | RENAME | REPLACE | REPLICA | RIGHT | SAMPLE | SECOND | SEMI | SET
+    | SETTINGS | SHOW | START | STOP | SUBSTRING | SYNC | SYSTEM | TABLE | TABLES | TEMPORARY | THEN | TIES | TOTALS | TRAILING | TRIM
+    | TRUNCATE | TO | TTL | UNION | USE | VALUES | VIEW | VOLUME | WEEK | WHEN | WITH | YEAR
     ;
 identifier: IDENTIFIER | INTERVAL_TYPE | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.

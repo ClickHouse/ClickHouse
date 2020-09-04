@@ -180,33 +180,31 @@ ASTPtr JoinExpr::convertToOld() const
 namespace DB
 {
 
+using namespace AST;
+
 antlrcpp::Any ParseTreeVisitor::visitJoinConstraintClause(ClickHouseParser::JoinConstraintClauseContext *ctx)
 {
-    return std::make_shared<AST::JoinConstraintClause>(
-        ctx->ON() ? AST::JoinConstraintClause::ConstraintType::ON : AST::JoinConstraintClause::ConstraintType::USING,
+    return std::make_shared<JoinConstraintClause>(
+        ctx->ON() ? JoinConstraintClause::ConstraintType::ON : JoinConstraintClause::ConstraintType::USING,
         visit(ctx->columnExprList()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprCrossOp(ClickHouseParser::JoinExprCrossOpContext *ctx)
 {
-    auto [op, mode] = std::pair<AST::JoinExpr::JoinOpType, AST::JoinExpr::JoinOpMode>(visit(ctx->joinOpCross()));
+    auto [op, mode] = std::pair<JoinExpr::JoinOpType, JoinExpr::JoinOpMode>(visit(ctx->joinOpCross()));
 
-    return AST::JoinExpr::createJoinOp(visit(ctx->joinExpr(0)), visit(ctx->joinExpr(1)), op, mode, nullptr);
+    return JoinExpr::createJoinOp(visit(ctx->joinExpr(0)), visit(ctx->joinExpr(1)), op, mode, nullptr);
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprOp(ClickHouseParser::JoinExprOpContext *ctx)
 {
-    AST::JoinExpr::JoinOpMode mode = AST::JoinExpr::JoinOpMode::DEFAULT;
+    auto mode = JoinExpr::JoinOpMode::DEFAULT;
+    auto op = ctx->joinOp() ? visit(ctx->joinOp()).as<JoinExpr::JoinOpType>() : JoinExpr::JoinOpType::LEFT;
 
-    if (ctx->GLOBAL()) mode = AST::JoinExpr::JoinOpMode::GLOBAL;
-    else if (ctx->LOCAL()) mode = AST::JoinExpr::JoinOpMode::LOCAL;
+    if (ctx->GLOBAL()) mode = JoinExpr::JoinOpMode::GLOBAL;
+    else if (ctx->LOCAL()) mode = JoinExpr::JoinOpMode::LOCAL;
 
-    return AST::JoinExpr::createJoinOp(
-        visit(ctx->joinExpr(0)),
-        visit(ctx->joinExpr(1)),
-        visit(ctx->joinOp()),
-        mode,
-        visit(ctx->joinConstraintClause()));
+    return JoinExpr::createJoinOp(visit(ctx->joinExpr(0)), visit(ctx->joinExpr(1)), op, mode, visit(ctx->joinConstraintClause()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprParens(ClickHouseParser::JoinExprParensContext *ctx)
@@ -216,52 +214,52 @@ antlrcpp::Any ParseTreeVisitor::visitJoinExprParens(ClickHouseParser::JoinExprPa
 
 antlrcpp::Any ParseTreeVisitor::visitJoinExprTable(ClickHouseParser::JoinExprTableContext *ctx)
 {
-    return AST::JoinExpr::createTableExpr(visit(ctx->tableExpr()));
+    return JoinExpr::createTableExpr(visit(ctx->tableExpr()));
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpCross(ClickHouseParser::JoinOpCrossContext *ctx)
 {
-    std::pair<AST::JoinExpr::JoinOpType, AST::JoinExpr::JoinOpMode> op{
-        AST::JoinExpr::JoinOpType::CROSS, AST::JoinExpr::JoinOpMode::DEFAULT};
+    std::pair<JoinExpr::JoinOpType, JoinExpr::JoinOpMode> op{
+        JoinExpr::JoinOpType::CROSS, JoinExpr::JoinOpMode::DEFAULT};
 
-    if (ctx->GLOBAL()) op.second = AST::JoinExpr::JoinOpMode::GLOBAL;
-    else if (ctx->LOCAL()) op.second = AST::JoinExpr::JoinOpMode::LOCAL;
+    if (ctx->GLOBAL()) op.second = JoinExpr::JoinOpMode::GLOBAL;
+    else if (ctx->LOCAL()) op.second = JoinExpr::JoinOpMode::LOCAL;
 
     return op;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpFull(ClickHouseParser::JoinOpFullContext *ctx)
 {
-    if (ctx->OUTER()) return AST::JoinExpr::JoinOpType::FULL_OUTER;
-    if (ctx->ANY()) return AST::JoinExpr::JoinOpType::FULL_ANY;
-    return AST::JoinExpr::JoinOpType::FULL;
+    if (ctx->OUTER()) return JoinExpr::JoinOpType::FULL_OUTER;
+    if (ctx->ANY()) return JoinExpr::JoinOpType::FULL_ANY;
+    return JoinExpr::JoinOpType::FULL;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpInner(ClickHouseParser::JoinOpInnerContext *ctx)
 {
-    if (ctx->ANY()) return AST::JoinExpr::JoinOpType::INNER_ANY;
-    return AST::JoinExpr::JoinOpType::INNER;
+    if (ctx->ANY()) return JoinExpr::JoinOpType::INNER_ANY;
+    return JoinExpr::JoinOpType::INNER;
 }
 
 antlrcpp::Any ParseTreeVisitor::visitJoinOpLeftRight(ClickHouseParser::JoinOpLeftRightContext *ctx)
 {
     if (ctx->LEFT())
     {
-        if (ctx->OUTER()) return AST::JoinExpr::JoinOpType::LEFT_OUTER;
-        if (ctx->SEMI()) return AST::JoinExpr::JoinOpType::LEFT_SEMI;
-        if (ctx->ANTI()) return AST::JoinExpr::JoinOpType::LEFT_ANTI;
-        if (ctx->ANY()) return AST::JoinExpr::JoinOpType::LEFT_ANY;
-        if (ctx->ASOF()) return AST::JoinExpr::JoinOpType::LEFT_ASOF;
-        return AST::JoinExpr::JoinOpType::LEFT;
+        if (ctx->OUTER()) return JoinExpr::JoinOpType::LEFT_OUTER;
+        if (ctx->SEMI()) return JoinExpr::JoinOpType::LEFT_SEMI;
+        if (ctx->ANTI()) return JoinExpr::JoinOpType::LEFT_ANTI;
+        if (ctx->ANY()) return JoinExpr::JoinOpType::LEFT_ANY;
+        if (ctx->ASOF()) return JoinExpr::JoinOpType::LEFT_ASOF;
+        return JoinExpr::JoinOpType::LEFT;
     }
     else if (ctx->RIGHT())
     {
-        if (ctx->OUTER()) return AST::JoinExpr::JoinOpType::RIGHT_OUTER;
-        if (ctx->SEMI()) return AST::JoinExpr::JoinOpType::RIGHT_SEMI;
-        if (ctx->ANTI()) return AST::JoinExpr::JoinOpType::RIGHT_ANTI;
-        if (ctx->ANY()) return AST::JoinExpr::JoinOpType::RIGHT_ANY;
-        if (ctx->ASOF()) return AST::JoinExpr::JoinOpType::RIGHT_ASOF;
-        return AST::JoinExpr::JoinOpType::RIGHT;
+        if (ctx->OUTER()) return JoinExpr::JoinOpType::RIGHT_OUTER;
+        if (ctx->SEMI()) return JoinExpr::JoinOpType::RIGHT_SEMI;
+        if (ctx->ANTI()) return JoinExpr::JoinOpType::RIGHT_ANTI;
+        if (ctx->ANY()) return JoinExpr::JoinOpType::RIGHT_ANY;
+        if (ctx->ASOF()) return JoinExpr::JoinOpType::RIGHT_ASOF;
+        return JoinExpr::JoinOpType::RIGHT;
     }
     __builtin_unreachable();
 }
