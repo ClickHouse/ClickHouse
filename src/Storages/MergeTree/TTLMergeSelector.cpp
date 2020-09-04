@@ -118,8 +118,6 @@ bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Par
             return "";
         return queryToString(query);
     };
-    //LOG_DEBUG(&Poco::Logger::get("RECOMPRESS SELECTOR"), "PART CODEC: {}", ast_to_str(part.compression_codec_desc));
-    //LOG_DEBUG(&Poco::Logger::get("RECOMPRESS SELECTOR"), "ENTRY CODEC: {}", ast_to_str(ttl_description->recompression_codec));
 
     return ast_to_str(ttl_description->recompression_codec) == ast_to_str(part.compression_codec_desc);
 }
