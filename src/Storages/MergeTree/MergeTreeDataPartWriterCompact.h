@@ -28,7 +28,7 @@ protected:
 private:
     void writeBlock(const Block & block);
 
-    void addToChecksums(MergeTreeDataPartChecksums & checksumns);
+    void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
     Block header;
 
@@ -74,11 +74,11 @@ private:
     HashingWriteBuffer marks;
 
     /// Write single granule of one column (rows between 2 marks)
-    void writeColumnSingleGranule(
+    static void writeColumnSingleGranule(
         const ColumnWithTypeAndName & column,
         const CompressedStreamPtr & stream,
         size_t from_row,
-        size_t number_of_rows) const;
+        size_t number_of_rows);
 };
 
 }

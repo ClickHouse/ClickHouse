@@ -143,7 +143,7 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
     const ColumnWithTypeAndName & column,
     const CompressedStreamPtr & stream,
-    size_t from_row, size_t number_of_rows) const
+    size_t from_row, size_t number_of_rows)
 {
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
