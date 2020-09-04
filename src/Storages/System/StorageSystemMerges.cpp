@@ -66,7 +66,10 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
         res_columns[i++]->insert(merge.columns_written);
         res_columns[i++]->insert(merge.memory_usage);
         res_columns[i++]->insert(merge.thread_id);
-        res_columns[i++]->insert(merge.merge_type);
+        if (!merge.is_mutation)
+            res_columns[i++]->insert(merge.merge_type);
+        else
+            res_columns[i++]->insertDefault();
     }
 }
 

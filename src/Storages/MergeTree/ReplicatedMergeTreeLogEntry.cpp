@@ -36,7 +36,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
-            if (merge_type != MergeType::NORMAL)
+            if (merge_type != MergeType::REGULAR)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
             break;
 
@@ -150,6 +150,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             source_parts.push_back(s);
         }
         in >> new_part_name;
+
         if (format_version >= 4)
         {
             in >> "\ndeduplicate: " >> deduplicate;
@@ -160,7 +161,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             {
                 UInt64 value;
                 in >> value;
-                merge_type = static_cast<MergeType>(value);
+                merge_type = checkAndGetMergeType(value);
             }
         }
     }
