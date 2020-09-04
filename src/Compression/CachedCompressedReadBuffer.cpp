@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -20,9 +19,8 @@ void CachedCompressedReadBuffer::initInput()
 {
     if (!file_in)
     {
-        file_in_holder = file_in_creator();
-        file_in = file_in_holder.get();
-        compressed_in = file_in;
+        file_in = file_in_creator();
+        compressed_in = file_in.get();
 
         if (profile_callback)
             file_in->setProfileCallback(profile_callback, clock_type);
@@ -74,19 +72,10 @@ bool CachedCompressedReadBuffer::nextImpl()
 }
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, ReadBufferFromFileBase * file_in_, UncompressedCache * cache_)
-    : ReadBuffer(nullptr, 0), file_in(file_in_), cache(cache_), path(path_), file_pos(0)
-{
-    if (file_in == nullptr)
-        throw Exception("Neither file_in nor file_in_creator is initialized in CachedCompressedReadBuffer", ErrorCodes::LOGICAL_ERROR);
-
-    compressed_in = file_in;
-}
-
-CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_)
+    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_, bool allow_different_codecs_)
     : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_pos(0)
 {
+    allow_different_codecs = allow_different_codecs_;
 }
 
 void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
