@@ -1973,6 +1973,13 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
+    auto disks = getDisksMap();
+    for (auto & [disk_name, disk] : disks)
+    {
+        LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
+        disk->shutdown();
+    }
+
     shared->shutdown();
 }
 
