@@ -23,6 +23,7 @@ SRCS(
     TableFunctionValues.cpp
     TableFunctionView.cpp
     TableFunctionZeros.cpp
+    tests/test_strange_memory_leak.cpp
 
 )
 

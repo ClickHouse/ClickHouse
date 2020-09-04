@@ -587,6 +587,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
     {
+        assert(create.storage->engine);
         if (create.temporary && create.storage->engine->name != "Memory")
             throw Exception(
                 "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
