@@ -482,6 +482,11 @@ void PipelineExecutor::execute(size_t num_threads)
         for (auto & node : graph)
             if (node.execution_state->exception)
                 std::rethrow_exception(node.execution_state->exception);
+
+        /// Exception which happened in executing thread, but not at processor.
+        for (auto & executor_context : executor_contexts)
+            if (executor_context->exception)
+                std::rethrow_exception(executor_context->exception);
     }
     catch (...)
     {
@@ -764,7 +769,16 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                             CurrentThread::detachQueryIfNotDetached();
                 );
 
-                executeSingleThread(thread_num, num_threads);
+                try
+                {
+                    executeSingleThread(thread_num, num_threads);
+                }
+                catch (...)
+                {
+                    /// In case of exception from executor itself, stop other threads.
+                    finish();
+                    executor_contexts[thread_num]->exception = std::current_exception();
+                }
             });
         }
 
