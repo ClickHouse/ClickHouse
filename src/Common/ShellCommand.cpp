@@ -186,6 +186,10 @@ int ShellCommand::tryWait()
 {
     wait_called = true;
 
+    in.close();
+    out.close();
+    err.close();
+
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;
