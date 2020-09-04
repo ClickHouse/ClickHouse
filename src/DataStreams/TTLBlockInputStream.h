@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
 #include <Interpreters/Aggregator.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 
 #include <common/DateLUT.h>
 
@@ -74,6 +75,8 @@ private:
 
     /// Finalize agg_result into result_columns
     void finalizeAggregates(MutableColumns & result_columns);
+
+    void updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map);
 
     /// Updates TTL for moves
     void updateMovesTTL(Block & block);

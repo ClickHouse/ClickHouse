@@ -3039,8 +3039,6 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
-    LOG_DEBUG(log, "RECOMPRESSION ENTRIES SIZE {}", recompression_ttl_entries.size());
-    LOG_DEBUG(log, "TTL INFOS SIZE {}", ttl_infos.recompression_ttl.size());
     auto best_ttl_entry = selectTTLEntryForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, false);
 
     if (best_ttl_entry)
