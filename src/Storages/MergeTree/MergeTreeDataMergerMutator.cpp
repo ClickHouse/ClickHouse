@@ -1135,20 +1135,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     bool need_remove_expired_values = false;
 
     if (in && shouldExecuteTTL(metadata_snapshot, in->getHeader().getNamesAndTypesList().getNames(), commands_for_part))
-    {
-        //std::cerr << "GOING TO MATERIALIZE TTL\n";
         need_remove_expired_values = true;
-    }
-    else
-    {
-        //std::cerr << "NOT GOING TO MATERIALIZE TTL\n";
-        //std::cerr << "IN IS NULL:" << (in == nullptr) << std::endl;
-    }
 
     /// All columns from part are changed and may be some more that were missing before in part
     if (!isWidePart(source_part) || (interpreter && interpreter->isAffectingAllColumns()))
     {
-        //std::cerr << "MUTATING ALL PART COLUMNS\n";
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
         /// (which is locked in shared mode when input streams are created) and when inserting new data
@@ -1179,9 +1170,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
-        {
             files_to_skip.insert("ttl.txt");
-        }
         /// Create hardlinks for unchanged files
         for (auto it = disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
         {
