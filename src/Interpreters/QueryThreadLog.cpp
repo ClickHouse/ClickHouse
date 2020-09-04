@@ -64,6 +64,7 @@ Block QueryThreadLogElement::createBlock()
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"}
+    };
 }
 
 void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
