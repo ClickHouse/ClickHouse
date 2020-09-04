@@ -346,6 +346,9 @@ void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+    if (equal_range.empty())
+        return;
+
     for (const auto& column : columns)
     {
         column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
