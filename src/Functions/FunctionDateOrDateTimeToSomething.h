@@ -67,7 +67,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.
-        /// Else if the time zone is specified but empty, throw an exception.
+        /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
