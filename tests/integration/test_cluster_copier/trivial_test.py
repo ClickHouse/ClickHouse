@@ -34,7 +34,7 @@ def started_cluster():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                                         config_dir="configs",
+                                         main_configs=[], user_configs=[],
                                          macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                                          with_zookeeper=True)
 
