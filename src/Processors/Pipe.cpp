@@ -102,6 +102,8 @@ Pipe::Holder & Pipe::Holder::operator=(Holder && rhs)
     storage_holders.insert(storage_holders.end(), rhs.storage_holders.begin(), rhs.storage_holders.end());
     interpreter_context.insert(interpreter_context.end(),
                                rhs.interpreter_context.begin(), rhs.interpreter_context.end());
+    for (auto & plan : rhs.query_plans)
+        query_plans.emplace_back(std::move(plan));
 
     return *this;
 }

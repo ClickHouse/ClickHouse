@@ -716,6 +716,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Disable DNS caching at all
         DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
     }
     else
     {
