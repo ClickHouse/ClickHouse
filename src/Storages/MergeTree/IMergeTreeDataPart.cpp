@@ -1047,6 +1047,37 @@ void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) co
         column_to_size[column_name] = size.data_compressed;
 }
 
+
+bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const
+{
+    if (!metadata_snapshot->hasAnyTTL())
+        return false;
+
+    if (metadata_snapshot->hasRowsTTL())
+    {
+        if (isEmpty()) /// All rows were finally deleted and we don't store TTL
+            return true;
+        else if (ttl_infos.table_ttl.min == 0)
+            return false;
+    }
+
+    for (const auto & [column, desc] : metadata_snapshot->getColumnTTLs())
+    {
+        /// Part has this column, but we don't calculated TTL for it
+        if (!ttl_infos.columns_ttl.count(column) && getColumns().contains(column))
+            return false;
+    }
+
+    for (const auto & move_desc : metadata_snapshot->getMoveTTLs())
+    {
+        /// Move TTL is not calculated
+        if (!ttl_infos.moves_ttl.count(move_desc.result_column))
+            return false;
+    }
+
+    return true;
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);

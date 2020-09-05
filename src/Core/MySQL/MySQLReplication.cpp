@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace MySQLReplication
@@ -110,12 +111,12 @@ namespace MySQLReplication
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
         }
         else if (query.starts_with("SAVEPOINT"))
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
+            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -741,7 +742,9 @@ namespace MySQLReplication
 
     void GTIDEvent::dump(std::ostream & out) const
     {
-        auto gtid_next = gtid.uuid.toUnderType().toHexString() + ":" + std::to_string(gtid.seq_no);
+        WriteBufferFromOwnString ws;
+        writeUUIDText(gtid.uuid, ws);
+        auto gtid_next = ws.str() + ":" + std::to_string(gtid.seq_no);
 
         header.dump(out);
         out << "GTID Next: " << gtid_next << std::endl;

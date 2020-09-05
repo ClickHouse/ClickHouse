@@ -20,7 +20,6 @@ from google.protobuf.internal.encoder import _VarintBytes
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/rabbitmq.xml','configs/log_conf.xml'],
                                 with_rabbitmq=True)
 rabbitmq_id = ''

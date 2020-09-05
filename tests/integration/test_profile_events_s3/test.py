@@ -17,7 +17,7 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
-        cluster.add_instance("node", config_dir="configs", with_minio=True)
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/log.xml",  "configs/query_log.xml",  "configs/ssl_conf.xml"], with_minio=True)
 
         logging.info("Starting cluster...")
         cluster.start()

@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **ReplacingMergeTree Parametreleri**
 
--   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` veya `DateTime64`. İsteğe bağlı parametre.
+-   `ver` — column with version. Type `UInt*`, `Date` veya `DateTime`. İsteğe bağlı parametre.
 
     Birleş whenirken, `ReplacingMergeTree` aynı birincil anahtara sahip tüm satırlardan sadece bir tane bırakır:
 
