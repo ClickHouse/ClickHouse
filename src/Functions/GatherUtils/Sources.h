@@ -123,8 +123,12 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 };
 
 #if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-override"
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wsuggest-override"
+#elif __clang_major__ >= 11
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wsuggest-override"
+#   pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
 #endif
 
 template <typename Base>
@@ -205,8 +209,8 @@ struct ConstSource : public Base
     }
 };
 
-#if !__clang__
-#pragma GCC diagnostic pop
+#if !__clang__ || __clang_major__ >= 11
+#   pragma GCC diagnostic pop
 #endif
 
 struct StringSource
@@ -325,9 +329,9 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsForward(begin, offset, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
             return {begin, 0};
@@ -337,14 +341,14 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsForward(begin, offset, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
             return {begin, 0};
 
-        auto res_end = skipCodePointsForward(res_begin, length, end);
+        const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
             return {res_begin, size_t(end - res_begin)};
@@ -354,19 +358,19 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
 
         return {res_begin, size_t(end - res_begin)};
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsBackward(end, offset, begin);
-        auto res_end = skipCodePointsForward(res_begin, length, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
             return {res_begin, size_t(end - res_begin)};
@@ -463,7 +467,7 @@ struct IStringSource
     virtual bool isEnd() const = 0;
     virtual size_t getSizeForReserve() const = 0;
     virtual Slice getWhole() const = 0;
-    virtual ~IStringSource() {}
+    virtual ~IStringSource() = default;
 };
 
 

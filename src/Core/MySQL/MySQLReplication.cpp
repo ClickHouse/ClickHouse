@@ -870,7 +870,7 @@ namespace MySQLReplication
             }
             case WRITE_ROWS_EVENT_V1:
             case WRITE_ROWS_EVENT_V2: {
-                if (do_replicate())
+                if (doReplicate())
                     event = std::make_shared<WriteRowsEvent>(table_map);
                 else
                     event = std::make_shared<DryRunEvent>();
@@ -881,7 +881,7 @@ namespace MySQLReplication
             }
             case DELETE_ROWS_EVENT_V1:
             case DELETE_ROWS_EVENT_V2: {
-                if (do_replicate())
+                if (doReplicate())
                     event = std::make_shared<DeleteRowsEvent>(table_map);
                 else
                     event = std::make_shared<DryRunEvent>();
@@ -892,7 +892,7 @@ namespace MySQLReplication
             }
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2: {
-                if (do_replicate())
+                if (doReplicate())
                     event = std::make_shared<UpdateRowsEvent>(table_map);
                 else
                     event = std::make_shared<DryRunEvent>();

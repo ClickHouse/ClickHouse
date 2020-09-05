@@ -413,7 +413,7 @@ namespace MySQLReplication
         String table;
         std::vector<Field> rows;
 
-        RowsEvent(std::shared_ptr<TableMapEvent> table_map_)
+        explicit RowsEvent(std::shared_ptr<TableMapEvent> table_map_)
             : number_columns(0), table_id(0), flags(0), extra_data_len(0), table_map(table_map_)
         {
             schema = table_map->schema;
@@ -439,21 +439,21 @@ namespace MySQLReplication
     class WriteRowsEvent : public RowsEvent
     {
     public:
-        WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+        explicit WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
         MySQLEventType type() const override { return MYSQL_WRITE_ROWS_EVENT; }
     };
 
     class DeleteRowsEvent : public RowsEvent
     {
     public:
-        DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+        explicit DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
         MySQLEventType type() const override { return MYSQL_DELETE_ROWS_EVENT; }
     };
 
     class UpdateRowsEvent : public RowsEvent
     {
     public:
-        UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+        explicit UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
         MySQLEventType type() const override { return MYSQL_UPDATE_ROWS_EVENT; }
     };
 
@@ -499,7 +499,7 @@ namespace MySQLReplication
         virtual BinlogEventPtr readOneEvent() = 0;
         virtual void setReplicateDatabase(String db) = 0;
         virtual void setGTIDSets(GTIDSets sets) = 0;
-        virtual ~IFlavor() = default;
+        virtual ~IFlavor() override = default;
     };
 
     class MySQLFlavor : public IFlavor
@@ -518,7 +518,7 @@ namespace MySQLReplication
         String replicate_do_db;
         std::shared_ptr<TableMapEvent> table_map;
 
-        inline bool do_replicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
+        inline bool doReplicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
     };
 }
 
