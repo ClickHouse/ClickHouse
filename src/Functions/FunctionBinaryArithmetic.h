@@ -28,6 +28,7 @@
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <ext/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -51,6 +52,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -602,7 +604,8 @@ class FunctionBinaryArithmetic : public IFunction
         return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
     }
 
-    FunctionOverloadResolverPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    static FunctionOverloadResolverPtr
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, const Context & context)
     {
         bool first_is_date_or_datetime = isDateOrDateTime(type0);
         bool second_is_date_or_datetime = isDateOrDateTime(type1);
@@ -632,7 +635,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         std::string function_name;
@@ -651,7 +654,7 @@ class FunctionBinaryArithmetic : public IFunction
         return FunctionFactory::instance().get(function_name, context);
     }
 
-    bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1) const
+    static bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1)
     {
         if constexpr (!is_multiply)
             return false;
@@ -663,7 +666,7 @@ class FunctionBinaryArithmetic : public IFunction
             || (which0.isNativeUInt() && which1.isAggregateFunction());
     }
 
-    bool isAggregateAddition(const DataTypePtr & type0, const DataTypePtr & type1) const
+    static bool isAggregateAddition(const DataTypePtr & type0, const DataTypePtr & type1)
     {
         if constexpr (!is_plus)
             return false;
@@ -813,6 +816,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        return getReturnTypeImplStatic(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, const Context & context)
+    {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
@@ -832,7 +840,7 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -903,7 +911,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + String(name),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return type_res;
     }
@@ -1110,7 +1118,8 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        if (auto function_builder
+            = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type, context))
         {
             executeDateTimeIntervalPlusMinus(block, arguments, result, input_rows_count, function_builder);
             return;
@@ -1198,6 +1207,169 @@ public:
 #endif
 
     bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
+};
+
+
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
+class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>
+{
+public:
+    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
+    using Monotonicity = typename Base::Monotonicity;
+    static FunctionPtr create(const ColumnWithTypeAndName & left_, const ColumnWithTypeAndName & right_, const Context & context)
+    {
+        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, context);
+    }
+    FunctionBinaryArithmeticWithConstants(
+        const ColumnWithTypeAndName & left_, const ColumnWithTypeAndName & right_, const Context & context_)
+        : Base(context_), left(left_), right(right_)
+    {
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
+    {
+        if (left.column && isColumnConst(*left.column) && arguments.size() == 1)
+        {
+            Block block_with_constant
+                = {{left.column->cloneResized(input_rows_count), left.type, left.name},
+                   block.getByPosition(arguments[0]),
+                   block.getByPosition(result)};
+            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
+            block.getByPosition(result) = block_with_constant.getByPosition(2);
+        }
+        else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
+        {
+            Block block_with_constant
+                = {block.getByPosition(arguments[0]),
+                   {right.column->cloneResized(input_rows_count), right.type, right.name},
+                   block.getByPosition(result)};
+            Base::executeImpl(block_with_constant, {0, 1}, 2, input_rows_count);
+            block.getByPosition(result) = block_with_constant.getByPosition(2);
+        }
+        else
+            Base::executeImpl(block, arguments, result, input_rows_count);
+    }
+
+    bool hasInformationAboutMonotonicity() const override
+    {
+        std::string_view name_ = Name::name;
+        if (name_ == "minus" || name_ == "plus" || name_ == "multiply" || name_ == "divide" || name_ == "intDiv")
+        {
+            return true;
+        }
+        return false;
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
+    {
+        std::string_view name_ = Name::name;
+        if (name_ == "minus" || name_ == "plus")
+        {
+            return {true, true, true};
+        }
+        if (name_ == "multiply" || name_ == "divide" || name_ == "intDiv")
+        {
+            if (!left.column)
+            {
+                bool positive = true;
+                if (WhichDataType(right.type).isInt())
+                {
+                    positive = right.column->getInt(0) >= 0;
+                }
+
+                if (WhichDataType(left.type).isUInt())
+                    return {true, positive, true};
+                else if (WhichDataType(left.type).isInt())
+                {
+                    if (left_point.get<Int64>() == right_point.get<Int64>())
+                        return {true, positive, true};
+                    if (left_point.get<Int64>() >= 0)
+                        return {true, positive, false};
+                    else if (right_point.get<Int64>() <= 0)
+                        return {true, !positive, false};
+                    else
+                        return {false, true, false};
+                }
+            }
+            if (!right.column)
+            {
+                bool positive = true;
+                if (WhichDataType(left.type).isInt())
+                {
+                    positive = right.column->getInt(0) >= 0;
+                }
+
+                if (WhichDataType(left.type).isUInt())
+                    return {true, !positive, true};
+                else if (WhichDataType(left.type).isInt())
+                {
+                    if (left_point.get<Int64>() == right_point.get<Int64>())
+                        return {true, !positive, true};
+                    if (left_point.get<Int64>() >= 0)
+                        return {true, !positive, false};
+                    else if (right_point.get<Int64>() <= 0)
+                        return {true, positive, false};
+                    else
+                        return {false, true, false};
+                }
+            }
+            return {true, true, true}; // both arguments are constants
+        }
+        return {false, true, false};
+    }
+
+private:
+    ColumnWithTypeAndName left;
+    ColumnWithTypeAndName right;
+};
+
+
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
+class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolverImpl
+{
+public:
+    static constexpr auto name = Name::name;
+    static FunctionOverloadResolverImplPtr create(const Context & context)
+    {
+        return std::make_unique<BinaryArithmeticOverloadResolver>(context);
+    }
+
+    explicit BinaryArithmeticOverloadResolver(const Context & context_) : context(context_) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return false; }
+
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        /// More efficient specialization for two numeric arguments.
+        if (arguments.size() == 2
+            && ((arguments[0].column && isColumnConst(*arguments[0].column))
+                || (arguments[1].column && isColumnConst(*arguments[1].column))))
+        {
+            return std::make_unique<DefaultFunction>(
+                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments>::create(arguments[0], arguments[1], context),
+                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                return_type);
+        }
+
+        return std::make_unique<DefaultFunction>(
+            FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>::create(context),
+            ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            return_type);
+    }
+
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>::getReturnTypeImplStatic(arguments, context);
+    }
+
+private:
+    const Context & context;
 };
 
 }
