@@ -467,87 +467,86 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_NEWDECIMAL:
                     {
-                        Int8 digits_per_integer = 9;
-                        Int8 precision = meta >> 8;
-                        Int8 decimals = meta & 0xff;
-                        const char compressed_byte_map[] = {0, 1, 1, 2, 2, 3, 3, 4, 4, 4};
-
-                        Int8 integral = (precision - decimals);
-                        UInt32 uncompressed_integers = integral / digits_per_integer;
-                        UInt32 uncompressed_decimals = decimals / digits_per_integer;
-                        UInt32 compressed_integers = integral - (uncompressed_integers * digits_per_integer);
-                        UInt32 compressed_decimals = decimals - (uncompressed_decimals * digits_per_integer);
-
-                        String buff;
-                        UInt32 bytes_to_read = uncompressed_integers * 4 + compressed_byte_map[compressed_integers]
-                            + uncompressed_decimals * 4 + compressed_byte_map[compressed_decimals];
-                        buff.resize(bytes_to_read);
-                        payload.readStrict(reinterpret_cast<char *>(buff.data()), bytes_to_read);
-
-                        String format;
-                        format.resize(0);
-
-                        bool is_negative = ((buff[0] & 0x80) == 0);
-                        if (is_negative)
+                        const auto & dispatch = [](const size_t & precision, const size_t & scale, const auto & function) -> Field
                         {
-                            format += "-";
-                        }
-                        buff[0] ^= 0x80;
+                            if (precision <= DecimalUtils::maxPrecision<Decimal32>())
+                                return Field(function(precision, scale, Decimal32()));
+                            else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
+                                return Field(function(precision, scale, Decimal64()));
+                            else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
+                                return Field(function(precision, scale, Decimal128()));
 
-                        ReadBufferFromString reader(buff);
-                        /// Compressed part.
-                        if (compressed_integers != 0)
-                        {
-                            Int64 val = 0;
-                            UInt8 to_read = compressed_byte_map[compressed_integers];
-                            readBigEndianStrict(reader, reinterpret_cast<char *>(&val), to_read);
-                            format += std::to_string(val);
-                        }
+                            return Field(function(precision, scale, Decimal256()));
+                        };
 
-                        for (auto k = 0U; k < uncompressed_integers; k++)
+                        const auto & read_decimal = [&](const size_t & precision, const size_t & scale, auto decimal)
                         {
-                            UInt32 val = 0;
-                            readBigEndianStrict(reader, reinterpret_cast<char *>(&val), 4);
-                            format += std::to_string(val);
-                        }
-                        format += ".";
-                        for (auto k = 0U; k < uncompressed_decimals; k++)
-                        {
-                            UInt32 val = 0;
-                            reader.readStrict(reinterpret_cast<char *>(&val), 4);
-                            format += std::to_string(val);
-                        }
+                            using DecimalType = decltype(decimal);
+                            static constexpr size_t digits_per_integer = 9;
+                            static const size_t compressed_byte_map[] = {0, 1, 1, 2, 2, 3, 3, 4, 4, 4};
 
-                        /// Compressed part.
-                        if (compressed_decimals != 0)
-                        {
-                            Int64 val = 0;
-                            String compressed_buff;
-                            UInt8 to_read = compressed_byte_map[compressed_decimals];
-                            switch (to_read)
+                            DecimalType res(0);
+                            bool is_negative = (*payload.position() & 0x80) == 0;
+                            *payload.position() ^= 0x80;
+
                             {
-                                case 1: {
-                                    reader.readStrict(reinterpret_cast<char *>(&val), 1);
-                                    break;
+                                size_t integral = (precision - scale);
+                                size_t uncompressed_integers = integral / digits_per_integer;
+                                size_t compressed_integers = integral - (uncompressed_integers * digits_per_integer);
+
+                                /// Compressed part.
+                                if (compressed_integers != 0)
+                                {
+                                    Int64 val = 0;
+                                    size_t to_read = compressed_byte_map[compressed_integers];
+                                    readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
+                                    res += val;
                                 }
-                                case 2: {
-                                    readBigEndianStrict(reader, reinterpret_cast<char *>(&val), 2);
-                                    break;
+
+                                for (auto k = 0U; k < uncompressed_integers; k++)
+                                {
+                                    UInt32 val = 0;
+                                    readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
+                                    res *= intExp10OfSize<DecimalType>(k ? digits_per_integer : std::max(size_t(1), compressed_integers));
+                                    res += val;
                                 }
-                                case 3: {
-                                    readBigEndianStrict(reader, reinterpret_cast<char *>(&val), 3);
-                                    break;
-                                }
-                                case 4: {
-                                    readBigEndianStrict(reader, reinterpret_cast<char *>(&val), 4);
-                                    break;
-                                }
-                                default:
-                                    break;
                             }
-                            format += std::to_string(val);
-                        }
-                        row.push_back(Field{String{format}});
+
+                            {
+                                size_t uncompressed_decimals = scale / digits_per_integer;
+                                size_t compressed_decimals = scale - (uncompressed_decimals * digits_per_integer);
+
+                                for (auto k = 0U; k < uncompressed_decimals; k++)
+                                {
+                                    UInt32 val = 0;
+                                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
+                                    res *= intExp10OfSize<DecimalType>(digits_per_integer);
+                                    res += val;
+                                }
+
+                                /// Compressed part.
+                                if (compressed_decimals != 0)
+                                {
+                                    Int64 val = 0;
+                                    String compressed_buff;
+                                    size_t to_read = compressed_byte_map[compressed_decimals];
+
+                                    if (to_read)
+                                    {
+                                        payload.readStrict(reinterpret_cast<char *>(&val), to_read);
+                                        res *= intExp10OfSize<DecimalType>(compressed_decimals);
+                                        res += val;
+                                    }
+                                }
+                            }
+
+                            if (is_negative)
+                                res *= -1;
+
+                            return res;
+                        };
+
+                        row.push_back(dispatch((meta >> 8) & 0xFF, meta & 0xFF, read_decimal));
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:
