@@ -7,6 +7,9 @@ SELECT toStartOfMonth(toDateTime('2017-12-31 00:00:00', 'UTC'), 'UTC'); -- succe
 SELECT toStartOfQuarter(toDateTime('2017-12-31 00:00:00', 'UTC'), ''); -- {serverError 43}
 SELECT toStartOfQuarter(toDateTime('2017-12-31 00:00:00', 'UTC'), 'UTC'); -- success
 
+SELECT toStartOfYear(toDateTime('2017-12-31 00:00:00', 'UTC'), ''); -- {serverError 43}
+SELECT toStartOfYear(toDateTime('2017-12-31 00:00:00', 'UTC'), 'UTC'); -- success
+
 SELECT toStartOfTenMinutes(toDateTime('2017-12-31 00:00:00', 'UTC'), ''); -- {serverError 43}
 SELECT toStartOfTenMinutes(toDateTime('2017-12-31 05:12:30', 'UTC'), 'UTC'); -- success
 
