@@ -25,9 +25,9 @@ toc_title: "\u6559\u7A0B"
 -   `clickhouse-common` 包，包含一个ClickHouse可执行文件。
 -   `clickhouse-server` 包，包含要作为服务端运行的ClickHouse配置文件。
 
-服务端配置文件位于 `/etc/clickhouse-server/`。在进一步讨论之前，请注意 `config.xml`文件中的`<path>` 元素. Path决定了数据存储的位置，因此该位置应该位于磁盘容量较大的卷上；默认值为 `/var/lib/clickhouse/`。如果你想调整配置，直接编辑并不方便 `config.xml` 文件，考虑到它可能会在未来的软件包更新中被重写。 复盖配置元素的推荐方法是创建 [在配置文件。d目录](../operations/configuration-files.md) 它作为 “patches” 要配置。xml
+服务端配置文件位于 `/etc/clickhouse-server/`。 在进一步讨论之前，请注意 `config.xml`文件中的`<path>` 元素. Path决定了数据存储的位置，因此该位置应该位于磁盘容量较大的卷上；默认值为 `/var/lib/clickhouse/`。 如果你想调整配置，考虑到它可能会在未来的软件包更新中被重写，直接编辑`config.xml` 文件并不方便。 推荐的方法是在[配置文件](../operations/configuration-files.md)目录创建文件，作为config.xml文件的“补丁”，用以复写配置元素。
 
-你可能已经注意到了, `clickhouse-server` 安装包后不会自动启动。 它也不会在更新后自动重新启动。 您启动服务器的方式取决于您的init系统，通常情况下，它是:
+你可能已经注意到了, `clickhouse-server` 安装后不会自动启动。 它也不会在更新后自动重新启动。 您启动服务端的方式取决于您的初始系统，通常情况下是这样:
 
 ``` bash
 sudo service clickhouse-server start
@@ -39,13 +39,13 @@ sudo service clickhouse-server start
 sudo /etc/init.d/clickhouse-server start
 ```
 
-服务器日志的默认位置是 `/var/log/clickhouse-server/`. 服务器已准备好处理客户端连接一旦它记录 `Ready for connections` 消息
+服务端日志的默认位置是 `/var/log/clickhouse-server/`。当服务端在日志中记录 `Ready for connections` 消息，即表示服务端已准备好处理客户端连接。
 
-一旦 `clickhouse-server` 正在运行我们可以利用 `clickhouse-client` 连接到服务器并运行一些测试查询，如 `SELECT "Hello, world!";`.
+一旦 `clickhouse-server` 启动并运行，我们可以利用 `clickhouse-client` 连接到服务端，并运行一些测试查询，如 `SELECT "Hello, world!";`.
 
 <details markdown="1">
 
-<summary>Clickhouse-客户端的快速提示</summary>
+<summary>Clickhouse-client的快速提示</summary>
 
 交互模式:
 
