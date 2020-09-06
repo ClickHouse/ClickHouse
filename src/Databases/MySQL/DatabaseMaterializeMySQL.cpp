@@ -6,11 +6,21 @@
 
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
+#    include <vector>
+#    include <unordered_map>
+
+#    include <Common/Exception.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/quoteString.h>
+#    include <Common/formatReadable.h>
+#    include <Core/Block.h>
 #    include <Core/Defines.h>
+#    include <Core/MySQL/MySQLReplication.h>
 #    include <Interpreters/Context.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/MySQL/DatabaseMaterializeTablesIterator.h>
 #    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Databases/MySQL/MySQLUtils.h>
 #    include <DataStreams/copyData.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -18,6 +28,9 @@
 #    include <Poco/File.h>
 #    include <Poco/Logger.h>
 #    include <Common/setThreadName.h>
+#    include <Formats/MySQLBlockInputStream.h>
+#    include <IO/Progress.h>
+#    include <Interpreters/DatabaseCatalog.h>
 
 namespace DB
 {
@@ -33,23 +46,26 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     const String & metadata_path_,
     const IAST * database_engine_define_,
     const String & mysql_database_name_,
-    mysqlxx::Pool & pool_,
+    mysqlxx::Pool && pool_,
     MySQLClient && client_,
     std::unique_ptr<MaterializeMySQLSettings> settings_)
     : IDatabase(database_name_), global_context(context.getGlobalContext())
     , engine_define(database_engine_define_->clone())
     , nested_database(std::make_shared<DatabaseOrdinary>(database_name_, metadata_path_, context))
-    , settings(std::move(settings_))
-    , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
-    , materialize_thread(context, database_name_, mysql_database_name_, pool_, std::move(client_), settings.get())
-    , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
-    , pool(pool_)
+    , settings(std::move(settings_))
+    , pool(std::move(pool_))
+    , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
+    , materialize_metadata(loadMetadata())
+    , materialize_thread(context, database_name_, mysql_database_name_, pool, std::move(client_), &materialize_metadata, settings.get())
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
+}
 
+MaterializeMetadata DatabaseMaterializeMySQL::loadMetadata()
+{
     auto connection = pool.get();
-    materialize_metadata = MaterializeMetadata(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", checkVariableAndGetVersion(connection));
+    return MaterializeMetadata(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", checkVariableAndGetVersion(connection));
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
@@ -81,64 +97,6 @@ ASTPtr DatabaseMaterializeMySQL::getCreateDatabaseQuery() const
     create_query->database = database_name;
     create_query->set(create_query->storage, engine_define);
     return create_query;
-}
-
-String DatabaseMaterializeMySQL::checkVariableAndGetVersion(const mysqlxx::Pool::Entry & connection)
-{
-    Block variables_header{
-        {std::make_shared<DataTypeString>(), "Variable_name"},
-        {std::make_shared<DataTypeString>(), "Value"}
-    };
-
-    const String & check_query = "SHOW VARIABLES WHERE "
-         "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
-         "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
-         "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
-         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
-
-    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE);
-
-    Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 4)
-    {
-        std::unordered_map<String, String> variables_error_message{
-            {"log_bin", "log_bin = 'ON'"},
-            {"binlog_format", "binlog_format='ROW'"},
-            {"binlog_row_image", "binlog_row_image='FULL'"},
-            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"}
-        };
-        ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
-
-        for (size_t index = 0; index < variables_block.rows(); ++index)
-        {
-            const auto & error_message_it = variables_error_message.find(variable_name_column->getDataAt(index).toString());
-
-            if (error_message_it != variables_error_message.end())
-                variables_error_message.erase(error_message_it);
-        }
-
-        bool first = true;
-        std::stringstream error_message;
-        error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
-        for (const auto & [variable_name, variable_error_message] : variables_error_message)
-        {
-            error_message << (first ? "" : ", ") << variable_error_message;
-
-            if (first)
-                first = false;
-        }
-
-        throw Exception(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
-    }
-
-    Block version_header{{std::make_shared<DataTypeString>(), "version"}};
-    MySQLBlockInputStream version_input(connection, "SELECT version() AS version;", version_header, DEFAULT_BLOCK_SIZE);
-
-    Block version_block = version_input.read();
-    if (!version_block || version_block.rows() != 1)
-        throw Exception("LOGICAL ERROR: cannot get mysql version.", ErrorCodes::LOGICAL_ERROR);
-
-    return version_block.getByPosition(0).column->getDataAt(0).toString();
 }
 
 std::vector<String> DatabaseMaterializeMySQL::fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection)
@@ -229,11 +187,13 @@ void DatabaseMaterializeMySQL::cleanOutdatedTables(const Context & context)
     }
 }
 
-void DatabaseMaterializeMySQL::tryDumpTablesData(Context & context, bool & opened_transaction)
+void DatabaseMaterializeMySQL::tryDumpTablesData(
+    mysqlxx::Pool::Entry & connection,
+    Context & context,
+    bool & opened_transaction)
 {
     bool locked_tables = false;
     opened_transaction = false;
-    auto connection = pool.get();
 
     std::unordered_map<String, String> tables_dump_queries;
     try {
@@ -241,7 +201,7 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(Context & context, bool & opene
         connection->query("FLUSH TABLES WITH READ LOCK;").execute();
 
         locked_tables = true;
-        materialize_metadata->fetchMasterStatus(connection); // overwrite metadata for consistency
+        materialize_metadata.fetchMasterStatus(connection); // overwrite metadata for consistency
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
@@ -258,9 +218,9 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(Context & context, bool & opene
 
     if (!tables_dump_queries.empty()) {
         Position position;
-        position.update(materialize_metadata->binlog_position, materialize_metadata->binlog_file, materialize_metadata->executed_gtid_set);
+        position.update(materialize_metadata.binlog_position, materialize_metadata.binlog_file, materialize_metadata.executed_gtid_set);
 
-        materialize_metadata->transaction(position, [&]()
+        materialize_metadata.transaction(position, [&]()
         {
             cleanOutdatedTables(context);
             executeDumpQueries(context, connection, tables_dump_queries);
@@ -289,7 +249,8 @@ void DatabaseMaterializeMySQL::dumpTablesData(Context & context) {
     // TODO: replace retry_count to is_cancelled
     while (retry_count--) {
         try {
-            tryDumpTablesData(context, opened_transaction);
+            auto connection = pool.get();
+            tryDumpTablesData(connection, context, opened_transaction);
         } catch (...) {
             tryLogCurrentException(log);
             if (opened_transaction) {

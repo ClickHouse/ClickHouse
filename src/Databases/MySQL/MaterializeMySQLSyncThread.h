@@ -44,8 +44,13 @@ public:
     ~MaterializeMySQLSyncThread();
 
     MaterializeMySQLSyncThread(
-        const Context & context, const String & database_name_, const String & mysql_database_name_
-        , mysqlxx::Pool & pool_, MySQLClient && client_, MaterializeMySQLSettings * settings_);
+        const Context & context,
+        const String & database_name_,
+        const String & mysql_database_name_,
+        mysqlxx::Pool & pool_,
+        MySQLClient && client_,
+        MaterializeMetadataPtr materialize_metadata_,
+        MaterializeMySQLSettings * settings_);
 
     void stopSynchronization();
 
@@ -62,10 +67,9 @@ private:
 
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
+    MaterializeMetadataPtr materialize_metadata;
     MaterializeMySQLSettings * settings;
     String query_prefix;
-
-    MySQLReplicaBuffer buffer;
 
     struct Buffers
     {
@@ -92,11 +96,11 @@ private:
         BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
     };
 
-    void synchronization(const String & mysql_version);
+    void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized(const String & mysql_version);
+    void prepareSynchronized();
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 

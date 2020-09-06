@@ -21,9 +21,16 @@ class DatabaseMaterializeMySQL : public IDatabase
 {
 public:
     DatabaseMaterializeMySQL(
-        const Context & context, const String & database_name_, const String & metadata_path_,
-        const IAST * database_engine_define_, const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
+        const Context & context,
+        const String & database_name_,
+        const String & metadata_path_,
+        const IAST * database_engine_define_,
+        const String & mysql_database_name_,
+        mysqlxx::Pool && pool_,
+        MySQLClient && client_,
+        std::unique_ptr<MaterializeMySQLSettings> settings_);
+
+    MaterializeMetadata loadMetadata();
 
     void rethrowExceptionIfNeed() const;
 
@@ -33,21 +40,40 @@ protected:
 
     ASTPtr engine_define;
     DatabasePtr nested_database;
-    std::unique_ptr<MaterializeMySQLSettings> settings;
-    MaterializeMetadata materialize_metadata;
-    mutable mysqlxx::Pool pool;
     String mysql_database_name;
-    String database_name;
+    std::unique_ptr<MaterializeMySQLSettings> settings;
 
+    mutable mysqlxx::Pool pool;
     Poco::Logger * log;
+    MaterializeMetadata materialize_metadata;
     MaterializeMySQLSyncThread materialize_thread;
 
     std::exception_ptr exception;
+
+    String query_prefix;
 
 public:
     String getEngineName() const override { return "MaterializeMySQL"; }
 
     ASTPtr getCreateDatabaseQuery() const override;
+
+    std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection);
+
+    std::unordered_map<String, String> fetchTablesCreateQuery(const mysqlxx::PoolWithFailover::Entry & connection);
+
+    void cleanOutdatedTables(const Context & context);
+
+    void executeDumpQueries(
+        mysqlxx::Pool::Entry & connection,
+        const Context & context,
+        std::unordered_map<String, String> tables_dump_queries);
+
+    void tryDumpTablesData(
+        mysqlxx::PoolWithFailover::Entry & connection,
+        Context & context,
+        bool & opened_transaction);
+
+    void dumpTablesData(Context & context);
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 

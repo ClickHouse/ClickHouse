@@ -34,16 +34,29 @@ struct MaterializeMetadata
     size_t data_version = 1;
     size_t meta_version = 2;
 
+    bool is_initialized;
+
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
-    bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const;
+    bool checkBinlogFileExists(
+        mysqlxx::PoolWithFailover::Entry & connection,
+        const String & mysql_version,
+        const String & binlog_file) const;
+
+    void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path);
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
+
+    bool tryInitFromFile(const String & path);
+
+    void fetchMetadata(mysqlxx::PoolWithFailover::Entry & connection);
 
     MaterializeMetadata(
         mysqlxx::PoolWithFailover::Entry & connection,
         const String & path,
         const String & mysql_version);
+
+    MaterializeMetadata();
 };
 
 using MaterializeMetadataPtr = std::shared_ptr<MaterializeMetadata>;

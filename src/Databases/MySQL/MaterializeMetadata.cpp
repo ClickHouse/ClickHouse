@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/MySQL/MySQLUtils.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -45,7 +46,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
-static Block getShowMasterLogHeader(const String & mysql_version)
+Block getShowMasterLogHeader(const String & mysql_version)
 {
     if (startsWith(mysql_version, "5."))
     {
@@ -62,7 +63,10 @@ static Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const
+bool checkBinlogFileExists(
+    mysqlxx::PoolWithFailover::Entry & connection,
+    const String & mysql_version,
+    const String & binlog_file) const
 {
     MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
 
@@ -78,7 +82,7 @@ bool MaterializeMetadata::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry
     return false;
 }
 
-void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path, const String & persistent_path)
+void MaterializeMetadata::commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path)
 {
     try
     {
@@ -95,6 +99,9 @@ void commitMetadata(const std::function<void()> & function, const String & persi
 
 void MaterializeMetadata::transaction(const MySQLReplication::Position & position, const std::function<void()> & fun)
 {
+    if (!is_initialized)
+        throw Exception("Initialize metadata before calling transaction.", ErrorCodes::LOGICAL_ERROR);
+
     binlog_file = position.binlog_name;
     binlog_position = position.binlog_pos;
     executed_gtid_set = position.gtid_sets.toString();
@@ -138,11 +145,7 @@ void MaterializeMetadata::fetchMetadata(mysqlxx::PoolWithFailover::Entry & conne
     }
 }
 
-MaterializeMetadata::MaterializeMetadata(
-    mysqlxx::PoolWithFailover::Entry & connection,
-    const String & path_,
-    const String & mysql_version)
-    : persistent_path(path_)
+bool MaterializeMetadata::tryInitFromFile(const String & path)
 {
     if (!Poco::File(persistent_path).exists()) {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
@@ -156,11 +159,30 @@ MaterializeMetadata::MaterializeMetadata(
         assertString("\nData Version:\t", in);
         readIntText(data_version, in);
 
-        if (checkBinlogFileExists(connection, mysql_version))
-            return;
+        if (checkBinlogFileExists(connection, mysql_version, binlog_file))
+            return true;
+    }
+
+    return false;
+}
+
+MaterializeMetadata::MaterializeMetadata(
+    mysqlxx::PoolWithFailover::Entry & connection,
+    const String & path_,
+    const String & mysql_version)
+    : persistent_path(path_)
+    , is_initialized(true)
+{
+    if (tryInitFromFile(persistent_path)) {
+        return;
     }
 
     fetchMetadata(connection); // this will be overriden in case of database
+}
+
+MaterializeMetadata::MaterializeMetadata()
+    : is_initialized(false)
+{
 }
 
 }
