@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <filesystem>
 
 #include <re2_st/re2.h>
 
@@ -47,8 +48,9 @@ CREATE TABLE git.commits
 CREATE TABLE git.file_changes
 (
     change_type Enum('Add' = 1, 'Delete' = 2, 'Modify' = 3, 'Rename' = 4, 'Copy' = 5, 'Type' = 6),
-    new_file_path LowCardinality(String),
-    old_file_path LowCardinality(String),
+    path LowCardinality(String),
+    old_path LowCardinality(String),
+    file_extension LowCardinality(String),
     lines_added UInt32,
     lines_deleted UInt32,
     hunks_added UInt32,
@@ -84,8 +86,9 @@ CREATE TABLE git.line_changes
     line_type Enum('Empty' = 0, 'Comment' = 1, 'Punct' = 2, 'Code' = 3),
 
     file_change_type Enum('Add' = 1, 'Delete' = 2, 'Modify' = 3, 'Rename' = 4, 'Copy' = 5, 'Type' = 6),
-    new_file_path LowCardinality(String),
-    old_file_path LowCardinality(String),
+    path LowCardinality(String),
+    old_path LowCardinality(String),
+    file_extension LowCardinality(String),
     file_lines_added UInt32,
     file_lines_deleted UInt32,
     file_hunks_added UInt32,
@@ -255,8 +258,9 @@ void writeText(FileChangeType type, WriteBuffer & out)
 struct FileChange
 {
     FileChangeType change_type{};
-    std::string new_file_path;
-    std::string old_file_path;
+    std::string path;
+    std::string old_path;
+    std::string file_extension;
     uint32_t lines_added{};
     uint32_t lines_deleted{};
     uint32_t hunks_added{};
@@ -267,9 +271,11 @@ struct FileChange
     {
         writeText(change_type, out);
         writeChar('\t', out);
-        writeText(new_file_path, out);
+        writeText(path, out);
         writeChar('\t', out);
-        writeText(old_file_path, out);
+        writeText(old_path, out);
+        writeChar('\t', out);
+        writeText(file_extension, out);
         writeChar('\t', out);
         writeText(lines_added, out);
         writeChar('\t', out);
@@ -422,11 +428,20 @@ struct Options
 };
 
 
+/// Rough snapshot of repository calculated by application of diffs. It's used to calculate blame info.
+struct File
+{
+    std::vector<LineChange> lines;
+};
+
+using Snapshot = std::map<std::string /* path */, File>;
+
+
 void processCommit(
-    const Options & options, size_t commit_num, size_t total_commits, std::string hash, Result & result)
+    const Options & options, size_t commit_num, size_t total_commits, std::string hash, Snapshot & /*snapshot*/, Result & result)
 {
     std::string command = fmt::format(
-        "git show --raw --pretty='format:%at%x09%aN%x09%aE%x09%P%x0A%s%x00' --patch --unified=0 {}",
+        "git show --raw --pretty='format:%at%x09%aN%x09%P%x0A%s%x00' --patch --unified=0 {}",
         hash);
 
     //std::cerr << command << "\n";
@@ -515,21 +530,23 @@ void processCommit(
 
         if (change_type == 'R' || change_type == 'C')
         {
-            readText(file_change.old_file_path, in);
+            readText(file_change.old_path, in);
             skipWhitespaceIfAny(in);
-            readText(file_change.new_file_path, in);
+            readText(file_change.path, in);
         }
         else
         {
-            readText(file_change.new_file_path, in);
+            readText(file_change.path, in);
         }
+
+        file_change.file_extension = std::filesystem::path(file_change.path).extension();
 
         assertChar('\n', in);
 
-        if (!(options.skip_paths && re2_st::RE2::PartialMatch(file_change.new_file_path, *options.skip_paths)))
+        if (!(options.skip_paths && re2_st::RE2::PartialMatch(file_change.path, *options.skip_paths)))
         {
             file_changes.emplace(
-                file_change.new_file_path,
+                file_change.path,
                 FileChangeAndLineChanges{ file_change, {} });
         }
     }
@@ -755,9 +772,10 @@ void processLog(const Options & options)
     size_t num_commits = hashes.size();
     fmt::print("Total {} commits to process.\n", num_commits);
 
+    Snapshot snapshot;
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(options, i, num_commits, hashes[i], result);
+        processCommit(options, i, num_commits, hashes[i], snapshot, result);
     }
 }
 
@@ -792,7 +810,7 @@ try
             << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
-            << "\n./git-to-clickhouse --diff-size-limit 100000 --skip-paths '^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/'\n";
+            << "\n./git-to-clickhouse --diff-size-limit 100000 --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/'\n";
         return 1;
     }
 
