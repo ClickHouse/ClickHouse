@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <unordered_map>
 #include <list>
 #include <thread>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include <boost/program_options.hpp>
 
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <common/find_symbols.h>
@@ -427,18 +429,25 @@ struct Result
 struct Options
 {
     bool skip_commits_without_parents = true;
+    bool skip_commits_with_duplicate_diffs = true;
     size_t threads = 1;
     std::optional<re2_st::RE2> skip_paths;
+    std::optional<re2_st::RE2> skip_commits_with_messages;
     std::unordered_set<std::string> skip_commits;
     std::optional<size_t> diff_size_limit;
 
     Options(const po::variables_map & options)
     {
         skip_commits_without_parents = options["skip-commits-without-parents"].as<bool>();
+        skip_commits_with_duplicate_diffs = options["skip-commits-with-duplicate-diffs"].as<bool>();
         threads = options["threads"].as<size_t>();
         if (options.count("skip-paths"))
         {
             skip_paths.emplace(options["skip-paths"].as<std::string>());
+        }
+        if (options.count("skip-commits-with-messages"))
+        {
+            skip_commits_with_messages.emplace(options["skip-commits-with-messages"].as<std::string>());
         }
         if (options.count("skip-commit"))
         {
@@ -481,15 +490,12 @@ struct FileBlame
 
     void walk(uint32_t num)
     {
-        if (current_idx < num)
+        while (current_idx < num && it != lines.end())
         {
-            while (current_idx < num && it != lines.end())
-            {
-                ++current_idx;
-                ++it;
-            }
+            ++current_idx;
+            ++it;
         }
-        else if (current_idx > num)
+        while (current_idx > num)
         {
             --current_idx;
             --it;
@@ -499,6 +505,8 @@ struct FileBlame
     const Commit * find(uint32_t num)
     {
         walk(num);
+
+//        std::cerr << "current_idx: " << current_idx << ", num: " << num << "\n";
 
         if (current_idx == num && it != lines.end())
             return &*it;
@@ -514,20 +522,17 @@ struct FileBlame
             lines.emplace_back();
             ++current_idx;
         }
-        if (it == lines.end())
-        {
-            lines.emplace_back();
-            --it;
-        }
 
-        lines.insert(it, commit);
+        it = lines.insert(it, commit);
     }
 
     void removeLine(uint32_t num)
     {
+//        std::cerr << "Removing line " << num << ", current_idx: " << current_idx << "\n";
+
         walk(num);
 
-        if (current_idx == num)
+        if (current_idx == num && it != lines.end())
             it = lines.erase(it);
     }
 };
@@ -540,9 +545,9 @@ struct FileChangeAndLineChanges
 
     FileChange file_change;
     LineChanges line_changes;
-
-    std::map<uint32_t, Commit> deleted_lines;
 };
+
+using DiffHashes = std::unordered_set<UInt128>;
 
 
 void processCommit(
@@ -552,6 +557,7 @@ void processCommit(
     size_t total_commits,
     std::string hash,
     Snapshot & snapshot,
+    DiffHashes & diff_hashes,
     Result & result)
 {
     auto & in = commit_info->out;
@@ -569,6 +575,9 @@ void processCommit(
     readString(parent_hash, in);
     assertChar('\n', in);
     readNullTerminated(commit.message, in);
+
+    if (options.skip_commits_with_messages && re2_st::RE2::PartialMatch(commit.message, *options.skip_commits_with_messages))
+        return;
 
     std::string message_to_print = commit.message;
     std::replace_if(message_to_print.begin(), message_to_print.end(), [](char c){ return std::iscntrl(c); }, ' ');
@@ -643,7 +652,10 @@ void processCommit(
             skipWhitespaceIfAny(in);
             readText(file_change.path, in);
 
-            snapshot[file_change.path] = snapshot[file_change.old_path];
+//            std::cerr << "Move from " << file_change.old_path << " to " << file_change.path << "\n";
+
+            if (file_change.path != file_change.old_path)
+                snapshot[file_change.path] = snapshot[file_change.old_path];
         }
         else
         {
@@ -706,6 +718,9 @@ void processCommit(
                     if (checkChar(',', in))
                         readText(new_lines, in);
 
+                    if (line_change.hunk_start_line_number_new == 0)
+                        line_change.hunk_start_line_number_new = 1;
+
                     assertString(" @@", in);
                     if (checkChar(' ', in))
                         readStringUntilNextLine(line_change.hunk_context, in);
@@ -767,16 +782,6 @@ void processCommit(
                         readStringUntilNextLine(line_change.line, in);
                         line_change.setLineInfo(line_change.line);
 
-                        FileBlame & file_snapshot = snapshot[old_file_path];
-                        if (const Commit * prev_commit = file_snapshot.find(line_change.line_number_old))
-                        {
-                            line_change.prev_commit_hash = prev_commit->hash;
-                            line_change.prev_author = prev_commit->author;
-                            line_change.prev_time = prev_commit->time;
-                            file_change_and_line_changes->deleted_lines[line_change.line_number_old] = *prev_commit;
-                            file_snapshot.removeLine(line_change.line_number_old);
-                        }
-
                         file_change_and_line_changes->line_changes.push_back(line_change);
                         ++line_change.line_number_old;
                     }
@@ -813,16 +818,6 @@ void processCommit(
                         readStringUntilNextLine(line_change.line, in);
                         line_change.setLineInfo(line_change.line);
 
-                        FileBlame & file_snapshot = snapshot[new_file_path];
-                        if (file_change_and_line_changes->deleted_lines.count(line_change.line_number_new))
-                        {
-                            const auto & prev_commit = file_change_and_line_changes->deleted_lines[line_change.line_number_new];
-                            line_change.prev_commit_hash = prev_commit.hash;
-                            line_change.prev_author = prev_commit.author;
-                            line_change.prev_time = prev_commit.time;
-                        }
-                        file_snapshot.addLine(line_change.line_number_new, commit);
-
                         file_change_and_line_changes->line_changes.push_back(line_change);
                         ++line_change.line_number_new;
                     }
@@ -837,6 +832,99 @@ void processCommit(
 
     if (options.diff_size_limit && commit.lines_added + commit.lines_deleted > *options.diff_size_limit)
         return;
+
+    /// Calculate hash of diff and skip duplicates
+    if (options.skip_commits_with_duplicate_diffs)
+    {
+        SipHash hasher;
+
+        for (auto & elem : file_changes)
+        {
+            hasher.update(elem.second.file_change.change_type);
+            hasher.update(elem.second.file_change.old_path.size());
+            hasher.update(elem.second.file_change.old_path);
+            hasher.update(elem.second.file_change.path.size());
+            hasher.update(elem.second.file_change.path);
+
+            hasher.update(elem.second.line_changes.size());
+            for (auto & line_change : elem.second.line_changes)
+            {
+                hasher.update(line_change.sign);
+                hasher.update(line_change.line_number_old);
+                hasher.update(line_change.line_number_new);
+                hasher.update(line_change.indent);
+                hasher.update(line_change.line.size());
+                hasher.update(line_change.line);
+            }
+        }
+
+        UInt128 hash_of_diff;
+        hasher.get128(hash_of_diff.low, hash_of_diff.high);
+
+        if (!diff_hashes.insert(hash_of_diff).second)
+            return;
+    }
+
+    /// Update snapshot and blame info
+
+    for (auto & elem : file_changes)
+    {
+//        std::cerr << elem.first << "\n";
+
+        FileBlame & file_snapshot = snapshot[elem.first];
+        std::unordered_map<uint32_t, Commit> deleted_lines;
+
+        /// Obtain blame info from previous state of the snapshot
+
+        for (auto & line_change : elem.second.line_changes)
+        {
+            if (line_change.sign == -1)
+            {
+                if (const Commit * prev_commit = file_snapshot.find(line_change.line_number_old);
+                    prev_commit && prev_commit->time <= commit.time)
+                {
+                    line_change.prev_commit_hash = prev_commit->hash;
+                    line_change.prev_author = prev_commit->author;
+                    line_change.prev_time = prev_commit->time;
+                    deleted_lines[line_change.line_number_old] = *prev_commit;
+                }
+                else
+                {
+                    // std::cerr << "Did not find line " << line_change.line_number_old << " from file " << elem.first << ": " << line_change.line << "\n";
+                }
+            }
+            else if (line_change.sign == 1)
+            {
+                uint32_t this_line_in_prev_commit = line_change.hunk_start_line_number_old
+                    + (line_change.line_number_new - line_change.hunk_start_line_number_new);
+
+                if (deleted_lines.count(this_line_in_prev_commit))
+                {
+                    const auto & prev_commit = deleted_lines[this_line_in_prev_commit];
+                    if (prev_commit.time <= commit.time)
+                    {
+                        line_change.prev_commit_hash = prev_commit.hash;
+                        line_change.prev_author = prev_commit.author;
+                        line_change.prev_time = prev_commit.time;
+                    }
+                }
+            }
+        }
+
+        /// Update the snapshot
+
+        for (const auto & line_change : elem.second.line_changes)
+        {
+            if (line_change.sign == -1)
+            {
+                file_snapshot.removeLine(line_change.line_number_new);
+            }
+            else if (line_change.sign == 1)
+            {
+                file_snapshot.addLine(line_change.line_number_new, commit);
+            }
+        }
+    }
 
     /// Write the result
 
@@ -881,7 +969,7 @@ void processCommit(
 auto gitShow(const std::string & hash)
 {
     std::string command = fmt::format(
-        "git show --raw --pretty='format:%at%x09%aN%x09%P%x0A%s%x00' --patch --unified=0 {}",
+        "git show --raw --pretty='format:%ct%x09%aN%x09%P%x0A%s%x00' --patch --unified=0 {}",
         hash);
 
     return ShellCommand::execute(command);
@@ -924,9 +1012,11 @@ void processLog(const Options & options)
         show_commands[i] = gitShow(hashes[i]);
 
     Snapshot snapshot;
+    DiffHashes diff_hashes;
+
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(show_commands[i % num_threads], options, i, num_commits, hashes[i], snapshot, result);
+        processCommit(show_commands[i % num_threads], options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
         if (i + num_threads < num_commits)
             show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
@@ -946,10 +1036,15 @@ try
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
             "Skip commits without parents (except the initial commit)."
             " These commits are usually erroneous but they can make sense in very rare cases.")
-        ("skip-paths", po::value<std::string>(),
-            "Skip paths that matches regular expression (re2 syntax).")
+        ("skip-commits-with-duplicate-diffs", po::value<bool>()->default_value(true),
+            "Skip commits with duplicate diffs."
+            " These commits are usually results of cherry-pick or merge after rebase.")
         ("skip-commit", po::value<std::vector<std::string>>(),
             "Skip commit with specified hash. The option can be specified multiple times.")
+        ("skip-paths", po::value<std::string>(),
+            "Skip paths that matches regular expression (re2 syntax).")
+        ("skip-commits-with-messages", po::value<std::string>(),
+            "Skip commits whose messages matches regular expression (re2 syntax).")
         ("diff-size-limit", po::value<size_t>(),
             "Skip commits whose diff size (number of added + removed lines) is larger than specified threshold")
         ("threads", po::value<size_t>()->default_value(std::thread::hardware_concurrency()),
@@ -965,7 +1060,7 @@ try
             << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
-            << "\n./git-to-clickhouse --diff-size-limit 100000 --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/'\n";
+            << "\n./git-to-clickhouse --diff-size-limit 100000 --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
         return 1;
     }
 
