@@ -435,6 +435,7 @@ struct Options
     std::optional<re2_st::RE2> skip_commits_with_messages;
     std::unordered_set<std::string> skip_commits;
     std::optional<size_t> diff_size_limit;
+    std::string stop_after_commit;
 
     Options(const po::variables_map & options)
     {
@@ -457,6 +458,10 @@ struct Options
         if (options.count("diff-size-limit"))
         {
             diff_size_limit = options["diff-size-limit"].as<size_t>();
+        }
+        if (options.count("stop-after-commit"))
+        {
+            stop_after_commit = options["stop-after-commit"].as<std::string>();
         }
     }
 };
@@ -828,7 +833,7 @@ void processCommit(
         }
     }
 
-    if (options.diff_size_limit && commit.lines_added + commit.lines_deleted > *options.diff_size_limit)
+    if (options.diff_size_limit && commit_num != 0 && commit.lines_added + commit.lines_deleted > *options.diff_size_limit)
         return;
 
     /// Calculate hash of diff and skip duplicates
@@ -1015,6 +1020,10 @@ void processLog(const Options & options)
     for (size_t i = 0; i < num_commits; ++i)
     {
         processCommit(show_commands[i % num_threads], options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+
+        if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
+            break;
+
         if (i + num_threads < num_commits)
             show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
@@ -1043,10 +1052,12 @@ try
             "Skip paths that matches regular expression (re2 syntax).")
         ("skip-commits-with-messages", po::value<std::string>(),
             "Skip commits whose messages matches regular expression (re2 syntax).")
-        ("diff-size-limit", po::value<size_t>(),
-            "Skip commits whose diff size (number of added + removed lines) is larger than specified threshold")
+        ("diff-size-limit", po::value<size_t>()->default_value(100000),
+            "Skip commits whose diff size (number of added + removed lines) is larger than specified threshold. Does not apply for initial commit.")
+        ("stop-after-commit", po::value<std::string>(),
+            "Stop processing after specified commit hash.")
         ("threads", po::value<size_t>()->default_value(std::thread::hardware_concurrency()),
-            "Number of threads to interact with git")
+            "Number of concurrent git subprocesses to spawn")
     ;
 
     po::variables_map options;
@@ -1058,7 +1069,7 @@ try
             << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
-            << "\n./git-to-clickhouse --diff-size-limit 100000 --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
+            << "\n./git-to-clickhouse --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
         return 1;
     }
 
