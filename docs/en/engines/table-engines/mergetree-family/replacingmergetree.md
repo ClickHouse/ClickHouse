@@ -31,7 +31,7 @@ For a description of request parameters, see [statement description](../../../sq
 
 **ReplacingMergeTree Parameters**
 
--   `ver` — column with version. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
+-   `ver` — column with version. Type `UInt*`, `Date` or `DateTime`. Optional parameter.
 
     When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 

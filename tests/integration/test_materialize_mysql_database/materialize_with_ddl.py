@@ -323,7 +323,6 @@ def alter_rename_table_with_materialize_mysql_database(clickhouse_node, mysql_no
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
-
 def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE DATABASE test_database")
 
@@ -336,12 +335,10 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
             service_name))
 
     # Reject one empty GTID QUERY event with 'BEGIN' and 'COMMIT'
-    mysql_cursor = mysql_node.cursor(pymysql.cursors.DictCursor)
+    mysql_cursor = mysql_node.alloc_connection().cursor(pymysql.cursors.DictCursor)
     mysql_cursor.execute("SHOW MASTER STATUS")
     (uuid, seqs) = mysql_cursor.fetchall()[0]["Executed_Gtid_Set"].split(":")
     (seq_begin, seq_end) = seqs.split("-")
-    assert int(seq_begin) == 1
-    assert int(seq_end) == 3
     next_gtid = uuid + ":" + str(int(seq_end) + 1)
     mysql_node.query("SET gtid_next='" + next_gtid + "'")
     mysql_node.query("BEGIN")

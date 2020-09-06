@@ -370,7 +370,7 @@ if args.report == 'main':
         columns = [
             'Old,&nbsp;s',                                          # 0
             'New,&nbsp;s',                                          # 1
-            'Times speedup / slowdown',                 # 2
+            'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 # 2
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 3
             'p&nbsp;<&nbsp;0.001 threshold',                   # 4
             # Failed                                           # 5
@@ -447,7 +447,7 @@ if args.report == 'main':
     addSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
     addSimpleTable('Test performance changes',
-        ['Test', 'Queries', 'Unstable', 'Changed perf', 'Total not OK', 'Avg relative time diff'],
+        ['Test', 'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)', 'Queries', 'Total not OK', 'Changed perf', 'Unstable'],
         tsvRows('report/test-perf-changes.tsv'))
 
     def add_test_times():
@@ -580,7 +580,7 @@ elif args.report == 'all-queries':
             # Unstable #1
             'Old,&nbsp;s', #2
             'New,&nbsp;s', #3
-            'Times speedup / slowdown',                 #4
+            'Ratio of speedup&nbsp;(-) or slowdown&nbsp;(+)',                 #4
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #5
             'p&nbsp;&lt;&nbsp;0.001 threshold',          #6
             'Test',                                   #7
