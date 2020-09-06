@@ -582,7 +582,7 @@ void processCommit(
     std::string message_to_print = commit.message;
     std::replace_if(message_to_print.begin(), message_to_print.end(), [](char c){ return std::iscntrl(c); }, ' ');
 
-    fmt::print("{}%  {}  {}  {}\n",
+    std::cerr << fmt::format("{}%  {}  {}  {}\n",
         commit_num * 100 / total_commits, toString(commit.time), hash, message_to_print);
 
     if (options.skip_commits_without_parents && commit_num != 0 && parent_hash.empty())
