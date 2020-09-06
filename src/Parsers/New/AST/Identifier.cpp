@@ -38,6 +38,14 @@ void TableIdentifier::makeCompound() const
     }
 }
 
+ASTPtr TableIdentifier::convertToOld() const
+{
+    std::vector<std::string> parts;
+    if (db) parts.push_back(db->getName());
+    parts.push_back(getName());
+    return std::make_shared<ASTTableIdentifier>(std::move(parts));
+}
+
 ColumnIdentifier::ColumnIdentifier(PtrTo<TableIdentifier> table_, PtrTo<Identifier> name) : Identifier(name->getName()), table(table_)
 {
 }

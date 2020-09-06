@@ -117,6 +117,20 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
+String ASTTableIdentifier::getTableName() const
+{
+    if (name_parts.size() == 2) return name_parts[1];
+    else return name_parts[0];
+    __builtin_unreachable();
+}
+
+String ASTTableIdentifier::getDatabaseName() const
+{
+    if (name_parts.size() == 2) return name_parts[0];
+    else return {};
+    __builtin_unreachable();
+}
+
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
 {
     assert(database_name != "_temporary_and_external_tables");

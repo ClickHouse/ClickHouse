@@ -40,6 +40,8 @@ class TableIdentifier : public Identifier
 
         String getQualifiedName() const override { return (db ? db->getQualifiedName() + "." : String()) + getName(); }
 
+        ASTPtr convertToOld() const override;
+
     private:
         mutable PtrTo<DatabaseIdentifier> db;
 };

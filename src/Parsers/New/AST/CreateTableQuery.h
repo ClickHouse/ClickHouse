@@ -14,7 +14,6 @@ class SchemaClause : public INode
         static PtrTo<SchemaClause> createAsTable(PtrTo<TableIdentifier> identifier);
         static PtrTo<SchemaClause> createAsFunction(PtrTo<Identifier> identifier, PtrTo<TableArgList> list);
 
-    private:
         enum class ClauseType
         {
             DESCRIPTION,
@@ -22,6 +21,9 @@ class SchemaClause : public INode
             FUNCTION,
         };
 
+        auto getType() const { return clause_type; }
+
+    private:
         ClauseType clause_type;
 
         SchemaClause(ClauseType type, PtrList exprs);
@@ -31,6 +33,7 @@ class CreateTableQuery : public DDLQuery
 {
     public:
         CreateTableQuery(
+            bool attach,
             bool temporary,
             bool if_not_exists,
             PtrTo<TableIdentifier> identifier,
@@ -38,16 +41,18 @@ class CreateTableQuery : public DDLQuery
             PtrTo<EngineClause> engine,
             PtrTo<SelectUnionQuery> query);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum ChildIndex : UInt8
         {
             NAME = 0,
-            SCHEMA = 1,
-            ENGINE = 2,
-            SUBQUERY = 3,
+            SCHEMA,
+            ENGINE,
+            SUBQUERY,
         };
 
-        const bool temporary, if_not_exists;
+        const bool attach, temporary, if_not_exists;
 };
 
 }

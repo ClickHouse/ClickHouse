@@ -22,7 +22,9 @@ class INode : public TypePromotion<INode>
         void dump() const { dump(0); }
 
     protected:
-        PtrList children;  // children potentially may point to |nullptr|
+        bool has(size_t i) const { return i < children.size() && children[i]; }
+
+        PtrList children;  // any child potentially may point to |nullptr|
 
     private:
         void dump(int indentation) const

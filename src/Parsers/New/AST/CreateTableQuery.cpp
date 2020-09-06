@@ -5,7 +5,11 @@
 #include <Parsers/New/AST/SelectUnionQuery.h>
 #include <Parsers/New/AST/TableElementExpr.h>
 
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
+
 #include <Parsers/New/ParseTreeVisitor.h>
+#include "Parsers/ASTIdentifier.h"
 
 
 namespace DB::AST
@@ -32,24 +36,64 @@ PtrTo<SchemaClause> SchemaClause::createAsFunction(PtrTo<Identifier> identifier,
 SchemaClause::SchemaClause(ClauseType type, PtrList exprs) : clause_type(type)
 {
     children = exprs;
-    (void)clause_type; // TODO
 }
 
 CreateTableQuery::CreateTableQuery(
+    bool attach_,
     bool temporary_,
     bool if_not_exists_,
     PtrTo<TableIdentifier> identifier,
     PtrTo<SchemaClause> schema,
     PtrTo<EngineClause> engine,
     PtrTo<SelectUnionQuery> query)
-    : temporary(temporary_), if_not_exists(if_not_exists_)
+    : attach(attach_), temporary(temporary_), if_not_exists(if_not_exists_)
 {
     children.push_back(identifier);
     children.push_back(schema);
     children.push_back(engine);
     children.push_back(query);
+}
 
-    (void)if_not_exists, (void)temporary; // TODO
+ASTPtr CreateTableQuery::convertToOld() const
+{
+    auto query = std::make_shared<ASTCreateQuery>();
+    auto name = children[NAME]->convertToOld();
+
+    query->database = name->as<ASTIdentifier>()->getDatabaseName();
+    query->table = name->as<ASTIdentifier>()->getTableName();
+    query->uuid = name->as<ASTIdentifier>()->uuid;
+
+    query->attach = attach;
+    query->if_not_exists = if_not_exists;
+    query->temporary = temporary;
+
+    if (has(SCHEMA))
+    {
+        switch(children[SCHEMA]->as<SchemaClause>()->getType())
+        {
+            case SchemaClause::ClauseType::DESCRIPTION:
+            {
+                query->set(query->columns_list, children[SCHEMA]->convertToOld());
+                break;
+            }
+            case SchemaClause::ClauseType::TABLE:
+            {
+                auto as_table = children[SCHEMA]->convertToOld();
+                query->as_database = as_table->as<ASTIdentifier>()->getDatabaseName();
+                query->as_table = as_table->as<ASTIdentifier>()->getTableName();
+                break;
+            }
+            case SchemaClause::ClauseType::FUNCTION:
+            {
+                query->as_table_function = children[SCHEMA]->convertToOld();
+                break;
+            }
+        }
+    }
+    if (has(ENGINE)) query->set(query->storage, children[ENGINE]->convertToOld());
+    if (has(SUBQUERY)) query->set(query->select, children[SUBQUERY]->convertToOld());
+
+    return query;
 }
 
 }
