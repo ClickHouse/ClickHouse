@@ -568,12 +568,10 @@ void processCommit(
     time_t commit_time;
     readText(commit_time, in);
     commit.time = commit_time;
-    assertChar('\t', in);
-    readText(commit.author, in);
-    assertChar('\t', in);
+    assertChar('\0', in);
+    readNullTerminated(commit.author, in);
     std::string parent_hash;
-    readString(parent_hash, in);
-    assertChar('\n', in);
+    readNullTerminated(parent_hash, in);
     readNullTerminated(commit.message, in);
 
     if (options.skip_commits_with_messages && re2_st::RE2::PartialMatch(commit.message, *options.skip_commits_with_messages))
@@ -969,7 +967,7 @@ void processCommit(
 auto gitShow(const std::string & hash)
 {
     std::string command = fmt::format(
-        "git show --raw --pretty='format:%ct%x09%aN%x09%P%x0A%s%x00' --patch --unified=0 {}",
+        "git show --raw --pretty='format:%ct%x00%aN%x00%P%x00%s%x00' --patch --unified=0 {}",
         hash);
 
     return ShellCommand::execute(command);
