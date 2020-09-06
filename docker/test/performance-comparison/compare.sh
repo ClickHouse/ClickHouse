@@ -609,7 +609,7 @@ create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes
                 or bad
         )
     )
-    order by test = 'Total' desc
+    order by test = 'Total' desc, times_speedup desc
     ;
 
 

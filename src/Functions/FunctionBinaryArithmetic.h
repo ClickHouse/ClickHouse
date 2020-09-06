@@ -361,12 +361,8 @@ private:
                 return apply(a.value, b);
             else if constexpr (IsDecimalNumber<U>)
                 return apply(a, b.value);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return apply(UInt16(a), b);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return apply(a, UInt16(b));
             else
-                return applyNative(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b));
+                return applyNative(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b));
         }
         else
             return applyNative(a, b);
@@ -381,12 +377,8 @@ private:
                 return applyScaled<scale_left>(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaled<scale_left>(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaled<scale_left>(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaled<scale_left>(a, UInt16(b), scale);
             else
-                return applyNativeScaled<scale_left>(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaled<scale_left>(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaled<scale_left>(a, b, scale);
@@ -401,12 +393,8 @@ private:
                 return applyScaledDiv(a.value, b, scale);
             else if constexpr (IsDecimalNumber<U>)
                 return applyScaledDiv(a, b.value, scale);
-            else if constexpr (std::is_same_v<T, UInt8>)
-                return applyScaledDiv(UInt16(a), b, scale);
-            else if constexpr (std::is_same_v<U, UInt8>)
-                return applyScaledDiv(a, UInt16(b), scale);
             else
-                return applyNativeScaledDiv(static_cast<NativeResultType>(a), static_cast<NativeResultType>(b), scale);
+                return applyNativeScaledDiv(bigint_cast<NativeResultType>(a), bigint_cast<NativeResultType>(b), scale);
         }
         else
             return applyNativeScaledDiv(a, b, scale);
