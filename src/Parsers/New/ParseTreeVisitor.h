@@ -10,7 +10,7 @@ namespace DB {
 class ParseTreeVisitor : public ClickHouseParserVisitor
 {
 public:
-    virtual ~ParseTreeVisitor() = default;
+    virtual ~ParseTreeVisitor() override = default;
 
     // Top-level statements
 

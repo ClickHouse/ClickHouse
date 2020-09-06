@@ -30,6 +30,8 @@ class InsertQuery : public Query
         static PtrTo<InsertQuery> createTable(PtrTo<TableIdentifier> identifier, PtrTo<ColumnNameList> list, PtrTo<ValuesClause> clause);
         static PtrTo<InsertQuery> createFunction(PtrTo<Identifier> name, PtrTo<TableArgList> args, PtrTo<ValuesClause> clause);
 
+        ASTPtr convertToOld() const override;
+
     private:
         enum class QueryType
         {

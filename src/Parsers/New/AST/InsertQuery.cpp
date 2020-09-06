@@ -6,6 +6,8 @@
 
 #include <Parsers/New/ParseTreeVisitor.h>
 
+#include <Parsers/ASTInsertQuery.h>
+
 
 namespace DB::AST
 {
@@ -43,8 +45,14 @@ PtrTo<InsertQuery> InsertQuery::createFunction(PtrTo<Identifier> name, PtrTo<Tab
 InsertQuery::InsertQuery(QueryType type, PtrList exprs) : query_type(type)
 {
     children = exprs;
+}
 
-    (void) query_type; // TODO
+ASTPtr InsertQuery::convertToOld() const
+{
+    // TODO: implement this
+    auto query = std::make_shared<ASTInsertQuery>();
+    (void) query_type;
+    return query;
 }
 
 }

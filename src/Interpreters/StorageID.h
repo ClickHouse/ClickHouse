@@ -28,6 +28,7 @@ class ASTQueryWithTableAndOutput;
 class ASTIdentifier;
 class Context;
 
+// TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID
 {
     String database_name;
@@ -40,9 +41,9 @@ struct StorageID
         assertNotEmpty();
     }
 
-    StorageID(const ASTQueryWithTableAndOutput & query);
-    StorageID(const ASTIdentifier & table_identifier_node);
-    StorageID(const ASTPtr & node);
+    explicit StorageID(const ASTQueryWithTableAndOutput & query);
+    explicit StorageID(const ASTIdentifier & table_identifier_node);
+    explicit StorageID(const ASTPtr & node);
 
     String getDatabaseName() const;
 

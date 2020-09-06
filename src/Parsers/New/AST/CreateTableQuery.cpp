@@ -59,9 +59,9 @@ ASTPtr CreateTableQuery::convertToOld() const
     auto query = std::make_shared<ASTCreateQuery>();
     auto name = children[NAME]->convertToOld();
 
-    query->database = name->as<ASTIdentifier>()->getDatabaseName();
-    query->table = name->as<ASTIdentifier>()->getTableName();
-    query->uuid = name->as<ASTIdentifier>()->uuid;
+    query->database = name->as<ASTTableIdentifier>()->getDatabaseName();
+    query->table = name->as<ASTTableIdentifier>()->getTableName();
+    query->uuid = name->as<ASTTableIdentifier>()->uuid;
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;

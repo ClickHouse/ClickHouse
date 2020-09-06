@@ -82,7 +82,10 @@ public:
         String indent_str(indent, '-');
         ostr << indent_str << getID() << ", " << this << std::endl;
         for (const auto & child : children)
+        {
+            if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
             child->dumpTree(ostr, indent + 1);
+        }
     }
 
     /** Check the depth of the tree.
