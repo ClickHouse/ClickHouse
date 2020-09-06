@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <list>
+#include <thread>
 #include <filesystem>
 
 #include <re2_st/re2.h>
@@ -80,10 +82,16 @@ CREATE TABLE git.line_changes
     hunk_num UInt32,
     hunk_start_line_number_old UInt32,
     hunk_start_line_number_new UInt32,
+    hunk_lines_added UInt32,
+    hunk_lines_deleted UInt32,
     hunk_context LowCardinality(String),
     line LowCardinality(String),
     indent UInt8,
     line_type Enum('Empty' = 0, 'Comment' = 1, 'Punct' = 2, 'Code' = 3),
+
+    prev_commit_hash String,
+    prev_author LowCardinality(String),
+    prev_time DateTime,
 
     file_change_type Enum('Add' = 1, 'Delete' = 2, 'Modify' = 3, 'Rename' = 4, 'Copy' = 5, 'Type' = 6),
     path LowCardinality(String),
@@ -128,6 +136,112 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+
+struct Commit
+{
+    std::string hash;
+    std::string author;
+    LocalDateTime time{};
+    std::string message;
+    uint32_t files_added{};
+    uint32_t files_deleted{};
+    uint32_t files_renamed{};
+    uint32_t files_modified{};
+    uint32_t lines_added{};
+    uint32_t lines_deleted{};
+    uint32_t hunks_added{};
+    uint32_t hunks_removed{};
+    uint32_t hunks_changed{};
+
+    void writeTextWithoutNewline(WriteBuffer & out) const
+    {
+        writeText(hash, out);
+        writeChar('\t', out);
+        writeText(author, out);
+        writeChar('\t', out);
+        writeText(time, out);
+        writeChar('\t', out);
+        writeText(message, out);
+        writeChar('\t', out);
+        writeText(files_added, out);
+        writeChar('\t', out);
+        writeText(files_deleted, out);
+        writeChar('\t', out);
+        writeText(files_renamed, out);
+        writeChar('\t', out);
+        writeText(files_modified, out);
+        writeChar('\t', out);
+        writeText(lines_added, out);
+        writeChar('\t', out);
+        writeText(lines_deleted, out);
+        writeChar('\t', out);
+        writeText(hunks_added, out);
+        writeChar('\t', out);
+        writeText(hunks_removed, out);
+        writeChar('\t', out);
+        writeText(hunks_changed, out);
+    }
+};
+
+
+enum class FileChangeType
+{
+    Add,
+    Delete,
+    Modify,
+    Rename,
+    Copy,
+    Type,
+};
+
+void writeText(FileChangeType type, WriteBuffer & out)
+{
+    switch (type)
+    {
+        case FileChangeType::Add: writeString("Add", out); break;
+        case FileChangeType::Delete: writeString("Delete", out); break;
+        case FileChangeType::Modify: writeString("Modify", out); break;
+        case FileChangeType::Rename: writeString("Rename", out); break;
+        case FileChangeType::Copy: writeString("Copy", out); break;
+        case FileChangeType::Type: writeString("Type", out); break;
+    }
+}
+
+struct FileChange
+{
+    FileChangeType change_type{};
+    std::string path;
+    std::string old_path;
+    std::string file_extension;
+    uint32_t lines_added{};
+    uint32_t lines_deleted{};
+    uint32_t hunks_added{};
+    uint32_t hunks_removed{};
+    uint32_t hunks_changed{};
+
+    void writeTextWithoutNewline(WriteBuffer & out) const
+    {
+        writeText(change_type, out);
+        writeChar('\t', out);
+        writeText(path, out);
+        writeChar('\t', out);
+        writeText(old_path, out);
+        writeChar('\t', out);
+        writeText(file_extension, out);
+        writeChar('\t', out);
+        writeText(lines_added, out);
+        writeChar('\t', out);
+        writeText(lines_deleted, out);
+        writeChar('\t', out);
+        writeText(hunks_added, out);
+        writeChar('\t', out);
+        writeText(hunks_removed, out);
+        writeChar('\t', out);
+        writeText(hunks_changed, out);
+    }
+};
+
+
 enum class LineType
 {
     Empty,
@@ -155,10 +269,15 @@ struct LineChange
     uint32_t hunk_num{}; /// ordinal number of hunk in diff, starting with 0
     uint32_t hunk_start_line_number_old{};
     uint32_t hunk_start_line_number_new{};
+    uint32_t hunk_lines_added{};
+    uint32_t hunk_lines_deleted{};
     std::string hunk_context; /// The context (like a line with function name) as it is calculated by git
     std::string line; /// Line content without leading whitespaces
     uint8_t indent{}; /// The number of leading whitespaces or tabs * 4
     LineType line_type{};
+    std::string prev_commit_hash;
+    std::string prev_author;
+    LocalDateTime prev_time{};
 
     void setLineInfo(std::string full_line)
     {
@@ -220,6 +339,10 @@ struct LineChange
         writeChar('\t', out);
         writeText(hunk_start_line_number_new, out);
         writeChar('\t', out);
+        writeText(hunk_lines_added, out);
+        writeChar('\t', out);
+        writeText(hunk_lines_deleted, out);
+        writeChar('\t', out);
         writeText(hunk_context, out);
         writeChar('\t', out);
         writeText(line, out);
@@ -227,119 +350,16 @@ struct LineChange
         writeText(indent, out);
         writeChar('\t', out);
         writeText(line_type, out);
+        writeChar('\t', out);
+        writeText(prev_commit_hash, out);
+        writeChar('\t', out);
+        writeText(prev_author, out);
+        writeChar('\t', out);
+        writeText(prev_time, out);
     }
 };
 
 using LineChanges = std::vector<LineChange>;
-
-enum class FileChangeType
-{
-    Add,
-    Delete,
-    Modify,
-    Rename,
-    Copy,
-    Type,
-};
-
-void writeText(FileChangeType type, WriteBuffer & out)
-{
-    switch (type)
-    {
-        case FileChangeType::Add: writeString("Add", out); break;
-        case FileChangeType::Delete: writeString("Delete", out); break;
-        case FileChangeType::Modify: writeString("Modify", out); break;
-        case FileChangeType::Rename: writeString("Rename", out); break;
-        case FileChangeType::Copy: writeString("Copy", out); break;
-        case FileChangeType::Type: writeString("Type", out); break;
-    }
-}
-
-struct FileChange
-{
-    FileChangeType change_type{};
-    std::string path;
-    std::string old_path;
-    std::string file_extension;
-    uint32_t lines_added{};
-    uint32_t lines_deleted{};
-    uint32_t hunks_added{};
-    uint32_t hunks_removed{};
-    uint32_t hunks_changed{};
-
-    void writeTextWithoutNewline(WriteBuffer & out) const
-    {
-        writeText(change_type, out);
-        writeChar('\t', out);
-        writeText(path, out);
-        writeChar('\t', out);
-        writeText(old_path, out);
-        writeChar('\t', out);
-        writeText(file_extension, out);
-        writeChar('\t', out);
-        writeText(lines_added, out);
-        writeChar('\t', out);
-        writeText(lines_deleted, out);
-        writeChar('\t', out);
-        writeText(hunks_added, out);
-        writeChar('\t', out);
-        writeText(hunks_removed, out);
-        writeChar('\t', out);
-        writeText(hunks_changed, out);
-    }
-};
-
-struct FileChangeAndLineChanges
-{
-    FileChange file_change;
-    LineChanges line_changes;
-};
-
-struct Commit
-{
-    std::string hash;
-    std::string author;
-    time_t time{};
-    std::string message;
-    uint32_t files_added{};
-    uint32_t files_deleted{};
-    uint32_t files_renamed{};
-    uint32_t files_modified{};
-    uint32_t lines_added{};
-    uint32_t lines_deleted{};
-    uint32_t hunks_added{};
-    uint32_t hunks_removed{};
-    uint32_t hunks_changed{};
-
-    void writeTextWithoutNewline(WriteBuffer & out) const
-    {
-        writeText(hash, out);
-        writeChar('\t', out);
-        writeText(author, out);
-        writeChar('\t', out);
-        writeText(time, out);
-        writeChar('\t', out);
-        writeText(message, out);
-        writeChar('\t', out);
-        writeText(files_added, out);
-        writeChar('\t', out);
-        writeText(files_deleted, out);
-        writeChar('\t', out);
-        writeText(files_renamed, out);
-        writeChar('\t', out);
-        writeText(files_modified, out);
-        writeChar('\t', out);
-        writeText(lines_added, out);
-        writeChar('\t', out);
-        writeText(lines_deleted, out);
-        writeChar('\t', out);
-        writeText(hunks_added, out);
-        writeChar('\t', out);
-        writeText(hunks_removed, out);
-        writeChar('\t', out);
-        writeText(hunks_changed, out);
-    }
-};
 
 
 void skipUntilWhitespace(ReadBuffer & buf)
@@ -407,13 +427,15 @@ struct Result
 struct Options
 {
     bool skip_commits_without_parents = true;
+    size_t threads = 1;
     std::optional<re2_st::RE2> skip_paths;
     std::unordered_set<std::string> skip_commits;
-    size_t diff_size_limit = 0;
+    std::optional<size_t> diff_size_limit;
 
     Options(const po::variables_map & options)
     {
         skip_commits_without_parents = options["skip-commits-without-parents"].as<bool>();
+        threads = options["threads"].as<size_t>();
         if (options.count("skip-paths"))
         {
             skip_paths.emplace(options["skip-paths"].as<std::string>());
@@ -423,36 +445,123 @@ struct Options
             auto vec = options["skip-commit"].as<std::vector<std::string>>();
             skip_commits.insert(vec.begin(), vec.end());
         }
-        diff_size_limit = options["diff-size-limit"].as<size_t>();
+        if (options.count("diff-size-limit"))
+        {
+            diff_size_limit = options["diff-size-limit"].as<size_t>();
+        }
     }
 };
 
 
 /// Rough snapshot of repository calculated by application of diffs. It's used to calculate blame info.
-struct File
+struct FileBlame
 {
-    std::vector<LineChange> lines;
+    using Lines = std::list<Commit>;
+    Lines lines;
+    Lines::iterator it;
+    size_t current_idx = 1;
+
+    FileBlame()
+    {
+        it = lines.begin();
+    }
+
+    FileBlame & operator=(const FileBlame & rhs)
+    {
+        lines = rhs.lines;
+        it = lines.begin();
+        current_idx = 1;
+        return *this;
+    }
+
+    FileBlame(const FileBlame & rhs)
+    {
+        *this = rhs;
+    }
+
+    void walk(uint32_t num)
+    {
+        if (current_idx < num)
+        {
+            while (current_idx < num && it != lines.end())
+            {
+                ++current_idx;
+                ++it;
+            }
+        }
+        else if (current_idx > num)
+        {
+            --current_idx;
+            --it;
+        }
+    }
+
+    const Commit * find(uint32_t num)
+    {
+        walk(num);
+
+        if (current_idx == num && it != lines.end())
+            return &*it;
+        return {};
+    }
+
+    void addLine(uint32_t num, Commit commit)
+    {
+        walk(num);
+
+        while (it == lines.end() && current_idx < num)
+        {
+            lines.emplace_back();
+            ++current_idx;
+        }
+        if (it == lines.end())
+        {
+            lines.emplace_back();
+            --it;
+        }
+
+        lines.insert(it, commit);
+    }
+
+    void removeLine(uint32_t num)
+    {
+        walk(num);
+
+        if (current_idx == num)
+            it = lines.erase(it);
+    }
 };
 
-using Snapshot = std::map<std::string /* path */, File>;
+using Snapshot = std::map<std::string /* path */, FileBlame>;
+
+struct FileChangeAndLineChanges
+{
+    FileChangeAndLineChanges(FileChange file_change_) : file_change(file_change_) {}
+
+    FileChange file_change;
+    LineChanges line_changes;
+
+    std::map<uint32_t, Commit> deleted_lines;
+};
 
 
 void processCommit(
-    const Options & options, size_t commit_num, size_t total_commits, std::string hash, Snapshot & /*snapshot*/, Result & result)
+    std::unique_ptr<ShellCommand> & commit_info,
+    const Options & options,
+    size_t commit_num,
+    size_t total_commits,
+    std::string hash,
+    Snapshot & snapshot,
+    Result & result)
 {
-    std::string command = fmt::format(
-        "git show --raw --pretty='format:%at%x09%aN%x09%P%x0A%s%x00' --patch --unified=0 {}",
-        hash);
-
-    //std::cerr << command << "\n";
-
-    auto commit_info = ShellCommand::execute(command);
     auto & in = commit_info->out;
 
     Commit commit;
     commit.hash = hash;
 
-    readText(commit.time, in);
+    time_t commit_time;
+    readText(commit_time, in);
+    commit.time = commit_time;
     assertChar('\t', in);
     readText(commit.author, in);
     assertChar('\t', in);
@@ -465,7 +574,7 @@ void processCommit(
     std::replace_if(message_to_print.begin(), message_to_print.end(), [](char c){ return std::iscntrl(c); }, ' ');
 
     fmt::print("{}%  {}  {}  {}\n",
-        commit_num * 100 / total_commits, toString(LocalDateTime(commit.time)), hash, message_to_print);
+        commit_num * 100 / total_commits, toString(commit.time), hash, message_to_print);
 
     if (options.skip_commits_without_parents && commit_num != 0 && parent_hash.empty())
     {
@@ -533,6 +642,8 @@ void processCommit(
             readText(file_change.old_path, in);
             skipWhitespaceIfAny(in);
             readText(file_change.path, in);
+
+            snapshot[file_change.path] = snapshot[file_change.old_path];
         }
         else
         {
@@ -547,7 +658,7 @@ void processCommit(
         {
             file_changes.emplace(
                 file_change.path,
-                FileChangeAndLineChanges{ file_change, {} });
+                FileChangeAndLineChanges(file_change));
         }
     }
 
@@ -601,6 +712,9 @@ void processCommit(
                     else
                         assertChar('\n', in);
 
+                    line_change.hunk_lines_added = new_lines;
+                    line_change.hunk_lines_deleted = old_lines;
+
                     ++line_change.hunk_num;
                     line_change.line_number_old = line_change.hunk_start_line_number_old;
                     line_change.line_number_new = line_change.hunk_start_line_number_new;
@@ -653,6 +767,16 @@ void processCommit(
                         readStringUntilNextLine(line_change.line, in);
                         line_change.setLineInfo(line_change.line);
 
+                        FileBlame & file_snapshot = snapshot[old_file_path];
+                        if (const Commit * prev_commit = file_snapshot.find(line_change.line_number_old))
+                        {
+                            line_change.prev_commit_hash = prev_commit->hash;
+                            line_change.prev_author = prev_commit->author;
+                            line_change.prev_time = prev_commit->time;
+                            file_change_and_line_changes->deleted_lines[line_change.line_number_old] = *prev_commit;
+                            file_snapshot.removeLine(line_change.line_number_old);
+                        }
+
                         file_change_and_line_changes->line_changes.push_back(line_change);
                         ++line_change.line_number_old;
                     }
@@ -689,6 +813,16 @@ void processCommit(
                         readStringUntilNextLine(line_change.line, in);
                         line_change.setLineInfo(line_change.line);
 
+                        FileBlame & file_snapshot = snapshot[new_file_path];
+                        if (file_change_and_line_changes->deleted_lines.count(line_change.line_number_new))
+                        {
+                            const auto & prev_commit = file_change_and_line_changes->deleted_lines[line_change.line_number_new];
+                            line_change.prev_commit_hash = prev_commit.hash;
+                            line_change.prev_author = prev_commit.author;
+                            line_change.prev_time = prev_commit.time;
+                        }
+                        file_snapshot.addLine(line_change.line_number_new, commit);
+
                         file_change_and_line_changes->line_changes.push_back(line_change);
                         ++line_change.line_number_new;
                     }
@@ -701,7 +835,7 @@ void processCommit(
         }
     }
 
-    if (commit.lines_added + commit.lines_deleted > options.diff_size_limit)
+    if (options.diff_size_limit && commit.lines_added + commit.lines_deleted > *options.diff_size_limit)
         return;
 
     /// Write the result
@@ -744,6 +878,16 @@ void processCommit(
 }
 
 
+auto gitShow(const std::string & hash)
+{
+    std::string command = fmt::format(
+        "git show --raw --pretty='format:%at%x09%aN%x09%P%x0A%s%x00' --patch --unified=0 {}",
+        hash);
+
+    return ShellCommand::execute(command);
+}
+
+
 void processLog(const Options & options)
 {
     Result result;
@@ -772,10 +916,19 @@ void processLog(const Options & options)
     size_t num_commits = hashes.size();
     fmt::print("Total {} commits to process.\n", num_commits);
 
+    /// Will run multiple processes in parallel
+    size_t num_threads = options.threads;
+
+    std::vector<std::unique_ptr<ShellCommand>> show_commands(num_threads);
+    for (size_t i = 0; i < num_commits && i < num_threads; ++i)
+        show_commands[i] = gitShow(hashes[i]);
+
     Snapshot snapshot;
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(options, i, num_commits, hashes[i], snapshot, result);
+        processCommit(show_commands[i % num_threads], options, i, num_commits, hashes[i], snapshot, result);
+        if (i + num_threads < num_commits)
+            show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
 }
 
@@ -797,8 +950,10 @@ try
             "Skip paths that matches regular expression (re2 syntax).")
         ("skip-commit", po::value<std::vector<std::string>>(),
             "Skip commit with specified hash. The option can be specified multiple times.")
-        ("diff-size-limit", po::value<size_t>()->default_value(0),
+        ("diff-size-limit", po::value<size_t>(),
             "Skip commits whose diff size (number of added + removed lines) is larger than specified threshold")
+        ("threads", po::value<size_t>()->default_value(std::thread::hardware_concurrency()),
+            "Number of threads to interact with git")
     ;
 
     po::variables_map options;
