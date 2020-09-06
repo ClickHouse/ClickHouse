@@ -1,6 +1,11 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <cctype>
+#include <unordered_set>
+
+#include <re2_st/re2.h>
 
 #include <boost/program_options.hpp>
 
@@ -16,7 +21,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 
 
-/** How to use:
+static constexpr auto documentation = R"(
+Prepare the database by executing the following queries:
 
 DROP DATABASE IF EXISTS git;
 CREATE DATABASE git;
@@ -44,11 +50,11 @@ CREATE TABLE git.file_changes
     change_type Enum('Add' = 1, 'Delete' = 2, 'Modify' = 3, 'Rename' = 4, 'Copy' = 5, 'Type' = 6),
     new_file_path LowCardinality(String),
     old_file_path LowCardinality(String),
-    lines_added UInt16,
-    lines_deleted UInt16,
-    hunks_added UInt16,
-    hunks_removed UInt16,
-    hunks_changed UInt16,
+    lines_added UInt32,
+    lines_deleted UInt32,
+    hunks_added UInt32,
+    hunks_removed UInt32,
+    hunks_changed UInt32,
 
     commit_hash String,
     author_name LowCardinality(String),
@@ -69,11 +75,11 @@ CREATE TABLE git.file_changes
 CREATE TABLE git.line_changes
 (
     sign Int8,
-    line_number_old UInt16,
-    line_number_new UInt16,
-    hunk_num UInt16,
-    hunk_start_line_number_old UInt16,
-    hunk_start_line_number_new UInt16,
+    line_number_old UInt32,
+    line_number_new UInt32,
+    hunk_num UInt32,
+    hunk_start_line_number_old UInt32,
+    hunk_start_line_number_new UInt32,
     hunk_context LowCardinality(String),
     line LowCardinality(String),
     indent UInt8,
@@ -82,11 +88,11 @@ CREATE TABLE git.line_changes
     file_change_type Enum('Add' = 1, 'Delete' = 2, 'Modify' = 3, 'Rename' = 4, 'Copy' = 5, 'Type' = 6),
     new_file_path LowCardinality(String),
     old_file_path LowCardinality(String),
-    file_lines_added UInt16,
-    file_lines_deleted UInt16,
-    file_hunks_added UInt16,
-    file_hunks_removed UInt16,
-    file_hunks_changed UInt16,
+    file_lines_added UInt32,
+    file_lines_deleted UInt32,
+    file_hunks_added UInt32,
+    file_hunks_removed UInt32,
+    file_hunks_changed UInt32,
 
     commit_hash String,
     author_name LowCardinality(String),
@@ -104,12 +110,15 @@ CREATE TABLE git.line_changes
     commit_hunks_changed UInt32
 ) ENGINE = MergeTree ORDER BY time;
 
+Insert the data with the following commands:
+
 clickhouse-client --query "INSERT INTO git.commits FORMAT TSV" < commits.tsv
 clickhouse-client --query "INSERT INTO git.file_changes FORMAT TSV" < file_changes.tsv
 clickhouse-client --query "INSERT INTO git.line_changes FORMAT TSV" < line_changes.tsv
 
-  */
+)";
 
+namespace po = boost::program_options;
 
 namespace DB
 {
@@ -141,11 +150,11 @@ void writeText(LineType type, WriteBuffer & out)
 struct LineChange
 {
     int8_t sign{}; /// 1 if added, -1 if deleted
-    uint16_t line_number_old{};
-    uint16_t line_number_new{};
-    uint16_t hunk_num{}; /// ordinal number of hunk in diff, starting with 0
-    uint16_t hunk_start_line_number_old{};
-    uint16_t hunk_start_line_number_new{};
+    uint32_t line_number_old{};
+    uint32_t line_number_new{};
+    uint32_t hunk_num{}; /// ordinal number of hunk in diff, starting with 0
+    uint32_t hunk_start_line_number_old{};
+    uint32_t hunk_start_line_number_new{};
     std::string hunk_context; /// The context (like a line with function name) as it is calculated by git
     std::string line; /// Line content without leading whitespaces
     uint8_t indent{}; /// The number of leading whitespaces or tabs * 4
@@ -251,11 +260,11 @@ struct FileChange
     FileChangeType change_type{};
     std::string new_file_path;
     std::string old_file_path;
-    uint16_t lines_added{};
-    uint16_t lines_deleted{};
-    uint16_t hunks_added{};
-    uint16_t hunks_removed{};
-    uint16_t hunks_changed{};
+    uint32_t lines_added{};
+    uint32_t lines_deleted{};
+    uint32_t hunks_added{};
+    uint32_t hunks_removed{};
+    uint32_t hunks_changed{};
 
     void writeTextWithoutNewline(WriteBuffer & out) const
     {
@@ -395,13 +404,38 @@ struct Result
 };
 
 
-void processCommit(std::string hash, Result & result)
+struct Options
+{
+    bool skip_commits_without_parents = true;
+    std::optional<re2_st::RE2> skip_paths;
+    std::unordered_set<std::string> skip_commits;
+    size_t diff_size_limit = 0;
+
+    Options(const po::variables_map & options)
+    {
+        skip_commits_without_parents = options["skip-commits-without-parents"].as<bool>();
+        if (options.count("skip-paths"))
+        {
+            skip_paths.emplace(options["skip-paths"].as<std::string>());
+        }
+        if (options.count("skip-commit"))
+        {
+            auto vec = options["skip-commit"].as<std::vector<std::string>>();
+            skip_commits.insert(vec.begin(), vec.end());
+        }
+        diff_size_limit = options["diff-size-limit"].as<size_t>();
+    }
+};
+
+
+void processCommit(
+    const Options & options, size_t commit_num, size_t total_commits, std::string hash, Result & result)
 {
     std::string command = fmt::format(
-        "git show --raw --pretty='format:%at%x09%aN%x09%aE%x0A%s%x00' --patch --unified=0 {}",
+        "git show --raw --pretty='format:%at%x09%aN%x09%aE%x09%P%x0A%s%x00' --patch --unified=0 {}",
         hash);
 
-    std::cerr << command << "\n";
+    //std::cerr << command << "\n";
 
     auto commit_info = ShellCommand::execute(command);
     auto & in = commit_info->out;
@@ -414,10 +448,23 @@ void processCommit(std::string hash, Result & result)
     readText(commit.author_name, in);
     assertChar('\t', in);
     readText(commit.author_email, in);
+    assertChar('\t', in);
+    std::string parent_hash;
+    readString(parent_hash, in);
     assertChar('\n', in);
     readNullTerminated(commit.message, in);
 
-    std::cerr << fmt::format("{}\t{}\n", toString(LocalDateTime(commit.time)), commit.message);
+    std::string message_to_print = commit.message;
+    std::replace_if(message_to_print.begin(), message_to_print.end(), [](char c){ return std::iscntrl(c); }, ' ');
+
+    fmt::print("{}%  {}  {}  {}\n",
+        commit_num * 100 / total_commits, toString(LocalDateTime(commit.time)), hash, message_to_print);
+
+    if (options.skip_commits_without_parents && commit_num != 0 && parent_hash.empty())
+    {
+        std::cerr << "Warning: skipping commit without parents\n";
+        return;
+    }
 
     if (!in.eof())
         assertChar('\n', in);
@@ -487,9 +534,12 @@ void processCommit(std::string hash, Result & result)
 
         assertChar('\n', in);
 
-        file_changes.emplace(
-            file_change.new_file_path,
-            FileChangeAndLineChanges{ file_change, {} });
+        if (!(options.skip_paths && re2_st::RE2::PartialMatch(file_change.new_file_path, *options.skip_paths)))
+        {
+            file_changes.emplace(
+                file_change.new_file_path,
+                FileChangeAndLineChanges{ file_change, {} });
+        }
     }
 
     if (!in.eof())
@@ -517,16 +567,14 @@ void processCommit(std::string hash, Result & result)
                 {
                     auto file_name = new_file_path.empty() ? old_file_path : new_file_path;
                     auto it = file_changes.find(file_name);
-                    if (file_changes.end() == it)
-                        std::cerr << fmt::format("Warning: skipping bad file name {}\n", file_name);
-                    else
+                    if (file_changes.end() != it)
                         file_change_and_line_changes = &it->second;
                 }
 
                 if (file_change_and_line_changes)
                 {
-                    uint16_t old_lines = 1;
-                    uint16_t new_lines = 1;
+                    uint32_t old_lines = 1;
+                    uint32_t new_lines = 1;
 
                     assertChar('-', in);
                     readText(line_change.hunk_start_line_number_old, in);
@@ -644,6 +692,9 @@ void processCommit(std::string hash, Result & result)
         }
     }
 
+    if (commit.lines_added + commit.lines_deleted > options.diff_size_limit)
+        return;
+
     /// Write the result
 
     /// commits table
@@ -684,13 +735,19 @@ void processCommit(std::string hash, Result & result)
 }
 
 
-void processLog()
+void processLog(const Options & options)
 {
     Result result;
 
-    std::string command = "git log --no-merges --pretty=%H";
-    std::cerr << command << "\n";
+    std::string command = "git log --reverse --no-merges --pretty=%H";
+    fmt::print("{}\n", command);
     auto git_log = ShellCommand::execute(command);
+
+    /// Collect hashes in memory. This is inefficient but allows to display beautiful progress.
+    /// The number of commits is in order of single millions for the largest repositories,
+    /// so don't care about potential waste of ~100 MB of memory.
+
+    std::vector<std::string> hashes;
 
     auto & in = git_log->out;
     while (!in.eof())
@@ -699,33 +756,55 @@ void processLog()
         readString(hash, in);
         assertChar('\n', in);
 
-        std::cerr << fmt::format("Processing commit {}\n", hash);
-        processCommit(std::move(hash), result);
+        if (!options.skip_commits.count(hash))
+            hashes.emplace_back(std::move(hash));
+    }
+
+    size_t num_commits = hashes.size();
+    fmt::print("Total {} commits to process.\n", num_commits);
+
+    for (size_t i = 0; i < num_commits; ++i)
+    {
+        processCommit(options, i, num_commits, hashes[i], result);
     }
 }
 
 
 }
 
-int main(int /*argc*/, char ** /*argv*/)
+int main(int argc, char ** argv)
 try
 {
     using namespace DB;
 
-/*    boost::program_options::options_description desc("Allowed options");
-    desc.add_options()("help,h", "produce help message");
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("skip-commits-without-parents", po::value<bool>()->default_value(true),
+            "Skip commits without parents (except the initial commit)."
+            " These commits are usually erroneous but they can make sense in very rare cases.")
+        ("skip-paths", po::value<std::string>(),
+            "Skip paths that matches regular expression (re2 syntax).")
+        ("skip-commit", po::value<std::vector<std::string>>(),
+            "Skip commit with specified hash. The option can be specified multiple times.")
+        ("diff-size-limit", po::value<size_t>()->default_value(0),
+            "Skip commits whose diff size (number of added + removed lines) is larger than specified threshold")
+    ;
 
-    boost::program_options::variables_map options;
-    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+    po::variables_map options;
+    po::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.count("help") || argc != 2)
+    if (options.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << std::endl;
-        std::cout << desc << std::endl;
+        std::cout << documentation << '\n'
+            << "Usage: " << argv[0] << '\n'
+            << desc << '\n'
+            << "\nExample:\n"
+            << "\n./git-to-clickhouse --diff-size-limit 100000 --skip-paths '^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/'\n";
         return 1;
-    }*/
+    }
 
-    processLog();
+    processLog(options);
     return 0;
 }
 catch (...)
