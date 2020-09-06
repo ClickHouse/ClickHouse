@@ -30,8 +30,7 @@ CREATE DATABASE git;
 CREATE TABLE git.commits
 (
     hash String,
-    author_name LowCardinality(String),
-    author_email LowCardinality(String),
+    author LowCardinality(String),
     time DateTime,
     message String,
     files_added UInt32,
@@ -57,8 +56,7 @@ CREATE TABLE git.file_changes
     hunks_changed UInt32,
 
     commit_hash String,
-    author_name LowCardinality(String),
-    author_email LowCardinality(String),
+    author LowCardinality(String),
     time DateTime,
     commit_message String,
     commit_files_added UInt32,
@@ -95,8 +93,7 @@ CREATE TABLE git.line_changes
     file_hunks_changed UInt32,
 
     commit_hash String,
-    author_name LowCardinality(String),
-    author_email LowCardinality(String),
+    author LowCardinality(String),
     time DateTime,
     commit_message String,
     commit_files_added UInt32,
@@ -295,8 +292,7 @@ struct FileChangeAndLineChanges
 struct Commit
 {
     std::string hash;
-    std::string author_name;
-    std::string author_email;
+    std::string author;
     time_t time{};
     std::string message;
     uint32_t files_added{};
@@ -313,9 +309,7 @@ struct Commit
     {
         writeText(hash, out);
         writeChar('\t', out);
-        writeText(author_name, out);
-        writeChar('\t', out);
-        writeText(author_email, out);
+        writeText(author, out);
         writeChar('\t', out);
         writeText(time, out);
         writeChar('\t', out);
@@ -445,9 +439,7 @@ void processCommit(
 
     readText(commit.time, in);
     assertChar('\t', in);
-    readText(commit.author_name, in);
-    assertChar('\t', in);
-    readText(commit.author_email, in);
+    readText(commit.author, in);
     assertChar('\t', in);
     std::string parent_hash;
     readString(parent_hash, in);
