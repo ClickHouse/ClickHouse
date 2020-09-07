@@ -31,7 +31,7 @@ Ok.
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
-$ wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
+$ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
@@ -276,7 +276,7 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 ### Пример {#primer}
 
 ``` bash
-$ curl -sS "http://localhost:8123/?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+$ curl -sS "<address>?param_id=2¶m_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
 ## Предопределенный HTTP интерфейс {#predefined_http_interface}

@@ -1,32 +1,18 @@
-SELECT any(number) + (any(number) * 2)
-FROM numbers(1, 2)
+SELECT any(number) + (any(number) * 2)\nFROM numbers(1, 2)
 3
-SELECT anyLast(number) + (anyLast(number) * 2)
-FROM numbers(1, 2)
+SELECT anyLast(number) + (anyLast(number) * 2)\nFROM numbers(1, 2)
 6
-WITH any(number) * 3 AS x
-SELECT x
-FROM numbers(1, 2)
+WITH any(number) * 3 AS x\nSELECT x\nFROM numbers(1, 2)
 3
-SELECT 
-    anyLast(number) * 3 AS x,
-    x
-FROM numbers(1, 2)
+SELECT \n    anyLast(number) * 3 AS x,\n    x\nFROM numbers(1, 2)
 6	6
-SELECT any(number + (number * 2))
-FROM numbers(1, 2)
+SELECT any(number + (number * 2))\nFROM numbers(1, 2)
 3
-SELECT anyLast(number + (number * 2))
-FROM numbers(1, 2)
+SELECT anyLast(number + (number * 2))\nFROM numbers(1, 2)
 6
-WITH any(number * 3) AS x
-SELECT x
-FROM numbers(1, 2)
+WITH any(number * 3) AS x\nSELECT x\nFROM numbers(1, 2)
 3
-SELECT 
-    anyLast(number * 3) AS x,
-    x
-FROM numbers(1, 2)
+SELECT \n    anyLast(number * 3) AS x,\n    x\nFROM numbers(1, 2)
 6	6
 arrayJoin
 0	[]

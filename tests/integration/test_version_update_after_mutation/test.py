@@ -1,13 +1,14 @@
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server', tag='20.1.10.70', with_installed_binary=True, stay_alive=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server', tag='20.1.10.70', with_installed_binary=True, stay_alive=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server', tag='20.1.10.70', with_installed_binary=True, stay_alive=True)
+node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server:20.1.10.70', with_installed_binary=True, stay_alive=True)
+node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server:20.1.10.70', with_installed_binary=True, stay_alive=True)
+node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server:20.1.10.70', with_installed_binary=True, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -69,8 +70,5 @@ def test_upgrade_while_mutation(start_cluster):
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
     node3.restart_with_latest_version()
-
-    # will delete nothing, but previous async mutation will finish with this query
-    node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
 
     assert_eq_with_retry(node3, "SELECT COUNT() from mt1", "50000\n")

@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename A>
@@ -17,12 +16,9 @@ struct IntExp2Impl
     using ResultType = UInt64;
     static constexpr const bool allow_fixed_string = false;
 
-    static inline ResultType apply([[maybe_unused]] A a)
+    static inline ResultType apply(A a)
     {
-        if constexpr (is_big_int_v<A>)
-            throw DB::Exception("intExp2 not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-        else
-            return intExp2(a);
+        return intExp2(a);
     }
 
 #if USE_EMBEDDED_COMPILER

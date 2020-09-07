@@ -3,7 +3,7 @@ toc_priority: 39
 toc_title: GRANT
 ---
 
-# GRANT Statement {#grant}
+# GRANT {#grant}
 
 -   Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
 -   Assigns roles to user accounts or to the other roles.
@@ -82,7 +82,6 @@ Hierarchy of privileges:
             -   `ALTER RENAME COLUMN`
         -   `ALTER INDEX`
             -   `ALTER ORDER BY`
-            -   `ALTER SAMPLE BY`
             -   `ALTER ADD INDEX`
             -   `ALTER DROP INDEX`
             -   `ALTER MATERIALIZE INDEX`
@@ -252,7 +251,7 @@ The granted privilege allows `john` to insert data to the `x` and/or `y` columns
 
 ### ALTER {#grant-alter}
 
-Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries according to the following hierarchy of privileges:
+Allows executing [ALTER](../../sql-reference/statements/alter.md) queries according to the following hierarchy of privileges:
 
 -   `ALTER`. Level: `COLUMN`.
     -   `ALTER TABLE`. Level: `GROUP`
@@ -267,7 +266,6 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
             -   `ALTER RENAME COLUMN`. Level: `COLUMN`. Aliases: `RENAME COLUMN`
         -   `ALTER INDEX`. Level: `GROUP`. Aliases: `INDEX`
             -   `ALTER ORDER BY`. Level: `TABLE`. Aliases: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
-            -   `ALTER SAMPLE BY`. Level: `TABLE`. Aliases: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
             -   `ALTER ADD INDEX`. Level: `TABLE`. Aliases: `ADD INDEX`
             -   `ALTER DROP INDEX`. Level: `TABLE`. Aliases: `DROP INDEX`
             -   `ALTER MATERIALIZE INDEX`. Level: `TABLE`. Aliases: `MATERIALIZE INDEX`
@@ -299,7 +297,7 @@ Examples of how this hierarchy is treated:
 
 ### CREATE {#grant-create}
 
-Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
+Allows executing [CREATE](../../sql-reference/statements/create.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`

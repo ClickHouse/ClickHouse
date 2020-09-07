@@ -89,10 +89,6 @@
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) — специализированный инструмент для визуализации `system.trace_log` в виде [flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-### clickhouse-plantuml {#clickhouse-plantuml}
-
-[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) — скрипт, генерирующий [PlantUML](https://plantuml.com/) диаграммы схем таблиц.
-
 ## Коммерческие {#kommercheskie}
 
 ### DataGrip {#datagrip}

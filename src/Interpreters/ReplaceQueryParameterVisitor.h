@@ -22,7 +22,6 @@ private:
     const NameToNameMap & query_parameters;
     const String & getParamValue(const String & name);
     void visitQueryParameter(ASTPtr & ast);
-    void visitChildren(ASTPtr & ast);
 };
 
 }

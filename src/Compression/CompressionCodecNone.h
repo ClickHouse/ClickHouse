@@ -13,7 +13,7 @@ class CompressionCodecNone : public ICompressionCodec
 public:
     uint8_t getMethodByte() const override;
 
-    ASTPtr getCodecDesc() const override;
+    String getCodecDesc() const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -25,4 +25,6 @@ protected:
     bool isNone() const override { return true; }
 };
 
+class CompressionCodecFactory;
+void registerCodecNone(CompressionCodecFactory & factory);
 }

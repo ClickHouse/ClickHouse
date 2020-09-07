@@ -11,7 +11,7 @@ WITH number * 2 AS square_number SELECT number, square_number FROM numbers_index
 
 SELECT * FROM squares WHERE number = 999;
 
-EXPLAIN SYNTAX SELECT number, square_number FROM ( WITH number * 2 AS square_number SELECT number, square_number FROM numbers_indexed) AS squares WHERE number = 999;
+-- EXPLAIN SYNTAX SELECT number, square_number FROM ( WITH number * 2 AS square_number SELECT number, square_number FROM numbers_indexed) AS squares WHERE number = 999;
 
 DROP TABLE IF EXISTS squares;
 DROP TABLE IF EXISTS numbers_indexed;

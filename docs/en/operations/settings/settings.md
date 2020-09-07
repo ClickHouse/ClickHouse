@@ -129,7 +129,7 @@ Default value: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create/table.md) query and by the [url](../../sql-reference/table-functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table-engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) query and by the [url](../../sql-reference/table-functions/url.md) table function.
 
 Possible values:
 
@@ -471,7 +471,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
 
 ## temporary\_files\_codec {#temporary_files_codec}
 
@@ -585,31 +585,6 @@ Possible values:
 
 Default value: 0.
 
-## network_compression_method {#network_compression_method}
-
-Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
-
-Possible values:
-
--   `LZ4` — sets LZ4 compression method.
--   `ZSTD` — sets ZSTD compression method.
-
-Default value: `LZ4`.
-
-**See Also**
-
--   [network_zstd_compression_level](#network_zstd_compression_level)
-
-## network_zstd_compression_level {#network_zstd_compression_level}
-
-Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
-
-Possible values:
-
--   Positive integer from 1 to 15.
-
-Default value: `1`.
-
 ## log\_queries {#settings-log-queries}
 
 Setting up query logging.
@@ -654,7 +629,7 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-The size of blocks (in a count of rows) to form for insertion into a table.
+The size of blocks to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
 But when using clickhouse-client, the client parses the data itself, and the ‘max\_insert\_block\_size’ setting on the server doesn’t affect the size of the inserted blocks.
@@ -752,17 +727,6 @@ The INSERT query also contains data for INSERT that is processed by a separate s
 
 Default value: 256 KiB.
 
-## max\_parser\_depth {#max_parser_depth}
-
-Limits maximum recursion depth in the recursive descent parser. Allows to control stack size.
-
-Possible values:
-
--   Positive integer.
--   0 — Recursion depth is unlimited.
-
-Default value: 1000.
-
 ## interactive\_delay {#interactive-delay}
 
 The interval in microseconds for checking whether request execution has been cancelled and sending the progress.
@@ -808,17 +772,6 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 50.
 
-## connection\_pool\_max\_wait\_ms {#connection-pool-max-wait-ms}
-
-The wait time in milliseconds for a connection when the connection pool is full.
-
-Possible values:
-
-- Positive integer.
-- 0 — Infinite timeout.
-
-Default value: 0.
-
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
 The maximum number of connection attempts with each replica for the Distributed table engine.
@@ -829,21 +782,6 @@ Default value: 3.
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section “Extreme values”.
-
-## kafka\_max\_wait\_ms {#kafka-max-wait-ms}
-
-The wait time in milliseconds for reading messages from [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) before retry.
-
-Possible values:
-
-- Positive integer.
-- 0 — Infinite timeout.
-
-Default value: 5000.
-
-See also:
-
--   [Apache Kafka](https://kafka.apache.org/)
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
@@ -862,17 +800,6 @@ If a query from the same user with the same ‘query\_id’ already exists at th
 `1` – Cancel the old query and start running the new one.
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
-
-## replace\_running\_query\_max\_wait\_ms {#replace-running-query-max-wait-ms}
-
-The wait time for running query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
-
-Possible values:
-
-- Positive integer.
-- 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the  same `query_id`.
-
-Default value: 5000.
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
@@ -893,10 +820,6 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
 -   [Round robin](#load_balancing-round_robin)
-
-See also:
-
--   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ### Random (by Default) {#load_balancing-random}
 
@@ -997,105 +920,6 @@ The results of the compilation are saved in the build directory in the form of .
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
-
-## output\_format\_json\_quote\_denormals {#settings-output_format_json_quote_denormals}
-
-Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/formats.md#json) output format.
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 0.
-
-**Example**
-
-Consider the following table `account_orders`:
-
-```text
-┌─id─┬─name───┬─duration─┬─period─┬─area─┐
-│  1 │ Andrew │       20 │      0 │  400 │
-│  2 │ John   │       40 │      0 │    0 │
-│  3 │ Bob    │       15 │      0 │ -100 │
-└────┴────────┴──────────┴────────┴──────┘
-```
-
-When `output_format_json_quote_denormals = 0`, the query returns `null` values in output:
-
-```sql
-SELECT area/period FROM account_orders FORMAT JSON;
-```
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "divide(area, period)",
-                        "type": "Float64"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "divide(area, period)": null
-                },
-                {
-                        "divide(area, period)": null
-                },
-                {
-                        "divide(area, period)": null
-                }
-        ],
-
-        "rows": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.003648093,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
-When `output_format_json_quote_denormals = 1`, the query returns:
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "divide(area, period)",
-                        "type": "Float64"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "divide(area, period)": "inf"
-                },
-                {
-                        "divide(area, period)": "-nan"
-                },
-                {
-                        "divide(area, period)": "-inf"
-                }
-        ],
-
-        "rows": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.000070241,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
@@ -1290,47 +1114,6 @@ Possible values:
 
 Default value: 0.
 
-## distributed\_group\_by\_no\_merge {#distributed-group-by-no-merge}
-
-Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
-
-Possible values:
-
--   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data).
--   2 - Same as 1 but apply `ORDER BY` and `LIMIT` on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
-
-**Example**
-
-```sql
-SELECT *
-FROM remote('127.0.0.{2,3}', system.one)
-GROUP BY dummy
-LIMIT 1
-SETTINGS distributed_group_by_no_merge = 1
-FORMAT PrettyCompactMonoBlock
-
-┌─dummy─┐
-│     0 │
-│     0 │
-└───────┘
-```
-
-```sql
-SELECT *
-FROM remote('127.0.0.{2,3}', system.one)
-GROUP BY dummy
-LIMIT 1
-SETTINGS distributed_group_by_no_merge = 2
-FORMAT PrettyCompactMonoBlock
-
-┌─dummy─┐
-│     0 │
-└───────┘
-```
-
-Default value: 0
-
 ## optimize\_skip\_unused\_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
@@ -1339,18 +1122,6 @@ Possible values:
 
 -   0 — Disabled.
 -   1 — Enabled.
-
-Default value: 0
-
-## optimize\_skip\_unused\_shards\_nesting {#optimize-skip-unused-shards-nesting}
-
-Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
-
-Possible values:
-
--   0 — Disabled, `optimize_skip_unused_shards` works always.
--   1 — Enables `optimize_skip_unused_shards` only for the first level.
--   2 — Enables `optimize_skip_unused_shards` up to the second level.
 
 Default value: 0
 
@@ -1366,51 +1137,16 @@ Possible values:
 
 Default value: 0
 
-## force\_optimize\_skip\_unused\_shards\_nesting {#settings-force_optimize_skip_unused_shards_nesting}
+## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
 
-Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
-
-Possible values:
-
--   0 - Disabled, `force_optimize_skip_unused_shards` works always.
--   1 — Enables `force_optimize_skip_unused_shards` only for the first level.
--   2 — Enables `force_optimize_skip_unused_shards` up to the second level.
-
-Default value: 0
-
-## optimize\_distributed\_group\_by\_sharding\_key {#optimize-distributed-group-by-sharding-key}
-
-Optimize `GROUP BY sharding_key` queries, by avoiding costly aggregation on the initiator server (which will reduce memory usage for the query on the initiator server).
-
-The following types of queries are supported (and all combinations of them):
-
-- `SELECT DISTINCT [..., ]sharding_key[, ...] FROM dist`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...]`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...] ORDER BY x`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1 BY x`
-
-The following types of queries are not supported (support for some of them may be added later):
-
-- `SELECT ... GROUP BY sharding_key[, ...] WITH TOTALS`
-- `SELECT ... GROUP BY sharding_key[, ...] WITH ROLLUP`
-- `SELECT ... GROUP BY sharding_key[, ...] WITH CUBE`
-- `SELECT ... GROUP BY sharding_key[, ...] SETTINGS extremes=1`
+Reset [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) for nested `Distributed` table
 
 Possible values:
 
--   0 — Disabled.
 -   1 — Enabled.
+-   0 — Disabled.
 
-Default value: 0
-
-See also:
-
--   [distributed\_group\_by\_no\_merge](#distributed-group-by-no-merge)
--   [optimize\_skip\_unused\_shards](#optimize-skip-unused-shards)
-
-!!! note "Note"
-    Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
+Default value: 0.
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
@@ -1434,10 +1170,8 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
--   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
--   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
@@ -1448,23 +1182,7 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
--   [load\_balancing](#load_balancing-round_robin)
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
--   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
--   [distributed\_replica\_max\_ignored\_errors](#settings-distributed_replica_max_ignored_errors)
-
-## distributed\_replica\_max\_ignored\_errors {#settings-distributed_replica_max_ignored_errors}
-
--   Type: unsigned int
--   Default value: 0
-
-Number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
-
-See also:
-
--   [load\_balancing](#load_balancing-round_robin)
--   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
--   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
@@ -1615,22 +1333,13 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
-## format\_avro\_schema\_registry\_url {#format_avro_schema_registry_url}
+## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
 
-Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
+Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
 
-Default value: `Empty`.
+Type: URL
 
-## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}
-
-Enables using fields that are not specified in [Avro](../../interfaces/formats.md#data-format-avro) or [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format schema. When a field is not found in the schema, ClickHouse uses the default value instead of throwing an exception.
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 0.
+Default value: Empty
 
 ## background\_pool\_size {#background_pool_size}
 
@@ -1644,37 +1353,6 @@ Possible values:
 
 Default value: 16.
 
-## parallel_distributed_insert_select {#parallel_distributed_insert_select}
-
-Enables parallel distributed `INSERT ... SELECT` query.
-
-If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
-
-Possible values:
-
--   0 — Disabled.
--   1 — `SELECT` will be executed on each shard from underlying table of the distributed engine.
--   2 — `SELECT` and `INSERT` will be executed on each shard from/to underlying table of the distributed engine.
-
-Default value: 0.
-
-## insert_distributed_sync {#insert_distributed_sync}
-
-Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
-
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true). 
-
-Possible values:
-
--   0 — Data is inserted in asynchronous mode.
--   1 — Data is inserted in synchronous mode.
-
-Default value: `0`.
-
-**See Also**
-
--   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
--   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 ## background\_buffer\_flush\_schedule\_pool\_size {#background_buffer_flush_schedule_pool_size}
 
 Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can’t be changed in a user session.
@@ -1705,23 +1383,6 @@ Possible values:
 
 Default value: 16.
 
-## always\_fetch\_merged\_part {#always_fetch_merged_part}
-
-Prohibits data parts merging in [Replicated\*MergeTree](../../engines/table-engines/mergetree-family/replication.md)-engine tables.
-
-When merging is prohibited, the replica never merges parts and always downloads merged parts from other replicas. If there is no required data yet, the replica waits for it. CPU and disk load on the replica server decreases, but the network load on cluster increases. This setting can be useful on servers with relatively weak CPUs or slow disks, such as servers for backups storage.
-
-Possible values:
-
--   0 — `Replicated*MergeTree`-engine tables merge data parts at the replica.
--   1 — `Replicated*MergeTree`-engine tables don’t merge data parts at the replica. The tables download merged data parts from other replicas.
-
-Default value: 0.
-
-**See Also**
-
--   [Data Replication](../../engines/table-engines/mergetree-family/replication.md)
-
 ## background\_distributed\_schedule\_pool\_size {#background_distributed_schedule_pool_size}
 
 Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at ClickHouse server start and can’t be changed in a user session.
@@ -1732,22 +1393,11 @@ Possible values:
 
 Default value: 16.
 
-## validate\_polygons {#validate_polygons}
-
-Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
-
-Possible values:
-
-- 0 — Throwing an exception is disabled. `pointInPolygon` accepts invalid polygons and returns possibly incorrect results for them.
-- 1 — Throwing an exception is enabled.
-
-Default value: 1.
-
-## transform\_null\_in {#transform_null_in}
+## transform_null_in {#transform_null_in}
 
 Enables equality of [NULL](../../sql-reference/syntax.md#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
 
-By default, `NULL` values can’t be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
+By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
 
 Possible values:
 
@@ -1756,11 +1406,11 @@ Possible values:
 
 Default value: 0.
 
-**Example**
+**Example** 
 
 Consider the `null_in` table:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -1770,13 +1420,13 @@ Consider the `null_in` table:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -1784,22 +1434,23 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
 └──────┴───────┘
 ```
 
-**See Also**
+**See Also** 
 
 -   [NULL Processing in IN Operators](../../sql-reference/operators/in.md#in-null-processing)
+
 
 ## low\_cardinality\_max\_dictionary\_size {#low_cardinality_max_dictionary_size}
 
@@ -1858,9 +1509,9 @@ Possible values:
 
 Default value: 0.
 
-## min\_insert\_block\_size\_rows\_for\_materialized\_views {#min-insert-block-size-rows-for-materialized-views}
+## min_insert_block_size_rows_for_materialized_views {#min-insert-block-size-rows-for-materialized-views}
 
-Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1871,11 +1522,11 @@ Default value: 1048576.
 
 **See Also**
 
--   [min\_insert\_block\_size\_rows](#min-insert-block-size-rows)
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
 
-## min\_insert\_block\_size\_bytes\_for\_materialized\_views {#min-insert-block-size-bytes-for-materialized-views}
+## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
 
-Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create.md#create-view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
@@ -1886,92 +1537,6 @@ Default value: 268435456.
 
 **See also**
 
--   [min\_insert\_block\_size\_bytes](#min-insert-block-size-bytes)
-
-## output\_format\_pretty\_grid\_charset {#output-format-pretty-grid-charset}
-
-Allows to change a charset which is used for printing grids borders. Available charsets are following: UTF-8, ASCII.
-
-**Example**
-
-``` text
-SET output_format_pretty_grid_charset = 'UTF-8';
-SELECT * FROM a;
-┌─a─┐
-│ 1 │
-└───┘
-
-SET output_format_pretty_grid_charset = 'ASCII';
-SELECT * FROM a;
-+-a-+
-| 1 |
-+---+
-```
-## optimize_read_in_order {#optimize_read_in_order}
-
-Enables [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-
-Possible values:
-
--   0 — `ORDER BY` optimization is disabled. 
--   1 — `ORDER BY` optimization is enabled. 
-
-Default value: `1`.
-
-**See Also**
-
--   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
-
-## mutations_sync {#mutations_sync}
-
-Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
-
-Possible values:
-
--   0 - Mutations execute asynchronously. 
--   1 - The query waits for all mutations to complete on the current server. 
--   2 - The query waits for all mutations to complete on all replicas (if they exist).
-
-Default value: `0`.
-
-**See Also**
-
--   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
--   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
-
-## ttl_only_drop_parts {#ttl_only_drop_parts}
-
-Enables or disables complete dropping of data parts where all rows are expired in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. 
-
-When `ttl_only_drop_parts` is disabled (by default), the ClickHouse server only deletes expired rows according to their TTL. 
-
-When `ttl_only_drop_parts` is enabled, the ClickHouse server drops a whole part when all rows in it are expired. 
-
-Dropping whole parts instead of partial cleaning TTL-d rows allows to have shorter `merge_with_ttl_timeout` times and lower impact on system performance.
-
-Possible values:
-
--   0 — Complete dropping of data parts is disabled.
--   1 — Complete dropping of data parts is enabled.
-
-Default value: `0`.
-
-**See Also** 
-
--   [CREATE TABLE query clauses and settings](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (`merge_with_ttl_timeout` setting)
--   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
-
-## lock_acquire_timeout {#lock_acquire_timeout}
-
-Defines how many seconds locking request waits before failing. 
-
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When timeout expires and locking request fails, the ClickHouse server throws an exeption "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
-
-Possible values:
-
--   Positive integer (in seconds).
--   0 — No locking timeout.
-
-Default value: `120` seconds.
+-   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

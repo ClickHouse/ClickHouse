@@ -15,15 +15,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/**
- * How data is stored (in a nutshell):
- * we have a dictionary @e reverse_index in ColumnUnique that holds pairs (DataType, UIntXX) and a column
- * with UIntXX holding actual data indices.
- * To obtain the value's index, call #getOrFindIndex.
- * To operate on the data (so called indices column), call #getIndexes.
- *
- * @note The indices column always contains the default value (empty StringRef) with the first index.
- */
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {
     friend class COWHelper<IColumn, ColumnLowCardinality>;
@@ -101,8 +92,6 @@ public:
     }
 
     void updateWeakHash32(WeakHash32 & hash) const override;
-
-    void updateHashFast(SipHash &) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {

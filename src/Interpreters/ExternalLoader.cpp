@@ -290,27 +290,18 @@ private:
                     continue;
                 }
 
-                /// Use uuid as name if possible
-                String object_uuid = file_contents.getString(key + "." + settings.external_uuid, "");
-                String object_name;
-                if (object_uuid.empty())
-                    object_name = file_contents.getString(key + "." + settings.external_name);
-                else
-                    object_name = object_uuid;
+                String object_name = file_contents.getString(key + "." + settings.external_name);
                 if (object_name.empty())
                 {
                     LOG_WARNING(log, "{}: node '{}' defines {} with an empty name. It's not allowed", path, key, type_name);
                     continue;
                 }
 
-                if (object_uuid.empty())
-                {
-                    String database;
-                    if (!settings.external_database.empty())
-                        database = file_contents.getString(key + "." + settings.external_database, "");
-                    if (!database.empty())
-                        object_name = database + "." + object_name;
-                }
+                String database;
+                if (!settings.external_database.empty())
+                    database = file_contents.getString(key + "." + settings.external_database, "");
+                if (!database.empty())
+                    object_name = database + "." + object_name;
 
                 objects.emplace(object_name, key);
             }

@@ -104,5 +104,6 @@ toc_title: Integrations
         -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
+        
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

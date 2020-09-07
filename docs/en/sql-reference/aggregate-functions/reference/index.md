@@ -1,10 +1,10 @@
 ---
-toc_folder_title: Reference
 toc_priority: 36
-toc_hidden: true
+toc_title: Reference
+toc_folder_title: Reference
 ---
 
-# List of Aggregate Functions {#aggregate-functions-reference}
+# Aggregate Function Reference {#aggregate-functions-reference}
 
 Standard aggregate functions:
 
@@ -28,7 +28,7 @@ ClickHouse-specific aggregate functions:
 -   [argMin](../../../sql-reference/aggregate-functions/reference/argmin.md)
 -   [argMax](../../../sql-reference/aggregate-functions/reference/argmax.md)
 -   [avgWeighted](../../../sql-reference/aggregate-functions/reference/avgweighted.md)
--   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
+-   [topK](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [groupArray](../../../sql-reference/aggregate-functions/reference/grouparray.md)
 -   [groupUniqArray](../../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
@@ -60,8 +60,6 @@ ClickHouse-specific aggregate functions:
 -   [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md)
 -   [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md)
--   [quantileExactLow](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexactlow)
--   [quantileExactHigh](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexacthigh)
 -   [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md)
 -   [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md)
 -   [quantileTimingWeighted](../../../sql-reference/aggregate-functions/reference/quantiletimingweighted.md)
@@ -71,6 +69,7 @@ ClickHouse-specific aggregate functions:
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
+
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

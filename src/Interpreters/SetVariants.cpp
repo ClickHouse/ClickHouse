@@ -110,8 +110,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
             if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
                 return Type::nullable_keys128;
-
-            /// Pass to more generic method
+            else
+                throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.",
+                    ErrorCodes::LOGICAL_ERROR};
         }
 
         if (all_fixed)
@@ -122,7 +123,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
                 throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
             if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
                 return Type::nullable_keys128;
-            if ((std::tuple_size<KeysNullMap<DummyUInt256>>::value + keys_bytes) <= 32)
+            if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
                 return Type::nullable_keys256;
         }
 
@@ -144,9 +145,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             return Type::key64;
         if (size_of_field == 16)
             return Type::keys128;
-        if (size_of_field == 32)
-            return Type::keys256;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys

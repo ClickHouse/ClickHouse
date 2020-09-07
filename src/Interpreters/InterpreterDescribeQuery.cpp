@@ -89,9 +89,9 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             table = DatabaseCatalog::instance().getTable(table_id, context);
         }
 
-        auto table_lock = table->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        auto metadata_snapshot = table->getInMemoryMetadataPtr();
-        columns = metadata_snapshot->getColumns();
+        auto table_lock = table->lockStructureForShare(
+                false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        columns = table->getColumns();
     }
 
     Block sample_block = getSampleBlock();
@@ -116,7 +116,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         res_columns[4]->insert(column.comment);
 
         if (column.codec)
-            res_columns[5]->insert(queryToString(column.codec->as<ASTFunction>()->arguments));
+            res_columns[5]->insert(column.codec->getCodecDesc());
         else
             res_columns[5]->insertDefault();
 

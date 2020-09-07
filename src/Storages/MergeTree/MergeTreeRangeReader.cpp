@@ -506,6 +506,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         if (prewhere->alias_actions)
             prewhere->alias_actions->execute(sample_block, true);
 
+        sample_block_before_prewhere = sample_block;
         if (prewhere->prewhere_actions)
             prewhere->prewhere_actions->execute(sample_block, true);
 
@@ -825,7 +826,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
             block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
-        if (prewhere->alias_actions)
+        if (prewhere && prewhere->alias_actions)
             prewhere->alias_actions->execute(block);
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
@@ -877,7 +878,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// If there is still a filter, do the filtering now
         if (result.getFilter())
         {
-            /// filter might be shrunk while columns not
+            /// filter might be shrinked while columns not
             const auto * result_filter = result.getFilterOriginal();
             filterColumns(result.columns, result_filter->getData());
             result.need_filter = true;

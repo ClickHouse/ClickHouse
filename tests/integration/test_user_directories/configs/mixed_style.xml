@@ -1,8 +1,0 @@
-<yandex>
-    <user_directories replace="replace">
-        <memory/>
-    </user_directories>
-
-    <users_config>/etc/clickhouse-server/users6.xml</users_config>
-    <access_control_path>/var/lib/clickhouse/access6/</access_control_path>
-</yandex>

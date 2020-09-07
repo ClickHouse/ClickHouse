@@ -189,7 +189,6 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
             query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
@@ -214,18 +213,17 @@ void TCPHandler::runImpl()
                 if (&context != &query_context.value())
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
-                auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
                 state.need_receive_data_for_input = true;
 
                 /// Send ColumnsDescription for input storage.
                 if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
                 {
-                    sendTableColumns(metadata_snapshot->getColumns());
+                    sendTableColumns(input_storage->getColumns());
                 }
 
                 /// Send block to the client - input storage structure.
-                state.input_header = metadata_snapshot->getSampleBlock();
+                state.input_header = input_storage->getSampleBlock();
                 sendData(state.input_header);
             });
 
@@ -313,18 +311,6 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception.emplace(Exception::CreateFromPocoTag{}, e);
         }
-// Server should die on std logic errors in debug, like with assert()
-// or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
-// tests.
-#ifndef NDEBUG
-        catch (const std::logic_error & e)
-        {
-            state.io.onException();
-            exception.emplace(Exception::CreateFromSTDTag{}, e);
-            sendException(*exception, send_exception_with_stack_trace);
-            std::abort();
-        }
-#endif
         catch (const std::exception & e)
         {
             state.io.onException();
@@ -488,10 +474,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
             if (!table_id.empty())
-            {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, *query_context);
-                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
-            }
+                sendTableColumns(DatabaseCatalog::instance().getTable(table_id, *query_context)->getColumns());
         }
     }
 
@@ -880,10 +863,10 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                      : SettingsBinaryFormat::OLD;
     Settings passed_settings;
-    passed_settings.read(*in, settings_format);
+    passed_settings.deserialize(*in, settings_format);
     auto settings_changes = passed_settings.changes();
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -925,9 +908,9 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_client_info.read(*in, client_revision);
 
     Settings skip_settings;
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
-    skip_settings.read(*in, settings_format);
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                      : SettingsBinaryFormat::OLD;
+    skip_settings.deserialize(*in, settings_format);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
@@ -969,9 +952,8 @@ bool TCPHandler::receiveData(bool scalar)
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                 /// The data will be written directly to the table.
-                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+                state.io.out = storage->write(ASTPtr(), *query_context);
             }
             if (state.need_receive_data_for_input)
                 state.block_for_input = block;
@@ -1045,12 +1027,8 @@ void TCPHandler::initBlockOutput(const Block & block)
                 level = query_settings.network_zstd_compression_level;
 
             if (state.compression == Protocol::Compression::Enable)
-            {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs);
-
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
-            }
+                    *out, CompressionCodecFactory::instance().get(method, level, !query_settings.allow_suspicious_codecs));
             else
                 state.maybe_compressed_out = out;
         }

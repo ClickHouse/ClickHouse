@@ -24,7 +24,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 </yandex>
 ```
 
-In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), equal configuration will looks like:
+In case of [DDL-query](../../../sql-reference/statements/create.md#create-dictionary-query), equal configuration will looks like:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -206,7 +206,7 @@ Setting fields:
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
-If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/general.md#oracle-odbc-encodings) article.
 
 ### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 

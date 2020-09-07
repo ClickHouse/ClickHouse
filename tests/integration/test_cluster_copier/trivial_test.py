@@ -34,7 +34,7 @@ def started_cluster():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
-                                         main_configs=[], user_configs=[],
+                                         config_dir="configs",
                                          macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                                          with_zookeeper=True)
 
@@ -62,7 +62,7 @@ class TaskTrivial:
 
         for node in [source, destination]:
             node.query("DROP DATABASE IF EXISTS default")
-            node.query("CREATE DATABASE IF NOT EXISTS default ENGINE=Ordinary")
+            node.query("CREATE DATABASE IF NOT EXISTS default")
 
         source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1) "
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "

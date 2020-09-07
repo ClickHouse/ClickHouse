@@ -117,7 +117,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto value = static_cast<const ColumnSource &>(*columns[0]).getData()[row_num];
-        this->data(place).add(static_cast<ResultT>(value), arena);
+        this->data(place).add(value, arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -163,7 +163,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & data = this->data(place);
         size_t size = data.value.size();
@@ -173,7 +173,7 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        if (size)
+        if (size != 0)
         {
             typename ColumnResult::Container & data_to = assert_cast<ColumnResult &>(arr_to.getData()).getData();
 

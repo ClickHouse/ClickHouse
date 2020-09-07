@@ -165,6 +165,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeDateTime64(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);

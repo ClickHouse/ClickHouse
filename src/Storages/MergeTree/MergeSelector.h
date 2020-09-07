@@ -48,19 +48,19 @@ public:
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.
-    using PartsRange = std::vector<Part>;
+    using PartsInPartition = std::vector<Part>;
 
     /// Parts are in some specific order. Parts could be merged only in contiguous ranges.
-    using PartsRanges = std::vector<PartsRange>;
+    using Partitions = std::vector<PartsInPartition>;
 
     /** Function could be called at any frequency and it must decide, should you do any merge at all.
       * If better not to do any merge, it returns empty result.
       */
-    virtual PartsRange select(
-        const PartsRanges & parts_ranges,
+    virtual PartsInPartition select(
+        const Partitions & partitions,
         const size_t max_total_size_to_merge) = 0;
 
-    virtual ~IMergeSelector() = default;
+    virtual ~IMergeSelector() {}
 };
 
 }

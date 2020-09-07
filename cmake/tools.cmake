@@ -22,7 +22,7 @@ elseif (COMPILER_CLANG)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "AppleClang compiler version must be at least ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
         elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0.0)
-            # char8_t is available starting (upstream vanilla) Clang 7, but prior to Clang 8,
+            # char8_t is available staring (upstream vanilla) Clang 7, but prior to Clang 8,
             # it is not enabled by -std=c++20 and can be enabled with an explicit -fchar8_t.
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fchar8_t")
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
@@ -41,23 +41,25 @@ STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSIO
 LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
 option (LINKER_NAME "Linker name or full path")
-if (COMPILER_GCC AND NOT LINKER_NAME)
+if (COMPILER_GCC)
     find_program (LLD_PATH NAMES "ld.lld")
     find_program (GOLD_PATH NAMES "ld.gold")
-elseif (NOT LINKER_NAME)
+else ()
     find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
     find_program (GOLD_PATH NAMES "ld.gold" "gold")
 endif ()
 
-if (OS_LINUX AND NOT LINKER_NAME)
+if (OS_LINUX)
     # We prefer LLD linker over Gold or BFD on Linux.
-    if (LLD_PATH)
-        if (COMPILER_GCC)
-            # GCC driver requires one of supported linker names like "lld".
-            set (LINKER_NAME "lld")
-        else ()
-            # Clang driver simply allows full linker path.
-            set (LINKER_NAME ${LLD_PATH})
+    if (NOT LINKER_NAME)
+        if (LLD_PATH)
+            if (COMPILER_GCC)
+                # GCC driver requires one of supported linker names like "lld".
+                set (LINKER_NAME "lld")
+            else ()
+                # Clang driver simply allows full linker path.
+                set (LINKER_NAME ${LLD_PATH})
+            endif ()
         endif ()
     endif ()
 

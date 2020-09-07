@@ -7,13 +7,13 @@
 #include <Processors/Pipe.h>
 #include <Processors/QueryPipeline.h>
 #include <Storages/IStorage.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 
 namespace DB
 {
 
 ReadFromStorageStep::ReadFromStorageStep(
-    TableLockHolder table_lock_,
-    StorageMetadataPtr & metadata_snapshot_,
+    TableStructureReadLockHolder table_lock_,
     SelectQueryOptions options_,
     StoragePtr storage_,
     const Names & required_columns_,
@@ -23,7 +23,6 @@ ReadFromStorageStep::ReadFromStorageStep(
     size_t max_block_size_,
     size_t max_streams_)
     : table_lock(std::move(table_lock_))
-    , metadata_snapshot(metadata_snapshot_)
     , options(std::move(options_))
     , storage(std::move(storage_))
     , required_columns(required_columns_)
@@ -36,48 +35,37 @@ ReadFromStorageStep::ReadFromStorageStep(
     /// Note: we read from storage in constructor of step because we don't know real header before reading.
     /// It will be fixed when storage return QueryPlanStep itself.
 
-    Pipe pipe = storage->read(required_columns, metadata_snapshot, query_info, *context, processing_stage, max_block_size, max_streams);
+    Pipes pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
 
-    if (pipe.empty())
+    if (pipes.empty())
     {
-        pipe = Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID())));
+        Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
 
         if (query_info.prewhere_info)
         {
             if (query_info.prewhere_info->alias_actions)
-            {
-                pipe.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
-                });
-            }
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                        pipe.getHeader(), query_info.prewhere_info->alias_actions));
 
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                    header,
+            pipe.addSimpleTransform(std::make_shared<FilterTransform>(
+                    pipe.getHeader(),
                     query_info.prewhere_info->prewhere_actions,
                     query_info.prewhere_info->prewhere_column_name,
-                    query_info.prewhere_info->remove_prewhere_column);
-            });
+                    query_info.prewhere_info->remove_prewhere_column));
 
             // To remove additional columns
             // In some cases, we did not read any marks so that the pipeline.streams is empty
             // Thus, some columns in prewhere are not removed as expected
             // This leads to mismatched header in distributed table
             if (query_info.prewhere_info->remove_columns_actions)
-            {
-                pipe.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(
-                            header, query_info.prewhere_info->remove_columns_actions);
-                });
-            }
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                        pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
         }
+
+        pipes.emplace_back(std::move(pipe));
     }
 
     pipeline = std::make_unique<QueryPipeline>();
-    QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     /// Table lock is stored inside pipeline here.
     pipeline->addTableLock(table_lock);
@@ -113,21 +101,25 @@ ReadFromStorageStep::ReadFromStorageStep(
 
         auto quota = context->getQuota();
 
-        if (!options.ignore_limits)
-            pipe.setLimits(limits);
+        for (auto & pipe : pipes)
+        {
+            if (!options.ignore_limits)
+                pipe.setLimits(limits);
 
-        if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
-            pipe.setQuota(quota);
+            if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
+                pipe.setQuota(quota);
+        }
     }
 
-    pipeline->init(std::move(pipe));
+    for (auto & pipe : pipes)
+        pipe.enableQuota();
+
+    pipeline->init(std::move(pipes));
 
     pipeline->addInterpreterContext(std::move(context));
     pipeline->addStorageHolder(std::move(storage));
 
-    processors = collector.detachProcessors();
-
-    output_stream = DataStream{.header = pipeline->getHeader(), .has_single_port = pipeline->getNumStreams() == 1};
+    output_stream = DataStream{.header = pipeline->getHeader()};
 }
 
 ReadFromStorageStep::~ReadFromStorageStep() = default;
@@ -135,11 +127,6 @@ ReadFromStorageStep::~ReadFromStorageStep() = default;
 QueryPipelinePtr ReadFromStorageStep::updatePipeline(QueryPipelines)
 {
     return std::move(pipeline);
-}
-
-void ReadFromStorageStep::describePipeline(FormatSettings & settings) const
-{
-    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }
