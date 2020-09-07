@@ -9,7 +9,7 @@
 #include <thread>
 #include <filesystem>
 
-#include <re2_st/re2.h>
+#include <re2/re2.h>
 
 #include <boost/program_options.hpp>
 
@@ -539,8 +539,8 @@ struct Options
     bool skip_commits_without_parents = true;
     bool skip_commits_with_duplicate_diffs = true;
     size_t threads = 1;
-    std::optional<re2_st::RE2> skip_paths;
-    std::optional<re2_st::RE2> skip_commits_with_messages;
+    std::optional<re2::RE2> skip_paths;
+    std::optional<re2::RE2> skip_commits_with_messages;
     std::unordered_set<std::string> skip_commits;
     std::optional<size_t> diff_size_limit;
     std::string stop_after_commit;
@@ -857,7 +857,7 @@ void processFileChanges(
 
         assertChar('\n', in);
 
-        if (!(options.skip_paths && re2_st::RE2::PartialMatch(file_change.path, *options.skip_paths)))
+        if (!(options.skip_paths && re2::RE2::PartialMatch(file_change.path, *options.skip_paths)))
         {
             file_changes.emplace(
                 file_change.path,
@@ -1070,7 +1070,7 @@ void processCommit(
     readNullTerminated(parent_hash, in);
     readNullTerminated(commit.message, in);
 
-    if (options.skip_commits_with_messages && re2_st::RE2::PartialMatch(commit.message, *options.skip_commits_with_messages))
+    if (options.skip_commits_with_messages && re2::RE2::PartialMatch(commit.message, *options.skip_commits_with_messages))
         return;
 
     std::string message_to_print = commit.message;
