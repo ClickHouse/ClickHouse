@@ -10,6 +10,7 @@ SRCS(
     ASTAsterisk.cpp
     ASTColumnDeclaration.cpp
     ASTColumnsMatcher.cpp
+    ASTColumnsTransformers.cpp
     ASTConstraintDeclaration.cpp
     ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp

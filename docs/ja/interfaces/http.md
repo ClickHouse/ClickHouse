@@ -38,7 +38,7 @@ GETメソッドを使用する場合, ‘readonly’ 設定されています。
 $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
-$ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
+$ wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
