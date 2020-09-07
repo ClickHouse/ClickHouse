@@ -43,7 +43,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         if (query.limit_length)
             rewritten_query << " LIMIT " << query.limit_length;
 
-        DUMP(rewritten_query.str());
         return rewritten_query.str();
     }
 
