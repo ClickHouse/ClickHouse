@@ -13,6 +13,7 @@
 
 #include <boost/program_options.hpp>
 
+#include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -1199,7 +1200,7 @@ try
 {
     using namespace DB;
 
-    po::options_description desc("Allowed options");
+    po::options_description desc("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
