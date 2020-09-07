@@ -57,10 +57,7 @@ public:
         AckTracker track;
     };
 
-    bool channelUsable() { return !channel_error.load(); }
-    /// Do not allow to update channel untill current channel is properly set up and subscribed
-    bool channelAllowed() { return !wait_subscription.load(); }
-    bool consumerStopped() { return stopped; }
+    bool isConsumerStopped() { return stopped; }
 
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();

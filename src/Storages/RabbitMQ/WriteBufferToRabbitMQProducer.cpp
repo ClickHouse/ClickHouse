@@ -92,10 +92,10 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
     connection->close();
 
     size_t cnt_retries = 0;
-    while (!connection->closed() && ++cnt_retries != (RETRIES_MAX >> 1))
+    while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
     {
         event_handler->iterateLoop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP >> 3));
+        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
     assert(rows == 0 && chunks.empty());
@@ -115,7 +115,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         std::string payload;
         payload.reserve((chunks.size() - 1) * chunk_size + last_chunk_size);
 
-        for (auto i = chunks.begin(), e = --chunks.end(); i != e; ++i)
+        for (auto i = chunks.begin(), end = --chunks.end(); i != end; ++i)
             payload.append(*i);
 
         payload.append(last_chunk, 0, last_chunk_size);
@@ -227,8 +227,6 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
 
             /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
             delivery_record.erase(delivery_record.begin(), record_iter);
-
-            //LOG_DEBUG(log, "Confirmed all delivery tags up to {}", received_delivery_tag);
         }
         else
         {
@@ -236,8 +234,6 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
                 returned.tryPush(record_iter->second);
 
             delivery_record.erase(record_iter);
-
-            //LOG_DEBUG(log, "Confirmed delivery tag {}", received_delivery_tag);
         }
     }
     /// else is theoretically not possible

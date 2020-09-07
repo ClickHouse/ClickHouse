@@ -16,8 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
 }
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
@@ -75,20 +75,20 @@ void ReadBufferFromRabbitMQConsumer::bindQueue(size_t queue_id)
         LOG_DEBUG(log, "Queue {} is declared", queue_name);
 
         if (msgcount)
-            LOG_TRACE(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
+            LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
 
        /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
         * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
         * fanout exchange it can be arbitrary
         */
         setup_channel->bindQueue(exchange_name, queue_name, std::to_string(channel_id_base))
-        .onSuccess([&]
-        {
-            binding_created = true;
-        })
+        .onSuccess([&] { binding_created = true; })
         .onError([&](const char * message)
         {
-            throw Exception("Failed to create queue binding. Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+                "Failed to create queue binding with queue {} for exchange {}. Reason: {}", std::string(message),
+                queue_name, exchange_name);
         });
     };
 

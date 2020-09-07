@@ -44,6 +44,7 @@ private:
 
     bool finished = false;
     const Block non_virtual_header;
+    Block sample_block;
     const Block virtual_header;
 
     ConsumerBufferPtr buffer;
