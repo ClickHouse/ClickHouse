@@ -9,10 +9,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+cluster = ClickHouseCluster(__file__)
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
-main_node = cluster.add_instance('main_node', main_configs=['configs/dictionaries/cache_strings_default_settings.xml'])
+main_node = cluster.add_instance('main_node', main_configs=['configs/enable_dictionaries.xml','configs/dictionaries/cache_ints_dictionary.xml','configs/dictionaries/cache_strings_default_settings.xml'])
 
 
 def get_random_string(string_length=8):
@@ -26,7 +26,7 @@ def started_cluster():
         dictionary_node.query("CREATE DATABASE IF NOT EXISTS test;")
         dictionary_node.query("DROP TABLE IF EXISTS test.strings;")
         dictionary_node.query("""
-                             CREATE TABLE test.strings 
+                             CREATE TABLE test.strings
                              (key UInt64, value String)
                              ENGINE = Memory;
                              """)

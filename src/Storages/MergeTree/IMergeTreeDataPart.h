@@ -344,6 +344,11 @@ public:
 
     static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
 
+    /// Checks that all TTLs (table min/max, column ttls, so on) for part
+    /// calculated. Part without calculated TTL may exist if TTL was added after
+    /// part creation (using alter query with materialize_ttl setting).
+    bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk

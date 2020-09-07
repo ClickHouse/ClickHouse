@@ -40,7 +40,6 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml', 'configs/kafka_macros.xml' ],
                                 with_kafka=True,
                                 with_zookeeper=True,

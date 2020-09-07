@@ -123,7 +123,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 };
 
 
-/// The method can be virtual or not depending on the template parameter.
+/// The methods can be virtual or not depending on the template parameter. See IStringSource.
 #if !__clang__
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wsuggest-override"
