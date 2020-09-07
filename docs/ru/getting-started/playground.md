@@ -5,7 +5,7 @@
 
 ClickHouse Playground дает возможность поработать с  [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) в конфигурации m2.small (4 vCPU, 32 ГБ ОЗУ), которую предосталяет [Яндекс.Облако](https://cloud.yandex.com/). Дополнительную информацию об облачных провайдерах читайте в разделе [Поставщики облачных услуг ClickHouse](../commercial/cloud.md).
 
-Вы можете создавать запросы к Playground с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), также можно установить соединение с помощью драйверов [JDBC](../ interfaces / jdbc.md) или [ODBC](../ interfaces / odbc.md). Более подробная информация о программных продуктах, поддерживающих ClickHouse, доступна [здесь](../ interfaces / index.md).
+Вы можете отправлять запросы к Playground с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), также можно установить соединение с помощью драйверов [JDBC](../ interfaces / jdbc.md) или [ODBC](../ interfaces / odbc.md). Более подробная информация о программных продуктах, поддерживающих ClickHouse, доступна [здесь](../ interfaces / index.md).
 
 ## Параметры доступа {#credentials}
 
