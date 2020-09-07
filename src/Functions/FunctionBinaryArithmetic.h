@@ -590,13 +590,17 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeUInt16,
             DataTypeUInt32,
             DataTypeUInt64,
+#if !defined(ARCADIA_BUILD) /// "Arcadia" build system cannot support large integers due to use of old linker version.
             DataTypeUInt256,
+#endif
             DataTypeInt8,
             DataTypeInt16,
             DataTypeInt32,
             DataTypeInt64,
+#if !defined(ARCADIA_BUILD)
             DataTypeInt128,
             DataTypeInt256,
+#endif
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeDate,
@@ -604,7 +608,9 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
+#if !defined(ARCADIA_BUILD)
             DataTypeDecimal<Decimal256>,
+#endif
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }

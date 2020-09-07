@@ -8,10 +8,22 @@ namespace DB
 {
 
 using TypeListNativeNumbers = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+
+#if !defined(ARCADIA_BUILD)
+
 using TypeListExtendedNumbers = TypeList<Int128, UInt256, Int256>;
 using TypeListDecimalNumbers = TypeList<Decimal32, Decimal64, Decimal128, Decimal256>;
-
 using TypeListGeneralNumbers = typename TypeListConcat<TypeListNativeNumbers, TypeListExtendedNumbers>::Type;
+
+#else
+
+/// "Arcadia" build system cannot support large integers due to use of old linker version.
+
+using TypeListDecimalNumbers = TypeList<Decimal32, Decimal64, Decimal128>;
+using TypeListGeneralNumbers = typename TypeListNativeNumbers;
+
+#endif
+
 using TypeListNumbers = typename TypeListConcat<TypeListGeneralNumbers, TypeListDecimalNumbers>::Type;
 
 /// Currently separate because UInt128 cannot be used in every context where other numbers can be used.
