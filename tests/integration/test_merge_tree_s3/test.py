@@ -14,7 +14,7 @@ logging.getLogger().addHandler(logging.StreamHandler())
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", config_dir="configs", with_minio=True)
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/bg_processing_pool_conf.xml", "configs/config.d/log_conf.xml"], user_configs=[], with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
