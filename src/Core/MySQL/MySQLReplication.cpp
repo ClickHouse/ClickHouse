@@ -100,8 +100,7 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(schema.data()), schema_len);
         payload.ignore(1);
 
-        size_t len
-            = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
+        size_t len = payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
@@ -779,11 +778,8 @@ namespace MySQLReplication
                 gtid_sets.update(gtid_event->gtid);
                 break;
             }
-            default: {
-                /// DryRun event.
-                binlog_pos = event->header.log_pos;
-                break;
-            }
+            default:
+                throw ReplicationError("Position update with unsupport event", ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -910,7 +906,6 @@ namespace MySQLReplication
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.update(event);
                 break;
             }
         }
