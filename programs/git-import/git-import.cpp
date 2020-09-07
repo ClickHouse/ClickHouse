@@ -184,7 +184,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
 }
 
 
@@ -419,7 +418,7 @@ using LineChanges = std::vector<LineChange>;
 
 struct FileDiff
 {
-    FileDiff(FileChange file_change_) : file_change(file_change_) {}
+    explicit FileDiff(FileChange file_change_) : file_change(file_change_) {}
 
     FileChange file_change;
     LineChanges line_changes;
@@ -546,7 +545,7 @@ struct Options
     std::optional<size_t> diff_size_limit;
     std::string stop_after_commit;
 
-    Options(const po::variables_map & options)
+    explicit Options(const po::variables_map & options)
     {
         skip_commits_without_parents = options["skip-commits-without-parents"].as<bool>();
         skip_commits_with_duplicate_diffs = options["skip-commits-with-duplicate-diffs"].as<bool>();
@@ -753,7 +752,7 @@ UInt128 diffHash(const CommitDiff & file_changes)
 {
     SipHash hasher;
 
-    for (auto & elem : file_changes)
+    for (const auto & elem : file_changes)
     {
         hasher.update(elem.second.file_change.change_type);
         hasher.update(elem.second.file_change.old_path.size());
@@ -762,7 +761,7 @@ UInt128 diffHash(const CommitDiff & file_changes)
         hasher.update(elem.second.file_change.path);
 
         hasher.update(elem.second.line_changes.size());
-        for (auto & line_change : elem.second.line_changes)
+        for (const auto & line_change : elem.second.line_changes)
         {
             hasher.update(line_change.sign);
             hasher.update(line_change.line_number_old);
@@ -1159,6 +1158,8 @@ void processLog(const Options & options)
 
     /// Will run multiple processes in parallel
     size_t num_threads = options.threads;
+    if (num_threads == 0)
+        throw Exception("num-threads cannot be zero", ErrorCodes::INCORRECT_DATA);
 
     std::vector<std::unique_ptr<ShellCommand>> show_commands(num_threads);
     for (size_t i = 0; i < num_commits && i < num_threads; ++i)
@@ -1223,7 +1224,7 @@ try
         return 1;
     }
 
-    processLog(options);
+    processLog(Options(options));
     return 0;
 }
 catch (...)
