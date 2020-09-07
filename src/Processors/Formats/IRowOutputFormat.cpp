@@ -32,20 +32,6 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
-    if (!chunk.hasRows())
-        return;
-
-    if (chunk.getNumRows() > 1)
-    {
-        /// This may happen if something like ARRAY JOIN was executed on totals.
-        /// Skip rows except the first one.
-        auto columns = chunk.detachColumns();
-        for (auto & column : columns)
-            column = column->cut(0, 1);
-
-        chunk.setColumns(std::move(columns), 1);
-    }
-
     writePrefixIfNot();
     writeSuffixIfNot();
 
