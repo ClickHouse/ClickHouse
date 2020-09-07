@@ -528,7 +528,7 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
-    bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String partition_id, LogEntry & entry, bool detach);
+    bool dropPart(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach);
     bool dropAllPartsInPartition(
         zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, bool detach);
 
