@@ -104,19 +104,6 @@ struct PartialSortingLessWithCollation
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
-//    std::cout << block.dumpStructure() << std::endl;
-//
-//    for (const auto & column : block.getColumnsWithTypeAndName())
-//    {
-//        std::cout << column.name << " \t\t";
-//        auto column_size = column.column->size();
-//        for (size_t i = 0; i < column_size; ++i)
-//        {
-//            std::cout << toString(column.column->operator[](i)) << ", \t";
-//        }
-//        std::cout << std::endl;
-//    }
-
     if (!block)
         return;
 
@@ -194,8 +181,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             ranges.emplace_back(0, perm.size());
             for (const auto & column : columns_with_sort_desc)
             {
-//                std::cout << "need collation" << std::endl;
-//                std::cout << column.column->dumpStructure() << std::endl;
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                     ranges.pop_back();
 
@@ -225,9 +210,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             ranges.emplace_back(0, perm.size());
             for (const auto & column : columns_with_sort_desc)
             {
-//                std::cout << "no need collation" << std::endl;
-//                std::cout << column.column->dumpStructure() << std::endl;
-
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
                 {
                     ranges.pop_back();
@@ -247,20 +229,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
         }
     }
-//
-//    std::cout << "final block" << std::endl;
-//    std::cout << block.dumpStructure() << std::endl;
-//
-//    for (const auto & column : block.getColumnsWithTypeAndName())
-//    {
-//        std::cout << column.name << " \t\t";
-//        auto column_size = column.column->size();
-//        for (size_t i = 0; i < column_size; ++i)
-//        {
-//            std::cout << toString(column.column->operator[](i)) << ", \t";
-//        }
-//        std::cout << std::endl;
-//    }
 }
 
 

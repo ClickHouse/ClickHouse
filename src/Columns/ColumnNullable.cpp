@@ -331,12 +331,6 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
 
 void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-//    std::cout << "ColumnNullable" << std::endl;
-//
-//    std::cout << "equal_ranges " << equal_ranges.size() << std::endl;
-//    for (auto [first, last] : equal_ranges)
-//        std::cout << "first " << first << " last " << last << std::endl;
-
     if (equal_ranges.empty())
         return;
 
@@ -350,11 +344,9 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
 
     if (is_nulls_last)
     {
-//        std::cout << "NULL LAST" << std::endl;
         /// Shift all NULL values to the end.
         for (const auto & [first, last] : equal_ranges)
         {
-//            std::cout << "current range " << first << ' ' << last << std::endl;
             /// Consider a half interval [first, last)
             size_t read_idx = first;
             size_t write_idx = first;
@@ -407,7 +399,6 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
     }
     else
     {
-//        std::cout << "NULLS FIRST" << std::endl;
         for (const auto & [first, last] : equal_ranges)
         {
             /// Shift all NULL values to the beginning.
@@ -447,21 +438,8 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
 
     getNestedColumn().updatePermutation(reverse, 0, null_direction_hint, res, new_ranges);
 
-//    std::cout << "new_ranges " << new_ranges.size() << std::endl;
-//    for (auto [first, last] : new_ranges)
-//        std::cout << "first " << first << " last " << last << std::endl;
-//    std::cout << "null_ranges " << null_ranges.size() << std::endl;
-//    for (auto [first, last] : null_ranges)
-//        std::cout << "first " << first << " last " << last << std::endl;
-//
     equal_ranges = std::move(new_ranges);
     std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
-
-//    std::cout << "equal_ranges_final " << equal_ranges.size() << std::endl;
-//    for (auto [first, last] : equal_ranges)
-//        std::cout << "first " << first << " last " << last << std::endl;
-
-//    std::cout << "end" << std::endl;
 }
 
 void ColumnNullable::gather(ColumnGathererStream & gatherer)
