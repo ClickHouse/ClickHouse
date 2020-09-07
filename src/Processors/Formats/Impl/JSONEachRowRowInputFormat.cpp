@@ -32,9 +32,6 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
-
     size_t num_columns = getPort().getHeader().columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -285,6 +282,9 @@ void JSONEachRowRowInputFormat::resetParser()
 
 void JSONEachRowRowInputFormat::readPrefix()
 {
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(in);
+
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == '[')
     {
