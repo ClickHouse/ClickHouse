@@ -23,7 +23,6 @@ import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/rabbitmq.xml','configs/log_conf.xml'],
                                 with_rabbitmq=True,
                                 clickhouse_path_dir='clickhouse_path')
