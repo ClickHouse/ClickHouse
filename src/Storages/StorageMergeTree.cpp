@@ -1066,8 +1066,13 @@ Pipe StorageMergeTree::alterPartition(
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
-                checkPartitionCanBeDropped(command.partition);
-                dropPartition(command.partition, command.detach, query_context);
+                if (command.part)
+                {
+                    /// TODO(nv) what would be a good check here?
+                }
+                else
+                    checkPartitionCanBeDropped(command.partition);
+                dropPartition(command.partition, command.detach, command.part, query_context);
                 break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
@@ -1165,7 +1170,7 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 }
 
 
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -1173,10 +1178,23 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         auto merge_blocker = stopMergesAndWait();
 
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        String partition_id = getPartitionIDFromQuery(partition, context);
+
+        MergeTreeData::DataPartsVector parts_to_remove;
 
         /// TODO: should we include PreComitted parts like in Replicated case?
-        auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        if (drop_part)
+        {
+            String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+
+            if (part)
+                parts_to_remove.push_back(part);
+        } else
+        {
+            String partition_id = getPartitionIDFromQuery(partition, context);
+            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        }
+
         // TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
 
@@ -1191,9 +1209,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         }
 
         if (detach)
-            LOG_INFO(log, "Detached {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+            LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
         else
-            LOG_INFO(log, "Removed {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+            LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
 
     clearOldPartsFromFilesystem();
