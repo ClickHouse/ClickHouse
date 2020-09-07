@@ -76,11 +76,14 @@ private:
     /// Finalize agg_result into result_columns
     void finalizeAggregates(MutableColumns & result_columns);
 
+    /// Execute description expressions on block and update ttl's in
+    /// ttl_info_map with expression results.
     void updateTTLWithDescriptions(Block & block, const TTLDescriptions & descriptions, TTLInfoMap & ttl_info_map);
 
     /// Updates TTL for moves
     void updateMovesTTL(Block & block);
 
+    /// Update values for recompression TTL using data from block.
     void updateRecompressionTTL(Block & block);
 
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);

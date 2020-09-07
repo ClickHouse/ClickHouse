@@ -42,8 +42,11 @@ public:
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
         const void * data;
 
+        /// Information about different TTLs for part. Can be used by
+        /// TTLSelector to assign merges with TTL.
         MergeTreeDataPartTTLInfos ttl_infos;
 
+        /// Part compression codec definition.
         ASTPtr compression_codec_desc;
     };
 

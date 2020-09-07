@@ -295,6 +295,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
+        /// TTL delete is prefered to recompression
         TTLDeleteMergeSelector delete_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
@@ -303,7 +304,9 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
         parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
         if (!parts_to_merge.empty())
+        {
             future_part.merge_type = MergeType::TTL_DELETE;
+        }
         else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
             TTLRecompressMergeSelector recompress_ttl_selector(
@@ -625,6 +628,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
+    /// We don't want to perform merge assigned with TTL as normal merge, so
+    /// throw exception
     if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
 
@@ -668,9 +673,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->setColumns(storage_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
-
-    if (isTTLMergeType(future_part.merge_type) && ttl_merges_blocker.isCancelled())
-        throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
     bool need_remove_expired_values = false;
     bool force_ttl = false;
