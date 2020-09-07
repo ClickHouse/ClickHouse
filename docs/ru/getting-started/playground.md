@@ -1,7 +1,7 @@
 # ClickHouse Playground {#clickhouse-playground}
 
 [ClickHouse Playground] (https://play.clickhouse.tech) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
-В Playground доступны несколько примеров c пакетами данных, а также образцы запросов, которые отображают возможности ClickHouse. Кроме того, там есть несколько релизов ClickHouse LTS, которые можно протестировать.
+В Playground доступны несколько тестовых массивов данных, а также примеры запросов, которые показывают возможности ClickHouse. Кроме того, вы можете выбрать LTS релиз ClickHouse , который хотите протестировать.
 
 ClickHouse Playground дает возможность поработать с m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) (4 vCPU, 32 ГБ ОЗУ), который находится в [Яндекс.Облаке](https://cloud.yandex.com/). Дополнительную информацию об облачных провайдерах читайте в разделе [Поставщики облачных услуг ClickHouse](../commercial/cloud.md).
 
