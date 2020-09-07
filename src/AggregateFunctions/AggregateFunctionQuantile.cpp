@@ -168,3 +168,4 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 }
 
 }
+
