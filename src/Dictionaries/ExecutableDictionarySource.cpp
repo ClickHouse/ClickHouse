@@ -171,7 +171,7 @@ namespace
         BlockInputStreamPtr stream;
         std::unique_ptr<ShellCommand> command;
         std::function<void(WriteBufferFromFile &)> send_data;
-        mutable ThreadFromGlobalPool thread;
+        ThreadFromGlobalPool thread;
     };
 
 }
