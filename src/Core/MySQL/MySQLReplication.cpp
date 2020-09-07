@@ -483,10 +483,16 @@ namespace MySQLReplication
                         {
                             using DecimalType = decltype(decimal);
                             static constexpr size_t digits_per_integer = 9;
-                            static const size_t compressed_byte_map[] = {0, 1, 1, 2, 2, 3, 3, 4, 4, 4};
+                            static const size_t compressed_bytes_map[] = {0, 1, 1, 2, 2, 3, 3, 4, 4, 4};
+                            static const size_t compressed_integer_align_numbers[] = {
+                                0x0, 0xFF, 0xFF, 0xFFFF, 0xFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
 
+                            UInt32 mask = 0;
                             DecimalType res(0);
-                            bool is_negative = (*payload.position() & 0x80) == 0;
+
+                            if ((*payload.position() & 0x80) == 0)
+                                mask = UInt32(-1);
+
                             *payload.position() ^= 0x80;
 
                             {
@@ -497,18 +503,18 @@ namespace MySQLReplication
                                 /// Compressed part.
                                 if (compressed_integers != 0)
                                 {
-                                    Int64 val = 0;
-                                    size_t to_read = compressed_byte_map[compressed_integers];
+                                    UInt32 val = 0;
+                                    size_t to_read = compressed_bytes_map[compressed_integers];
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
-                                    res += val;
+                                    res += (val ^ (mask & compressed_integer_align_numbers[compressed_integers]));
                                 }
 
                                 for (auto k = 0U; k < uncompressed_integers; k++)
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
-                                    res *= intExp10OfSize<DecimalType>(k ? digits_per_integer : std::max(size_t(1), compressed_integers));
-                                    res += val;
+                                    res *= intExp10OfSize<DecimalType>(digits_per_integer);
+                                    res += (val ^ mask);
                                 }
                             }
 
@@ -521,26 +527,25 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     payload.readStrict(reinterpret_cast<char *>(&val), 4);
                                     res *= intExp10OfSize<DecimalType>(digits_per_integer);
-                                    res += val;
+                                    res += (val ^ mask);
                                 }
 
                                 /// Compressed part.
                                 if (compressed_decimals != 0)
                                 {
-                                    Int64 val = 0;
-                                    String compressed_buff;
-                                    size_t to_read = compressed_byte_map[compressed_decimals];
+                                    UInt32 val = 0;
+                                    size_t to_read = compressed_bytes_map[compressed_decimals];
 
                                     if (to_read)
                                     {
                                         payload.readStrict(reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<DecimalType>(compressed_decimals);
-                                        res += val;
+                                        res += (val ^ (mask & compressed_integer_align_numbers[compressed_decimals]));
                                     }
                                 }
                             }
 
-                            if (is_negative)
+                            if (mask != 0)
                                 res *= -1;
 
                             return res;
