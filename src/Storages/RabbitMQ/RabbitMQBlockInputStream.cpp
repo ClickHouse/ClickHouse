@@ -14,7 +14,7 @@ namespace DB
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    Context & context_,
+    const Context & context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
@@ -59,8 +59,11 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 
 bool RabbitMQBlockInputStream::needChannelUpdate()
 {
-    if (!buffer)
+    if (!buffer || !buffer->isChannelUpdateAllowed())
         return false;
+
+    if (buffer->isChannelError())
+        return true;
 
     ChannelPtr channel = buffer->getChannel();
 

@@ -58,6 +58,9 @@ public:
     };
 
     bool isConsumerStopped() { return stopped; }
+    bool isChannelError() { return channel_error; }
+    /// Do not allow to update channel if current channel is not properly set up and subscribed
+    bool isChannelUpdateAllowed() { return !wait_subscription; }
 
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();

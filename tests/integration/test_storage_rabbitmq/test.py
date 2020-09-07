@@ -153,10 +153,12 @@ def test_rabbitmq_select(rabbitmq_cluster):
         channel.basic_publish(exchange='select', routing_key='', body=message)
 
     connection.close()
+    # The order of messages in select * from test.rabbitmq is not guaranteed, so sleep to collect everything in one select
+    time.sleep(1)
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
         if rabbitmq_check_result(result):
             break
 
@@ -207,13 +209,15 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     for message in all_messages:
         channel.basic_publish(exchange='json', routing_key='', body=message)
 
+    connection.close()
+    time.sleep(1)
+
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
         if rabbitmq_check_result(result):
             break
 
-    connection.close()
     rabbitmq_check_result(result, True)
 
 
@@ -240,14 +244,15 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='csv', routing_key='', body=message)
 
+    connection.close()
+    time.sleep(1)
+
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
         if rabbitmq_check_result(result):
             break
 
-
-    connection.close()
     rabbitmq_check_result(result, True)
 
 
@@ -274,64 +279,15 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='tsv', routing_key='', body=message)
 
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
-        if rabbitmq_check_result(result):
-            break
-
     connection.close()
-    rabbitmq_check_result(result, True)
-
-
-@pytest.mark.timeout(180)
-def test_rabbitmq_protobuf(rabbitmq_cluster):
-    instance.query('''
-        CREATE TABLE test.rabbitmq (key UInt64, value String)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'pb',
-                     rabbitmq_format = 'Protobuf',
-                     rabbitmq_schema = 'rabbitmq.proto:KeyValueProto';
-        ''')
-
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    data = ''
-    for i in range(0, 20):
-        msg = rabbitmq_pb2.KeyValueProto()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    channel.basic_publish(exchange='pb', routing_key='', body=data)
-    data = ''
-    for i in range(20, 21):
-        msg = rabbitmq_pb2.KeyValueProto()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    channel.basic_publish(exchange='pb', routing_key='', body=data)
-    data = ''
-    for i in range(21, 50):
-        msg = rabbitmq_pb2.KeyValueProto()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    channel.basic_publish(exchange='pb', routing_key='', body=data)
+    time.sleep(1)
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.rabbitmq')
+        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
         if rabbitmq_check_result(result):
             break
 
-    connection.close()
     rabbitmq_check_result(result, True)
 
 
@@ -365,7 +321,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
         channel.basic_publish(exchange='mv', routing_key='', body=message)
 
     while True:
-        result = instance.query('SELECT * FROM test.view')
+        result = instance.query('SELECT * FROM test.view ORDER BY key')
         if (rabbitmq_check_result(result)):
             break
 
@@ -408,7 +364,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
         channel.basic_publish(exchange='mvsq', routing_key='', body=message)
 
     while True:
-        result = instance.query('SELECT * FROM test.view')
+        result = instance.query('SELECT * FROM test.view ORDER BY key')
         if rabbitmq_check_result(result):
             break
 
@@ -458,8 +414,8 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         channel.basic_publish(exchange='mmv', routing_key='', body=message)
 
     while True:
-        result1 = instance.query('SELECT * FROM test.view1')
-        result2 = instance.query('SELECT * FROM test.view2')
+        result1 = instance.query('SELECT * FROM test.view1 ORDER BY key')
+        result2 = instance.query('SELECT * FROM test.view2 ORDER BY key')
         if rabbitmq_check_result(result1) and rabbitmq_check_result(result2):
             break
 
@@ -473,6 +429,70 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     connection.close()
     rabbitmq_check_result(result1, True)
     rabbitmq_check_result(result2, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_protobuf(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.rabbitmq (key UInt64, value String)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'pb',
+                     rabbitmq_format = 'Protobuf',
+                     rabbitmq_schema = 'rabbitmq.proto:KeyValueProto';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    data = ''
+    for i in range(0, 20):
+        msg = rabbitmq_pb2.KeyValueProto()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    channel.basic_publish(exchange='pb', routing_key='', body=data)
+    data = ''
+    for i in range(20, 21):
+        msg = rabbitmq_pb2.KeyValueProto()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    channel.basic_publish(exchange='pb', routing_key='', body=data)
+    data = ''
+    for i in range(21, 50):
+        msg = rabbitmq_pb2.KeyValueProto()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    channel.basic_publish(exchange='pb', routing_key='', body=data)
+
+    connection.close()
+
+    result = ''
+    while True:
+        result = instance.query('SELECT * FROM test.view ORDER BY key')
+        if rabbitmq_check_result(result):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    rabbitmq_check_result(result, True)
 
 
 @pytest.mark.timeout(240)
@@ -633,12 +653,9 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        current = 0
-        for message in messages:
-            current += 1
-            mes_id = str(current)
+        for msg_id in range(messages_num):
             channel.basic_publish(exchange='combo', routing_key='',
-                properties=pika.BasicProperties(message_id=mes_id), body=message)
+                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
         connection.close()
 
     threads = []
@@ -663,8 +680,8 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
 
     for mv_id in range(NUM_MV):
         instance.query('''
-            DROP TABLE test.combo_{0};
             DROP TABLE test.combo_{0}_mv;
+            DROP TABLE test.combo_{0};
         '''.format(mv_id))
 
 
@@ -992,8 +1009,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     for consumer_id in range(num_tables):
         instance.query('''
-            DROP TABLE test.direct_exchange_{0};
             DROP TABLE test.direct_exchange_{0}_mv;
+            DROP TABLE test.direct_exchange_{0};
         '''.format(consumer_id))
 
     instance.query('''
@@ -1045,12 +1062,9 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
         messages.append(json.dumps({'key': i[0], 'value': i[0]}))
         i[0] += 1
 
-    current = 0
-    for message in messages:
-        current += 1
-        mes_id = str(current)
+    for msg_id in range(messages_num):
         channel.basic_publish(exchange='fanout_exchange_testing', routing_key='',
-                properties=pika.BasicProperties(message_id=mes_id), body=message)
+                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
 
     connection.close()
 
@@ -1062,8 +1076,8 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     for consumer_id in range(num_tables):
         instance.query('''
-            DROP TABLE test.fanout_exchange_{0};
             DROP TABLE test.fanout_exchange_{0}_mv;
+            DROP TABLE test.fanout_exchange_{0};
         '''.format(consumer_id))
 
     instance.query('''
@@ -1143,11 +1157,9 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     key = "random.logs"
     current = 0
-    for message in messages:
-        current += 1
-        mes_id = str(current)
+    for msg_id in range(messages_num):
         channel.basic_publish(exchange='topic_exchange_testing', routing_key=key,
-                properties=pika.BasicProperties(message_id=mes_id), body=message)
+                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
 
     connection.close()
 
@@ -1159,8 +1171,8 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     for consumer_id in range(num_tables * 2):
         instance.query('''
-            DROP TABLE test.topic_exchange_{0};
             DROP TABLE test.topic_exchange_{0}_mv;
+            DROP TABLE test.topic_exchange_{0};
         '''.format(consumer_id))
 
     instance.query('''
@@ -1213,12 +1225,9 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        current = 0
-        for message in messages:
-            current += 1
-            mes_id = str(current)
-            channel.basic_publish(exchange='hash_exchange_testing', routing_key=mes_id,
-                properties=pika.BasicProperties(message_id=mes_id), body=message)
+        for msg_id in range(messages_num):
+            channel.basic_publish(exchange='hash_exchange_testing', routing_key=str(msg_id),
+                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
         connection.close()
 
     threads = []
@@ -1242,8 +1251,8 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     for consumer_id in range(num_tables):
         table_name = 'rabbitmq_consumer{}'.format(consumer_id)
         instance.query('''
-            DROP TABLE test.{0};
             DROP TABLE test.{0}_mv;
+            DROP TABLE test.{0};
         '''.format(table_name))
 
     instance.query('''
@@ -1397,12 +1406,9 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
     fields['type']='report'
     fields['year']='2020'
 
-    current = 0
-    for message in messages:
-        current += 1
-        mes_id = str(current)
+    for msg_id in range(messages_num):
         channel.basic_publish(exchange='headers_exchange_testing', routing_key='',
-                properties=pika.BasicProperties(headers=fields, message_id=mes_id), body=message)
+                properties=pika.BasicProperties(headers=fields, message_id=str(msg_id)), body=messages[msg_id])
 
     connection.close()
 
@@ -1414,8 +1420,8 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     for consumer_id in range(num_tables_to_receive + num_tables_to_ignore):
         instance.query('''
-            DROP TABLE test.headers_exchange_{0};
             DROP TABLE test.headers_exchange_{0}_mv;
+            DROP TABLE test.headers_exchange_{0};
         '''.format(consumer_id))
 
     instance.query('''
@@ -1592,12 +1598,9 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        current = 0
-        for message in messages:
-            current += 1
-            mes_id = str(current)
+        for msg_id in range(messages_num):
             channel.basic_publish(exchange='many_consumers', routing_key='',
-                    properties=pika.BasicProperties(message_id=mes_id), body=message)
+                    properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
         connection.close()
 
     threads = []
@@ -1733,9 +1736,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     for _ in range(messages_num):
         messages.append(json.dumps({'key': i, 'value': i}))
         i += 1
-    for i in range(messages_num):
-        channel.basic_publish(exchange='consumer_reconnect', routing_key='', body=messages[i],
-                properties=pika.BasicProperties(delivery_mode = 2, message_id=str(i)))
+    for msg_id in range(messages_num):
+        channel.basic_publish(exchange='consumer_reconnect', routing_key='', body=messages[msg_id],
+                properties=pika.BasicProperties(delivery_mode = 2, message_id=str(msg_id)))
     connection.close()
 
     instance.query('''

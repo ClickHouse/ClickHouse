@@ -62,10 +62,7 @@ public:
     void unbindExchange();
     bool exchangeRemoved() { return exchange_removed.load(); }
 
-    bool connectionRunning() { return event_handler->connectionRunning(); }
-    bool restoreConnection(bool reconnecting);
     void updateChannel(ChannelPtr & channel);
-
 
 protected:
     StorageRabbitMQ(
@@ -144,7 +141,7 @@ private:
     void initExchange();
     void bindExchange();
 
-    void pingConnection() { connection->heartbeat(); }
+    bool restoreConnection(bool reconnecting);
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 

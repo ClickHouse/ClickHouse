@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+    extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
 }
 
 namespace ExchangeType
@@ -464,7 +465,7 @@ void StorageRabbitMQ::unbindExchange()
         })
         .onError([&](const char * message)
         {
-            throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+            throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE);
         });
 
         while (!exchange_removed.load())
@@ -516,7 +517,7 @@ Pipe StorageRabbitMQ::read(
          * close connection, but checking anyway (in second condition of if statement). This must be done here (and also in streamToViews())
          * and not in readPrefix as it requires to stop heartbeats and looping tasks to avoid race conditions inside the library
          */
-        if ((update_channels || rabbit_stream->needChannelUpdate()) && event_handler->connectionRunning())
+        if (event_handler->connectionRunning() && (update_channels || rabbit_stream->needChannelUpdate()))
         {
             if (event_handler->loopRunning())
             {

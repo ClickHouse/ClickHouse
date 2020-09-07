@@ -16,7 +16,7 @@ public:
     RabbitMQBlockInputStream(
             StorageRabbitMQ & storage_,
             const StorageMetadataPtr & metadata_snapshot_,
-            Context & context_,
+            const Context & context_,
             const Names & columns,
             size_t max_block_size_,
             bool ack_in_suffix = true);
