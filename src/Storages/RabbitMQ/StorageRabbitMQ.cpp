@@ -48,6 +48,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONNECT_RABBITMQ;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
+    extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
 }
 
 namespace ExchangeType
@@ -117,7 +119,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     looping_task = global_context.getSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ threadFunc(); });
+    streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
 
     heartbeat_task = global_context.getSchedulePool().createTask("RabbitMQHeartbeatTask", [this]{ heartbeatFunc(); });
@@ -195,7 +197,7 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 }
 
 
-Context StorageRabbitMQ::addSettings(Context context)
+Context StorageRabbitMQ::addSettings(Context context) const
 {
     context.setSetting("input_format_skip_unknown_fields", true);
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -233,21 +235,21 @@ void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, 
     if (stop_loop)
         event_handler->updateLoopState(Loop::STOP);
 
-    std::unique_lock<std::mutex> lk(task_mutex, std::defer_lock);
-    if (lk.try_lock())
+    std::unique_lock<std::mutex> lock(task_mutex, std::defer_lock);
+    if (lock.try_lock())
     {
         task->deactivate();
-        lk.unlock();
+        lock.unlock();
     }
     else if (wait) /// Wait only if deactivating from shutdown
     {
-        lk.lock();
+        lock.lock();
         task->deactivate();
     }
 }
 
 
-size_t StorageRabbitMQ::getMaxBlockSize()
+size_t StorageRabbitMQ::getMaxBlockSize() const
  {
      return rabbitmq_settings->rabbitmq_max_block_size.changed
          ? rabbitmq_settings->rabbitmq_max_block_size.value
@@ -271,8 +273,8 @@ void StorageRabbitMQ::initExchange()
          * 2) with different exchange settings. This can only happen if client himself declared exchange with the same name and
          * specified its own settings, which differ from this implementation.
          */
-        throw Exception("Unable to declare exchange (1). Make sure specified exchange is not already declared. Error: "
-                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Unable to declare exchange. Make sure specified exchange is not already declared. Error: "
+                + std::string(message), ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE);
     });
 
     /// Bridge exchange is needed to easily disconnect consumer queues and also simplifies queue bindings
@@ -280,7 +282,8 @@ void StorageRabbitMQ::initExchange()
     .onError([&](const char * message)
     {
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings
-        throw Exception("Unable to declare exchange (2). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
     });
 
     if (!hash_exchange)
@@ -303,13 +306,19 @@ void StorageRabbitMQ::initExchange()
          * to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
          * is bad.
          */
-        throw Exception("Unable to declare exchange (3). Reason: " + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(
+           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
     });
 
     setup_channel->bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
     .onError([&](const char * message)
     {
-        throw Exception("Unable to bind exchange (2). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+            "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
+            bridge_exchange,
+            sharding_exchange,
+            std::string(message));
     });
 
     consumer_exchange = sharding_exchange;
@@ -332,25 +341,29 @@ void StorageRabbitMQ::bindExchange()
         }
 
         setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
-        .onSuccess([&]()
-        {
-            binding_created = true;
-        })
+        .onSuccess([&]() { binding_created = true; })
         .onError([&](const char * message)
         {
-            throw Exception("Unable to bind exchange (1). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+                "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                exchange_name,
+                bridge_exchange,
+                std::string(message));
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
     {
         setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0])
-        .onSuccess([&]()
-        {
-            binding_created = true;
-        })
+        .onSuccess([&]() { binding_created = true; })
         .onError([&](const char * message)
         {
-            throw Exception("Unable to bind exchange (1). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+                "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                exchange_name,
+                bridge_exchange,
+                std::string(message));
         });
     }
     else
@@ -366,7 +379,12 @@ void StorageRabbitMQ::bindExchange()
             })
             .onError([&](const char * message)
             {
-                throw Exception("Unable to bind exchange (1). Reason: " + std::string(message), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(
+                    ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+                    "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                    exchange_name,
+                    bridge_exchange,
+                    std::string(message));
             });
         }
     }
@@ -400,7 +418,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         LOG_TRACE(log, "Trying to restore connection to " + address);
     }
 
-    connection = std::make_shared<AMQP::TcpConnection>(event_handler.get(),
+    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
             AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login(login_password.first, login_password.second), "/"));
 
     cnt_retries = 0;
@@ -543,7 +561,7 @@ void StorageRabbitMQ::startup()
         }
         catch (const AMQP::Exception & e)
         {
-            std::cerr << e.what();
+            LOG_ERROR(log, "Got AMQ exception {}", e.what());
             throw;
         }
     }
@@ -557,7 +575,7 @@ void StorageRabbitMQ::startup()
 void StorageRabbitMQ::shutdown()
 {
     stream_cancelled = true;
-    wait_confirm.store(false);
+    wait_confirm = false;
 
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
@@ -580,7 +598,7 @@ void StorageRabbitMQ::shutdown()
 
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(buffers_mutex);
     buffers.push_back(buffer);
     semaphore.set();
 }
@@ -604,7 +622,7 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
     }
 
     // Take the first available buffer from the list
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(buffers_mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
 
@@ -660,7 +678,7 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 }
 
 
-void StorageRabbitMQ::threadFunc()
+void StorageRabbitMQ::streamingToViewsFunc()
 {
     try
     {
@@ -766,7 +784,6 @@ bool StorageRabbitMQ::streamToViews()
         {
             for (auto & stream : streams)
                 stream->as<RabbitMQBlockInputStream>()->updateChannel();
-
         }
         else
         {

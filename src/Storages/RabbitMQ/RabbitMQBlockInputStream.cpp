@@ -18,16 +18,20 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , context(context_)
-        , column_names(columns)
-        , max_block_size(max_block_size_)
-        , ack_in_suffix(ack_in_suffix_)
-        , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
-        , virtual_header(metadata_snapshot->getSampleBlockForColumns(
-                    {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id"}, storage.getVirtuals(), storage.getStorageID()))
+    : storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , context(context_)
+    , column_names(columns)
+    , max_block_size(max_block_size_)
+    , ack_in_suffix(ack_in_suffix_)
+    , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
+    , sample_block(non_virtual_header)
+    , virtual_header(metadata_snapshot->getSampleBlockForColumns(
+                {"_exchange_name", "_channel_id", "_delivery_tag", "_redelivered", "_message_id"},
+                storage.getVirtuals(), storage.getStorageID()))
 {
+    for (const auto & column : virtual_header)
+        sample_block.insert(column);
 }
 
 
@@ -42,7 +46,7 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
 
 Block RabbitMQBlockInputStream::getHeader() const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+    return sample_block;
 }
 
 
@@ -168,7 +172,7 @@ Block RabbitMQBlockInputStream::readImpl()
 
         buffer->allowNext();
 
-        if (total_rows >= max_block_size || buffer->queueEmpty() || buffer->consumerStopped() || !checkTimeLimit())
+        if (total_rows >= max_block_size || buffer->queueEmpty() || buffer->isConsumerStopped() || !checkTimeLimit())
             break;
     }
 

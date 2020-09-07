@@ -367,7 +367,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     while True:
         result = instance.query('SELECT * FROM test.view')
         if (rabbitmq_check_result(result)):
-            break;
+            break
 
     instance.query('''
         DROP TABLE test.consumer;
@@ -417,7 +417,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
         DROP TABLE test.view;
     ''')
 
-    connection.close();
+    connection.close()
     rabbitmq_check_result(result, True)
 
 
@@ -592,7 +592,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 @pytest.mark.timeout(420)
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
 
-    NUM_MV = 5;
+    NUM_MV = 5
     NUM_CONSUMERS = 4
 
     instance.query('''
@@ -1688,9 +1688,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     while int(instance.query('SELECT count() FROM test.view')) == 0:
         time.sleep(0.1)
 
-    kill_rabbitmq();
-    time.sleep(4);
-    revive_rabbitmq();
+    kill_rabbitmq()
+    time.sleep(4)
+    revive_rabbitmq()
 
     while True:
         result = instance.query('SELECT count(DISTINCT key) FROM test.view')
@@ -1751,16 +1751,16 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     while int(instance.query('SELECT count() FROM test.view')) == 0:
         time.sleep(0.1)
 
-    kill_rabbitmq();
-    time.sleep(8);
-    revive_rabbitmq();
+    kill_rabbitmq()
+    time.sleep(8)
+    revive_rabbitmq()
 
     #while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)
 
-    #kill_rabbitmq();
-    #time.sleep(2);
-    #revive_rabbitmq();
+    #kill_rabbitmq()
+    #time.sleep(2)
+    #revive_rabbitmq()
 
     while True:
         result = instance.query('SELECT count(DISTINCT key) FROM test.view')

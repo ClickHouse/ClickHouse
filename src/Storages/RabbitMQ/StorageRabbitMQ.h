@@ -34,6 +34,7 @@ public:
     void startup() override;
     void shutdown() override;
 
+    /// Always return virtual columns in addition to required columns
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -96,25 +97,29 @@ private:
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
 
-    std::shared_ptr<uv_loop_t> loop;
+    std::unique_ptr<uv_loop_t> loop;
     std::shared_ptr<RabbitMQHandler> event_handler;
-    std::shared_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
+    std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
-    std::mutex mutex, task_mutex;
+    std::mutex buffers_mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String unique_strbase; /// to make unique consumer channel id
+
+    /// maximum number of messages in RabbitMQ queue (x-max-length). Also used
+    /// to setup size of inner buffer for received messages
     uint32_t queue_size;
     String sharding_exchange, bridge_exchange, consumer_exchange;
-    std::once_flag flag; /// remove exchange only once
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
     std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
     std::atomic<bool> exchange_removed = false;
     ChannelPtr setup_channel;
 
+    std::once_flag flag; /// remove exchange only once
+    std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder heartbeat_task;
     BackgroundSchedulePool::TaskHolder looping_task;
@@ -123,7 +128,8 @@ private:
 
     ConsumerBufferPtr createReadBuffer();
 
-    void threadFunc();
+    /// Functions working in the background
+    void streamingToViewsFunc();
     void heartbeatFunc();
     void loopingFunc();
 
@@ -131,8 +137,8 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    Context addSettings(Context context);
-    size_t getMaxBlockSize();
+    Context addSettings(Context context) const;
+    size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
     void initExchange();
@@ -142,7 +148,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    String getRandomName()
+    String getRandomName() const
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
