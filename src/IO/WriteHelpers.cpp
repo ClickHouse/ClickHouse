@@ -68,22 +68,10 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
-    if (!s.size || !isValidIdentifierBegin(s.data[0]))
-    {
-        write_quoted_string(s, buf);
-    }
+    if (isValidIdentifier(std::string_view{s}))
+        writeString(s, buf);
     else
-    {
-        const char * pos = s.data + 1;
-        const char * end = s.data + s.size;
-        for (; pos < end; ++pos)
-            if (!isWordCharASCII(*pos))
-                break;
-        if (pos != end)
-            write_quoted_string(s, buf);
-        else
-            writeString(s, buf);
-    }
+        write_quoted_string(s, buf);
 }
 
 void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)

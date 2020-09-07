@@ -19,7 +19,10 @@ template <typename T>
 struct SumSimple
 {
     /// @note It uses slow Decimal128 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
-    using ResultType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
+    using ResultType = std::conditional_t<IsDecimalNumber<T>,
+                                        std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
+                                        NearestFieldType<T>>;
+    // using ResultType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
     using AggregateDataType = AggregateFunctionSumData<ResultType>;
     using Function = AggregateFunctionSum<T, ResultType, AggregateDataType, AggregateFunctionTypeSum>;
 };

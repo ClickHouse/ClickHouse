@@ -38,8 +38,8 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client3.send('CREATE LIVE VIEW test.lv_sums AS SELECT * FROM test.sums ORDER BY version')
     client3.expect(prompt)
 
-    client3.send("WATCH test.lv_sums FORMAT CSV")
-    client3.expect(r'0.*1' + end_of_block)
+    client3.send("WATCH test.lv_sums FORMAT CSVWithNames")
+    client3.expect('_version')
 
     client1.send('INSERT INTO test.sums WATCH test.lv')
     client1.expect(r'INSERT INTO')

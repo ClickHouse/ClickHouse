@@ -12,21 +12,23 @@ toc_title: LIMIT
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
-## LIMIT ... WITH TIES modifier {#limit-with-ties}
+## LIMIT … WITH TIES Modifier {#limit-with-ties}
 
 When you set `WITH TIES` modifier for `LIMIT n[,m]` and specify `ORDER BY expr_list`, you will get in result first `n` or `n,m` rows and all rows with same `ORDER BY` fields values equal to row at position `n` for `LIMIT n` and `m` for `LIMIT n,m`.
 
-This modifier also can be combined with [ORDER BY ... WITH FILL modifier](../../../sql-reference/statements/select/order-by.md#orderby-with-fill).
+This modifier also can be combined with [ORDER BY … WITH FILL modifier](../../../sql-reference/statements/select/order-by.md#orderby-with-fill).
 
 For example, the following query
-```sql
+
+``` sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0,5
 ```
 
-returns 
-```text
+returns
+
+``` text
 ┌─n─┐
 │ 0 │
 │ 0 │
@@ -37,14 +39,16 @@ returns
 ```
 
 but after apply `WITH TIES` modifier
-```sql
+
+``` sql
 SELECT * FROM (
     SELECT number%50 AS n FROM numbers(100)
 ) ORDER BY n LIMIT 0,5 WITH TIES
 ```
 
 it returns another rows set
-```text
+
+``` text
 ┌─n─┐
 │ 0 │
 │ 0 │
@@ -54,4 +58,5 @@ it returns another rows set
 │ 2 │
 └───┘
 ```
-cause row number 6 have same value "2" for field `n` as row number 5
+
+cause row number 6 have same value “2” for field `n` as row number 5

@@ -122,6 +122,11 @@ inline bool isPrintableASCII(char c)
     return uc >= 32 && uc <= 126;   /// 127 is ASCII DEL.
 }
 
+inline bool isValidIdentifier(const std::string_view & str)
+{
+    return !str.empty() && isValidIdentifierBegin(str[0]) && std::all_of(str.begin() + 1, str.end(), isWordCharASCII);
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {
@@ -234,4 +239,22 @@ std::string trim(const std::string & str, F && predicate)
     }
 
     return str.substr(cut_front, size - cut_front - cut_back);
+}
+
+inline void trimLeft(std::string_view & str, char c = ' ')
+{
+    while (str.starts_with(c))
+        str.remove_prefix(1);
+}
+
+inline void trimRight(std::string_view & str, char c = ' ')
+{
+    while (str.ends_with(c))
+        str.remove_suffix(1);
+}
+
+inline void trim(std::string_view & str, char c = ' ')
+{
+    trimLeft(str, c);
+    trimRight(str, c);
 }

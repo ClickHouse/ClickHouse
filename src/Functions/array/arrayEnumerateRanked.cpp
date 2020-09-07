@@ -88,7 +88,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
 
     if (clear_depth > max_array_depth)
         throw Exception("Incorrect arguments for function arrayEnumerateUniqRanked or arrayEnumerateDenseRanked: clear_depth ("
-            + std::to_string(clear_depth) + ") cant be larger than max_array_depth (" + std::to_string(max_array_depth) + ").",
+            + std::to_string(clear_depth) + ") can't be larger than max_array_depth (" + std::to_string(max_array_depth) + ").",
             ErrorCodes::BAD_ARGUMENTS);
 
     return {clear_depth, depths, max_array_depth};

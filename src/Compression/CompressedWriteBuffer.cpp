@@ -1,4 +1,3 @@
-#include <memory>
 #include <city.h>
 #include <string.h>
 

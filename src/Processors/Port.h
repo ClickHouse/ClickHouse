@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <vector>
 #include <variant>
@@ -117,7 +118,7 @@ protected:
                 while (!value.compare_exchange_weak(expected, desired))
                     desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | getUInt(data));
 
-                /// It's not very safe. In case of exception after exchange and before assigment we will get leak.
+                /// It's not very safe. In case of exception after exchange and before assignment we will get leak.
                 /// Don't know how to make it better.
                 data = getPtr(getUInt(expected) & PTR_MASK);
 

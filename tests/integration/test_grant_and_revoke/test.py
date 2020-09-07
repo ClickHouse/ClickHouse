@@ -107,6 +107,15 @@ def test_revoke_requires_grant_option():
     assert instance.query("SHOW GRANTS FOR B") == ""
 
 
+def test_grant_all_on_table():
+    instance.query("CREATE USER A, B")
+    instance.query("GRANT ALL ON test.table TO A WITH GRANT OPTION")
+    instance.query("GRANT ALL ON test.table TO B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
+    instance.query("REVOKE ALL ON test.table FROM B", user='A')
+    assert instance.query("SHOW GRANTS FOR B") == ""
+
+
 def test_implicit_show_grants():
     instance.query("CREATE USER A")
     assert instance.query("select count() FROM system.databases WHERE name='test'", user="A") == "0\n"
@@ -200,8 +209,8 @@ def test_introspection():
     assert expected_access2 in instance.query("SHOW ACCESS")
 
     assert instance.query("SELECT name, storage, auth_type, auth_params, host_ip, host_names, host_names_regexp, host_names_like, default_roles_all, default_roles_list, default_roles_except from system.users WHERE name IN ('A', 'B') ORDER BY name") ==\
-           TSV([[ "A", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],
-                [ "B", "disk", "no_password", "[]", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ]])
+           TSV([[ "A", "local directory", "no_password", "{}", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ],
+                [ "B", "local directory", "no_password", "{}", "['::/0']", "[]", "[]", "[]", 1, "[]", "[]" ]])
     
     assert instance.query("SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option") ==\
            TSV([[ "A",  "\N", "SELECT", "test", "table", "\N", 0, 0 ],

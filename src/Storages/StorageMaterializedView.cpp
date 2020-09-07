@@ -106,7 +106,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(cons
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
 }
 
-Pipes StorageMaterializedView::read(
+Pipe StorageMaterializedView::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const SelectQueryInfo & query_info,
@@ -122,12 +122,10 @@ Pipes StorageMaterializedView::read(
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage, metadata_snapshot);
 
-    Pipes pipes = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    Pipe pipe = storage->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    pipe.addTableLock(lock);
 
-    for (auto & pipe : pipes)
-        pipe.addTableLock(lock);
-
-    return pipes;
+    return pipe;
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context)
@@ -250,11 +248,18 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
     }
 }
 
-void StorageMaterializedView::alterPartition(
+Pipe StorageMaterializedView::alterPartition(
     const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
+    return getTargetTable()->alterPartition(query, metadata_snapshot, commands, context);
+}
+
+void StorageMaterializedView::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)

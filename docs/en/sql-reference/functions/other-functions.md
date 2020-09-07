@@ -917,6 +917,48 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
+## defaultValueOfTypeName {#defaultvalueoftypename}
+
+Outputs the default value for given type name.
+
+Does not include default values for custom columns set by the user.
+
+``` sql
+defaultValueOfTypeName(type)
+```
+
+**Parameters:**
+
+-   `type` — A string representing a type name.
+
+**Returned values**
+
+-   `0` for numbers.
+-   Empty string for strings.
+-   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
+
+**Example**
+
+``` sql
+SELECT defaultValueOfTypeName('Int8')
+```
+
+``` text
+┌─defaultValueOfTypeName('Int8')─┐
+│                              0 │
+└────────────────────────────────┘
+```
+
+``` sql
+SELECT defaultValueOfTypeName('Nullable(Int8)')
+```
+
+``` text
+┌─defaultValueOfTypeName('Nullable(Int8)')─┐
+│                                     ᴺᵁᴸᴸ │
+└──────────────────────────────────────────┘
+```
+
 ## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
@@ -1349,5 +1391,81 @@ len: 30
 
 -   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
+
+## randomFixedString {#randomfixedstring}
+
+Generates a binary string of the specified length filled with random bytes (including zero bytes).
+
+**Syntax**
+
+``` sql
+randomFixedString(length);
+```
+
+**Parameters**
+
+-   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   String filled with random bytes.
+
+Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+```
+
+Result:
+
+```text
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+
+```
+
+
+## randomStringUTF8 {#randomstringutf8}
+
+Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
+
+**Syntax**
+
+``` sql
+randomStringUTF8(length);
+```
+
+**Parameters**
+
+-   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   UTF-8 random string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT randomStringUTF8(13)
+```
+
+Result:
+
+```text
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
+└──────────────────────┘
+
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
