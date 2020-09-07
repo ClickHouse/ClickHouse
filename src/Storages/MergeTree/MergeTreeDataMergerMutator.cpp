@@ -243,7 +243,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         }
 
         /// Check predicate only for first part in each partition.
-        if (!prev_part)
+        if (!prev_part) 
+        {
             /* Parts can be merged with themselves for TTL needs for example.
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
