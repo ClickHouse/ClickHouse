@@ -53,7 +53,7 @@ clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground
 ## Детали реализации {#implementation-details}
 
 Веб-интерфейс ClickHouse Playground выполняет запросы через ClickHouse [HTTP API](../interfaces/http.md).
-Бэкэнд Playground - это просто кластер ClickHouse без каких-либо дополнительных серверных приложений. Как упоминалось выше, конечные точки ClickHouse HTTPS и TCP / TLS также являются общедоступными как часть Playground. Они проксируются через [Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) для добавления дополнительного уровня защиты и улучшенного глобального подключения.
+Бэкэнд Playground - это кластер ClickHouse без дополнительных серверных приложений. Как упоминалось выше,  способы подключения по HTTPS и TCP/TLS общедоступны как часть Playground. Они проксируются через [Cloudflare Spectrum](https://www.cloudflare.com/products/cloudflare-spectrum/) для добавления дополнительного уровня защиты и улучшенного глобального подключения.
 
 !!! warning "Предупреждение"
 Открывать сервер ClickHouse для публичного доступа  в любой другой ситуации **настоятельно не рекомендуется**. Убедитесь, что он прослушивается только в частной сети и защищен правильно настроенным брандмауэром.
