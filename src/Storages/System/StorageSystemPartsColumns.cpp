@@ -15,8 +15,8 @@ namespace DB
 {
 
 
-StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
-    : StorageSystemPartsBase(table_id_,
+StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
+    : StorageSystemPartsBase(name_,
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
@@ -71,7 +71,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
+    for (const auto & column : info.storage->getColumns())
     {
         ColumnInfo column_info;
         if (column.default_desc.expression)

@@ -13,11 +13,9 @@ namespace DB
 {
 
 class Context;
-class QueryPipeline;
 
 /// Return false if the data isn't going to be changed by mutations.
-bool isStorageTouchedByMutations(
-    StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const std::vector<MutationCommand> & commands, Context context_copy);
+bool isStorageTouchedByMutations(StoragePtr storage, const std::vector<MutationCommand> & commands, Context context_copy);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -26,25 +24,17 @@ class MutationsInterpreter
 public:
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
-    MutationsInterpreter(
-        StoragePtr storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        MutationCommands commands_,
-        const Context & context_,
-        bool can_execute_);
+    MutationsInterpreter(StoragePtr storage_, MutationCommands commands_, const Context & context_, bool can_execute_);
 
-    void validate();
+    void validate(TableStructureReadLockHolder & table_lock_holder);
 
     size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    BlockInputStreamPtr execute();
+    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
 
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
-
-    /// Latest mutation stage affects all columns in storage
-    bool isAffectingAllColumns() const;
 
 private:
     ASTPtr prepare(bool dry_run);
@@ -52,12 +42,11 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    void addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPipeline & pipeline) const;
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
     StoragePtr storage;
-    StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
     Context context;
     bool can_execute;
@@ -90,8 +79,8 @@ private:
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
 
-        /// Contains columns that are changed by this stage, columns changed by
-        /// the previous stages and also columns needed by the next stages.
+        /// Contains columns that are changed by this stage,
+        /// columns changed by the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
         std::unique_ptr<ExpressionAnalyzer> analyzer;
@@ -101,9 +90,6 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
-
-        /// Check that stage affects all storage columns
-        bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
     std::unique_ptr<Block> updated_header;

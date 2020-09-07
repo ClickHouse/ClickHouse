@@ -149,63 +149,6 @@ Rounds down a date with time to the start of the hour.
 
 Rounds down a date with time to the start of the minute.
 
-## toStartOfSecond {#tostartofsecond}
-
-Truncates sub-seconds.
-
-**Syntax**
-
-``` sql
-toStartOfSecond(value[, timezone])
-```
-
-**Parameters**
-
--   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Input value without sub-seconds.
-
-Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Examples**
-
-Query without timezone:
-
-``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64);
-```
-
-Result:
-
-``` text
-┌───toStartOfSecond(dt64)─┐
-│ 2020-01-01 10:20:30.000 │
-└─────────────────────────┘
-```
-
-Query with timezone:
-
-``` sql
-WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64
-SELECT toStartOfSecond(dt64, 'Europe/Moscow');
-```
-
-Result:
-
-``` text
-┌─toStartOfSecond(dt64, 'Europe/Moscow')─┐
-│                2020-01-01 13:20:30.000 │
-└────────────────────────────────────────┘
-```
-
-**See also**
-
--   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
-
 ## toStartOfFiveMinute {#tostartoffiveminute}
 
 Rounds down a date with time to the start of the five-minute interval.
@@ -337,22 +280,6 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 ┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
 │ 2016-12-27 │    201652 │    201652 │    201701 │
 └────────────┴───────────┴───────────┴───────────┘
-```
-
-## date_trunc(datepart, time\_or\_data\[, time\_zone\]), dateTrunc(datepart, time\_or\_data\[, time\_zone\]) {#date_trunc}
-
-Truncates a date or date with time based on the specified datepart, such as
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
-
-```sql
-SELECT date_trunc('hour', now())
 ```
 
 ## now {#now}
@@ -519,34 +446,3 @@ Supported modifiers for Format:
 | %%       | a % sign                                                | %          |
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
-
-## FROM_UNIXTIME
-
-When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
-type.
-
-For example:
-
-```sql
-SELECT FROM_UNIXTIME(423543535)
-```
-
-```text
-┌─FROM_UNIXTIME(423543535)─┐
-│      1983-06-04 10:58:55 │
-└──────────────────────────┘
-```
-
-When there are two arguments, first is integer or DateTime, second is constant format string, it act in the same way as `formatDateTime` and return `String` type.
-
-For example:
-
-```sql
-SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
-```
-
-```text
-┌─DateTime────────────┐
-│ 2009-02-11 14:42:23 │
-└─────────────────────┘
-```

@@ -95,9 +95,9 @@ public:
         nested_func->deserialize(place, buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        nested_func->insertResultInto(place, to, arena);
+        nested_func->insertResultInto(place, to);
     }
 
     bool allocatesMemoryInArena() const override
@@ -109,10 +109,6 @@ public:
     {
         return nested_func->isState();
     }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
-        const Array & params, const AggregateFunctionProperties & properties) const override;
 };
 
 }

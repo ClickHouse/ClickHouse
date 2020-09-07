@@ -93,26 +93,11 @@ public:
 
     /// Merges two sets of access rights together.
     /// It's used to combine access rights from multiple roles.
-    void makeUnion(const AccessRights & other);
-
-    /// Makes an intersection of access rights.
-    void makeIntersection(const AccessRights & other);
-
-    /// Traverse the tree and modify each access flags.
-    using ModifyFlagsFunction = std::function<AccessFlags(
-        const AccessFlags & flags,
-        const AccessFlags & min_flags_with_children,
-        const AccessFlags & max_flags_with_children,
-        const std::string_view & database,
-        const std::string_view & table,
-        const std::string_view & column)>;
-    void modifyFlags(const ModifyFlagsFunction & function);
-    void modifyFlagsWithGrantOption(const ModifyFlagsFunction & function);
+    void merge(const AccessRights & other);
 
     friend bool operator ==(const AccessRights & left, const AccessRights & right);
     friend bool operator !=(const AccessRights & left, const AccessRights & right) { return !(left == right); }
 
-    /// Makes full access rights (GRANT ALL ON *.* WITH GRANT OPTION).
     static AccessRights getFullAccess();
 
 private:

@@ -57,7 +57,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
@@ -69,7 +69,7 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr &, const DataTypes & types, const Array & params, const AggregateFunctionProperties & /*properties*/) const override;
+        const AggregateFunctionPtr &, const DataTypes & types, const Array & params) const override;
 };
 
 
@@ -112,7 +112,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }

@@ -4,19 +4,11 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+static ITransformingStep::DataStreamTraits getTraits()
 {
-    return ITransformingStep::Traits
+    return ITransformingStep::DataStreamTraits
     {
-        {
-            .preserves_distinct_columns = true,
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
-            .preserves_sorting = true,
-        },
-        {
-            .preserves_number_of_rows = true,
-        }
+            .preserves_distinct_columns = true
     };
 }
 

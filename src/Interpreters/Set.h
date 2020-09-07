@@ -228,13 +228,16 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
     using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
+
+    ColumnsWithInfinity left_point;
+    ColumnsWithInfinity right_point;
 };
 
 }

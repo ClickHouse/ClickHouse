@@ -1,10 +1,7 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#    include "config_core.h"
-#endif
-
+#include "config_formats.h"
+#include "config_core.h"
 
 #if USE_MSGPACK
 

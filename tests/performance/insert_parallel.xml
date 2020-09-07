@@ -1,8 +1,0 @@
-<test>
-    <settings>
-        <max_insert_threads>4</max_insert_threads>
-    </settings>
-    <create_query>CREATE TABLE t (x UInt64) ENGINE = Null</create_query>
-    <query>INSERT INTO t SELECT * FROM numbers_mt(1000000000)</query>
-    <drop_query>DROP TABLE IF EXISTS t</drop_query>
-</test>

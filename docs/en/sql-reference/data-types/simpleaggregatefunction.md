@@ -9,15 +9,11 @@ The following aggregate functions are supported:
 -   [`min`](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min)
 -   [`max`](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max)
 -   [`sum`](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum)
--   [`sumWithOverflow`](../../sql-reference/aggregate-functions/reference/sumwithoverflow.md#sumwithoverflowx)
 -   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference/groupbitand.md#groupbitand)
 -   [`groupBitOr`](../../sql-reference/aggregate-functions/reference/groupbitor.md#groupbitor)
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference/groupbitxor.md#groupbitxor)
 -   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray)
 -   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
--   [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
--   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
--   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
 
 Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes. `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 

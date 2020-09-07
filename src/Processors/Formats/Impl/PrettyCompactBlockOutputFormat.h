@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
-#include <optional>
-#include <unordered_map>
 
 
 namespace DB
@@ -13,7 +11,9 @@ namespace DB
 class PrettyCompactBlockOutputFormat : public PrettyBlockOutputFormat
 {
 public:
-    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_);
+    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
+        : PrettyBlockOutputFormat(out_, header, format_settings_) {}
+
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 protected:
@@ -26,14 +26,6 @@ protected:
         const Columns & columns,
         const WidthsPerColumn & widths,
         const Widths & max_widths);
-
-private:
-    bool mono_block;
-    /// For mono_block == true only
-    Chunk mono_chunk;
-
-    void writeChunk(const Chunk & chunk, PortKind port_kind);
-    void writeSuffixIfNot() override;
 };
 
 }

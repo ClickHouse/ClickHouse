@@ -13,7 +13,6 @@ class ASTFunction : public ASTWithAlias
 {
 public:
     String name;
-    ASTPtr query; // It's possible for a function to accept a query as its only argument.
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
@@ -23,8 +22,6 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
-
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

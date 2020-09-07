@@ -5,7 +5,6 @@
 namespace DB
 {
 
-/// Implements modifier WITH FILL of ORDER BY clause. See FillingTransform.
 class FillingStep : public ITransformingStep
 {
 public:
@@ -14,8 +13,6 @@ public:
     String getName() const override { return "Filling"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
-
-    void describeActions(FormatSettings & settings) const override;
 
 private:
     SortDescription sort_description;

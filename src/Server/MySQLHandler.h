@@ -3,10 +3,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/MySQL/Authentication.h>
-#include <Core/MySQL/PacketsGeneric.h>
-#include <Core/MySQL/PacketsConnection.h>
-#include <Core/MySQL/PacketsProtocolText.h>
+#include <Core/MySQLProtocol.h>
 #include "IServer.h"
 
 #if !defined(ARCADIA_BUILD)
@@ -36,7 +33,7 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::MySQLConnection};
 
     /// Enables SSL, if client requested.
-    void finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResponse &);
+    void finishHandshake(MySQLProtocol::HandshakeResponse &);
 
     void comQuery(ReadBuffer & payload);
 
@@ -49,7 +46,7 @@ private:
     void authenticate(const String & user_name, const String & auth_plugin_name, const String & auth_response);
 
     virtual void authPluginSSL();
-    virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
+    virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::HandshakeResponse & packet);
 
     IServer & server;
 
@@ -58,7 +55,7 @@ protected:
 
     Context connection_context;
 
-    std::shared_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
+    std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
 
 private:
     size_t connection_id = 0;
@@ -75,9 +72,7 @@ protected:
     bool secure_connection = false;
 
 private:
-    using ReplacementFn = std::function<String(const String & query)>;
-    using Replacements = std::unordered_map<std::string, ReplacementFn>;
-    Replacements replacements;
+    static const String show_table_status_replacement_query;
 };
 
 #if USE_SSL
@@ -88,10 +83,7 @@ public:
 
 private:
     void authPluginSSL() override;
-
-    void finishHandshakeSSL(
-        size_t packet_size, char * buf, size_t pos,
-        std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet) override;
+    void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::HandshakeResponse & packet) override;
 
     RSA & public_key;
     RSA & private_key;

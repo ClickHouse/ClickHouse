@@ -1,10 +1,7 @@
 #pragma once
 
-#include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
-#include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
-#include <aws/core/http/HttpRequest.h>
 
 namespace Aws::Http::Standard
 {
@@ -14,17 +11,10 @@ class StandardHttpResponse;
 namespace DB::S3
 {
 
-struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
-{
-    const RemoteHostFilter & remote_host_filter;
-
-    PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_);
-};
-
 class PocoHTTPClient : public Aws::Http::HttpClient
 {
 public:
-    explicit PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration);
+    explicit PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration);
     ~PocoHTTPClient() override = default;
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(
         Aws::Http::HttpRequest & request,
@@ -45,7 +35,6 @@ private:
 
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     ConnectionTimeouts timeouts;
-    const RemoteHostFilter & remote_host_filter;
 };
 
 }

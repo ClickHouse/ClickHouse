@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <Common/CurrentMetrics.h>
@@ -49,7 +48,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
     const String & full_relative_path,
     const NamesAndTypesList & columns_list,
     const MergeTreeDataPartType & part_type,
-    const NameSet & files_without_checksums,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
@@ -136,7 +134,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
-        if (checksum_it == checksums_data.files.end() && !files_without_checksums.count(file_name))
+        if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
         {
             auto txt_checksum_it = checksum_files_txt.find(file_name);
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
@@ -163,28 +161,16 @@ IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
-IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
-{
-    IMergeTreeDataPart::Checksums data_checksums;
-    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
-    return data_checksums;
-}
-
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
-    if (auto part_in_memory = asInMemoryPart(data_part))
-        return checkDataPartInMemory(part_in_memory);
-
     return checkDataPart(
         data_part->volume->getDisk(),
         data_part->getFullRelativePath(),
         data_part->getColumns(),
         data_part->getType(),
-        data_part->getFileNamesWithoutChecksums(),
         require_checksums,
         is_cancelled);
 }

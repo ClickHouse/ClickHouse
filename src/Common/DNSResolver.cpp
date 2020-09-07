@@ -284,7 +284,7 @@ bool DNSResolver::updateCache()
         impl->host_name.emplace(updated_host_name);
     }
 
-    /// FIXME Updating may take a long time because we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
+    /// FIXME Updating may take a long time becouse we cannot manage timeouts of getaddrinfo(...) and getnameinfo(...).
     /// DROP DNS CACHE will wait on update_mutex (possibly while holding drop_mutex)
     std::lock_guard lock(impl->update_mutex);
 

@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
+bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
 {
     bool has_state_column = false;
     Names real_column_names;
@@ -41,7 +41,7 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
 
     /// Do not check if only _state column is requested
     if (!(has_state_column && real_column_names.empty()))
-        metadata_snapshot->check(real_column_names, {}, getStorageID());
+        check(real_column_names);
 
     return has_state_column;
 }
@@ -196,7 +196,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockForShare(query_id, settings.lock_acquire_timeout);
+            info.table_lock = info.storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout);
         }
         catch (const Exception & e)
         {
@@ -223,22 +223,21 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipe StorageSystemPartsBase::read(
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+Pipes StorageSystemPartsBase::read(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        const size_t /*max_block_size*/,
+        const unsigned /*num_streams*/)
 {
-    bool has_state_column = hasStateColumn(column_names, metadata_snapshot);
+    bool has_state_column = hasStateColumn(column_names);
 
     StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
 
-    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
 
@@ -247,19 +246,22 @@ Pipe StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block header = metadata_snapshot->getSampleBlock();
+    Block header = getSampleBlock();
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    return pipes;
 }
 
 
-StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_)
-    : IStorage(table_id_)
+StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
+    : IStorage(StorageID{"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 
@@ -275,9 +277,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(tmp_columns);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(tmp_columns);
 }
 
 NamesAndTypesList StorageSystemPartsBase::getVirtuals() const

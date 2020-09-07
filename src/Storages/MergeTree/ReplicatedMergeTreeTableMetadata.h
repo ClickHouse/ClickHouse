@@ -32,7 +32,7 @@ struct ReplicatedMergeTreeTableMetadata
     UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
-    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
+    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);
 
     void read(ReadBuffer & in);
     static ReplicatedMergeTreeTableMetadata parse(const String & s);
@@ -45,9 +45,6 @@ struct ReplicatedMergeTreeTableMetadata
         bool sorting_key_changed = false;
         String new_sorting_key;
 
-        bool sampling_expression_changed = false;
-        String new_sampling_expression;
-
         bool skip_indices_changed = false;
         String new_skip_indices;
 
@@ -59,7 +56,7 @@ struct ReplicatedMergeTreeTableMetadata
 
         bool empty() const
         {
-            return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed;
+            return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed;
         }
     };
 

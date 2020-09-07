@@ -37,16 +37,15 @@ public:
 
     std::string getName() const override { return "MySQL"; }
 
-    Pipe read(
+    Pipes read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
 private:
     friend class StorageMySQLBlockOutputStream;

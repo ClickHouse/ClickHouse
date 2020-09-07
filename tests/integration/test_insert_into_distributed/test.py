@@ -12,7 +12,7 @@ instance_test_reconnect = cluster.add_instance('instance_test_reconnect', main_c
 instance_test_inserts_batching = cluster.add_instance(
     'instance_test_inserts_batching',
     main_configs=['configs/remote_servers.xml'], user_configs=['configs/enable_distributed_inserts_batching.xml'])
-remote = cluster.add_instance('remote', main_configs=['configs/forbid_background_merges.xml'])
+remote = cluster.add_instance('remote', user_configs=['configs/forbid_background_merges.xml'])
 
 instance_test_inserts_local_cluster = cluster.add_instance(
     'instance_test_inserts_local_cluster',

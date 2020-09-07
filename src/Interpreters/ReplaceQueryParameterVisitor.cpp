@@ -26,17 +26,13 @@ namespace ErrorCodes
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
-    if (ast->as<ASTQueryParameter>())
-        visitQueryParameter(ast);
-    else
-        visitChildren(ast);
-}
-
-
-void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
-{
     for (auto & child : ast->children)
-        visit(child);
+    {
+        if (child->as<ASTQueryParameter>())
+            visitQueryParameter(child);
+        else
+            visit(child);
+    }
 }
 
 const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
@@ -53,7 +49,6 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     const auto & ast_param = ast->as<ASTQueryParameter &>();
     const String & value = getParamValue(ast_param.name);
     const String & type_name = ast_param.type;
-    String alias = ast_param.alias;
 
     const auto data_type = DataTypeFactory::instance().get(type_name);
     auto temp_column_ptr = data_type->createColumn();
@@ -68,7 +63,6 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             + value.substr(0, read_buffer.count()), ErrorCodes::BAD_QUERY_PARAMETER);
 
     ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
-    ast->setAlias(alias);
 }
 
 }

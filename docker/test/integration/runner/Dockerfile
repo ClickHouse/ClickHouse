@@ -26,7 +26,6 @@ RUN apt-get update \
     liblua5.1-dev \
     luajit \
     libssl-dev \
-    libcurl4-openssl-dev \
     gdb \
     && rm -rf \
         /var/lib/apt/lists/* \
@@ -46,7 +45,7 @@ RUN set -eux; \
   \
 # this "case" statement is generated via "update.sh"
   \
-  if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
+  if ! wget -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
     echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
     exit 1; \
   fi; \
@@ -63,7 +62,6 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
-COPY compose/ /compose/
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -76,3 +74,4 @@ VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+

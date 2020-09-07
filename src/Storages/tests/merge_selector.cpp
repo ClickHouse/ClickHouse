@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/LevelMergeSelector.h>
 
 
 /** This program tests merge-selecting algorithm.

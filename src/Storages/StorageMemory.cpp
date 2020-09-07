@@ -28,13 +28,12 @@ public:
     MemorySource(
         Names column_names_,
         BlocksList::iterator first_,
-        size_t num_blocks_,
-        const StorageMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot)
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
+        BlocksList::iterator last_,
+        const StorageMemory & storage)
+        : SourceWithProgress(storage.getSampleBlockForColumns(column_names_))
         , column_names(std::move(column_names_))
-        , current_it(first_)
-        , num_blocks(num_blocks_)
+        , current(first_)
+        , last(last_) /// [first, last]
     {
     }
 
@@ -49,7 +48,7 @@ protected:
         }
         else
         {
-            const Block & src = *current_it;
+            const Block & src = *current;
             Columns columns;
             columns.reserve(column_names.size());
 
@@ -57,21 +56,17 @@ protected:
             for (const auto & name : column_names)
                 columns.emplace_back(src.getByName(name).column);
 
-            ++current_block_idx;
-
-            if (current_block_idx == num_blocks)
+            if (current == last)
                 is_finished = true;
             else
-                ++current_it;
-
+                ++current;
             return Chunk(std::move(columns), src.rows());
         }
     }
 private:
     Names column_names;
-    BlocksList::iterator current_it;
-    size_t current_block_idx = 0;
-    const size_t num_blocks;
+    BlocksList::iterator current;
+    BlocksList::iterator last;
     bool is_finished = false;
 };
 
@@ -79,47 +74,38 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit MemoryBlockOutputStream(
-        StorageMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-    {}
+    explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
-        metadata_snapshot->check(block, true);
+        storage.check(block, true);
         std::lock_guard lock(storage.mutex);
         storage.data.push_back(block);
     }
 private:
     StorageMemory & storage;
-    StorageMetadataPtr metadata_snapshot;
 };
 
 
 StorageMemory::StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(std::move(columns_description_));
-    storage_metadata.setConstraints(std::move(constraints_));
-    setInMemoryMetadata(storage_metadata);
+    setColumns(std::move(columns_description_));
+    setConstraints(std::move(constraints_));
 }
 
 
-Pipe StorageMemory::read(
+Pipes StorageMemory::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    check(column_names);
 
     std::lock_guard lock(mutex);
 
@@ -130,32 +116,30 @@ Pipe StorageMemory::read(
 
     Pipes pipes;
 
-    BlocksList::iterator it = data.begin();
-
-    size_t offset = 0;
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        size_t next_offset = (stream + 1) * size / num_streams;
-        size_t num_blocks = next_offset - offset;
+        BlocksList::iterator first = data.begin();
+        BlocksList::iterator last = data.begin();
 
-        assert(num_blocks > 0);
+        std::advance(first, stream * size / num_streams);
+        std::advance(last, (stream + 1) * size / num_streams);
 
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, it, num_blocks, *this, metadata_snapshot));
+        if (first == last)
+            continue;
+        else
+            --last;
 
-        while (offset < next_offset)
-        {
-            ++it;
-            ++offset;
-        }
+        pipes.emplace_back(std::make_shared<MemorySource>(column_names, first, last, *this));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipes;
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageMemory::write(
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<MemoryBlockOutputStream>(*this);
 }
 
 
@@ -165,8 +149,7 @@ void StorageMemory::drop()
     data.clear();
 }
 
-void StorageMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageMemory::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();
@@ -186,7 +169,7 @@ std::optional<UInt64> StorageMemory::totalBytes() const
     UInt64 bytes = 0;
     std::lock_guard lock(mutex);
     for (const auto & buffer : data)
-        bytes += buffer.allocatedBytes();
+        bytes += buffer.bytes();
     return bytes;
 }
 

@@ -1,10 +1,12 @@
 ---
+machine_translated: true
+machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_title: LIMIT BY
 ---
 
-# LIMIT BY子句 {#limit-by-clause}
+# 限制条款 {#limit-by-clause}
 
-与查询 `LIMIT n BY expressions` 子句选择第一个 `n` 每个不同值的行 `expressions`.  `LIMIT BY` 可以包含任意数量的 [表达式](../../../sql-reference/syntax.md#syntax-expressions).
+与查询 `LIMIT n BY expressions` 子句选择第一个 `n` 每个不同值的行 `expressions`. 的关键 `LIMIT BY` 可以包含任意数量的 [表达式](../../../sql-reference/syntax.md#syntax-expressions).
 
 ClickHouse支持以下语法变体:
 
@@ -18,7 +20,7 @@ ClickHouse支持以下语法变体:
 
 ## 例 {#examples}
 
-样例表:
+样品表:
 
 ``` sql
 CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
