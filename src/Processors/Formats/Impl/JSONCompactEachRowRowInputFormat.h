@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
