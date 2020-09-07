@@ -3882,7 +3882,6 @@ void StorageReplicatedMergeTree::alter(
 }
 
 Pipe StorageReplicatedMergeTree::alterPartition(
-    const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
     const Context & query_context)
@@ -3900,7 +3899,7 @@ Pipe StorageReplicatedMergeTree::alterPartition(
                 }
                 else
                     checkPartitionCanBeDropped(command.partition);
-                dropPartition(query, command.partition, command.detach, command.part, query_context);
+                dropPartition(command.partition, command.detach, command.part, query_context);
                 break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
@@ -4022,8 +4021,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(
-    const ASTPtr &, const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context)
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & query_context)
 {
     assertNotReadonly();
     if (!is_leader)
