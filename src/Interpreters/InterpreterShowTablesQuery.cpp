@@ -31,7 +31,21 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     /// SHOW DATABASES
     if (query.databases)
-        return "SELECT name FROM system.databases";
+    {
+        std::stringstream rewritten_query;
+        rewritten_query << "SELECT name FROM system.databases";
+
+        if (!query.like.empty())
+        {
+            rewritten_query << " WHERE name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+        }
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length;
+
+        DUMP(rewritten_query.str());
+        return rewritten_query.str();
+    }
 
     /// SHOW CLUSTER/CLUSTERS 
     if (query.clusters)
