@@ -1171,19 +1171,6 @@ void processLog(const Options & options)
     {
         processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
 
-        try
-        {
-            show_commands[i % num_threads]->wait();
-        }
-        catch (const Exception & e)
-        {
-            /// For broken pipe when we stopped reading prematurally.
-            if (e.code() == ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY)
-                std::cerr << getCurrentExceptionMessage(false) << "\n";
-            else
-                throw;
-        }
-
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;
 
