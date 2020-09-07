@@ -128,10 +128,6 @@ namespace
             send_data(std::move(send_data_)),
             thread([this] { send_data(command->in); })
         {
-            //WriteBufferFromFileDescriptor err(STDERR_FILENO);
-            //copyData(command->out, err);
-            //err.next();
-            //thread.join();
             stream = context.getInputFormat(format, command->out, sample_block, max_block_size);
         }
 
