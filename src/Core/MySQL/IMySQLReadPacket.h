@@ -25,7 +25,7 @@ protected:
     virtual void readPayloadImpl(ReadBuffer & buf) = 0;
 };
 
-    class LimitedReadPacket : public IMySQLReadPacket
+class LimitedReadPacket : public IMySQLReadPacket
 {
 public:
     void readPayload(ReadBuffer & in, uint8_t & sequence_id) override;
