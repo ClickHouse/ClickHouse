@@ -36,7 +36,9 @@ FROM <left_table>
 
 !!! note "Примечание"
     Значение строгости по умолчанию может быть переопределено с помощью настройки [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
-    
+
+Поведение сервера ClickHouse для операций `ANY JOIN` зависит от параметра [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys).
+
 ### Использование ASOF JOIN {#asof-join-usage}
 
 `ASOF JOIN` применим в том случае, когда необходимо объединять записи, которые не имеют точного совпадения.
