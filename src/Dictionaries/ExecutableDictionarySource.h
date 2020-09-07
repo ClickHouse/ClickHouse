@@ -14,7 +14,6 @@ namespace DB
 /// Allows loading dictionaries from executable
 class ExecutableDictionarySource final : public IDictionarySource
 {
-    friend class BlockInputStreamWithBackgroundThread;
 public:
     ExecutableDictionarySource(
         const DictionaryStructure & dict_struct_,
