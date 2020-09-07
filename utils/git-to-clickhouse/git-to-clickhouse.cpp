@@ -138,6 +138,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
 }
 
 
@@ -994,9 +995,6 @@ void processDiffs(
 
         if (size_limit && diff_size > *size_limit)
         {
-            /// Drain to avoid "broken pipe" error in child process.
-            while (!in.eof())
-                in.ignore(in.available());
             return;
         }
     }
@@ -1126,6 +1124,19 @@ void processLog(const Options & options)
     for (size_t i = 0; i < num_commits; ++i)
     {
         processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+
+        try
+        {
+            show_commands[i % num_threads]->wait();
+        }
+        catch (const Exception & e)
+        {
+            /// For broken pipe when we stopped reading prematurally.
+            if (e.code() == ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY)
+                std::cerr << getCurrentExceptionMessage(false) << "\n";
+            else
+                throw;
+        }
 
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;
