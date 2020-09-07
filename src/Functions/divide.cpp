@@ -9,6 +9,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
 template <typename A, typename B>
 struct DivideFloatingImpl
 {
@@ -39,6 +42,8 @@ struct DivideFloatingImpl
 
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivide = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivide>;
+
+}
 
 void registerFunctionDivide(FunctionFactory & factory)
 {

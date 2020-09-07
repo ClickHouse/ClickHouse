@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <typename A, typename B>
 struct LeastBaseImpl
@@ -56,6 +58,8 @@ using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, 
 
 struct NameLeast { static constexpr auto name = "least"; };
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
+
+}
 
 void registerFunctionLeast(FunctionFactory & factory)
 {

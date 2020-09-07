@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <typename A, typename B>
 struct MultiplyImpl
@@ -45,6 +47,8 @@ struct MultiplyImpl
 
 struct NameMultiply { static constexpr auto name = "multiply"; };
 using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
+
+}
 
 void registerFunctionMultiply(FunctionFactory & factory)
 {

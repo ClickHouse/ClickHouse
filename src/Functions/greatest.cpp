@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <typename A, typename B>
 struct GreatestBaseImpl
@@ -57,6 +59,8 @@ using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<
 
 struct NameGreatest { static constexpr auto name = "greatest"; };
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
+
+}
 
 void registerFunctionGreatest(FunctionFactory & factory)
 {

@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <typename A>
 struct NegateImpl
@@ -28,6 +30,8 @@ struct NegateImpl
 
 struct NameNegate { static constexpr auto name = "negate"; };
 using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, NameNegate, true>;
+
+}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 {
