@@ -250,10 +250,10 @@ private:
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
 
-    /// Stores the next TTL merge due time for each partition (used only by TTLMergeSelector)
+    /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector)
     ITTLMergeSelector::PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
 
-    /// Stores the next TTL merge due time for each partition (used only by TTLMergeSelector)
+    /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
     ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale

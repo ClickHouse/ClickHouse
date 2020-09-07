@@ -49,7 +49,10 @@ struct MergeTreeDataPartTTLInfos
 
     TTLInfoMap recompression_ttl;
 
+    /// Return min recompression TTL value if any, otherwise return zero.
     time_t getMinRecompressionTTL() const;
+
+    /// Return max recompression TTL value if any, otherwise return zero.
     time_t getMaxRecompressionTTL() const;
 
     void read(ReadBuffer & in);
@@ -71,6 +74,7 @@ struct MergeTreeDataPartTTLInfos
     }
 };
 
-std::optional<TTLDescription> selectTTLEntryForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max);
+/// Selects the most appropriate TTLDescription using TTL info and current time.
+std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max);
 
 }

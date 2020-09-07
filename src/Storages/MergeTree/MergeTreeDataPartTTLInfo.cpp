@@ -186,7 +186,7 @@ time_t MergeTreeDataPartTTLInfos::getMaxRecompressionTTL() const
 }
 
 
-std::optional<TTLDescription> selectTTLEntryForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
+std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
 {
     time_t best_ttl_time = 0;
     TTLDescriptions::const_iterator best_entry_it;
