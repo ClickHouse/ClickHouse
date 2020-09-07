@@ -277,10 +277,14 @@ struct LineChange
     std::string line; /// Line content without leading whitespaces
     uint8_t indent{}; /// The number of leading whitespaces or tabs * 4
     LineType line_type{};
+    /// Information from the history (blame).
     std::string prev_commit_hash;
     std::string prev_author;
     LocalDateTime prev_time{};
 
+    /** Classify line to empty / code / comment / single punctuation char.
+      * Very rough and mostly suitable for our C++ style.
+      */
     void setLineInfo(std::string full_line)
     {
         indent = 0;
@@ -306,8 +310,9 @@ struct LineChange
             line_type = LineType::Empty;
         }
         else if (pos + 1 < end
-            && ((pos[0] == '/' && pos[1] == '/')
-                || (pos[0] == '*' && pos[1] == ' '))) /// This is not precise.
+            && ((pos[0] == '/' && (pos[1] == '/' || pos[1] == '*'))
+                || (pos[0] == '*' && pos[1] == ' ')     /// This is not precise.
+                || (pos[0] == '#' && pos[1] == ' ')))
         {
             line_type = LineType::Comment;
         }
@@ -363,6 +368,18 @@ struct LineChange
 
 using LineChanges = std::vector<LineChange>;
 
+struct FileDiff
+{
+    FileDiff(FileChange file_change_) : file_change(file_change_) {}
+
+    FileChange file_change;
+    LineChanges line_changes;
+};
+
+using CommitDiff = std::map<std::string /* path */, FileDiff>;
+
+
+/** Parsing helpers */
 
 void skipUntilWhitespace(ReadBuffer & buf)
 {
@@ -418,14 +435,57 @@ void readStringUntilNextLine(std::string & s, ReadBuffer & buf)
 }
 
 
-struct Result
+/** Writes the resulting tables to files that can be imported to ClickHouse.
+  */
+struct ResultWriter
 {
     WriteBufferFromFile commits{"commits.tsv"};
     WriteBufferFromFile file_changes{"file_changes.tsv"};
     WriteBufferFromFile line_changes{"line_changes.tsv"};
+
+    void appendCommit(const Commit & commit, const CommitDiff & files)
+    {
+        /// commits table
+        {
+            auto & out = commits;
+
+            commit.writeTextWithoutNewline(out);
+            writeChar('\n', out);
+        }
+
+        for (const auto & elem : files)
+        {
+            const FileChange & file_change = elem.second.file_change;
+
+            /// file_changes table
+            {
+                auto & out = file_changes;
+
+                file_change.writeTextWithoutNewline(out);
+                writeChar('\t', out);
+                commit.writeTextWithoutNewline(out);
+                writeChar('\n', out);
+            }
+
+            /// line_changes table
+            for (const auto & line_change : elem.second.line_changes)
+            {
+                auto & out = line_changes;
+
+                line_change.writeTextWithoutNewline(out);
+                writeChar('\t', out);
+                file_change.writeTextWithoutNewline(out);
+                writeChar('\t', out);
+                commit.writeTextWithoutNewline(out);
+                writeChar('\n', out);
+            }
+        }
+    }
 };
 
 
+/** See description in "main".
+  */
 struct Options
 {
     bool skip_commits_without_parents = true;
@@ -467,11 +527,23 @@ struct Options
 };
 
 
-/// Rough snapshot of repository calculated by application of diffs. It's used to calculate blame info.
+/** Rough snapshot of repository calculated by application of diffs. It's used to calculate blame info.
+  * Represented by a list of lines. For every line it contains information about commit that modified this line the last time.
+  *
+  * Note that there are many cases when this info may become incorrect.
+  * The first reason is that git history is non-linear but we form this snapshot by application of commit diffs in some order
+  *  that cannot give us correct results even theoretically.
+  * The second reason is that we don't process merge commits. But merge commits may contain differences for conflict resolution.
+  *
+  * We expect that the information will be mostly correct for the purpose of analytics.
+  * So, it can provide the expected "blame" info for the most of the lines.
+  */
 struct FileBlame
 {
     using Lines = std::list<Commit>;
     Lines lines;
+
+    /// We walk through this list adding or removing lines.
     Lines::iterator it;
     size_t current_idx = 1;
 
@@ -480,6 +552,7 @@ struct FileBlame
         it = lines.begin();
     }
 
+    /// This is important when file was copied or renamed.
     FileBlame & operator=(const FileBlame & rhs)
     {
         lines = rhs.lines;
@@ -493,6 +566,7 @@ struct FileBlame
         *this = rhs;
     }
 
+    /// Move iterator to requested line or stop at the end.
     void walk(uint32_t num)
     {
         while (current_idx < num && it != lines.end())
@@ -522,6 +596,7 @@ struct FileBlame
     {
         walk(num);
 
+        /// If the inserted line is over the end of file, we insert empty lines before it.
         while (it == lines.end() && current_idx < num)
         {
             lines.emplace_back();
@@ -542,333 +617,23 @@ struct FileBlame
     }
 };
 
+/// All files with their blame info. When file is renamed, we also rename it in snapshot.
 using Snapshot = std::map<std::string /* path */, FileBlame>;
 
-struct FileChangeAndLineChanges
+
+/** Enrich the line changes data with the history info from the snapshot
+  * - the author, time and commit of the previous change to every found line (blame).
+  * And update the snapshot.
+  */
+void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & file_changes)
 {
-    FileChangeAndLineChanges(FileChange file_change_) : file_change(file_change_) {}
-
-    FileChange file_change;
-    LineChanges line_changes;
-};
-
-using DiffHashes = std::unordered_set<UInt128>;
-
-
-void processCommit(
-    std::unique_ptr<ShellCommand> & commit_info,
-    const Options & options,
-    size_t commit_num,
-    size_t total_commits,
-    std::string hash,
-    Snapshot & snapshot,
-    DiffHashes & diff_hashes,
-    Result & result)
-{
-    auto & in = commit_info->out;
-
-    Commit commit;
-    commit.hash = hash;
-
-    time_t commit_time;
-    readText(commit_time, in);
-    commit.time = commit_time;
-    assertChar('\0', in);
-    readNullTerminated(commit.author, in);
-    std::string parent_hash;
-    readNullTerminated(parent_hash, in);
-    readNullTerminated(commit.message, in);
-
-    if (options.skip_commits_with_messages && re2_st::RE2::PartialMatch(commit.message, *options.skip_commits_with_messages))
-        return;
-
-    std::string message_to_print = commit.message;
-    std::replace_if(message_to_print.begin(), message_to_print.end(), [](char c){ return std::iscntrl(c); }, ' ');
-
-    std::cerr << fmt::format("{}%  {}  {}  {}\n",
-        commit_num * 100 / total_commits, toString(commit.time), hash, message_to_print);
-
-    if (options.skip_commits_without_parents && commit_num != 0 && parent_hash.empty())
+    /// Renames and copies.
+    for (auto & elem : file_changes)
     {
-        std::cerr << "Warning: skipping commit without parents\n";
-        return;
+        auto & file = elem.second.file_change;
+        if (file.path != file.old_path)
+            snapshot[file.path] = snapshot[file.old_path];
     }
-
-    if (!in.eof())
-        assertChar('\n', in);
-
-    /// File changes in form
-    /// :100644 100644 b90fe6bb94 3ffe4c380f M  src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp
-    /// :100644 100644 828dedf6b5 828dedf6b5 R100       dbms/src/Functions/GeoUtils.h   dbms/src/Functions/PolygonUtils.h
-
-    std::map<std::string, FileChangeAndLineChanges> file_changes;
-
-    while (checkChar(':', in))
-    {
-        FileChange file_change;
-
-        for (size_t i = 0; i < 4; ++i)
-        {
-            skipUntilWhitespace(in);
-            skipWhitespaceIfAny(in);
-        }
-
-        char change_type;
-        readChar(change_type, in);
-
-        int confidence;
-        switch (change_type)
-        {
-            case 'A':
-                file_change.change_type = FileChangeType::Add;
-                ++commit.files_added;
-                break;
-            case 'D':
-                file_change.change_type = FileChangeType::Delete;
-                ++commit.files_deleted;
-                break;
-            case 'M':
-                file_change.change_type = FileChangeType::Modify;
-                ++commit.files_modified;
-                break;
-            case 'R':
-                file_change.change_type = FileChangeType::Rename;
-                ++commit.files_renamed;
-                readText(confidence, in);
-                break;
-            case 'C':
-                file_change.change_type = FileChangeType::Copy;
-                readText(confidence, in);
-                break;
-            case 'T':
-                file_change.change_type = FileChangeType::Type;
-                break;
-            default:
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected file change type: {}", change_type);
-        }
-
-        skipWhitespaceIfAny(in);
-
-        if (change_type == 'R' || change_type == 'C')
-        {
-            readText(file_change.old_path, in);
-            skipWhitespaceIfAny(in);
-            readText(file_change.path, in);
-
-//            std::cerr << "Move from " << file_change.old_path << " to " << file_change.path << "\n";
-
-            if (file_change.path != file_change.old_path)
-                snapshot[file_change.path] = snapshot[file_change.old_path];
-        }
-        else
-        {
-            readText(file_change.path, in);
-        }
-
-        file_change.file_extension = std::filesystem::path(file_change.path).extension();
-
-        assertChar('\n', in);
-
-        if (!(options.skip_paths && re2_st::RE2::PartialMatch(file_change.path, *options.skip_paths)))
-        {
-            file_changes.emplace(
-                file_change.path,
-                FileChangeAndLineChanges(file_change));
-        }
-    }
-
-    if (!in.eof())
-    {
-        assertChar('\n', in);
-
-        /// Diffs for every file in form of
-        /// --- a/src/Storages/StorageReplicatedMergeTree.cpp
-        /// +++ b/src/Storages/StorageReplicatedMergeTree.cpp
-        /// @@ -1387,2 +1387 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
-        /// -            table_lock, entry.create_time, reserved_space, entry.deduplicate,
-        /// -            entry.force_ttl);
-        /// +            table_lock, entry.create_time, reserved_space, entry.deduplicate);
-
-        std::string old_file_path;
-        std::string new_file_path;
-        FileChangeAndLineChanges * file_change_and_line_changes = nullptr;
-        LineChange line_change;
-
-        while (!in.eof())
-        {
-            if (checkString("@@ ", in))
-            {
-                if (!file_change_and_line_changes)
-                {
-                    auto file_name = new_file_path.empty() ? old_file_path : new_file_path;
-                    auto it = file_changes.find(file_name);
-                    if (file_changes.end() != it)
-                        file_change_and_line_changes = &it->second;
-                }
-
-                if (file_change_and_line_changes)
-                {
-                    uint32_t old_lines = 1;
-                    uint32_t new_lines = 1;
-
-                    assertChar('-', in);
-                    readText(line_change.hunk_start_line_number_old, in);
-                    if (checkChar(',', in))
-                        readText(old_lines, in);
-
-                    assertString(" +", in);
-                    readText(line_change.hunk_start_line_number_new, in);
-                    if (checkChar(',', in))
-                        readText(new_lines, in);
-
-                    if (line_change.hunk_start_line_number_new == 0)
-                        line_change.hunk_start_line_number_new = 1;
-
-                    assertString(" @@", in);
-                    if (checkChar(' ', in))
-                        readStringUntilNextLine(line_change.hunk_context, in);
-                    else
-                        assertChar('\n', in);
-
-                    line_change.hunk_lines_added = new_lines;
-                    line_change.hunk_lines_deleted = old_lines;
-
-                    ++line_change.hunk_num;
-                    line_change.line_number_old = line_change.hunk_start_line_number_old;
-                    line_change.line_number_new = line_change.hunk_start_line_number_new;
-
-                    if (old_lines && new_lines)
-                    {
-                        ++commit.hunks_changed;
-                        ++file_change_and_line_changes->file_change.hunks_changed;
-                    }
-                    else if (old_lines)
-                    {
-                        ++commit.hunks_removed;
-                        ++file_change_and_line_changes->file_change.hunks_removed;
-                    }
-                    else if (new_lines)
-                    {
-                        ++commit.hunks_added;
-                        ++file_change_and_line_changes->file_change.hunks_added;
-                    }
-                }
-            }
-            else if (checkChar('-', in))
-            {
-                if (checkString("-- ", in))
-                {
-                    if (checkString("a/", in))
-                    {
-                        readStringUntilNextLine(old_file_path, in);
-                        line_change = LineChange{};
-                        file_change_and_line_changes = nullptr;
-                    }
-                    else if (checkString("/dev/null", in))
-                    {
-                        old_file_path.clear();
-                        assertChar('\n', in);
-                        line_change = LineChange{};
-                        file_change_and_line_changes = nullptr;
-                    }
-                    else
-                        skipUntilNextLine(in); /// Actually it can be the line in diff. Skip it for simplicity.
-                }
-                else
-                {
-                    if (file_change_and_line_changes)
-                    {
-                        ++commit.lines_deleted;
-                        ++file_change_and_line_changes->file_change.lines_deleted;
-
-                        line_change.sign = -1;
-                        readStringUntilNextLine(line_change.line, in);
-                        line_change.setLineInfo(line_change.line);
-
-                        file_change_and_line_changes->line_changes.push_back(line_change);
-                        ++line_change.line_number_old;
-                    }
-                }
-            }
-            else if (checkChar('+', in))
-            {
-                if (checkString("++ ", in))
-                {
-                    if (checkString("b/", in))
-                    {
-                        readStringUntilNextLine(new_file_path, in);
-                        line_change = LineChange{};
-                        file_change_and_line_changes = nullptr;
-                    }
-                    else if (checkString("/dev/null", in))
-                    {
-                        new_file_path.clear();
-                        assertChar('\n', in);
-                        line_change = LineChange{};
-                        file_change_and_line_changes = nullptr;
-                    }
-                    else
-                        skipUntilNextLine(in); /// Actually it can be the line in diff. Skip it for simplicity.
-                }
-                else
-                {
-                    if (file_change_and_line_changes)
-                    {
-                        ++commit.lines_added;
-                        ++file_change_and_line_changes->file_change.lines_added;
-
-                        line_change.sign = 1;
-                        readStringUntilNextLine(line_change.line, in);
-                        line_change.setLineInfo(line_change.line);
-
-                        file_change_and_line_changes->line_changes.push_back(line_change);
-                        ++line_change.line_number_new;
-                    }
-                }
-            }
-            else
-            {
-                skipUntilNextLine(in);
-            }
-        }
-    }
-
-    if (options.diff_size_limit && commit_num != 0 && commit.lines_added + commit.lines_deleted > *options.diff_size_limit)
-        return;
-
-    /// Calculate hash of diff and skip duplicates
-    if (options.skip_commits_with_duplicate_diffs)
-    {
-        SipHash hasher;
-
-        for (auto & elem : file_changes)
-        {
-            hasher.update(elem.second.file_change.change_type);
-            hasher.update(elem.second.file_change.old_path.size());
-            hasher.update(elem.second.file_change.old_path);
-            hasher.update(elem.second.file_change.path.size());
-            hasher.update(elem.second.file_change.path);
-
-            hasher.update(elem.second.line_changes.size());
-            for (auto & line_change : elem.second.line_changes)
-            {
-                hasher.update(line_change.sign);
-                hasher.update(line_change.line_number_old);
-                hasher.update(line_change.line_number_new);
-                hasher.update(line_change.indent);
-                hasher.update(line_change.line.size());
-                hasher.update(line_change.line);
-            }
-        }
-
-        UInt128 hash_of_diff;
-        hasher.get128(hash_of_diff.low, hash_of_diff.high);
-
-        if (!diff_hashes.insert(hash_of_diff).second)
-            return;
-    }
-
-    /// Update snapshot and blame info
 
     for (auto & elem : file_changes)
     {
@@ -928,47 +693,379 @@ void processCommit(
             }
         }
     }
+}
 
-    /// Write the result
 
-    /// commits table
+/** Deduplication of commits with identical diffs.
+  */
+using DiffHashes = std::unordered_set<UInt128>;
+
+UInt128 diffHash(const CommitDiff & file_changes)
+{
+    SipHash hasher;
+
+    for (auto & elem : file_changes)
     {
-        auto & out = result.commits;
+        hasher.update(elem.second.file_change.change_type);
+        hasher.update(elem.second.file_change.old_path.size());
+        hasher.update(elem.second.file_change.old_path);
+        hasher.update(elem.second.file_change.path.size());
+        hasher.update(elem.second.file_change.path);
 
-        commit.writeTextWithoutNewline(out);
-        writeChar('\n', out);
+        hasher.update(elem.second.line_changes.size());
+        for (auto & line_change : elem.second.line_changes)
+        {
+            hasher.update(line_change.sign);
+            hasher.update(line_change.line_number_old);
+            hasher.update(line_change.line_number_new);
+            hasher.update(line_change.indent);
+            hasher.update(line_change.line.size());
+            hasher.update(line_change.line);
+        }
     }
 
-    for (const auto & elem : file_changes)
+    UInt128 hash_of_diff;
+    hasher.get128(hash_of_diff.low, hash_of_diff.high);
+
+    return hash_of_diff;
+}
+
+
+/** File changes in form
+  * :100644 100644 b90fe6bb94 3ffe4c380f M  src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp
+  * :100644 100644 828dedf6b5 828dedf6b5 R100       dbms/src/Functions/GeoUtils.h   dbms/src/Functions/PolygonUtils.h
+  * according to the output of 'git show --raw'
+  */
+void processFileChanges(
+    ReadBuffer & in,
+    const Options & options,
+    Commit & commit,
+    CommitDiff & file_changes)
+{
+    while (checkChar(':', in))
     {
-        const FileChange & file_change = elem.second.file_change;
+        FileChange file_change;
 
-        /// file_changes table
+        /// We don't care about file mode and content hashes.
+        for (size_t i = 0; i < 4; ++i)
         {
-            auto & out = result.file_changes;
-
-            file_change.writeTextWithoutNewline(out);
-            writeChar('\t', out);
-            commit.writeTextWithoutNewline(out);
-            writeChar('\n', out);
+            skipUntilWhitespace(in);
+            skipWhitespaceIfAny(in);
         }
 
-        /// line_changes table
-        for (const auto & line_change : elem.second.line_changes)
-        {
-            auto & out = result.line_changes;
+        char change_type;
+        readChar(change_type, in);
 
-            line_change.writeTextWithoutNewline(out);
-            writeChar('\t', out);
-            file_change.writeTextWithoutNewline(out);
-            writeChar('\t', out);
-            commit.writeTextWithoutNewline(out);
-            writeChar('\n', out);
+        /// For rename and copy there is a number called "score". We ignore it.
+        int score;
+
+        switch (change_type)
+        {
+            case 'A':
+                file_change.change_type = FileChangeType::Add;
+                ++commit.files_added;
+                break;
+            case 'D':
+                file_change.change_type = FileChangeType::Delete;
+                ++commit.files_deleted;
+                break;
+            case 'M':
+                file_change.change_type = FileChangeType::Modify;
+                ++commit.files_modified;
+                break;
+            case 'R':
+                file_change.change_type = FileChangeType::Rename;
+                ++commit.files_renamed;
+                readText(score, in);
+                break;
+            case 'C':
+                file_change.change_type = FileChangeType::Copy;
+                readText(score, in);
+                break;
+            case 'T':
+                file_change.change_type = FileChangeType::Type;
+                break;
+            default:
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected file change type: {}", change_type);
+        }
+
+        skipWhitespaceIfAny(in);
+
+        if (change_type == 'R' || change_type == 'C')
+        {
+            readText(file_change.old_path, in);
+            skipWhitespaceIfAny(in);
+            readText(file_change.path, in);
+        }
+        else
+        {
+            readText(file_change.path, in);
+        }
+
+        file_change.file_extension = std::filesystem::path(file_change.path).extension();
+        /// It gives us extension in form of '.cpp'. There is a reason for it but we remove initial dot for simplicity.
+        if (!file_change.file_extension.empty() && file_change.file_extension.front() == '.')
+            file_change.file_extension = file_change.file_extension.substr(1, std::string::npos);
+
+        assertChar('\n', in);
+
+        if (!(options.skip_paths && re2_st::RE2::PartialMatch(file_change.path, *options.skip_paths)))
+        {
+            file_changes.emplace(
+                file_change.path,
+                FileDiff(file_change));
         }
     }
 }
 
 
+/** Process the list of diffs for every file from the result of "git show".
+  * Caveats:
+  * - changes in binary files can be ignored;
+  * - if a line content begins with '+' or '-' it will be skipped
+  *   it means that if you store diffs in repository and "git show" will display diff-of-diff for you,
+  *   it won't be processed correctly;
+  * - we expect some specific format of the diff; but it may actually depend on git config;
+  * - non-ASCII file names are not processed correctly (they will not be found and will be ignored).
+  */
+void processDiffs(
+    ReadBuffer & in,
+    std::optional<size_t> size_limit,
+    Commit & commit,
+    CommitDiff & file_changes)
+{
+    std::string old_file_path;
+    std::string new_file_path;
+    FileDiff * file_change_and_line_changes = nullptr;
+    LineChange line_change;
+
+    /// Diffs for every file in form of
+    /// --- a/src/Storages/StorageReplicatedMergeTree.cpp
+    /// +++ b/src/Storages/StorageReplicatedMergeTree.cpp
+    /// @@ -1387,2 +1387 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
+    /// -            table_lock, entry.create_time, reserved_space, entry.deduplicate,
+    /// -            entry.force_ttl);
+    /// +            table_lock, entry.create_time, reserved_space, entry.deduplicate);
+
+    size_t diff_size = 0;
+    while (!in.eof())
+    {
+        if (checkString("@@ ", in))
+        {
+            if (!file_change_and_line_changes)
+            {
+                auto file_name = new_file_path.empty() ? old_file_path : new_file_path;
+                auto it = file_changes.find(file_name);
+                if (file_changes.end() != it)
+                    file_change_and_line_changes = &it->second;
+            }
+
+            if (file_change_and_line_changes)
+            {
+                uint32_t old_lines = 1;
+                uint32_t new_lines = 1;
+
+                assertChar('-', in);
+                readText(line_change.hunk_start_line_number_old, in);
+                if (checkChar(',', in))
+                    readText(old_lines, in);
+
+                assertString(" +", in);
+                readText(line_change.hunk_start_line_number_new, in);
+                if (checkChar(',', in))
+                    readText(new_lines, in);
+
+                /// This is needed to simplify the logic of updating snapshot:
+                /// When all lines are removed we can treat it as repeated removal of line with number 1.
+                if (line_change.hunk_start_line_number_new == 0)
+                    line_change.hunk_start_line_number_new = 1;
+
+                assertString(" @@", in);
+                if (checkChar(' ', in))
+                    readStringUntilNextLine(line_change.hunk_context, in);
+                else
+                    assertChar('\n', in);
+
+                line_change.hunk_lines_added = new_lines;
+                line_change.hunk_lines_deleted = old_lines;
+
+                ++line_change.hunk_num;
+                line_change.line_number_old = line_change.hunk_start_line_number_old;
+                line_change.line_number_new = line_change.hunk_start_line_number_new;
+
+                if (old_lines && new_lines)
+                {
+                    ++commit.hunks_changed;
+                    ++file_change_and_line_changes->file_change.hunks_changed;
+                }
+                else if (old_lines)
+                {
+                    ++commit.hunks_removed;
+                    ++file_change_and_line_changes->file_change.hunks_removed;
+                }
+                else if (new_lines)
+                {
+                    ++commit.hunks_added;
+                    ++file_change_and_line_changes->file_change.hunks_added;
+                }
+            }
+        }
+        else if (checkChar('-', in))
+        {
+            if (checkString("-- ", in))
+            {
+                if (checkString("a/", in))
+                {
+                    readStringUntilNextLine(old_file_path, in);
+                    line_change = LineChange{};
+                    file_change_and_line_changes = nullptr;
+                }
+                else if (checkString("/dev/null", in))
+                {
+                    old_file_path.clear();
+                    assertChar('\n', in);
+                    line_change = LineChange{};
+                    file_change_and_line_changes = nullptr;
+                }
+                else
+                    skipUntilNextLine(in); /// Actually it can be the line in diff. Skip it for simplicity.
+            }
+            else
+            {
+                ++diff_size;
+                if (file_change_and_line_changes)
+                {
+                    ++commit.lines_deleted;
+                    ++file_change_and_line_changes->file_change.lines_deleted;
+
+                    line_change.sign = -1;
+                    readStringUntilNextLine(line_change.line, in);
+                    line_change.setLineInfo(line_change.line);
+
+                    file_change_and_line_changes->line_changes.push_back(line_change);
+                    ++line_change.line_number_old;
+                }
+            }
+        }
+        else if (checkChar('+', in))
+        {
+            if (checkString("++ ", in))
+            {
+                if (checkString("b/", in))
+                {
+                    readStringUntilNextLine(new_file_path, in);
+                    line_change = LineChange{};
+                    file_change_and_line_changes = nullptr;
+                }
+                else if (checkString("/dev/null", in))
+                {
+                    new_file_path.clear();
+                    assertChar('\n', in);
+                    line_change = LineChange{};
+                    file_change_and_line_changes = nullptr;
+                }
+                else
+                    skipUntilNextLine(in); /// Actually it can be the line in diff. Skip it for simplicity.
+            }
+            else
+            {
+                ++diff_size;
+                if (file_change_and_line_changes)
+                {
+                    ++commit.lines_added;
+                    ++file_change_and_line_changes->file_change.lines_added;
+
+                    line_change.sign = 1;
+                    readStringUntilNextLine(line_change.line, in);
+                    line_change.setLineInfo(line_change.line);
+
+                    file_change_and_line_changes->line_changes.push_back(line_change);
+                    ++line_change.line_number_new;
+                }
+            }
+        }
+        else
+        {
+            /// Unknown lines are ignored.
+            skipUntilNextLine(in);
+        }
+
+        if (size_limit && diff_size > *size_limit)
+            return;
+    }
+}
+
+
+/** Process the "git show" result for a single commit. Append the result to tables.
+  */
+void processCommit(
+    ReadBuffer & in,
+    const Options & options,
+    size_t commit_num,
+    size_t total_commits,
+    std::string hash,
+    Snapshot & snapshot,
+    DiffHashes & diff_hashes,
+    ResultWriter & result)
+{
+    Commit commit;
+    commit.hash = hash;
+
+    time_t commit_time;
+    readText(commit_time, in);
+    commit.time = commit_time;
+    assertChar('\0', in);
+    readNullTerminated(commit.author, in);
+    std::string parent_hash;
+    readNullTerminated(parent_hash, in);
+    readNullTerminated(commit.message, in);
+
+    if (options.skip_commits_with_messages && re2_st::RE2::PartialMatch(commit.message, *options.skip_commits_with_messages))
+        return;
+
+    std::string message_to_print = commit.message;
+    std::replace_if(message_to_print.begin(), message_to_print.end(), [](char c){ return std::iscntrl(c); }, ' ');
+
+    std::cerr << fmt::format("{}%  {}  {}  {}\n",
+        commit_num * 100 / total_commits, toString(commit.time), hash, message_to_print);
+
+    if (options.skip_commits_without_parents && commit_num != 0 && parent_hash.empty())
+    {
+        std::cerr << "Warning: skipping commit without parents\n";
+        return;
+    }
+
+    if (!in.eof())
+        assertChar('\n', in);
+
+    CommitDiff file_changes;
+    processFileChanges(in, options, commit, file_changes);
+
+    if (!in.eof())
+    {
+        assertChar('\n', in);
+        processDiffs(in, commit_num != 0 ? options.diff_size_limit : std::nullopt, commit, file_changes);
+    }
+
+    /// Skip commits with too large diffs.
+    if (options.diff_size_limit && commit_num != 0 && commit.lines_added + commit.lines_deleted > *options.diff_size_limit)
+        return;
+
+    /// Calculate hash of diff and skip duplicates
+    if (options.skip_commits_with_duplicate_diffs && !diff_hashes.insert(diffHash(file_changes)).second)
+        return;
+
+    /// Update snapshot and blame info
+    updateSnapshot(snapshot, commit, file_changes);
+
+    /// Write the result
+    result.appendCommit(commit, file_changes);
+}
+
+
+/** Runs child process and allows to read the result.
+  * Multiple processes can be run for parallel processing.
+  */
 auto gitShow(const std::string & hash)
 {
     std::string command = fmt::format(
@@ -979,9 +1076,11 @@ auto gitShow(const std::string & hash)
 }
 
 
+/** Obtain the list of commits and process them.
+  */
 void processLog(const Options & options)
 {
-    Result result;
+    ResultWriter result;
 
     std::string command = "git log --reverse --no-merges --pretty=%H";
     fmt::print("{}\n", command);
@@ -1019,7 +1118,7 @@ void processLog(const Options & options)
 
     for (size_t i = 0; i < num_commits; ++i)
     {
-        processCommit(show_commands[i % num_threads], options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
+        processCommit(show_commands[i % num_threads]->out, options, i, num_commits, hashes[i], snapshot, diff_hashes, result);
 
         if (!options.stop_after_commit.empty() && hashes[i] == options.stop_after_commit)
             break;
