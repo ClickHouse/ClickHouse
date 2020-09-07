@@ -107,7 +107,7 @@ private:
     MessageData current;
     size_t subscribed = 0;
 
-    AckTracker last_inserted_record;
+    AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
 };
 
