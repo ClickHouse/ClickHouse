@@ -20,7 +20,7 @@ using TypeListGeneralNumbers = typename TypeListConcat<TypeListNativeNumbers, Ty
 /// "Arcadia" build system cannot support large integers due to use of old linker version.
 
 using TypeListDecimalNumbers = TypeList<Decimal32, Decimal64, Decimal128>;
-using TypeListGeneralNumbers = typename TypeListNativeNumbers;
+using TypeListGeneralNumbers = TypeListNativeNumbers;
 
 #endif
 
