@@ -243,6 +243,12 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
+//    std::cout << "ColumnVector" << std::endl;
+//
+//    std::cout << "equal_ranges " << equal_range.size() << std::endl;
+//    for (auto [first, last] : equal_range)
+//        std::cout << "first " << first << " last " << last << std::endl;
+
     if (equal_range.empty())
         return;
 
