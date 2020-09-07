@@ -158,7 +158,6 @@ class ClickHouseCluster:
 
         self.docker_client = None
         self.is_up = False
-
         print "CLUSTER INIT base_config_dir:{}".format(self.base_config_dir)
 
     def get_client_cmd(self):
@@ -805,7 +804,6 @@ class ClickHouseInstance:
 
         self.tmpfs = tmpfs or []
         self.base_config_dir = p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
-        self.config_dir = p.abspath(p.join(base_path, config_dir)) if config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]

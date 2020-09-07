@@ -22,6 +22,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             user_configs = [os.path.join(self.test_config_dir, "users.d", f) for f in ["restricted_user.xml", "query_log.xml"]]
             if self.test_config_dir == "configs_secure":
                 main_configs += [os.path.join(self.test_config_dir, f) for f in ["server.crt", "server.key", "dhparam.pem", "config.d/ssl_conf.xml"]]
+
             for i in xrange(4):
                 self.add_instance(
                     'ch{}'.format(i+1),
