@@ -12,7 +12,12 @@ namespace DB
 
 class ReadBuffer;
 
-/** A stream for reading data in JSONCompactEachRow- formats
+/** A stream for reading data in a bunch of formats:
+ *  - JSONCompactEachRow
+ *  - JSONCompactEachRowWithNamesAndTypes
+ *  - JSONCompactStringsEachRow
+ *  - JSONCompactStringsEachRowWithNamesAndTypes
+ *
 */
 class JSONCompactEachRowRowInputFormat : public IRowInputFormat
 {
@@ -54,7 +59,9 @@ private:
     /// This is for the correct exceptions in skipping unknown fields.
     std::vector<String> names_of_columns;
 
+    /// For *WithNamesAndTypes formats.
     bool with_names;
+    /// For JSONCompactString* formats.
     bool yield_strings;
 };
 
