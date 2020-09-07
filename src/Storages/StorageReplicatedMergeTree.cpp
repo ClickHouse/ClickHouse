@@ -216,7 +216,30 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
     if (global_context.hasZooKeeper())
-        current_zookeeper = global_context.getZooKeeper();
+    {
+        /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
+        /// be reached. In such cases Poco::Exception is thrown after a connection
+        /// timeout - refer to src/Common/ZooKeeper/ZooKeeperImpl.cpp:866 for more info.
+        ///
+        /// Side effect of this is that the CreateQuery gets interrupted and it exits.
+        /// But the data Directories for the tables being created aren't cleaned up.
+        /// This unclean state will hinder table creation on any retries and will
+        /// complain that the Directory for table already exists.
+        ///
+        /// To acheive a clean state on failed table creations, catch this error if
+        /// the excaption is of type Poco::Exception and call dropIfEmpty() method,
+        /// then proceed throwing the exception. Without this, the Directory for the
+        /// tables need to be manually deleted before retrying the CreateQuery.
+        try
+        {
+            current_zookeeper = global_context.getZooKeeper();
+        }
+        catch (Poco::Exception & e)
+        {
+            dropIfEmpty();
+            throw e;
+        }
+    }
 
     bool skip_sanity_checks = false;
 
