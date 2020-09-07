@@ -120,7 +120,9 @@ CREATE TABLE git.line_changes
     commit_hunks_changed UInt32
 ) ENGINE = MergeTree ORDER BY time;
 
-Insert the data with the following commands:
+Run the tool.
+
+Then insert the data with the following commands:
 
 clickhouse-client --query "INSERT INTO git.commits FORMAT TSV" < commits.tsv
 clickhouse-client --query "INSERT INTO git.file_changes FORMAT TSV" < file_changes.tsv
