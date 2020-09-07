@@ -48,7 +48,7 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
-    void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleenup);

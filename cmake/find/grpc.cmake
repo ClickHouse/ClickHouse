@@ -7,10 +7,17 @@ if (NOT ENABLE_GRPC)
     return()
 endif()
 
-option (USE_INTERNAL_GRPC_LIBRARY "Set to FALSE to use system gRPC library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_GRPC_LIBRARY
+        "Set to FALSE to use system gRPC library instead of bundled. (Experimental. Set to OFF on your own risk)"
+        ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_GRPC_LIBRARY)
     find_package(grpc)
+    if (NOT GRPC_FOUND)
+        find_path(GRPC_INCLUDE_DIR grpcpp/grpcpp.h)
+        find_library(GRPC_LIBRARY grpc++)
+    endif ()
+
     if (GRPC_INCLUDE_DIR AND GRPC_LIBRARY)
         set (USE_GRPC ON)
     else()

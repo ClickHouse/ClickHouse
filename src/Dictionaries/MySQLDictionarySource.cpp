@@ -19,6 +19,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  const Context & /* context */,
+                                 const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);

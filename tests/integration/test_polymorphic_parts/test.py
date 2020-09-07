@@ -71,11 +71,11 @@ node6 = cluster.add_instance('node6', main_configs=['configs/compact_parts.xml']
 
 settings_in_memory = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 256}
 
-node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True, stay_alive=True)
-node10 = cluster.add_instance('node10', config_dir="configs", with_zookeeper=True)
+node9 = cluster.add_instance('node9', with_zookeeper=True, stay_alive=True)
+node10 = cluster.add_instance('node10', with_zookeeper=True)
 
-node11 = cluster.add_instance('node11', config_dir="configs", main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
-node12 = cluster.add_instance('node12', config_dir="configs", main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
+node11 = cluster.add_instance('node11', main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
+node12 = cluster.add_instance('node12', main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -213,8 +213,8 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
         "WHERE table = '{}' AND active GROUP BY part_type ORDER BY part_type".format(table))) == TSV(expected)
 
 
-node7 = cluster.add_instance('node7', user_configs=["configs_old/users.d/not_optimize_count.xml"], with_zookeeper=True, image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
-node8 = cluster.add_instance('node8', main_configs=[], user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
+node7 = cluster.add_instance('node7', user_configs=["configs_old/users.d/not_optimize_count.xml"], with_zookeeper=True, image='yandex/clickhouse-server', tag='19.17.8.54', stay_alive=True, with_installed_binary=True)
+node8 = cluster.add_instance('node8', user_configs=["configs/users.d/not_optimize_count.xml"], with_zookeeper=True)
 
 settings7 = {'index_granularity_bytes' : 10485760}
 settings8 = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}

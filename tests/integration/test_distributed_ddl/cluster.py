@@ -17,18 +17,11 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
 
     def prepare(self, replace_hostnames_with_ips=True):
         try:
-            main_configs = [os.path.join(self.test_config_dir, "config.d/clusters.xml"),
-                            os.path.join(self.test_config_dir, "config.d/zookeeper_session_timeout.xml"),
-                            os.path.join(self.test_config_dir, "config.d/macro.xml"),
-                            os.path.join(self.test_config_dir, "config.d/query_log.xml"),
-                            os.path.join(self.test_config_dir, "config.d/ddl.xml")]
-            user_configs = [os.path.join(self.test_config_dir, "users.d/restricted_user.xml"),
-                            os.path.join(self.test_config_dir, "users.d/query_log.xml")]
+            main_configs_files = ["clusters.xml", "zookeeper_session_timeout.xml", "macro.xml", "query_log.xml","ddl.xml"]
+            main_configs = [os.path.join(self.test_config_dir, "config.d", f) for f in main_configs_files]
+            user_configs = [os.path.join(self.test_config_dir, "users.d", f) for f in ["restricted_user.xml", "query_log.xml"]]
             if self.test_config_dir == "configs_secure":
-                main_configs += [os.path.join(self.test_config_dir, "server.crt"),
-                                 os.path.join(self.test_config_dir, "server.key"),
-                                 os.path.join(self.test_config_dir, "dhparam.pem"),
-                                 os.path.join(self.test_config_dir, "config.d/ssl_conf.xml")]
+                main_configs += [os.path.join(self.test_config_dir, f) for f in ["server.crt", "server.key", "dhparam.pem", "config.d/ssl_conf.xml"]]
             for i in xrange(4):
                 self.add_instance(
                     'ch{}'.format(i+1),

@@ -38,6 +38,7 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
     interpreter.execute();
 }
@@ -83,9 +84,6 @@ static void loadDatabase(
 }
 
 
-#define SYSTEM_DATABASE "system"
-
-
 void loadMetadata(Context & context, const String & default_database_name)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
@@ -113,7 +111,7 @@ void loadMetadata(Context & context, const String & default_database_name)
             if (endsWith(it.name(), ".sql"))
             {
                 String db_name = it.name().substr(0, it.name().size() - 4);
-                if (db_name != SYSTEM_DATABASE)
+                if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
                     databases.emplace(unescapeForFileName(db_name), path + "/" + db_name);
             }
 
@@ -139,7 +137,7 @@ void loadMetadata(Context & context, const String & default_database_name)
         if (it.name().at(0) == '.')
             continue;
 
-        if (it.name() == SYSTEM_DATABASE)
+        if (it.name() == DatabaseCatalog::SYSTEM_DATABASE)
             continue;
 
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
@@ -171,21 +169,20 @@ void loadMetadata(Context & context, const String & default_database_name)
 
 void loadMetadataSystem(Context & context)
 {
-    String path = context.getPath() + "metadata/" SYSTEM_DATABASE;
-    if (Poco::File(path).exists())
+    String path = context.getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
+    String metadata_file = path + ".sql";
+    if (Poco::File(path).exists() || Poco::File(metadata_file).exists())
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, SYSTEM_DATABASE, path, true);
+        loadDatabase(context, DatabaseCatalog::SYSTEM_DATABASE, path, true);
     }
     else
     {
         /// Initialize system database manually
-        String global_path = context.getPath();
-        Poco::File(global_path + "data/" SYSTEM_DATABASE).createDirectories();
-        Poco::File(global_path + "metadata/" SYSTEM_DATABASE).createDirectories();
-
-        auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE "/", context);
-        DatabaseCatalog::instance().attachDatabase(SYSTEM_DATABASE, system_database);
+        String database_create_query = "CREATE DATABASE ";
+        database_create_query += DatabaseCatalog::SYSTEM_DATABASE;
+        database_create_query += " ENGINE=Atomic";
+        executeCreateQuery(database_create_query, context, DatabaseCatalog::SYSTEM_DATABASE, "<no file>", true);
     }
 
 }

@@ -1,4 +1,6 @@
-option(PROTOBUF_OLD_ABI_COMPAT "Set to ON for compatiability with external protobuf which was compiled old C++ ABI" ON)
+if (ENABLE_PROTOBUF AND NOT USE_INTERNAL_PROTOBUF_LIBRARY)
+    option(PROTOBUF_OLD_ABI_COMPAT "Set to ON for compatiability with external protobuf which was compiled old C++ ABI" OFF)
+endif()
 
 if (PROTOBUF_OLD_ABI_COMPAT)
     if (NOT ENABLE_PROTOBUF OR USE_INTERNAL_PROTOBUF_LIBRARY)
@@ -214,7 +216,7 @@ target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
     target_link_libraries(hdfs3 PRIVATE ${KERBEROS_LIBRARIES})
 endif()
-target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARY})
+target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
 
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})

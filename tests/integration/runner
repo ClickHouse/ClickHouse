@@ -154,8 +154,10 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
             elif image == "yandex/clickhouse-postgresql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-integration-test":
+                env_tags += "-e {}={}".format("DOCKER_BASE_TAG", tag)
             else:
-                raise Exception("Unknown image {}".format(image))
+                logging.info("Unknown image {}".format(image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time

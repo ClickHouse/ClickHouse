@@ -11,7 +11,8 @@ if(NOT ENABLE_HDFS)
     return()
 endif()
 
-option(USE_INTERNAL_HDFS3_LIBRARY "Set to FALSE to use system HDFS3 instead of bundled" ${NOT_UNBUNDLED})
+option(USE_INTERNAL_HDFS3_LIBRARY "Set to FALSE to use system HDFS3 instead of bundled (experimental - set to OFF on your own risk)"
+       ON) # We don't know any linux distribution with package for it
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/hdfs.h")
     if(USE_INTERNAL_HDFS3_LIBRARY)
@@ -32,7 +33,7 @@ endif()
 
 if(HDFS3_LIBRARY AND HDFS3_INCLUDE_DIR)
     set(USE_HDFS 1)
-elseif(NOT MISSING_INTERNAL_HDFS3_LIBRARY AND LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
+elseif(NOT MISSING_INTERNAL_HDFS3_LIBRARY AND LIBGSASL_LIBRARY AND LIBXML2_LIBRARIES)
     set(HDFS3_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
     set(HDFS3_LIBRARY hdfs3)
     set(USE_INTERNAL_HDFS3_LIBRARY 1)

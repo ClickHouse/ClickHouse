@@ -21,7 +21,11 @@ endif()
 
 if (NOT USE_INTERNAL_ZLIB_LIBRARY)
     find_package (ZLIB)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system zlib library")
+    if (NOT ZLIB_FOUND)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system zlib library")
+    else()
+        set (ZLIB_NAME "libz")
+    endif()
 endif ()
 
 if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
@@ -31,6 +35,7 @@ if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
     set (ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIR}) # for protobuf
     set (ZLIB_FOUND 1) # for poco
     set (ZLIB_LIBRARIES zlib CACHE INTERNAL "")
+    set (ZLIB_NAME "${INTERNAL_ZLIB_NAME}")
 endif ()
 
-message (STATUS "Using ${INTERNAL_ZLIB_NAME}: ${ZLIB_INCLUDE_DIR} : ${ZLIB_LIBRARIES}")
+message (STATUS "Using ${ZLIB_NAME}: ${ZLIB_INCLUDE_DIR} : ${ZLIB_LIBRARIES}")

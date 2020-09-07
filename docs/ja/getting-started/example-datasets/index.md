@@ -1,15 +1,13 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_folder_title: "\u30C7\u30FC\u30BF\u30BB\u30C3\u30C8\u4F8B"
+toc_folder_title: "データセット例"
 toc_priority: 12
-toc_title: "\u306F\u3058\u3081\u306B"
+toc_title: "イントロダクション"
 ---
 
 # データセット例 {#example-datasets}
 
-この方法について説明し得る例データセットおよび輸入しClickHouse.
-一部のデータセットの例ではクエリーもございます。
+このセクションでは、データセット例を取得し、ClickHouseにそれらをインポートする方法について説明します。
+いくつかのデータセット例では、クエリも利用可能です。
 
 -   [匿名Yandexの。メトリカデータセット](metrica.md)
 -   [Star Schemaベンチマーク](star-schema.md)

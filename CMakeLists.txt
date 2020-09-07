@@ -29,7 +29,9 @@ endforeach()
 project(ClickHouse)
 
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
-      "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy" OFF)
+       "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF) but is not possible to satisfy"
+       ON
+)
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
@@ -212,9 +214,16 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-# cmake < 3.12 doesn't supoprt 20. We'll set CMAKE_CXX_FLAGS for now
+if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
+    # to make numeric_limits<__int128> works for unbundled build
+    set (_CXX_STANDARD "-std=gnu++2a")
+else()
+    set (_CXX_STANDARD "-std=c++2a")
+endif()
+# cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++2a")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
+
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -256,7 +265,9 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-    option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+    if (NOT ENABLE_TESTS AND NOT SANITIZE)
+        option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+    endif()
 
     # We cannot afford to use LTO when compiling unitests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
@@ -287,6 +298,8 @@ if (COMPILER_CLANG)
     else ()
         message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
     endif ()
+elseif (ENABLE_THINLTO)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
@@ -380,15 +393,17 @@ include (cmake/find/icu.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
-include (cmake/find/termcap.cmake)
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/re2.cmake)
+include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
+include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/rdkafka.cmake)
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/termcap.cmake) # for external static llvm
 include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
@@ -397,21 +412,33 @@ include (cmake/find/protobuf.cmake)
 include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
+include (cmake/find/poco.cmake)
+include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
+include (cmake/find/odbc.cmake)
+
+if(NOT USE_INTERNAL_PARQUET_LIBRARY)
+    set (ENABLE_ORC OFF CACHE INTERNAL "")
+endif()
 include (cmake/find/orc.cmake)
+
 include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/stats.cmake)
 
+set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
+
 find_contrib_lib(farmhash)
+
+set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)

@@ -2,8 +2,8 @@ option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ${NOT_UNBUNDLED}
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     # 1.70 like in contrib/boost
-    # 1.67 on CI
-    set(BOOST_VERSION 1.67)
+    # 1.71 on CI
+    set(BOOST_VERSION 1.71)
 
     find_package(Boost ${BOOST_VERSION} COMPONENTS
         system
@@ -84,7 +84,7 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (_boost_iostreams ${SRCS_IOSTREAMS})
     add_library (boost::iostreams ALIAS _boost_iostreams)
     target_include_directories (_boost_iostreams PRIVATE ${LIBRARY_DIR})
-    target_link_libraries (_boost_iostreams PRIVATE zlib)
+    target_link_libraries (_boost_iostreams PRIVATE ${ZLIB_LIBRARIES})
 
     # program_options
 

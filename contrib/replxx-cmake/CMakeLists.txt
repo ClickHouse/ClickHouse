@@ -12,7 +12,7 @@ if (NOT ENABLE_REPLXX)
     return()
 endif()
 
-option (USE_INTERNAL_REPLXX_LIBRARY "Use internal replxx library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_REPLXX_LIBRARY "Use internal replxx library (Experimental: set to OFF on your own risk)" ON)
 
 if (NOT USE_INTERNAL_REPLXX_LIBRARY)
     find_library(LIBRARY_REPLXX NAMES replxx replxx-static)
@@ -49,16 +49,16 @@ if (NOT LIBRARY_REPLXX OR NOT INCLUDE_REPLXX OR NOT EXTERNAL_REPLXX_WORKS)
     set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/replxx")
 
     set(SRCS
-        ${LIBRARY_DIR}/src/conversion.cxx
-        ${LIBRARY_DIR}/src/ConvertUTF.cpp
-        ${LIBRARY_DIR}/src/escape.cxx
-        ${LIBRARY_DIR}/src/history.cxx
-        ${LIBRARY_DIR}/src/io.cxx
-        ${LIBRARY_DIR}/src/prompt.cxx
-        ${LIBRARY_DIR}/src/replxx_impl.cxx
-        ${LIBRARY_DIR}/src/replxx.cxx
-        ${LIBRARY_DIR}/src/util.cxx
-        ${LIBRARY_DIR}/src/wcwidth.cpp
+        "${LIBRARY_DIR}/src/conversion.cxx"
+        "${LIBRARY_DIR}/src/ConvertUTF.cpp"
+        "${LIBRARY_DIR}/src/escape.cxx"
+        "${LIBRARY_DIR}/src/history.cxx"
+        "${LIBRARY_DIR}/src/io.cxx"
+        "${LIBRARY_DIR}/src/prompt.cxx"
+        "${LIBRARY_DIR}/src/replxx_impl.cxx"
+        "${LIBRARY_DIR}/src/replxx.cxx"
+        "${LIBRARY_DIR}/src/util.cxx"
+        "${LIBRARY_DIR}/src/wcwidth.cpp"
     )
 
     add_library (replxx ${SRCS})

@@ -4,6 +4,10 @@ if (NOT ENABLE_CASSANDRA)
     return()
 endif()
 
+if (APPLE)
+    set(CMAKE_MACOSX_RPATH ON)
+endif()
+
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libuv")
     message (ERROR "submodule contrib/libuv is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libuv needed for Cassandra")

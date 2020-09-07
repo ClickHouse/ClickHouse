@@ -1,9 +1,11 @@
-option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
-
 if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN))
+    if (ENABLE_JEMALLOC)
+        message (${RECONFIGURE_MESSAGE_LEVEL}
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64 or aarch64 on linux or freebsd.")
+    endif()
     set (ENABLE_JEMALLOC OFF)
-    message (${RECONFIGURE_MESSAGE_LEVEL}
-             "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64 or aarch64 on linux or freebsd.")
+else()
+    option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 endif ()
 
 if (NOT ENABLE_JEMALLOC)
