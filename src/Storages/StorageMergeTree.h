@@ -62,7 +62,6 @@ public:
         const Context & context) override;
 
     Pipe alterPartition(
-        const ASTPtr & query,
         const StorageMetadataPtr & /* metadata_snapshot */,
         const PartitionCommands & commands,
         const Context & context) override;

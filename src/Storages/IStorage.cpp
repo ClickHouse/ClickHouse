@@ -92,7 +92,6 @@ Pipe IStorage::read(
 }
 
 Pipe IStorage::alterPartition(
-    const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
     const PartitionCommands & /* commands */,
     const Context & /* context */)
