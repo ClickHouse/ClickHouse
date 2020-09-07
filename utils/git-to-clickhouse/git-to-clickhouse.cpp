@@ -993,7 +993,12 @@ void processDiffs(
         }
 
         if (size_limit && diff_size > *size_limit)
+        {
+            /// Drain to avoid "broken pipe" error in child process.
+            while (!in.eof())
+                in.ignore(in.available());
             return;
+        }
     }
 }
 
