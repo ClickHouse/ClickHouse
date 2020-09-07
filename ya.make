@@ -5,8 +5,6 @@
 
 OWNER(g:clickhouse)
 
-CFLAGS(-g0)
-
 RECURSE(
     base
     programs
