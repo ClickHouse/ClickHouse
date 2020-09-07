@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <typename A, typename B>
 struct MinusImpl
@@ -45,6 +47,8 @@ struct MinusImpl
 
 struct NameMinus { static constexpr auto name = "minus"; };
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
+
+}
 
 void registerFunctionMinus(FunctionFactory & factory)
 {

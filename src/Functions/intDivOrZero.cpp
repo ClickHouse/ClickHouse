@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 template <typename A, typename B>
 struct DivideIntegralOrZeroImpl
@@ -27,6 +29,8 @@ struct DivideIntegralOrZeroImpl
 
 struct NameIntDivOrZero { static constexpr auto name = "intDivOrZero"; };
 using FunctionIntDivOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameIntDivOrZero>;
+
+}
 
 void registerFunctionIntDivOrZero(FunctionFactory & factory)
 {

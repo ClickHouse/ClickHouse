@@ -14,7 +14,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -23,6 +22,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 
 class FunctionInitializeAggregation : public IFunction
 {
@@ -152,6 +153,7 @@ void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbe
     block.getByPosition(result).column = std::move(result_holder);
 }
 
+}
 
 void registerFunctionInitializeAggregation(FunctionFactory & factory)
 {

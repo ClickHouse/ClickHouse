@@ -11,12 +11,14 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CLOCK_GETTIME;
 }
+
+namespace
+{
 
 static Field nowSubsecond(UInt32 scale)
 {
@@ -88,6 +90,8 @@ public:
         result_col.column = result_col.type->createColumnConst(input_rows_count, nowSubsecond(scale));
     }
 };
+
+}
 
 void registerFunctionNow64(FunctionFactory & factory)
 {
