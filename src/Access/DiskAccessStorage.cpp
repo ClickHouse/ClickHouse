@@ -426,33 +426,41 @@ bool DiskAccessStorage::writeLists()
 void DiskAccessStorage::scheduleWriteLists(EntityType type)
 {
     if (failed_to_write_lists)
-        return;
+        return; /// We don't try to write list files after the first fail.
+                /// The next restart of the server will invoke rebuilding of the list files.
 
-    bool already_scheduled = !types_of_lists_to_write.empty();
     types_of_lists_to_write.insert(type);
 
-    if (already_scheduled)
-        return;
+    if (lists_writing_thread_is_waiting)
+        return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
+                /// without restarting that thread.
+
+    if (lists_writing_thread.joinable())
+        lists_writing_thread.join();
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
     std::ofstream{getNeedRebuildListsMarkFilePath(directory_path)};
 
-    startListsWritingThread();
+    lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
+    lists_writing_thread_is_waiting = true;
 }
 
 
-void DiskAccessStorage::startListsWritingThread()
+void DiskAccessStorage::listsWritingThreadFunc()
 {
-    if (lists_writing_thread.joinable())
+    std::unique_lock lock{mutex};
+
     {
-        if (!lists_writing_thread_exited)
-            return;
-        lists_writing_thread.detach();
+        /// It's better not to write the lists files too often, that's why we need
+        /// the following timeout.
+        const auto timeout = std::chrono::minutes(1);
+        SCOPE_EXIT({ lists_writing_thread_is_waiting = false; });
+        if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
+            return; /// The destructor requires us to exit.
     }
 
-    lists_writing_thread_exited = false;
-    lists_writing_thread = ThreadFromGlobalPool{&DiskAccessStorage::listsWritingThreadFunc, this};
+    writeLists();
 }
 
 
@@ -463,21 +471,6 @@ void DiskAccessStorage::stopListsWritingThread()
         lists_writing_thread_should_exit.notify_one();
         lists_writing_thread.join();
     }
-}
-
-
-void DiskAccessStorage::listsWritingThreadFunc()
-{
-    std::unique_lock lock{mutex};
-    SCOPE_EXIT({ lists_writing_thread_exited = true; });
-
-    /// It's better not to write the lists files too often, that's why we need
-    /// the following timeout.
-    const auto timeout = std::chrono::minutes(1);
-    if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
-        return; /// The destructor requires us to exit.
-
-    writeLists();
 }
 
 
