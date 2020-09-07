@@ -1054,7 +1054,6 @@ bool StorageMergeTree::optimize(
 }
 
 Pipe StorageMergeTree::alterPartition(
-    const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
     const Context & query_context)
@@ -1130,7 +1129,7 @@ Pipe StorageMergeTree::alterPartition(
             break;
 
             default:
-                IStorage::alterPartition(query, metadata_snapshot, commands, query_context); // should throw an exception.
+                IStorage::alterPartition(metadata_snapshot, commands, query_context); // should throw an exception.
         }
 
         for (auto & command_result : current_command_results)
