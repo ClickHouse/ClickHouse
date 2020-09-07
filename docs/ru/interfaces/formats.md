@@ -955,10 +955,6 @@ ClickHouse пишет и читает сообщения `Protocol Buffers` в �
 
 [Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
-
-
-
-
 ## AvroConfluent {#data-format-avro-confluent}
 
 Для формата `AvroConfluent` ClickHouse поддерживает декодирование сообщений `Avro` с одним объектом. Такие сообщения используются с [Kafka] (http://kafka.apache.org/) и  реестром схем [Confluent](https://docs.confluent.io/current/schema-registry/index.html). 
