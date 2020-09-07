@@ -27,6 +27,51 @@
 
 
 static constexpr auto documentation = R"(
+A tool to extract information from Git repository for analytics.
+
+It dumps the data for the following tables:
+- commits - commits with statistics;
+- file_changes - files changed in every commit with the info about the change and statistics;
+- line_changes - every changed line in every changed file in every commit with full info about the line and the information about previous change of this line.
+
+The largest and the most important table is "line_changes".
+
+Allows to answer questions like:
+- list files with maximum number of authors;
+- show me the oldest lines of code in the repository;
+- show me the files with longest history;
+- list favorite files for author;
+- list largest files with lowest number of authors;
+- at what weekday the code has highest chance to stay in repository;
+- the distribution of code age across repository;
+- files sorted by average code age;
+- quickly show file with blame info (rough);
+- commits and lines of code distribution by time; by weekday, by author; for specific subdirectories;
+- show history for every subdirectory, file, line of file, the number of changes (lines and commits) across time; how the number of contributors was changed across time;
+- list files with most modifications;
+- list files that were rewritten most number of time or by most of authors;
+- what is percentage of code removal by other authors, across authors;
+- the matrix of authors that shows what authors tends to rewrite another authors code;
+- what is the worst time to write code in sense that the code has highest chance to be rewritten;
+- the average time before code will be rewritten and the median (half-life of code decay);
+- comments/code percentage change in time / by author / by location;
+- who tend to write more tests / cpp code / comments.
+
+The data is intended for analytical purposes. It can be imprecise by many reasons but it should be good enough for its purpose.
+
+The data is not intended to provide any conclusions for managers, it is especially counter-indicative for any kinds of "performance review". Instead you can spend multiple days looking at various interesting statistics.
+
+Run this tool inside your git repository. It will create .tsv files that can be loaded into ClickHouse (or into other DBMS if you dare).
+
+The tool can process large enough repositories in a reasonable time.
+It has been tested on:
+- ClickHouse: 31 seconds; 3 million rows;
+- LLVM: 8 minues; 62 million rows;
+- Linux - 12 minutes; 85 million rows;
+- Chromium - 67 minutes; 343 million rows;
+(the numbers as of Sep 2020)
+
+
 Prepare the database by executing the following queries:
 
 DROP DATABASE IF EXISTS git;
