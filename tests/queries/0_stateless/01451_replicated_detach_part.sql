@@ -12,6 +12,7 @@ INSERT INTO attach_01451_r1 VALUES (2);
 
 SELECT v FROM attach_01451_r1 ORDER BY v;
 
+SYSTEM SYNC REPLICA attach_01451_r2;
 ALTER TABLE attach_01451_r2 DETACH PART 'all_1_1_0';
 
 SELECT v FROM attach_01451_r1 ORDER BY v;
@@ -20,6 +21,7 @@ SELECT name FROM system.detached_parts WHERE table = 'attach_01451_r2';
 
 ALTER TABLE attach_01451_r2 ATTACH PART 'all_1_1_0';
 
+SYSTEM SYNC REPLICA attach_01451_r1;
 SELECT v FROM attach_01451_r1 ORDER BY v;
 
 SELECT name FROM system.detached_parts WHERE table = 'attach_01451_r2';
