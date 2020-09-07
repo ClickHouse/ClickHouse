@@ -1,2 +1,2 @@
-# See src/TableFunctions/tests/test-strange-memory-leak.cpp
-leak:getActualTableStructure
+# See https://bugs.llvm.org/show_bug.cgi?id=47418
+# leak:getActualTableStructure

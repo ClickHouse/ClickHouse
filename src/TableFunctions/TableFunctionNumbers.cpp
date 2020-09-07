@@ -23,7 +23,8 @@ namespace ErrorCodes
 template <bool multithreaded>
 ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(const Context & /*context*/) const
 {
-    return ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}});
+    /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
+    return ColumnsDescription{{{"number", std::make_shared<DataTypeUInt64>()}}};
 }
 
 template <bool multithreaded>
