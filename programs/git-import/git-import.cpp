@@ -1182,7 +1182,7 @@ void processLog(const Options & options)
 
 }
 
-int main(int argc, char ** argv)
+int mainEntryClickHouseGitImport(int argc, char ** argv)
 try
 {
     using namespace DB;
@@ -1219,7 +1219,7 @@ try
             << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
-            << "\n./git-to-clickhouse --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
+            << "\nclickhouse git-import --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
         return 1;
     }
 
