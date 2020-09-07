@@ -525,7 +525,7 @@ namespace MySQLReplication
                                 for (auto k = 0U; k < uncompressed_decimals; k++)
                                 {
                                     UInt32 val = 0;
-                                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
+                                    readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
                                     res *= intExp10OfSize<DecimalType>(digits_per_integer);
                                     res += (val ^ mask);
                                 }
@@ -538,7 +538,7 @@ namespace MySQLReplication
 
                                     if (to_read)
                                     {
-                                        payload.readStrict(reinterpret_cast<char *>(&val), to_read);
+                                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<DecimalType>(compressed_decimals);
                                         res += (val ^ (mask & compressed_integer_align_numbers[compressed_decimals]));
                                     }
