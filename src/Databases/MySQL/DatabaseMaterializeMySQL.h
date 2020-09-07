@@ -45,7 +45,7 @@ protected:
 
     mutable mysqlxx::Pool pool;
     Poco::Logger * log;
-    MaterializeMetadata materialize_metadata;
+    MaterializeMetadataPtr materialize_metadata;
     MaterializeMySQLSyncThread materialize_thread;
 
     std::exception_ptr exception;

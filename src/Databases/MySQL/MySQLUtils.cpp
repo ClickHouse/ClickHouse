@@ -13,7 +13,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
-#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>

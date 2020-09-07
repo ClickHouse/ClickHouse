@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #include <mysqlxx/Connection.h>
 
 namespace DB {

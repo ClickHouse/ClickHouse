@@ -63,9 +63,8 @@ Block getShowMasterLogHeader(const String & mysql_version)
     };
 }
 
-bool checkBinlogFileExists(
+bool MaterializeMetadata::checkBinlogFileExists(
     mysqlxx::PoolWithFailover::Entry & connection,
-    const String & mysql_version,
     const String & binlog_file) const
 {
     MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", getShowMasterLogHeader(mysql_version), DEFAULT_BLOCK_SIZE);
@@ -123,7 +122,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         out.close();
     }
 
-    commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
+    commitMetadata(std::move(fun), persistent_tmp_path);
 }
 
 void MaterializeMetadata::fetchMetadata(mysqlxx::PoolWithFailover::Entry & connection)
@@ -145,7 +144,7 @@ void MaterializeMetadata::fetchMetadata(mysqlxx::PoolWithFailover::Entry & conne
     }
 }
 
-bool MaterializeMetadata::tryInitFromFile(const String & path)
+bool MaterializeMetadata::tryInitFromFile(mysqlxx::PoolWithFailover::Entry & connection)
 {
     if (!Poco::File(persistent_path).exists()) {
         ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
@@ -159,7 +158,7 @@ bool MaterializeMetadata::tryInitFromFile(const String & path)
         assertString("\nData Version:\t", in);
         readIntText(data_version, in);
 
-        if (checkBinlogFileExists(connection, mysql_version, binlog_file))
+        if (checkBinlogFileExists(connection, binlog_file))
             return true;
     }
 
@@ -169,11 +168,12 @@ bool MaterializeMetadata::tryInitFromFile(const String & path)
 MaterializeMetadata::MaterializeMetadata(
     mysqlxx::PoolWithFailover::Entry & connection,
     const String & path_,
-    const String & mysql_version)
+    const String & mysql_version_)
     : persistent_path(path_)
+    , mysql_version(mysql_version_)
     , is_initialized(true)
 {
-    if (tryInitFromFile(persistent_path)) {
+    if (tryInitFromFile(connection)) {
         return;
     }
 

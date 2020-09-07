@@ -14,6 +14,8 @@
 namespace DB
 {
 
+Block getShowMasterLogHeader(const String & mysql_version);
+
 /** Materialize database engine metadata
  *
  * Record data version and current snapshot of MySQL, including:
@@ -40,21 +42,20 @@ struct MaterializeMetadata
 
     bool checkBinlogFileExists(
         mysqlxx::PoolWithFailover::Entry & connection,
-        const String & mysql_version,
         const String & binlog_file) const;
 
     void commitMetadata(const std::function<void()> & function, const String & persistent_tmp_path);
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
-    bool tryInitFromFile(const String & path);
+    bool tryInitFromFile(mysqlxx::PoolWithFailover::Entry & connection);
 
     void fetchMetadata(mysqlxx::PoolWithFailover::Entry & connection);
 
     MaterializeMetadata(
         mysqlxx::PoolWithFailover::Entry & connection,
         const String & path,
-        const String & mysql_version);
+        const String & mysql_version_);
 
     MaterializeMetadata();
 };

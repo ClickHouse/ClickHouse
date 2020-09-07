@@ -57,15 +57,15 @@ DatabaseMaterializeMySQL::DatabaseMaterializeMySQL(
     , pool(std::move(pool_))
     , log(&Poco::Logger::get("DatabaseMaterializeMySQL"))
     , materialize_metadata(loadMetadata())
-    , materialize_thread(context, database_name_, mysql_database_name_, pool, std::move(client_), &materialize_metadata, settings.get())
+    , materialize_thread(context, database_name_, mysql_database_name_, pool, std::move(client_), materialize_metadata, settings.get())
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
-MaterializeMetadata DatabaseMaterializeMySQL::loadMetadata()
+MaterializeMetadataPtr DatabaseMaterializeMySQL::loadMetadata()
 {
     auto connection = pool.get();
-    return MaterializeMetadata(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", checkVariableAndGetVersion(connection));
+    return std::make_shared<MaterializeMetadata>(connection, getDatabase(database_name).getMetadataPath() + "/.metadata", checkVariableAndGetVersion(connection));
 }
 
 void DatabaseMaterializeMySQL::rethrowExceptionIfNeed() const
@@ -143,8 +143,8 @@ std::unordered_map<String, String> DatabaseMaterializeMySQL::fetchTablesCreateQu
 }
 
 void DatabaseMaterializeMySQL::executeDumpQueries(
-    const Context & context,
     mysqlxx::Pool::Entry & connection,
+    const Context & context,
     std::unordered_map<String, String> tables_dump_queries)
 {
     for (const auto & [table_name, dump_query] : tables_dump_queries)
@@ -188,7 +188,7 @@ void DatabaseMaterializeMySQL::cleanOutdatedTables(const Context & context)
 }
 
 void DatabaseMaterializeMySQL::tryDumpTablesData(
-    mysqlxx::Pool::Entry & connection,
+    mysqlxx::PoolWithFailover::Entry & connection,
     Context & context,
     bool & opened_transaction)
 {
@@ -201,7 +201,7 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(
         connection->query("FLUSH TABLES WITH READ LOCK;").execute();
 
         locked_tables = true;
-        materialize_metadata.fetchMasterStatus(connection); // overwrite metadata for consistency
+        materialize_metadata->fetchMasterStatus(connection); // overwrite metadata for consistency
         connection->query("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;").execute();
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
@@ -218,12 +218,12 @@ void DatabaseMaterializeMySQL::tryDumpTablesData(
 
     if (!tables_dump_queries.empty()) {
         Position position;
-        position.update(materialize_metadata.binlog_position, materialize_metadata.binlog_file, materialize_metadata.executed_gtid_set);
+        position.update(materialize_metadata->binlog_position, materialize_metadata->binlog_file, materialize_metadata->executed_gtid_set);
 
-        materialize_metadata.transaction(position, [&]()
+        materialize_metadata->transaction(position, [&]()
         {
             cleanOutdatedTables(context);
-            executeDumpQueries(context, connection, tables_dump_queries);
+            executeDumpQueries(connection, context, tables_dump_queries);
         });
 
         const auto & position_message = [&]()
@@ -246,10 +246,12 @@ void DatabaseMaterializeMySQL::dumpTablesData(Context & context) {
     int retry_count = 5; // TODO: take from settings
     int max_wait_time_when_mysql_unavailable = 60;
 
+    mysqlxx::PoolWithFailover::Entry connection;
+
     // TODO: replace retry_count to is_cancelled
     while (retry_count--) {
         try {
-            auto connection = pool.get();
+            connection = pool.get();
             tryDumpTablesData(connection, context, opened_transaction);
         } catch (...) {
             tryLogCurrentException(log);
